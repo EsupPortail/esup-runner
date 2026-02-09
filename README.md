@@ -34,12 +34,25 @@ Each project has its own `pyproject.toml`, documentation, release process, etc.
 
 ## Contributors (development)
 
-- Manager dev install:
-	- `cd manager && uv sync --locked --extra dev`
-	- `cd manager && uv run --locked pytest -q`
-- Runner dev install:
-	- `cd runner && uv sync --locked --extra dev`
-	- `cd runner && uv run --locked pytest -q`
+Prerequisites: Python >= 3.11, `uv`, `make`.
+
+Recommended workflow uses the project Makefiles (they wrap `uv` and handle extras):
+
+- Manager:
+	- Install deps: `cd manager && make sync-dev`
+	- Run tests: `cd manager && make test` (or `make coverage`)
+	- Run in dev: `cd manager && uv run esup-runner-manager-dev`
+
+- Runner:
+	- Install deps: `cd runner && make sync-dev`
+	- (Optional) transcription deps: `cd runner && make sync-all` (or `make sync EXTRAS=transcription`)
+	- Run tests: `cd runner && make test`
+	- Run in dev: `cd runner && uv run esup-runner-runner-dev`
+
+If you need fully reproducible installs, you can call `uv` directly with the lockfile:
+
+- Manager: `cd manager && uv sync --locked --extra dev`
+- Runner: `cd runner && uv sync --locked --extra dev`
 
 Build/test commands and production setup details are documented in the pages above.
 

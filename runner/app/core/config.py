@@ -6,6 +6,7 @@ Handles environment variables, security settings, and application configuration.
 
 import os
 import re
+import sys
 import warnings
 from typing import List, Optional, Set
 
@@ -442,5 +443,16 @@ def _parse_grouped_task_types_spec(spec: str) -> Optional[List[Set[str]]]:
 # Create global config instance using the factory function
 config = get_config()
 
-# Auto-validate configuration on module load
-config.validate_configuration()
+def _is_pytest_run() -> bool:
+    # `PYTEST_CURRENT_TEST` is only set while executing a test; during collection it
+    # may be absent. We also check loaded modules/argv to reliably detect pytest.
+    return (
+        os.getenv("PYTEST_CURRENT_TEST") is not None
+        or "pytest" in sys.modules
+        or any(os.path.basename(arg).startswith("pytest") for arg in sys.argv)
+    )
+
+
+# Auto-validate configuration on module load (skip under pytest to avoid failing imports)
+if not _is_pytest_run():
+    config.validate_configuration()

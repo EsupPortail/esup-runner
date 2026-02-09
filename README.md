@@ -5,7 +5,7 @@
 # ESUP Runner
 
 [![CI](https://github.com/EsupPortail/esup-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/EsupPortail/esup-runner/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/github/actions/workflow/status/EsupPortail/esup-runner/ci.yml?branch=main&label=coverage)](https://github.com/EsupPortail/esup-runner/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/github/actions/workflow/status/EsupPortail/esup-runner/ci.yml?branch=main&label=coverage&suffix=%20(100%25))](https://github.com/EsupPortail/esup-runner/actions/workflows/ci.yml)
 
 This GitHub repository contains **two distinct Python projects**:
 

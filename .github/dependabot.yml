@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Keep GitHub Actions up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Python dependencies (Manager)
+  - package-ecosystem: "uv"
+    directory: "/manager"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Python dependencies (Runner)
+  - package-ecosystem: "uv"
+    directory: "/runner"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Manager documentation
+    url: https://github.com/EsupPortail/esup-runner/tree/main/manager/docs
+    about: Guides, installation and operations for the Manager
+  - name: Runner documentation
+    url: https://github.com/EsupPortail/esup-runner/tree/main/runner/docs
+    about: Guides, configuration and operations for the Runner

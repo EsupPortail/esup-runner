@@ -1,0 +1,34 @@
+<!-- templates/logs_search.html -->
+<div class="card border-0">
+    <div class="card-header bg-transparent border-0">
+        <h5 class="mb-0">
+            Search results for "{{ search_term }}"
+            <span class="badge bg-primary ms-2">{{ total_results }} results</span>
+        </h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="log-container p-3" id="logContainer">
+            {% for log in logs %}
+            <div class="log-entry log-level-{{ log.level }}"
+                 data-level="{{ log.level }}"
+                 data-module="{{ log.module }}"
+                 data-context="{{ log.context }}">
+                <div class="d-flex align-items-start">
+                    <span class="log-timestamp me-3">{{ log.timestamp }}</span>
+                    <span class="log-module me-2">{{ log.module }}</span>
+                    <span class="badge badge-{{ log.level }} me-2">{{ log.level }}</span>
+                    {% if log.context %}
+                    <span class="log-context me-2">{{ log.context }}</span>
+                    {% endif %}
+                </div>
+                <div class="log-message mt-1">{{ log.message }}</div>
+            </div>
+            {% else %}
+            <div class="text-center text-muted py-4">
+                <i class="bi bi-search display-4"></i>
+                <p class="mt-2">No results found for "{{ search_term }}"</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>

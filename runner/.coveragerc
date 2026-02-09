@@ -1,0 +1,21 @@
+[run]
+omit =
+    app/core/config.py
+    app/core/setup_logging.py
+    app/core/state.py
+    app/api/openapi.py
+    app/api/routes/task.py
+    app/managers/process_manager.py
+    app/managers/service_manager.py
+    app/managers/storage_manager.py
+    app/services/email_service.py
+    app/task_handlers/__init__.py
+    app/task_handlers/encoding/scripts/*
+    app/task_handlers/encoding/encoding_handler.py
+    app/task_handlers/studio/*
+    app/task_handlers/transcription/*
+    app/task_handlers/base_handler.py
+
+[report]
+precision = 2
+show_missing = True

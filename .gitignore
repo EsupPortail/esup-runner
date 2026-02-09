@@ -1,0 +1,57 @@
+# --- Python / tooling (monorepo) ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtualenvs
+.venv/
+**/.venv/
+
+# Tests / coverage
+.pytest_cache/
+**/.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+**/htmlcov/
+
+# Type checking / linters
+.mypy_cache/
+**/.mypy_cache/
+.ruff_cache/
+**/.ruff_cache/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+**/*.egg-info/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Env files (never commit real secrets)
+.env
+**/.env
+.env.*
+!.env.example
+
+# Project-specific runtime data
+manager/data/
+manager/data/**
+runner/data/
+runner/data/**
+
+# Logs
+*.log
+
+# Locks (but keep uv.lock for reproducible builds)
+*.lock
+!uv.lock

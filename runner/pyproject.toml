@@ -1,0 +1,126 @@
+# pyproject.toml - Configuration for Runner
+# Standalone installable package
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "esup-runner"
+version = "0.9.0"
+description = "ESUP Runner - Outsourcing system for encoding, transcription, and other processes"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+    {name = "Loïc Bonavent", email = "loic.bonavent@umontpellier.fr"}
+]
+keywords = ["task", "runner", "executor", "distributed", "async", "fastapi", "esup"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Distributed Computing",
+    "Framework :: FastAPI",
+]
+
+dependencies = [
+    "fastapi>=0.104.1,<1.0.0",
+    "uvicorn[standard]>=0.24.0,<1.0.0",
+    "httpx>=0.25.2,<1.0.0",
+    "python-multipart>=0.0.6",
+    "jinja2>=3.1.2",
+    "requests>=2.31.0",
+    "pydantic>=2.10.0,<3.0.0",
+    "python-dotenv>=1.0.0",
+    "Pillow>=12.0.0,<13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+]
+transcription = [
+    "openai-whisper==20250625",
+    "coverage>=7.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/EsupPortail/esup-runner"
+Documentation = "https://github.com/EsupPortail/esup-runner/tree/main/runner/docs"
+Repository = "https://github.com/EsupPortail/esup-runner"
+Issues = "https://github.com/EsupPortail/esup-runner/issues"
+
+[project.scripts]
+esup-runner-runner = "launcher:main"
+
+# Backward-compatible alias
+esup-runner = "launcher:main"
+esup-runner-runner-dev = "launcher:run_dev"
+
+# Backward-compatible alias
+esup-runner-dev = "launcher:run_dev"
+
+# Backward-compatible alias
+runner-dev = "launcher:run_dev"
+
+[tool.setuptools]
+packages = ["app"]
+py-modules = ["launcher"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+app = [
+    "web/static/**/*",
+    "web/templates/**/*",
+    "py.typed",
+]
+
+# ============================================================================
+# Black Configuration - Inherits from root config
+# ============================================================================
+[tool.black]
+line-length = 100
+target-version = ["py311", "py312", "py313", "py314"]
+
+# ============================================================================
+# isort Configuration - Inherits from root config
+# ============================================================================
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["app"]
+
+# ============================================================================
+# Mypy Configuration - Inherits from root config
+# ============================================================================
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = true
+ignore_missing_imports = true
+
+# ============================================================================
+# Configuration Pytest
+# ============================================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["./app"]
+python_files = "test_*.py"
+filterwarnings = [
+    "ignore::DeprecationWarning:passlib.*:",
+]

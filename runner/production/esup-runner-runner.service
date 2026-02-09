@@ -1,0 +1,18 @@
+[Unit]
+Description=Runner Service
+After=network.target
+
+[Service]
+User=esup-runner
+Group=esup-runner
+Type=simple
+WorkingDirectory=/opt/esup-runner/runner
+Environment=PATH=/home/esup-runner/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/env uv run esup-runner-runner
+Restart=always
+EnvironmentFile=/opt/esup-runner/runner/.env
+ExecReload=/bin/kill -HUP $MAINPID
+
+
+[Install]
+WantedBy=multi-user.target

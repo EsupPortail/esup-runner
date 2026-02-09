@@ -1,0 +1,22 @@
+<!-- templates/logs_partial.html -->
+{% for log in logs %}
+<div class="log-entry log-level-{{ log.level }}"
+     data-level="{{ log.level }}"
+     data-module="{{ log.module }}"
+     data-context="{{ log.context }}">
+    <div class="d-flex align-items-start">
+        <span class="log-timestamp me-3">{{ log.timestamp }}</span>
+        <span class="log-module me-2">{{ log.module }}</span>
+        <span class="badge badge-{{ log.level }} me-2">{{ log.level }}</span>
+        {% if log.context %}
+        <span class="log-context me-2">{{ log.context }}</span>
+        {% endif %}
+    </div>
+    <div class="log-message mt-1">{{ log.message }}</div>
+</div>
+{% endfor %}
+
+<!-- Update indicator -->
+<div class="text-center text-muted mt-2">
+    <small>Last update: {{ now.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+</div>

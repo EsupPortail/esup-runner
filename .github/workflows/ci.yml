@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: pytest (${{ matrix.project }}, py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [ manager, runner ]
+        python-version: [ "3.11", "3.12", "3.13" ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          working-directory: ${{ matrix.project }}
+          enable-cache: true
+          cache-dependency-glob: |
+            ${{ matrix.project }}/pyproject.toml
+            ${{ matrix.project }}/uv.lock
+          cache-suffix: ${{ matrix.project }}-py${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.project }}
+        run: |
+          uv sync --locked --extra dev
+
+      - name: Format check (black + isort)
+        working-directory: ${{ matrix.project }}
+        run: |
+          make fmt-check
+
+      - name: Lint (flake8 + mypy)
+        working-directory: ${{ matrix.project }}
+        run: |
+          make lint
+
+      - name: Test
+        working-directory: ${{ matrix.project }}
+        run: |
+          make test
+
+      - name: Coverage
+        working-directory: ${{ matrix.project }}
+        run: |
+          make coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.project }}-py${{ matrix.python-version }}
+          path: ${{ matrix.project }}/htmlcov/
+          retention-days: 14

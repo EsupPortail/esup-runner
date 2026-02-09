@@ -1,0 +1,43 @@
+[flake8]
+# Flake8 configuration for ESUP Runner project
+# Compatible with Black (line-length = 100)
+
+max-line-length = 100
+max-complexity = 10
+
+# Directories to exclude
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    .ruff_cache,
+    .cache,
+    build,
+    dist,
+    .eggs,
+    *.egg-info,
+    .mypy_cache,
+    .pytest_cache,
+    .tox,
+    .coverage,
+    .coverage.*,
+    coverage.xml,
+    coverage.json,
+    htmlcov
+
+# Error codes to ignore (Black compatibility)
+extend-ignore =
+    E203,
+    E266,
+    E501,
+    W503,
+    W504,
+    E402,
+
+# Per-file configuration
+per-file-ignores =
+    __init__.py:F401,F403
+    */__version__.py:F401
+    */conftest.py:F401,F403

@@ -237,7 +237,7 @@ class BaseTaskHandler(ABC):
             env["CUDA_DEVICE_ORDER"] = str(cfg.GPU_CUDA_DEVICE_ORDER)
         if getattr(cfg, "GPU_CUDA_PATH", None):
             cuda_bin = os.path.join(str(cfg.GPU_CUDA_PATH), "bin")
-            env["PATH"] = f"{cuda_bin}:{env.get('PATH','')}"
+            env["PATH"] = f"{cuda_bin}:{env.get('PATH', '')}"
 
     def is_video_file(self, filename: str) -> bool:
         """Check if the file is a video based on its extension.

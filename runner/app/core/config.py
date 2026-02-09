@@ -443,6 +443,7 @@ def _parse_grouped_task_types_spec(spec: str) -> Optional[List[Set[str]]]:
 # Create global config instance using the factory function
 config = get_config()
 
+
 def _is_pytest_run() -> bool:
     # `PYTEST_CURRENT_TEST` is only set while executing a test; during collection it
     # may be absent. We also check loaded modules/argv to reliably detect pytest.

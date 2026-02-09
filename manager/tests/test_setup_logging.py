@@ -186,3 +186,60 @@ def test_setup_uvicorn_logging_clears_existing_handlers(monkeypatch, tmp_path):
 def test_get_uvicorn_log_config_json_format():
     cfg = get_uvicorn_log_config(json_format=True)
     assert cfg["formatters"]["json"]["()"] is JSONFormatter
+
+
+def test_add_file_handler_success(tmp_path):
+    """Nominal case: _add_file_handler creates a RotatingFileHandler and adds it."""
+    logger = logging.getLogger("file-handler-success")
+    logger.handlers.clear()
+    formatter = _create_formatter(False)
+    log_path = str(tmp_path / "test.log")
+
+    _add_file_handler(logger, formatter, log_path)
+    assert any(isinstance(h, RotatingFileHandler) for h in logger.handlers)
+
+
+def test_add_syslog_handler_success(monkeypatch):
+    """Nominal case: _add_syslog_handler adds a handler when syslog is available."""
+    logger = logging.getLogger("syslog-success")
+    logger.handlers.clear()
+    formatter = _create_formatter(False)
+
+    class FakeSyslog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def setFormatter(self, fmt):
+            pass
+
+        def setLevel(self, level):
+            pass
+
+    monkeypatch.setattr(logging_module, "SysLogHandler", FakeSyslog)
+    _add_syslog_handler(logger, formatter)
+    assert any(isinstance(h, FakeSyslog) for h in logger.handlers)
+
+
+def test_setup_logging_non_test_run_branch(monkeypatch, tmp_path):
+    """Exercise the 'not is_test_run' branch (lines 137-138) of setup_logging."""
+    # Make the function believe we are NOT in a test run
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    # Remove only 'pytest' from sys.modules so the detection check fails
+    monkeypatch.delitem(sys.modules, "pytest", raising=False)
+    monkeypatch.setattr(logging_module.sys, "argv", ["/usr/bin/app"])
+    monkeypatch.setattr(logging_module.config, "LOG_DIRECTORY", str(tmp_path) + "/")
+
+    # Use a fake SysLogHandler to avoid depending on /dev/log
+    class FakeSyslog(logging.Handler):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+
+        def emit(self, record):
+            pass
+
+    monkeypatch.setattr(logging_module, "SysLogHandler", FakeSyslog)
+
+    logger = setup_logging("BranchTest", log_level=logging.DEBUG)
+    # Should have console + file + syslog handlers
+    assert any(isinstance(h, RotatingFileHandler) for h in logger.handlers)
+    assert any(isinstance(h, FakeSyslog) for h in logger.handlers)

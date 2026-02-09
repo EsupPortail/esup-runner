@@ -7,6 +7,7 @@ Provides flexible logging setup with support for JSON formatting, file rotation,
 import json
 import logging
 import os
+import sys
 from datetime import datetime
 from logging.handlers import RotatingFileHandler, SysLogHandler
 from typing import Any, Callable, Dict, Optional
@@ -88,8 +89,18 @@ def setup_logging(
         OSError: If log directory cannot be created
         PermissionError: If log file cannot be written
     """
-    # Create log directory if it doesn't exist
-    log_dir = config.LOG_DIRECTORY
+    # `PYTEST_CURRENT_TEST` is only set while executing a test. During collection
+    # (module imports), it may be absent even though pytest is running.
+    is_test_run = (
+        os.getenv("PYTEST_CURRENT_TEST") is not None
+        or "pytest" in sys.modules
+        or any(os.path.basename(arg).startswith("pytest") for arg in sys.argv)
+    )
+
+    # Use temp directory during tests to avoid permission issues and keep handlers simple
+    log_dir = os.getenv(
+        "PYTEST_LOG_DIR", config.LOG_DIRECTORY if not is_test_run else "/tmp/esup-runner_logs/"
+    )
     try:
         os.makedirs(log_dir, exist_ok=True)
     except OSError as e:
@@ -115,11 +126,13 @@ def setup_logging(
     # Add console handler for development
     _add_console_handler(logger, formatter, console_level)
 
-    # Add file handler with rotation
-    _add_file_handler(logger, formatter, log_path, file_level, max_file_size, backup_count)
+    # Skip persistent handlers when running under pytest to avoid permission issues
+    # and resource warnings during test teardown.
+    if not is_test_run:
+        _add_file_handler(logger, formatter, log_path, file_level, max_file_size, backup_count)
 
-    # Add syslog handler for system logging
-    _add_syslog_handler(logger, formatter)
+        # Add syslog handler for system logging
+        _add_syslog_handler(logger, formatter)
 
     # Log configuration summary (useless, too many logs will be generated otherwise)
     # logger.info(

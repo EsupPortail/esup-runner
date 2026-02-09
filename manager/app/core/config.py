@@ -212,7 +212,7 @@ class Config:
         self.CLEANUP_TASK_FILES_DAYS: int = int(os.getenv("CLEANUP_TASK_FILES_DAYS", 30))
 
         # Directory to store log files
-        self.LOG_DIRECTORY: str = os.getenv("LOG_DIRECTORY", "/var/log/flow_runner")
+        self.LOG_DIRECTORY: str = os.getenv("LOG_DIRECTORY", "/var/log/esup-runner")
         # Add slash at end if missing
         if not self.LOG_DIRECTORY.endswith("/"):
             self.LOG_DIRECTORY += "/"

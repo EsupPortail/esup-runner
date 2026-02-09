@@ -7,6 +7,7 @@ Provides flexible logging setup with support for JSON formatting, file rotation,
 import json
 import logging
 import os
+import sys
 from datetime import datetime
 from logging.handlers import RotatingFileHandler, SysLogHandler
 from typing import Any, Callable, Dict, Optional
@@ -94,7 +95,13 @@ def setup_logging(
         OSError: If log directory cannot be created
         PermissionError: If log file cannot be written
     """
-    is_test_run = os.getenv("PYTEST_CURRENT_TEST") is not None
+    # `PYTEST_CURRENT_TEST` is only set while executing a test. During collection
+    # (module imports), it may be absent even though pytest is running.
+    is_test_run = (
+        os.getenv("PYTEST_CURRENT_TEST") is not None
+        or "pytest" in sys.modules
+        or any(os.path.basename(arg).startswith("pytest") for arg in sys.argv)
+    )
 
     # Use temp directory during tests to avoid permission issues and keep handlers simple
     log_dir = os.getenv(

@@ -23,7 +23,7 @@ class StorageServiceManager:
     cleanup to prevent disk space issues from accumulated task results.
     """
 
-    def __init__(self, base_path: str = "/tmp/flow_runner"):
+    def __init__(self, base_path: str = "/tmp/esup-runner"):
         """
         Initialize storage manager with specified base path.
 

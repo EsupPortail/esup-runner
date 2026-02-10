@@ -116,7 +116,7 @@ async def verify_openapi_token(
             break
 
     if not authorized:
-        logger.info(
+        logger.warning(
             "Unauthorized OpenAPI access attempt with token: %s",
             _mask_token(token),
         )
@@ -190,7 +190,7 @@ async def verify_token(
             break
 
     if not authorized:
-        logger.info("Unauthorized token attempt: %s", _mask_token(token))
+        logger.warning("Unauthorized token attempt: %s", _mask_token(token))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

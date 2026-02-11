@@ -224,7 +224,8 @@ async def _send_notify_callback(
     payload = {
         "task_id": notification.task_id,
         "status": notification.status,
-        "error_message": notification.error_message,
+        # Keep callback payload robust for lightweight test doubles/mocks.
+        "error_message": getattr(notification, "error_message", None),
         "script_output": notification.script_output,
     }
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

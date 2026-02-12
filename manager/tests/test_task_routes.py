@@ -407,6 +407,54 @@ async def test_retry_notify_callback_sleeps_when_delay_positive(
     assert slept["seconds"] == 1
 
 
+def test_set_notify_warning_failure_without_existing_error(monkeypatch, task_module, clean_state):
+    tasks["t1"] = _task("t1", "r1", status="failed")
+    tasks["t1"].error = None
+    previous_updated_at = tasks["t1"].updated_at
+
+    called = {"count": 0}
+
+    def fake_save():
+        called["count"] += 1
+
+    monkeypatch.setattr(task_module, "save_tasks", fake_save)
+
+    task_module._set_notify_warning("t1", "notify callback failed")
+
+    assert tasks["t1"].status == "failed"
+    assert tasks["t1"].error == "notify callback failed"
+    assert tasks["t1"].updated_at != previous_updated_at
+    assert called["count"] == 1
+
+
+def test_restore_status_after_notify_sets_error_for_non_completed(
+    monkeypatch, task_module, clean_state
+):
+    tasks["t1"] = _task("t1", "r1", status="warning")
+    tasks["t1"].error = None
+
+    called = {"count": 0}
+
+    def fake_save():
+        called["count"] += 1
+
+    monkeypatch.setattr(task_module, "save_tasks", fake_save)
+
+    task_module._restore_status_after_notify(
+        "t1",
+        TaskCompletionNotification(
+            task_id="t1",
+            status="failed",
+            error_message="runner failed",
+            script_output=None,
+        ),
+    )
+
+    assert tasks["t1"].status == "failed"
+    assert tasks["t1"].error == "runner failed"
+    assert called["count"] == 1
+
+
 # -----------------------------
 # Web UI endpoints
 # -----------------------------
@@ -1477,6 +1525,30 @@ def test_task_completion_failed_sets_error_message(client, task_module, clean_st
     assert tasks["t1"].error == "boom"
 
 
+def test_task_completion_timeout_sets_error_message(client, task_module, clean_state):
+    runners["r1"] = _runner("r1", token="tok")
+    tasks["t1"] = _task("t1", "r1", status="running")
+    tasks["t1"].notify_url = None
+
+    app.dependency_overrides[verify_token] = lambda: "tok"
+    try:
+        resp = client.post(
+            "/task/completion",
+            json={
+                "task_id": "t1",
+                "status": "timeout",
+                "error_message": "download timeout",
+                "script_output": None,
+            },
+        )
+    finally:
+        app.dependency_overrides[verify_token] = lambda: True
+
+    assert resp.status_code == 200
+    assert tasks["t1"].status == "timeout"
+    assert tasks["t1"].error == "download timeout"
+
+
 def test_task_completion_notify_exception_sets_warning_and_schedules_retry(
     monkeypatch, client, task_module, clean_state
 ):
@@ -1512,6 +1584,47 @@ def test_task_completion_notify_exception_sets_warning_and_schedules_retry(
     assert resp.status_code == 200
     assert tasks["t1"].status == "warning"
     assert tasks["t1"].error and "server error" in tasks["t1"].error
+    assert "coro" in scheduled
+    scheduled["coro"].close()
+
+
+def test_task_completion_timeout_notify_non_200_keeps_timeout_and_schedules_retry(
+    monkeypatch, client, task_module, clean_state
+):
+    runners["r1"] = _runner("r1", token="tok")
+    tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
+
+    async def fake_send(task: Task, notification: TaskCompletionNotification):
+        return False, "nope"
+
+    scheduled: dict[str, Any] = {}
+
+    def fake_create_task(coro):
+        scheduled["coro"] = coro
+        return SimpleNamespace()
+
+    monkeypatch.setattr(task_module, "_send_notify_callback", fake_send)
+    monkeypatch.setattr(task_module.asyncio, "create_task", fake_create_task)
+
+    app.dependency_overrides[verify_token] = lambda: "tok"
+    try:
+        resp = client.post(
+            "/task/completion",
+            json={
+                "task_id": "t1",
+                "status": "timeout",
+                "error_message": "download timeout",
+                "script_output": None,
+            },
+        )
+    finally:
+        app.dependency_overrides[verify_token] = lambda: True
+
+    assert resp.status_code == 200
+    assert tasks["t1"].status == "timeout"
+    assert "download timeout" in (tasks["t1"].error or "")
+    assert "Notify callback warning:" in (tasks["t1"].error or "")
+    assert "nope" in (tasks["t1"].error or "")
     assert "coro" in scheduled
     scheduled["coro"].close()
 

@@ -49,6 +49,8 @@ templates = Jinja2Templates(directory="app/web/templates")
 # Utility Functions
 # ======================================================
 
+_FAILURE_TASK_STATUSES = {"failed", "timeout", "error"}
+
 
 def _runner_auth_headers(runner: Runner, accept: str) -> Dict[str, str]:
     """Build auth headers for manager -> runner requests.
@@ -260,17 +262,32 @@ async def _send_notify_callback(
 
 
 def _set_notify_warning(task_id: str, message: str) -> None:
-    tasks[task_id].status = "warning"
-    tasks[task_id].error = message
-    tasks[task_id].updated_at = datetime.now().isoformat()
+    task = tasks[task_id]
+
+    if task.status in _FAILURE_TASK_STATUSES:
+        # Preserve terminal failure status and attach notify callback diagnostics.
+        if task.error and message not in task.error:
+            task.error = f"{task.error}\n\nNotify callback warning: {message}"
+        elif not task.error:
+            task.error = message
+    else:
+        task.status = "warning"
+        task.error = message
+
+    task.updated_at = datetime.now().isoformat()
     save_tasks()
 
 
 def _restore_status_after_notify(task_id: str, notification: TaskCompletionNotification) -> None:
-    tasks[task_id].status = notification.status
-    tasks[task_id].updated_at = datetime.now().isoformat()
-    if notification.status != "failed":
-        tasks[task_id].error = None
+    task = tasks[task_id]
+    task.status = notification.status
+    task.updated_at = datetime.now().isoformat()
+
+    if notification.status == "completed":
+        task.error = None
+    elif notification.error_message:
+        task.error = notification.error_message
+
     save_tasks()
 
 
@@ -1047,7 +1064,9 @@ def _apply_task_completion_update(task: Task, notification: TaskCompletionNotifi
     task.status = notification.status
     task.updated_at = datetime.now().isoformat()
 
-    if notification.status == "failed" and notification.error_message:
+    if notification.status == "completed":
+        task.error = None
+    elif notification.error_message:
         task.error = notification.error_message
 
     if notification.script_output:

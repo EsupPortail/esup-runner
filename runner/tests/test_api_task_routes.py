@@ -193,7 +193,7 @@ async def test_process_task_failure(monkeypatch):
     await task_module.process_task("tid-2", req)
 
     assert events["avail"] == [False, True]
-    assert events["notified"][1] == "failed"
+    assert events["notified"][1] == "timeout"
     assert events["email"]["status"] == "timeout"
 
 

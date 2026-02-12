@@ -89,23 +89,24 @@ async def process_task(task_id: str, task_request: TaskRequest):
                 await notify_completion(
                     completion_callback,
                     task_id,
-                    "failed",
+                    failure_status,
                     error_msg,
                     json.dumps(script_output, indent=2, ensure_ascii=False),
                 )
 
     except Exception as e:
         error_msg = str(e)
+        failure_status = _derive_failure_status(error_msg)
         logger.error(f"Error processing task {task_id}: {error_msg}")
         logger.info(f"Sending failure email for task {task_id}")
         await send_task_failure_email(
             task_id=task_id,
             task_type=task_request.task_type,
-            status=_derive_failure_status(error_msg),
+            status=failure_status,
             error_message=error_msg,
         )
         if completion_callback:
-            await notify_completion(completion_callback, task_id, "failed", error_msg)
+            await notify_completion(completion_callback, task_id, failure_status, error_msg)
     finally:
         # Mark runner as available again
         set_available(True)

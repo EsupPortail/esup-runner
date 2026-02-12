@@ -9,6 +9,7 @@ import csv
 import ipaddress
 import json
 import socket
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path as PathlibPath
@@ -50,6 +51,8 @@ templates = Jinja2Templates(directory="app/web/templates")
 # ======================================================
 
 _FAILURE_TASK_STATUSES = {"failed", "timeout", "error"}
+_MANIFEST_READ_ATTEMPTS = 5
+_MANIFEST_READ_DELAY_SECONDS = 0.2
 
 
 def _runner_auth_headers(runner: Runner, accept: str) -> Dict[str, str]:
@@ -799,23 +802,43 @@ def _get_local_output_dir(task_id: str) -> PathlibPath:
     return output_resolved
 
 
-def _get_local_manifest(task: Task) -> JSONResponse:
-    task_id = task.task_id
-    task_dir = _get_local_task_dir(task_id)
+def _resolve_local_manifest_path(task_dir: PathlibPath) -> PathlibPath:
     manifest_path = task_dir / "manifest.json"
-
     try:
-        manifest_resolved = manifest_path.resolve(strict=False)
+        return manifest_path.resolve(strict=False)
     except Exception:
         raise HTTPException(500, "Invalid manifest path")
 
-    if not manifest_resolved.exists() or not manifest_resolved.is_file():
-        raise HTTPException(404, "Manifest not found in shared storage")
 
-    try:
-        manifest_data = json.loads(manifest_resolved.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
+def _read_manifest_with_retry(manifest_resolved: PathlibPath):
+    manifest_data = None
+    last_json_error = False
+
+    for attempt in range(1, _MANIFEST_READ_ATTEMPTS + 1):
+        if manifest_resolved.exists() and manifest_resolved.is_file():
+            try:
+                manifest_data = json.loads(manifest_resolved.read_text(encoding="utf-8"))
+                break
+            except json.JSONDecodeError:
+                last_json_error = True
+
+        if attempt < _MANIFEST_READ_ATTEMPTS:
+            time.sleep(_MANIFEST_READ_DELAY_SECONDS)
+
+    if manifest_data is not None:
+        return manifest_data
+
+    if last_json_error:
         raise HTTPException(500, "Invalid manifest JSON")
+
+    raise HTTPException(404, "Manifest not found in shared storage")
+
+
+def _get_local_manifest(task: Task) -> JSONResponse:
+    task_id = task.task_id
+    task_dir = _get_local_task_dir(task_id)
+    manifest_resolved = _resolve_local_manifest_path(task_dir)
+    manifest_data = _read_manifest_with_retry(manifest_resolved)
 
     if isinstance(manifest_data, dict):
         manifest_data.setdefault("task_id", task_id)

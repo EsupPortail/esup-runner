@@ -5,6 +5,7 @@ Task dispatching service for routing tasks to appropriate handlers.
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -109,9 +110,18 @@ class TaskDispatcher:
                 "utf-8"
             )
 
+            # Canonical manifest path: <storage>/<task_id>/manifest.json
+            canonical_manifest_path = output_dir.parent / "manifest.json"
+            canonical_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_manifest_path = canonical_manifest_path.with_name(".manifest.json.tmp")
+            with open(temp_manifest_path, "wb") as f:
+                f.write(manifest_bytes)
+                f.flush()
+                os.fsync(f.fileno())
+            temp_manifest_path.replace(canonical_manifest_path)
+
             # Update results with manifest information
-            manifest_path = storage_manager.save_file(task_id, manifest_bytes)
-            results["result_manifest"] = str(manifest_path)
+            results["result_manifest"] = str(canonical_manifest_path)
             results["output_files"] = output_files
 
             # Clean up temporary files

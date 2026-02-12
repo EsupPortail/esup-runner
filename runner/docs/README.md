@@ -110,6 +110,7 @@ The runner ships with three handlers (see [app/task_handlers](app/task_handlers)
 ## How tasks are processed
 - Each handler inherits from [app/task_handlers/base_handler.py](app/task_handlers/base_handler.py), which manages workspaces, downloads, input validation, and metadata writing.
 - Workspaces live under the storage manager base path; outputs and logs are written to an `output/` subfolder with a `task_metadata.json` summary.
+- Result manifests are written to `<STORAGE_DIR>/<task_id>/manifest.json`.
 - External scripts are executed with timeouts and inherit environment variables (CUDA hints are injected automatically when GPU mode is enabled).
 - The runner enforces basic safety checks: media extension validation, optional max file size, and non-blocking FFmpeg build warnings for missing codecs/features.
 

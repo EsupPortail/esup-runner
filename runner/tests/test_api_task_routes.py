@@ -33,23 +33,36 @@ def auth_override():
     app.dependency_overrides.clear()
 
 
-def test_get_task_result(monkeypatch, tmp_path):
+def test_get_task_result(tmp_path):
     from app.api.routes import task as task_module
 
     task_id = "task-123"
-    result_path = tmp_path / f"{task_id}.json"
-    result_path.write_text("{}", encoding="utf-8")
-
-    monkeypatch.setattr(task_module.storage_manager, "get_path", lambda tid: str(result_path))
-    monkeypatch.setattr(task_module.storage_manager, "exists", lambda tid: True)
+    manifest_path = tmp_path / task_id / "manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("{}", encoding="utf-8")
+    task_module.storage_manager.base_path = str(tmp_path)
 
     with TestClient(app) as client:
         resp = client.get(f"/task/result/{task_id}")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("application/json")
+        assert "manifest.json" in resp.headers.get("content-disposition", "")
 
 
-def test_get_task_result_not_found(monkeypatch, tmp_path):
+def test_get_task_result_does_not_fall_back_to_legacy_manifest(tmp_path):
+    from app.api.routes import task as task_module
+
+    task_id = "task-legacy"
+    legacy_manifest_path = tmp_path / f"{task_id}.json"
+    legacy_manifest_path.write_text("{}", encoding="utf-8")
+    task_module.storage_manager.base_path = str(tmp_path)
+
+    with TestClient(app) as client:
+        resp = client.get(f"/task/result/{task_id}")
+        assert resp.status_code == 404
+
+
+def test_get_task_result_not_found(tmp_path):
     from app.api.routes import task as task_module
 
     task_module.storage_manager.base_path = str(tmp_path)
@@ -59,7 +72,7 @@ def test_get_task_result_not_found(monkeypatch, tmp_path):
         assert resp.status_code == 404
 
 
-def test_get_task_result_file(monkeypatch, tmp_path):
+def test_get_task_result_file(tmp_path):
     from app.api.routes import task as task_module
 
     task_id = "task-456"
@@ -77,7 +90,7 @@ def test_get_task_result_file(monkeypatch, tmp_path):
         assert resp.text == "hello"
 
 
-def test_get_task_result_file_not_found(monkeypatch, tmp_path):
+def test_get_task_result_file_not_found(tmp_path):
     from app.api.routes import task as task_module
 
     task_module.storage_manager.base_path = str(tmp_path)
@@ -87,7 +100,7 @@ def test_get_task_result_file_not_found(monkeypatch, tmp_path):
         assert resp.status_code == 404
 
 
-def test_get_task_result_file_traversal(monkeypatch, tmp_path):
+def test_get_task_result_file_traversal(tmp_path):
     from app.api.routes import task as task_module
 
     task_id = "task-evil"
@@ -100,21 +113,19 @@ def test_get_task_result_file_traversal(monkeypatch, tmp_path):
         assert resp.status_code == 404
 
 
-def test_delete_task_result(monkeypatch):
+def test_delete_task_result(tmp_path):
     from app.api.routes import task as task_module
 
-    monkeypatch.setattr(task_module.storage_manager, "cleanup", lambda tid: True)
-    called = {}
-
-    def _set_available(flag):
-        called["flag"] = flag
-
-    monkeypatch.setattr(task_module, "set_available", _set_available)
+    task_id = "abc"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir(parents=True)
+    (task_dir / "manifest.json").write_text("{}", encoding="utf-8")
+    task_module.storage_manager.base_path = str(tmp_path)
 
     with TestClient(app) as client:
-        resp = client.delete("/task/delete/abc")
+        resp = client.delete(f"/task/delete/{task_id}")
         assert resp.status_code == 200
-        assert called["flag"] is True
+        assert not task_dir.exists()
 
 
 @pytest.mark.asyncio

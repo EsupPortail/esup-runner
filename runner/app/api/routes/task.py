@@ -6,6 +6,7 @@ Handles task execution, status tracking, and result streaming endpoints.
 
 import asyncio
 import json
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -41,6 +42,26 @@ def _derive_failure_status(error_message: str) -> str:
     if "timeout" in (error_message or "").lower():
         return "timeout"
     return "failed"
+
+
+def _resolve_task_manifest_path(task_id: str) -> Path:
+    """Resolve canonical manifest path (<base>/<task_id>/manifest.json)."""
+    task_root = _resolve_task_root(task_id)
+    manifest_path = task_root / "manifest.json"
+    if not manifest_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return manifest_path
+
+
+def _resolve_task_root(task_id: str) -> Path:
+    """Resolve task root directory and reject path traversal."""
+    base_path = Path(storage_manager.base_path).resolve()
+    task_root = (base_path / task_id).resolve(strict=False)
+
+    if task_root != base_path and base_path not in task_root.parents:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return task_root
 
 
 async def process_task(task_id: str, task_request: TaskRequest):
@@ -227,18 +248,16 @@ async def get_task_result(
     """
     logger.info(f"Retrieving task result: {task_id}")
 
-    file_path = storage_manager.get_path(task_id)
-    if not storage_manager.exists(task_id):
-        raise HTTPException(status_code=404, detail="File not found")
+    file_path = _resolve_task_manifest_path(task_id)
 
     # Schedule cleanup after file delivery if necessary
     # background_tasks.add_task(storage_manager.cleanup, task_id)
 
     # Return file with streaming support
     return FileResponse(
-        file_path,
+        str(file_path),
         media_type="application/json",
-        filename=f"{task_id}.json",
+        filename="manifest.json",
     )
 
 
@@ -272,7 +291,7 @@ async def get_task_result_file(
     """
     logger.info(f"Retrieving task result file: {task_id}/{filename}")
 
-    output_dir = Path(storage_manager.base_path) / task_id / "output"
+    output_dir = _resolve_task_root(task_id) / "output"
     if not output_dir.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -313,7 +332,19 @@ async def delete_task_result(task_id: str, current_manager: str = Depends(get_cu
     Returns:
         dict: Deletion status confirmation
     """
-    storage_manager.cleanup(task_id)
+    task_root = _resolve_task_root(task_id)
+    if task_root.exists():
+        shutil.rmtree(task_root)
+
+    # Backward compatibility cleanup for legacy flat manifest files.
+    try:
+        legacy_manifest = Path(storage_manager.get_path(task_id))
+    except ValueError:
+        legacy_manifest = None
+
+    if legacy_manifest and legacy_manifest.exists():
+        legacy_manifest.unlink()
+
     # Mark runner as available
     set_available(True)
     return {"status": "deleted"}

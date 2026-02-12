@@ -113,6 +113,7 @@ This is the same token the runner used to call `POST /runner/register`.
 Notes:
 
 - If `RUNNERS_STORAGE_ENABLED` is set, the manager reads manifests/files from shared storage.
+- In shared storage mode, manifests are expected at `<RUNNERS_STORAGE_PATH>/<task_id>/manifest.json`.
 - Otherwise, the manager proxy-streams results from the runner.
 - If a `notify_url` is configured for the task, the manager performs a callback when it receives completion.
 
@@ -315,7 +316,7 @@ Authorization: Bearer <RUNNER_TOKEN>
 
 The runner should return:
 
-- a JSON manifest describing produced files (commonly `manifest.json`),
+- a JSON manifest describing produced files (canonical name: `manifest.json`),
 - and binary streams for requested files.
 
 ## Manager API: callbacks and client-facing endpoints

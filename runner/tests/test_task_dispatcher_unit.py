@@ -63,6 +63,8 @@ async def test_dispatch_task_success(dispatcher, tmp_path):
 
     assert result["success"] is True
     assert Path(result["result_manifest"]).exists()
+    assert Path(result["result_manifest"]) == tmp_path / "t1" / "manifest.json"
+    assert not (tmp_path / "t1.json").exists()
     manifest_content = json.loads(Path(result["result_manifest"]).read_text())
     assert manifest_content["task_id"] == "t1"
 
@@ -129,9 +131,9 @@ async def test_dispatch_task_exception(dispatcher, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_package_results_failure(dispatcher, monkeypatch, tmp_path):
-    # Force save_file to raise
+    # Force atomic manifest write to fail
     monkeypatch.setattr(
-        "app.services.task_dispatcher.storage_manager.save_file",
+        "app.services.task_dispatcher.os.fsync",
         lambda *_, **__: (_ for _ in ()).throw(RuntimeError("disk")),
     )
 

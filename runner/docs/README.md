@@ -130,6 +130,7 @@ LOG_LEVEL=INFO
 
 ## Additional references
 - Installation: [docs/INSTALLATION.md](INSTALLATION.md)
+- FFmpeg GPU setup: [docs/FFMPEG_SETUP.md](FFMPEG_SETUP.md)
 - Upgrading: [UPGRADE.md](UPGRADE.md)
 - Task type docs: [docs/TYPE_ENCODING.md](TYPE_ENCODING.md), [docs/TYPE_STUDIO.md](TYPE_STUDIO.md), [docs/TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md)
 - Full parameter reference: [docs/RUNNER_PARAMETERS.md](RUNNER_PARAMETERS.md)

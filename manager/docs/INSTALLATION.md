@@ -2,6 +2,18 @@
 
 This document describes how to install and run the **ESUP Runner Manager** on a Debian/Ubuntu-like system.
 
+## Version compatibility note (Runner  Manager)
+
+The Runner sends its version to the Manager in the `X-Runner-Version` header during registration/heartbeats.
+The Manager enforces compatibility at **MAJOR + MINOR** level:
+
+- Runner `X.Y.*` can register only to a Manager `X.Y.*`
+- `PATCH` versions may differ
+
+> Assumptions
+> - You have root access (or sudo).
+> - You are installing under `/opt/esup-runner`.
+
 ## 1) Create a dedicated system user
 
 As `root`:
@@ -9,7 +21,8 @@ As `root`:
 ```bash
 adduser esup-runner
 adduser esup-runner sudo
-# (or /usr/sbin/adduser esup-runner sudo)
+# (alternative)
+/usr/sbin/adduser esup-runner sudo
 ```
 
 Then switch to that user:
@@ -22,27 +35,21 @@ su - esup-runner
 
 ### System packages
 
-As `root`:
-
 ```bash
-apt update
-apt install -y curl ca-certificates git make
+sudo apt update
+sudo apt install -y curl ca-certificates git make
 ```
 
 ### Install `uv`
 
-Install `uv` using the official installer:
+Install `uv` **as both `root` and `esup-runner`** (this matches the usual layout where each user gets `~/.local/bin/uv`).
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
+sudo curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Notes:
-
-- Run the installer for **both** `esup-runner` and `root` if you intend to run some steps with `sudo`.
-- Re-open your shell session (or source your profile) so that `~/.local/bin` is in your `PATH`.
-
-Verify:
+Re-open your shell session (recommended) or reload your shell init files, then verify:
 
 ```bash
 uv --version
@@ -53,11 +60,9 @@ uv python list
 
 ### Create the source directory
 
-As `root`:
-
 ```bash
-mkdir -p /opt/esup-runner
-chown esup-runner:esup-runner /opt/esup-runner/
+sudo mkdir -p /opt/esup-runner
+sudo chown esup-runner:esup-runner /opt/esup-runner/
 ```
 
 ### Fetch sources
@@ -216,6 +221,9 @@ Replace:
 
 ## 4) Production: systemd service
 
+Warning: the generated service uses `/opt/esup-runner` by default.
+If your installation lives in another directory, edit `production/esup-runner-manager.service` before running `sudo make create-service`.
+
 Install and start the systemd service:
 
 ```bash
@@ -225,10 +233,9 @@ sudo make create-service
 Useful commands:
 
 ```bash
-systemctl status esup-runner-manager
-systemctl restart esup-runner-manager
-systemctl reload esup-runner-manager
-journalctl -u esup-runner-manager -f
+sudo systemctl status esup-runner-manager
+sudo systemctl restart esup-runner-manager
+sudo journalctl -u esup-runner-manager -f
 ```
 
 Quick check:
@@ -246,7 +253,13 @@ Notes:
 
 If the manager writes log files under `/var/log/esup-runner`, configure `logrotate`.
 
-Create `/etc/logrotate.d/esup-runner` as `root`:
+Create `/etc/logrotate.d/esup-runner`:
+
+```bash
+sudo nano /etc/logrotate.d/esup-runner
+```
+
+With content:
 
 ```conf
 /var/log/esup-runner/*.log {

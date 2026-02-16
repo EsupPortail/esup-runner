@@ -51,16 +51,9 @@ sudo apt install -y imagemagick
 
 Install `uv` **as both `root` and `esup-runner`** (this matches the usual layout where each user gets `~/.local/bin/uv`).
 
-As `root`:
-
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-As `esup-runner`:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+sudo curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Re-open your shell session (recommended) or reload your shell init files, then verify:
@@ -79,7 +72,8 @@ sudo apt install -y ffmpeg
 ```
 
 - **GPU mode:** requires a GPU-capable FFmpeg build (specific prebuilt package or a custom compilation).
-  The project documentation for this will be added later.
+  See [FFMPEG_SETUP.md](FFMPEG_SETUP.md) for setup options:
+  source compilation, prebuilt package, or Docker container.
 
 ## 3) Install the runner
 
@@ -177,6 +171,9 @@ The runner exposes an OpenAPI UI at `/docs`.
 
 ## 5) Production (systemd service)
 
+Warning: the generated service uses `/opt/esup-runner` by default.
+If your installation lives in another directory, edit `production/esup-runner-runner.service` before running `sudo make create-service`.
+
 Install and start the service:
 
 ```bash
@@ -187,7 +184,14 @@ Check status and logs:
 
 ```bash
 sudo systemctl status esup-runner-runner
+sudo systemctl restart esup-runner-runner
 sudo journalctl -u esup-runner-runner -f
+```
+
+Quick check:
+
+```bash
+systemctl is-active --quiet esup-runner-runner && echo "OK: service is running"
 ```
 
 The provided unit sets a `PATH` that includes `/home/esup-runner/.local/bin` and starts `uv` via `/usr/bin/env`.
@@ -202,6 +206,12 @@ If you write logs under `/var/log/esup-runner`, configure `logrotate`.
 
 Create `/etc/logrotate.d/esup-runner`:
 
+```bash
+sudo nano /etc/logrotate.d/esup-runner
+```
+
+With content:
+
 ```conf
 /var/log/esup-runner/*.log {
     daily
@@ -212,3 +222,5 @@ Create `/etc/logrotate.d/esup-runner`:
     copytruncate
 }
 ```
+
+Make sure `LOG_DIRECTORY` in `.env` matches this path.

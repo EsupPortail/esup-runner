@@ -29,8 +29,8 @@ jobs:
           working-directory: ${{ matrix.project }}
           enable-cache: true
           cache-dependency-glob: |
-            ${{ matrix.project }}/pyproject.toml
-            ${{ matrix.project }}/uv.lock
+            pyproject.toml
+            uv.lock
           cache-suffix: ${{ matrix.project }}-py${{ matrix.python-version }}
 
       - name: Install dependencies

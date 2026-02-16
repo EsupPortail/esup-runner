@@ -21,8 +21,7 @@ from app.core.auth import verify_admin
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_task as get_task_from_state
-from app.core.state import get_tasks_snapshot
-from app.core.state import runners
+from app.core.state import get_tasks_snapshot, runners
 
 # Configure logging
 logger = setup_default_logging()

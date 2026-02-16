@@ -29,8 +29,7 @@ from app.core.config import config
 from app.core.priorities import would_exceed_other_domain_quota
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_task as get_task_from_state
-from app.core.state import get_tasks_snapshot
-from app.core.state import runners, save_tasks, tasks
+from app.core.state import get_tasks_snapshot, runners, save_tasks, tasks
 from app.models.models import (
     Runner,
     Task,

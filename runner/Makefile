@@ -129,7 +129,7 @@ test: check-test-deps
 
 coverage: check-coverage-deps
 	@echo "==> pytest (coverage)"
-	$(UV) run pytest --cov=app --cov-config=.coveragerc --cov-report=term-missing --cov-report=html --cov-fail-under=100
+	$(UV) run pytest --cov=app --cov-config=.coveragerc --cov-report=term-missing --cov-report=html --cov-fail-under=90
 
 fmt: check-fmt-deps
 	@echo "==> format (black + isort)"

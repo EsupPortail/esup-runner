@@ -18,7 +18,7 @@ from app.__version__ import (
 )
 from app.core.auth import verify_token
 from app.core.setup_logging import setup_default_logging
-from app.core.state import runners, tasks
+from app.core.state import get_tasks_snapshot, runners
 
 # Configure logging
 logger = setup_default_logging()
@@ -76,7 +76,7 @@ async def get_tasks_api() -> dict:
         dict: Task status information
     """
     tasks_data = []
-    for task_id, task in tasks.items():
+    for task_id, task in get_tasks_snapshot().items():
         tasks_data.append({"id": task_id, "runner_id": task.runner_id, "status": task.status})
 
     return {"tasks": tasks_data}

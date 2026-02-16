@@ -92,7 +92,14 @@ lock-docs:
 
 run:
 	@echo "==> run the manager"
-	$(UV) run esup-runner-manager
+	@set +e; \
+	$(UV) run esup-runner-manager; \
+	code=$$?; \
+	if [ $$code -eq 130 ]; then \
+		echo "==> manager stopped (Ctrl+C)"; \
+		exit 0; \
+	fi; \
+	exit $$code
 
 status:
 	@echo "==> manager status"

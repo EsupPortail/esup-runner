@@ -114,13 +114,15 @@ async def runner_heartbeat(
     Raises:
         HTTPException: If runner not found or token invalid
     """
-    if runner_id not in runners:
+    runner = runners.get(runner_id)
+    if runner is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runner not found")
 
-    if runners[runner_id].token != current_token:
+    if runner.token != current_token:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Token not authorized for this runner"
         )
 
-    runners[runner_id].last_heartbeat = datetime.now()
+    runner.last_heartbeat = datetime.now()
+    runners[runner_id] = runner
     return {"status": "ok"}

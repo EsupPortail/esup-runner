@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.__version__ import __version__, __version_info__
+from app.core import state as state_module
 from app.core.auth import verify_token
 from app.core.state import runners, tasks
 from app.main import app
@@ -32,15 +33,18 @@ def api_client(monkeypatch):
 
 
 @pytest.fixture
-def clean_state():
+def clean_state(monkeypatch):
     original_runners = dict(runners)
     original_tasks = dict(tasks)
+    original_is_production = state_module.IS_PRODUCTION
 
+    monkeypatch.setattr(state_module, "IS_PRODUCTION", False)
     runners.clear()
     tasks.clear()
 
     yield
 
+    monkeypatch.setattr(state_module, "IS_PRODUCTION", original_is_production)
     runners.clear()
     runners.update(original_runners)
     tasks.clear()

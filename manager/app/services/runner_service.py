@@ -38,8 +38,12 @@ async def check_runners_activity(
                 runners_to_remove.append(runner_id)
 
         for runner_id in runners_to_remove:
-            del runners[runner_id]
-            logger.info(f"Runner {runner_id} removed due to inactivity")
+            current_runner = runners.get(runner_id)
+            if current_runner is None:
+                continue
+            if now - current_runner.last_heartbeat > timedelta(minutes=1):
+                del runners[runner_id]
+                logger.info(f"Runner {runner_id} removed due to inactivity")
 
 
 def get_online_runners() -> List[Dict]:
@@ -95,7 +99,9 @@ def update_runner_heartbeat(runner_id: str) -> bool:
     Returns:
         bool: True if runner exists and heartbeat was updated
     """
-    if runner_id in runners:
-        runners[runner_id].last_heartbeat = datetime.now()
+    runner = runners.get(runner_id)
+    if runner is not None:
+        runner.last_heartbeat = datetime.now()
+        runners[runner_id] = runner
         return True
     return False

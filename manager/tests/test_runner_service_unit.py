@@ -49,6 +49,24 @@ async def test_check_runners_activity_removes_inactive_and_stops(clean_runners):
     assert "old" not in runners
 
 
+@pytest.mark.asyncio
+async def test_check_runners_activity_handles_missing_runner_on_delete(monkeypatch, clean_runners):
+    runners["old"] = _runner("old", last_heartbeat=datetime.now() - timedelta(minutes=2))
+    stop_event = asyncio.Event()
+
+    monkeypatch.setattr(runner_service.runners, "get", lambda *_args, **_kwargs: None)
+
+    task = asyncio.create_task(
+        runner_service.check_runners_activity(poll_interval=0, stop_event=stop_event)
+    )
+    await asyncio.sleep(0)
+    stop_event.set()
+    await asyncio.wait_for(task, timeout=0.1)
+
+    # Simulate race: runner disappeared between scan and delete attempt.
+    assert "old" in runners
+
+
 def test_get_online_runners_filters_by_heartbeat(clean_runners):
     now = datetime.now()
     runners["on"] = _runner("on", last_heartbeat=now)

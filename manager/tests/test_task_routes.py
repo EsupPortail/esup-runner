@@ -1461,6 +1461,43 @@ def test_task_completion_notify_ok(monkeypatch, client, task_module, clean_state
     assert "coro" not in scheduled  # no retries scheduled
 
 
+def test_task_completion_saves_before_notify(monkeypatch, client, task_module, clean_state):
+    runners["r1"] = _runner("r1", token="tok")
+    tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
+
+    events = []
+
+    def fake_save():
+        events.append("save")
+        return True
+
+    async def fake_handle(_task: Task, _notification: TaskCompletionNotification):
+        events.append("notify")
+
+    monkeypatch.setattr(task_module, "save_tasks", fake_save)
+    monkeypatch.setattr(task_module, "_handle_notify_callback", fake_handle)
+    monkeypatch.setattr(task_module, "_append_task_stats_csv", lambda *_: None)
+
+    app.dependency_overrides[verify_token] = lambda: "tok"
+    try:
+        resp = client.post(
+            "/task/completion",
+            json={
+                "task_id": "t1",
+                "status": "completed",
+                "error_message": None,
+                "script_output": None,
+            },
+        )
+    finally:
+        app.dependency_overrides[verify_token] = lambda: True
+
+    assert resp.status_code == 200
+    assert events
+    assert events[0] == "save"
+    assert "notify" in events
+
+
 def test_task_completion_notify_non_200_sets_warning_and_schedules_retry(
     monkeypatch, client, task_module, clean_state
 ):

@@ -173,15 +173,118 @@ class DailyJSONPersistence:
             logger.error(f"Error saving tasks: {e}")
             return False
 
-    def _read_task_file(self, task_file, keep_metadata: bool = False):
+    def upsert_tasks(self, tasks: Dict[str, Task]) -> bool:
+        """
+        Upsert tasks to today's directory without deleting files not present in input.
+
+        This method is multi-worker friendly: it updates only provided tasks and
+        preserves tasks managed by other processes.
+
+        Args:
+            tasks: Dictionary of tasks to upsert
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not tasks:
+            return True
+
+        try:
+            directory = self._get_directory_path()
+            directory.mkdir(parents=True, exist_ok=True)
+
+            lock = self._get_current_lock()
+            with lock:
+                for task_id, task in tasks.items():
+                    task_file = self._get_task_file_path(task_id)
+
+                    if hasattr(task, "model_dump"):
+                        task_data = task.model_dump()
+                    else:
+                        task_data = task.dict()
+
+                    task_data["_metadata"] = {
+                        "saved_at": datetime.now().isoformat(),
+                        "task_id": task_id,
+                        "date": self._get_date_suffix(),
+                    }
+
+                    temp_path = task_file.with_suffix(".tmp")
+                    with open(temp_path, "w", encoding="utf-8") as f:
+                        json.dump(task_data, f, indent=2, ensure_ascii=False)
+
+                    temp_path.replace(task_file)
+
+            logger.info(f"Successfully upserted {len(tasks)} tasks to {directory}")
+            return True
+
+        except Timeout:
+            logger.error(
+                f"Could not acquire lock to upsert tasks (timeout after {self.lock_timeout}s)"
+            )
+            return False
+        except Exception as e:
+            logger.error(f"Error upserting tasks: {e}")
+            return False
+
+    def load_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Load a single task by ID, searching today's directory first, then older dates.
+
+        Args:
+            task_id: Task identifier
+
+        Returns:
+            Optional[Dict[str, Any]]: Task data when found, otherwise None
+        """
+        today = datetime.now().date()
+        ordered_dates = [today] + [d for d in reversed(self.list_available_dates()) if d != today]
+
+        for target_date in ordered_dates:
+            directory = self._get_directory_path(target_date)
+            if not directory.exists():
+                continue
+
+            lock_path = self._get_lock_path(target_date)
+            lock = FileLock(lock_path, timeout=self.lock_timeout)
+            task_file = self._get_task_file_path(task_id, target_date)
+
+            try:
+                with lock:
+                    if not task_file.exists():
+                        continue
+                    result = self._read_task_file(task_file, keep_metadata=False)
+                    if result:
+                        _, task_data, _ = result
+                        return task_data
+            except Timeout:
+                logger.warning(
+                    f"Could not acquire lock for {target_date} while loading task {task_id}"
+                )
+            except Exception as e:
+                logger.warning(f"Error loading task {task_id} from {target_date}: {e}")
+
+        return None
+
+    def _read_task_file(
+        self, task_file: Path, keep_metadata: bool = False
+    ) -> Optional[tuple[str, Dict[str, Any], Optional[Dict[str, Any]]]]:
         """Read a single task file and return (task_id, task_data, metadata) or None on error."""
         try:
             with open(task_file, "r", encoding="utf-8") as f:
-                task_data = json.load(f)
-            metadata = None
-            if "_metadata" in task_data:
-                metadata = task_data["_metadata"]
-                task_id = metadata.get("task_id", task_file.stem)
+                loaded = json.load(f)
+
+            if not isinstance(loaded, dict):
+                logger.error(f"Invalid task payload in {task_file}: expected object")
+                return None
+
+            task_data: Dict[str, Any] = dict(loaded)
+            metadata: Optional[Dict[str, Any]] = None
+            metadata_obj = task_data.get("_metadata")
+
+            if isinstance(metadata_obj, dict):
+                metadata = metadata_obj
+                task_id = str(metadata.get("task_id", task_file.stem))
                 if not keep_metadata:
                     del task_data["_metadata"]
             else:
@@ -443,3 +546,31 @@ class SafeDailyJSONPersistence(DailyJSONPersistence):
                     logger.warning(f"Load attempt {attempt + 1} failed, retrying: {e}")
                     continue
         return {}
+
+    def upsert_tasks(self, tasks: Dict[str, Task]) -> bool:
+        """Upsert tasks with retry mechanism."""
+        for attempt in range(self.max_retries):
+            try:
+                result = super().upsert_tasks(tasks)
+                if result:
+                    return True
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    logger.error(f"Failed to upsert tasks after {self.max_retries} attempts: {e}")
+                    return False
+                logger.warning(f"Upsert attempt {attempt + 1} failed, retrying: {e}")
+        return False
+
+    def load_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Load a single task with retry mechanism."""
+        for attempt in range(self.max_retries):
+            try:
+                return super().load_task(task_id)
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    logger.error(
+                        f"Failed to load task {task_id} after {self.max_retries} attempts: {e}"
+                    )
+                    return None
+                logger.warning(f"Load task attempt {attempt + 1} failed, retrying: {e}")
+        return None

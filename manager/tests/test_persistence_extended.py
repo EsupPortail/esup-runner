@@ -267,6 +267,13 @@ def test_read_task_file_missing_file(tmp_path):
     assert persistence._read_task_file(missing) is None
 
 
+def test_read_task_file_invalid_root_type(tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+    task_file = tmp_path / "invalid_root.json"
+    task_file.write_text(json.dumps(["not-an-object"]), encoding="utf-8")
+    assert persistence._read_task_file(task_file) is None
+
+
 def test_merge_tasks_generic_error(monkeypatch, tmp_path):
     def failing_glob(self, *_args, **_kwargs):
         raise RuntimeError("fail")
@@ -304,10 +311,75 @@ def test_backup_corrupted_file_handles_copy_error(monkeypatch, tmp_path):
     persistence._backup_corrupted_file(file_path)
 
 
+def test_upsert_tasks_branches(monkeypatch, tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+
+    assert persistence.upsert_tasks({}) is True
+
+    class LegacyTask:
+        def dict(self):
+            return {"legacy": True}
+
+    assert persistence.upsert_tasks({"legacy": LegacyTask()})
+    task_file = tmp_path / datetime.now().strftime("%Y-%m-%d") / "legacy.json"
+    assert task_file.exists()
+
+    def raise_timeout():
+        raise Timeout("boom")
+
+    monkeypatch.setattr(persistence, "_get_current_lock", raise_timeout)
+    assert persistence.upsert_tasks({"t1": _task("t1")}) is False
+
+    def raise_generic(*_args, **_kwargs):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr(persistence, "_get_directory_path", raise_generic)
+    assert persistence.upsert_tasks({"t2": _task("t2")}) is False
+
+
+def test_load_task_branches(monkeypatch, tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+
+    # No directory for today -> continue and return None.
+    assert persistence.load_task("missing") is None
+
+    day_dir = tmp_path / date.today().strftime("%Y-%m-%d")
+    day_dir.mkdir(parents=True)
+    (day_dir / "t1.json").write_text(json.dumps({"task_id": "t1", "status": "pending"}))
+
+    class TimeoutLock:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            raise Timeout("late")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(persistence_module, "FileLock", TimeoutLock)
+    assert persistence.load_task("t1") is None
+
+    class GenericFailLock:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            raise RuntimeError("boom")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(persistence_module, "FileLock", GenericFailLock)
+    assert persistence.load_task("t1") is None
+
+
 def test_safe_persistence_zero_retries(tmp_path):
     safe = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=0)
     assert safe.save_tasks({"t": _task("t")}) is False
     assert safe.load_tasks() == {}
+    assert safe.upsert_tasks({"t": _task("t")}) is False
+    assert safe.load_task("t") is None
 
 
 def test_safe_persistence_retries_save_and_load(monkeypatch, tmp_path):
@@ -350,3 +422,43 @@ def test_safe_persistence_retries_save_and_load(monkeypatch, tmp_path):
         data_directory=tmp_path, lock_timeout=1, max_retries=2
     )
     assert safe_load_fail.load_tasks() == {}
+
+
+def test_safe_persistence_retries_upsert_and_load_task(monkeypatch, tmp_path):
+    calls = {"upsert": 0, "load_task": 0}
+
+    def flaky_upsert(self, _tasks):
+        calls["upsert"] += 1
+        if calls["upsert"] == 1:
+            raise RuntimeError("boom")
+        return True
+
+    def failing_upsert(self, _tasks):
+        raise RuntimeError("fail")
+
+    def flaky_load_task(self, _task_id):
+        calls["load_task"] += 1
+        if calls["load_task"] == 1:
+            raise RuntimeError("boom")
+        return {"task_id": "x"}
+
+    def failing_load_task(self, _task_id):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr(DailyJSONPersistence, "upsert_tasks", flaky_upsert)
+    safe = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=2)
+    assert safe.upsert_tasks({"t": _task("t")}) is True
+
+    monkeypatch.setattr(DailyJSONPersistence, "upsert_tasks", failing_upsert)
+    safe_fail = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=2)
+    assert safe_fail.upsert_tasks({"t": _task("t")}) is False
+
+    monkeypatch.setattr(DailyJSONPersistence, "load_task", flaky_load_task)
+    safe_load = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=2)
+    assert safe_load.load_task("x") == {"task_id": "x"}
+
+    monkeypatch.setattr(DailyJSONPersistence, "load_task", failing_load_task)
+    safe_load_fail = SafeDailyJSONPersistence(
+        data_directory=tmp_path, lock_timeout=1, max_retries=2
+    )
+    assert safe_load_fail.load_task("x") is None

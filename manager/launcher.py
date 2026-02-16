@@ -7,6 +7,7 @@ import logging
 import os
 import signal
 import subprocess
+import sys
 
 from app.core.config import config
 from app.core.setup_logging import (
@@ -84,7 +85,7 @@ def run_prod():
     subprocess.run(gunicorn_cmd, check=True)
 
 
-def main():
+def main() -> int:
     """
     Main entry point for running the application.
     Uses Uvicorn in dev, Gunicorn in prod.
@@ -94,11 +95,17 @@ def main():
 
     env = os.getenv("ENVIRONMENT", config.ENVIRONMENT).lower()
 
-    if env == "production":
-        run_prod()
-    else:
-        run_dev()
+    try:
+        if env == "production":
+            run_prod()
+        else:
+            run_dev()
+    except KeyboardInterrupt:
+        print("[INFO] Shutdown requested by user (Ctrl+C).")
+        return 130
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

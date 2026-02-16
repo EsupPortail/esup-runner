@@ -28,6 +28,8 @@ from app.core.auth import verify_admin, verify_token
 from app.core.config import config
 from app.core.priorities import would_exceed_other_domain_quota
 from app.core.setup_logging import setup_default_logging
+from app.core.state import get_task as get_task_from_state
+from app.core.state import get_tasks_snapshot
 from app.core.state import runners, save_tasks, tasks
 from app.models.models import (
     Runner,
@@ -295,9 +297,9 @@ def _restore_status_after_notify(task_id: str, notification: TaskCompletionNotif
 
 
 async def _retry_notify_callback(task_id: str, notification: TaskCompletionNotification) -> None:
-    if task_id not in tasks:
+    task = get_task_from_state(task_id)
+    if task is None:
         return
-    task = tasks[task_id]
     if not task.notify_url:
         return
 
@@ -367,6 +369,7 @@ async def execute_task_async_background(
 
             if response.status_code == 200:
                 runner.availability = "busy"
+                runners[runner.id] = runner
             else:
                 tasks[task_id].status = "failed"
                 tasks[task_id].error = (
@@ -374,6 +377,7 @@ async def execute_task_async_background(
                 )
                 tasks[task_id].updated_at = datetime.now().isoformat()
                 runner.availability = "available"
+                runners[runner.id] = runner
                 logger.error(f"Task {task_id} failed with status {response.status_code}")
 
             # Save tasks state
@@ -414,7 +418,7 @@ async def view_tasks(
     Tasks management page with filtering and search capabilities
     """
     # Get all tasks
-    all_tasks_list = list(tasks.values())
+    all_tasks_list = list(get_tasks_snapshot().values())
 
     # Available statuses and task types
     available_statuses = ["pending", "running", "completed", "failed", "warning"]
@@ -506,10 +510,11 @@ async def get_task_details_api(task_id: str = Path(..., description="Task identi
     """
     Get detailed task information for the web UI
     """
-    if task_id not in tasks:
+    task = get_task_from_state(task_id)
+    if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    return tasks[task_id]
+    return task
 
 
 # ======================================================
@@ -541,6 +546,7 @@ async def execute_task_async(
         HTTPException: If no runners are available
     """
     logger.info("Starting async task execution")
+    tasks_snapshot = get_tasks_snapshot()
 
     if task_request.notify_url:
         await _validate_notify_url(task_request.notify_url)
@@ -548,7 +554,7 @@ async def execute_task_async(
     if config.PRIORITIES_ENABLED:
         if would_exceed_other_domain_quota(
             request_notify_url=task_request.notify_url,
-            tasks=tasks,
+            tasks=tasks_snapshot,
             runner_capacity=len(runners),
             priority_domain=config.PRIORITY_DOMAIN,
             max_other_percent=config.MAX_OTHER_DOMAIN_TASK_PERCENT,
@@ -640,10 +646,11 @@ async def get_task_status(task_id: str = Path(..., description="Task identifier 
     Raises:
         HTTPException: If task not found
     """
-    if task_id not in tasks:
+    task = get_task_from_state(task_id)
+    if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
-    return tasks[task_id]
+    return task
 
 
 @router.get(
@@ -661,7 +668,7 @@ async def list_tasks() -> Dict[str, Task]:
     Returns:
         Dict[str, Task]: Dictionary of task IDs to task objects
     """
-    all_tasks: Dict[str, Task] = tasks
+    all_tasks: Dict[str, Task] = get_tasks_snapshot()
     return all_tasks
 
 
@@ -876,10 +883,9 @@ def _stream_local_file(task: Task, file_path: str) -> FileResponse:
 
 def _get_valid_task(task_id: str) -> Task:
     """Get and validate task."""
-    if task_id not in tasks:
+    task = get_task_from_state(task_id)
+    if task is None:
         raise HTTPException(404, "Task not found")
-
-    task = tasks[task_id]
 
     if task.status == "failed":
         raise HTTPException(400, f"Task failed: {task.error}")
@@ -1048,9 +1054,13 @@ async def task_completion(
     _verify_runner_token(runner, current_token)
 
     _apply_task_completion_update(task, notification)
+    # Persist terminal status before callback to avoid races with clients that
+    # fetch /task/result immediately after receiving notify_url.
+    save_tasks()
     await _handle_notify_callback(task, notification)
 
     runner.availability = "available"
+    runners[runner.id] = runner
 
     logger.info(f"Task {notification.task_id} updated with status: {task.status}")
 
@@ -1065,9 +1075,10 @@ async def task_completion(
 
 
 def _get_task_or_404(task_id: str) -> Task:
-    if task_id not in tasks:
+    task = get_task_from_state(task_id)
+    if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return tasks[task_id]
+    return task
 
 
 def _get_runner_or_404(runner_id: str) -> Runner:

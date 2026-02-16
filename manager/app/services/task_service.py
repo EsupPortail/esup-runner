@@ -9,6 +9,7 @@ from typing import Dict, Optional
 
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
+from app.core.state import get_task as get_task_from_state
 from app.core.state import tasks
 from app.models.models import Task
 
@@ -119,7 +120,7 @@ def get_task(task_id: str) -> Optional[Task]:
     Returns:
         Optional[Task]: Task if found, None otherwise
     """
-    return tasks.get(task_id)
+    return get_task_from_state(task_id)
 
 
 def get_all_tasks() -> Dict[str, Task]:

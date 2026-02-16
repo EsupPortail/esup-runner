@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.auth import verify_token
 from app.core.setup_logging import setup_default_logging
-from app.core.state import runners, tasks
+from app.core.state import get_tasks_snapshot, runners
 
 # Configure logging
 logger = setup_default_logging()
@@ -37,9 +37,10 @@ async def health_check() -> dict:
     Returns:
         dict: Health status and system metrics
     """
+    tasks_snapshot = get_tasks_snapshot()
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "runners": len(runners),
-        "tasks": len(tasks),
+        "tasks": len(tasks_snapshot),
     }

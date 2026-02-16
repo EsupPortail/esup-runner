@@ -20,7 +20,9 @@ from app.core import config as config_module
 from app.core.auth import verify_admin
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
-from app.core.state import runners, tasks
+from app.core.state import get_task as get_task_from_state
+from app.core.state import get_tasks_snapshot
+from app.core.state import runners
 
 # Configure logging
 logger = setup_default_logging()
@@ -60,11 +62,12 @@ async def admin_dashboard(request: Request):
         TemplateResponse: Rendered admin dashboard
     """
     dark_mode = request.cookies.get("theme") == "dark"
+    tasks_snapshot = get_tasks_snapshot()
 
     # Prepare runner data for dashboard
     runners_data = []
     for runner_id, runner in runners.items():
-        runner.status = (
+        status_value = (
             "online" if (datetime.now() - runner.last_heartbeat).total_seconds() < 60 else "offline"
         )
 
@@ -72,7 +75,7 @@ async def admin_dashboard(request: Request):
             {
                 "id": runner_id,
                 "url": runner.url,
-                "status": runner.status,
+                "status": status_value,
                 "availability": runner.availability,
                 "task_types": runner.task_types,
                 "last_heartbeat": runner.last_heartbeat.strftime("%Y-%m-%d %H:%M:%S"),
@@ -81,7 +84,7 @@ async def admin_dashboard(request: Request):
         )
 
     tasks_data = []
-    for task_id, task in tasks.items():
+    for task_id, task in tasks_snapshot.items():
         tasks_data.append(
             {
                 "id": task_id,
@@ -149,12 +152,11 @@ async def get_task_detail(request: Request, task_id: str):
         TemplateResponse: Rendered task detail page
     """
     # Check if runner exists
-    if task_id not in tasks:
+    task = get_task_from_state(task_id)
+    if task is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Task with ID '{task_id}' not found"
         )
-
-    task = tasks[task_id]
 
     dark_mode = request.cookies.get("theme") == "dark"
 
@@ -232,7 +234,7 @@ async def admin_tasks(request: Request) -> Any:
     """
     dark_mode = request.cookies.get("theme") == "dark"
 
-    all_tasks_list = list(tasks.values())
+    all_tasks_list = list(get_tasks_snapshot().values())
     available_statuses = ["pending", "running", "completed", "failed", "warning", "timeout"]
     available_task_types = sorted(
         {t.task_type for t in all_tasks_list if getattr(t, "task_type", None)}

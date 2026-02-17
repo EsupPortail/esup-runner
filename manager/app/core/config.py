@@ -7,7 +7,7 @@ Handles environment variables, security settings, and application configuration.
 import os
 from typing import Dict, Optional
 
-from passlib.context import CryptContext
+from app.core.passwords import BcryptPasswordContext
 
 # Module-level global state - these persist across imports
 _CONFIG_ENV_LOADED: bool = False
@@ -300,7 +300,7 @@ class Config:
         self.ADMIN_USERS: Dict[str, str] = self._load_admin_users()
 
         # Initialize password hashing context
-        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        self.pwd_context = BcryptPasswordContext()
 
     def _load_authorized_tokens(self) -> Dict[str, str]:
         """

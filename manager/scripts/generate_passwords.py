@@ -1,12 +1,10 @@
 # utils/generate_passwords.py
-"""
-Use this script to generate hashed passwords for the .env file
-"""
+"""Use this script to generate hashed passwords for the .env file."""
 
-from passlib.context import CryptContext
+from app.core.passwords import BcryptPasswordContext
 
 # Configuring the hashing context (bcrypt)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = BcryptPasswordContext()
 
 # List of plaintext passwords (to be replaced with your own)
 passwords = {

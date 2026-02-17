@@ -11,7 +11,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-# Silence stdlib crypt deprecation emitted during passlib import when running with -W error
+# Silence stdlib crypt deprecation warnings when running with -W error
 warnings.filterwarnings(
     "ignore",
     message="'crypt' is deprecated and slated for removal in Python 3.13",

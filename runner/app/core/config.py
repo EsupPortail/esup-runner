@@ -279,6 +279,16 @@ class Config:
         # Interval for periodic cleanup in hours
         self.CLEANUP_INTERVAL_HOURS: int = int(os.getenv("CLEANUP_INTERVAL_HOURS", 24))
 
+        # Maximum duration (seconds) allowed for external task scripts
+        # (encoding/studio/transcription handlers)
+        external_script_timeout = _parse_int(
+            os.getenv("EXTERNAL_SCRIPT_TIMEOUT_SECONDS"),
+            18000,
+        )
+        self.EXTERNAL_SCRIPT_TIMEOUT_SECONDS: int = (
+            external_script_timeout if external_script_timeout > 0 else 18000
+        )
+
         # Encoding type (CPU or GPU)
         self.ENCODING_TYPE: str = os.getenv("ENCODING_TYPE", "CPU").upper()
 

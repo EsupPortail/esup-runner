@@ -88,7 +88,11 @@ class StudioEncodingHandler(BaseTaskHandler):
         )
 
         self.logger.info(f"Run studio script: {studio_script} with args: {studio_args}")
-        studio_result = self.run_external_script(studio_script, studio_args, timeout=7200)
+        studio_result = self.run_external_script(
+            studio_script,
+            studio_args,
+            timeout=config.EXTERNAL_SCRIPT_TIMEOUT_SECONDS,
+        )
 
         self._log_studio_selected_mode(studio_result)
 
@@ -145,7 +149,11 @@ class StudioEncodingHandler(BaseTaskHandler):
             parameters=retry_params,
         )
         self.logger.info(f"Studio script failed on GPU, retrying with CPU. Args: {retry_args}")
-        studio_result_retry = self.run_external_script(studio_script, retry_args, timeout=7200)
+        studio_result_retry = self.run_external_script(
+            studio_script,
+            retry_args,
+            timeout=config.EXTERNAL_SCRIPT_TIMEOUT_SECONDS,
+        )
 
         self._log_studio_selected_mode(studio_result_retry, context="(retry)")
 
@@ -265,7 +273,11 @@ class StudioEncodingHandler(BaseTaskHandler):
             work_dir=work_dir,
         )
         self.logger.info(f"Run encoding script: {encoding_script} with args: {enc_args}")
-        return self.run_external_script(encoding_script, enc_args, timeout=7200)
+        return self.run_external_script(
+            encoding_script,
+            enc_args,
+            timeout=config.EXTERNAL_SCRIPT_TIMEOUT_SECONDS,
+        )
 
     def _build_results(
         self,

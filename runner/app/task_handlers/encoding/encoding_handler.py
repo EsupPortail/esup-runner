@@ -132,7 +132,11 @@ class VideoEncodingHandler(BaseTaskHandler):
             self.logger.info(f"Run external script: {script_path} with args: {args}")
 
             # Execute encoding script
-            script_result = self.run_external_script(script_path, args, timeout=7200)
+            script_result = self.run_external_script(
+                script_path,
+                args,
+                timeout=config.EXTERNAL_SCRIPT_TIMEOUT_SECONDS,
+            )
 
             # Collect results
             results = {

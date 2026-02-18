@@ -143,7 +143,7 @@ fmt-check: check-fmt-deps
 
 lint: check-lint-deps
 	@echo "==> lint (flake8 + mypy)"
-	$(UV) run flake8 .
+	$(UV) run flake8 --jobs=1 .
 	MYPY_CACHE_DIR=/tmp/mypy_cache_$(USER) $(UV) run mypy app
 
 .PHONY: help sync lock run init clean \

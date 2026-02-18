@@ -13,6 +13,7 @@ RUNNER_TASK_TYPES=[2x(encoding,studio,transcription)]
 RUNNER_TOKEN=change-me-runner-token
 MANAGER_URL=http://127.0.0.1:8081
 STORAGE_DIR=/tmp/esup-runner/storage
+EXTERNAL_SCRIPT_TIMEOUT_SECONDS=18000
 LOG_DIRECTORY=/var/log/esup-runner
 LOG_LEVEL=INFO
 ENCODING_TYPE=CPU
@@ -37,6 +38,7 @@ WHISPER_LANGUAGE=auto
 - `MAX_VIDEO_SIZE_GB` (int, default `0` = unlimited): Reject downloads above this size.
 - `MAX_FILE_AGE_DAYS` (int, default `0` = keep forever): Cleanup threshold.
 - `CLEANUP_INTERVAL_HOURS` (int, default `24`): Periodic cleanup interval.
+- `EXTERNAL_SCRIPT_TIMEOUT_SECONDS` (int, default `18000`): Timeout (in seconds) for external scripts run by `encoding`, `studio`, and `transcription` handlers.
 
 ## Encoding / hardware
 - `ENCODING_TYPE` (`CPU` | `GPU`, default `CPU`): Selects CPU or GPU path for encoding tasks.

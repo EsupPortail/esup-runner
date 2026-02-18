@@ -111,7 +111,7 @@ The runner ships with three handlers (see [app/task_handlers](app/task_handlers)
 - Each handler inherits from [app/task_handlers/base_handler.py](app/task_handlers/base_handler.py), which manages workspaces, downloads, input validation, and metadata writing.
 - Workspaces live under the storage manager base path; outputs and logs are written to an `output/` subfolder with a `task_metadata.json` summary.
 - Result manifests are written to `<STORAGE_DIR>/<task_id>/manifest.json`.
-- External scripts are executed with timeouts and inherit environment variables (CUDA hints are injected automatically when GPU mode is enabled).
+- External scripts are executed with timeouts and inherit environment variables (CUDA hints are injected automatically when GPU mode is enabled). The timeout is controlled by `EXTERNAL_SCRIPT_TIMEOUT_SECONDS` (default `18000`).
 - The runner enforces basic safety checks: media extension validation, optional max file size, and non-blocking FFmpeg build warnings for missing codecs/features.
 
 ## Minimal .env example
@@ -123,6 +123,7 @@ RUNNER_BASE_NAME=my-runner
 RUNNER_TASK_TYPES=[2x(encoding,studio,transcription)]
 RUNNER_TOKEN=change-me-runner-token
 STORAGE_DIR=/tmp/esup-runner/storage
+EXTERNAL_SCRIPT_TIMEOUT_SECONDS=18000
 ENCODING_TYPE=CPU
 LOG_DIRECTORY=/var/log/esup-runner
 LOG_LEVEL=INFO

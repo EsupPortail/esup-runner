@@ -9,6 +9,10 @@ Implementation:
 - Handler: [app/task_handlers/transcription/transcription_handler.py](../app/task_handlers/transcription/transcription_handler.py)
 - Script: [app/task_handlers/transcription/scripts/transcription.py](../app/task_handlers/transcription/scripts/transcription.py)
 
+## Installation profile (CPU vs GPU)
+- CPU-only server: `make sync-transcription-cpu` (uses the CPU-focused torch source on Linux x86_64 to avoid CUDA runtime packages).
+- GPU server: `make sync-transcription-gpu`.
+
 Outputs typically include:
 - `subtitles.vtt` (WebVTT)
 - logs and task metadata in the task output directory

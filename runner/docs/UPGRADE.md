@@ -104,16 +104,24 @@ Sensitive settings to double-check after an upgrade:
 
 ## 5) Update Python dependencies
 
+If this runner achieve only **encoding** ot **studio** tasks, install the default:
 ```bash
 cd /opt/esup-runner/runner
 make sync
 ```
 
-If this is a **transcription** runner, install the extra:
+If this runner must achieve **transcription** tasks on a **CPU-only** server, install the CPU transcription extra:
 
 ```bash
 cd /opt/esup-runner/runner
-make sync-transcription
+make sync-transcription-cpu
+```
+
+If this runner must achieve **transcription** tasks on a **GPU** server, install the GPU transcription extra:
+
+```bash
+cd /opt/esup-runner/runner
+make sync-transcription-gpu
 ```
 
 ---

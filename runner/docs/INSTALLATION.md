@@ -132,17 +132,27 @@ sudo make init
 
 From `/opt/esup-runner/runner`:
 
-- For **encoding** or **studio** runners:
+- If this runner achieve only **encoding** ot **studio** tasks, install the default:
 
 ```bash
 make sync
 ```
 
-- For **transcription** runners:
+- If this runner must achieve **transcription** tasks on a **CPU-only** server, install the CPU transcription extra:
 
 ```bash
-make sync-transcription
+make sync-transcription-cpu
 ```
+
+- If this runner must achieve **transcription** tasks on a **GPU** server, install the GPU transcription extra:
+
+```bash
+make sync-transcription-gpu
+```
+
+Notes:
+- `sync-transcription-cpu` forces `torch` from the PyTorch CPU index (Linux x86_64), which avoids `nvidia-*` packages.
+- `sync-transcription-gpu` keeps the default `torch` resolution, intended for GPU/CUDA environments.
 
 ### Verification checks
 

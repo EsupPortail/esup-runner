@@ -49,11 +49,14 @@ cp .env.example .env
 nano .env
 
 # 6) Install Python dependencies
+# Default encoding or studio tasks
 make sync
-# For a transcription runner, use:
-# make sync-transcription
+# With transcription tasks on CPU-only server, use:
+# make sync-transcription-cpu
+# With transcription tasks on GPU server, use:
+# make sync-transcription-gpu
 
-# 7) Initialize directories and install the systemd service (as root)
+# 7) Initialize directories and install the systemd service
 sudo make init
 sudo make create-service
 ```

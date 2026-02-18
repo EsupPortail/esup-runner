@@ -53,10 +53,26 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
 ]
-transcription = [
+transcription-gpu = [
     "openai-whisper==20250625",
     "coverage>=7.2.0",
 ]
+transcription-cpu = [
+    "openai-whisper==20250625",
+    "coverage>=7.2.0",
+]
+
+[tool.uv.sources]
+# transcription-cpu differs from transcription-gpu by torch index selection
+# (CPU wheels from pytorch-cpu on Linux x86_64).
+torch = [
+    { index = "pytorch-cpu", marker = "extra == 'transcription-cpu' and sys_platform == 'linux' and platform_machine == 'x86_64'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [project.urls]
 Homepage = "https://github.com/EsupPortail/esup-runner"

@@ -1,16 +1,18 @@
 # Makefile — Esup-Runner (uv + extras)
 #
-# Extras: dev, transcription
+# Extras: dev, transcription-gpu, transcription-cpu
 #
 # Usage:
 #   make sync
 #   make sync-dev
-#   make sync-transcription
+#   make sync-transcription-gpu
+#   make sync-transcription-cpu
 # 	make sync-all
 #
 #   make lock
-#   make lock-transcription
-#   make lock EXTRAS=dev,transcription
+#   make lock-transcription-gpu
+#   make lock-transcription-cpu
+#   make lock EXTRAS=dev,transcription-gpu
 #
 #   make run
 #
@@ -22,7 +24,7 @@ PYTHON  ?= $(UV) run python
 
 EXTRAS  ?=
 
-# Builds the --extra ... arguments from EXTRAS=dev,transcription
+# Builds the --extra ... arguments from EXTRAS=dev,transcription-gpu,transcription-cpu
 comma := ,
 empty :=
 space := $(empty) $(empty)
@@ -32,23 +34,24 @@ EXTRA_ARGS := $(strip $(foreach e,$(subst $(comma),$(space),$(EXTRAS)),--extra $
 
 help:
 	@echo "Targets:"
-	@echo "  make sync [EXTRAS=dev,transcription]   		-> uv sync (+ extras)"
-	@echo "  make lock [EXTRAS=dev,transcription]   		-> uv lock (+ extras)"
+	@echo "  make sync [EXTRAS=dev,transcription-gpu,transcription-cpu]	-> uv sync (+ extras)"
+	@echo "  make lock [EXTRAS=dev,transcription-gpu,transcription-cpu]	-> uv lock (+ extras)"
 	@echo "  make run                                       -> run the app launcher"
 	@echo "  make init                                      -> init directories from .env (sudo)"
 	@echo "  make create-service                            -> install systemd service (sudo)"
 	@echo "  make clean                                     -> remove .venv and caches"
 	@echo ""
 	@echo "Shortcuts:"
-	@echo "  make sync-dev | sync-transcription | make sync-all"
-	@echo "  make lock-dev | lock-transcription | make lock-all"
+	@echo "  make sync-dev | sync-transcription-gpu | sync-transcription-cpu | make sync-all"
+	@echo "  make lock-dev | lock-transcription-gpu | lock-transcription-cpu | make lock-all"
 	@echo ""
 	@echo "Quality commands (fmt/test/lint) do NOT auto-sync dev deps."
 	@echo "Run: make sync-dev or make sync-all (once) if needed."
 	@echo ""
 	@echo "Examples:"
 	@echo "  make sync"
-	@echo "  make sync EXTRAS=transcription"
+	@echo "  make sync EXTRAS=transcription-gpu"
+	@echo "  make sync EXTRAS=transcription-cpu"
 	@echo "  make lock EXTRAS=dev"
 
 # ---------- Dependencies ----------
@@ -61,23 +64,36 @@ sync-dev:
 	@$(MAKE) sync EXTRAS=dev
 
 sync-all:
-	@$(MAKE) sync EXTRAS=dev,transcription
+	@$(MAKE) sync EXTRAS=dev,transcription-gpu
 
-sync-transcription:
-	@$(MAKE) sync EXTRAS=transcription
+sync-transcription-gpu:
+	@$(MAKE) sync EXTRAS=transcription-gpu
+
+sync-transcription-cpu:
+	@$(MAKE) sync EXTRAS=transcription-cpu
 
 lock:
 	@echo "==> uv lock $(EXTRA_ARGS)"
-	$(UV) lock $(EXTRA_ARGS)
+	@if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
+		$(UV) lock $(EXTRA_ARGS); \
+	else \
+		if [ -n "$(EXTRAS)" ]; then \
+			echo "==> warning: this uv version ignores lock extras; running full lock"; \
+		fi; \
+		$(UV) lock; \
+	fi
 
 lock-dev:
 	@$(MAKE) lock EXTRAS=dev
 
 lock-all:
-	@$(MAKE) lock EXTRAS=dev,transcription
+	@$(MAKE) lock EXTRAS=dev,transcription-gpu
 
-lock-transcription:
-	@$(MAKE) lock EXTRAS=transcription
+lock-transcription-gpu:
+	@$(MAKE) lock EXTRAS=transcription-gpu
+
+lock-transcription-cpu:
+	@$(MAKE) lock EXTRAS=transcription-cpu
 
 # ---------- Execution ----------
 
@@ -147,7 +163,7 @@ lint: check-lint-deps
 	MYPY_CACHE_DIR=/tmp/mypy_cache_$(USER) $(UV) run mypy app
 
 .PHONY: help sync lock run init clean \
-		sync-dev sync-all sync-transcription \
-		lock-dev lock-transcription lock-all \
+		sync-dev sync-all sync-transcription-gpu sync-transcription-cpu \
+		lock-dev lock-transcription-gpu lock-transcription-cpu lock-all \
 		check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
 		test coverage fmt fmt-check lint

@@ -179,9 +179,10 @@ def test_shared_store_keys_values_items_and_get(tmp_path):
 
     store["r1"] = _runner("r1")
     store["r2"] = _runner("r2")
+    store.update({"r3": _runner("r3")})
 
-    assert set(store.keys()) == {"r1", "r2"}
-    assert sorted(list(iter(store))) == ["r1", "r2"]
-    assert sorted(r.id for r in store.values()) == ["r1", "r2"]
-    assert sorted(k for k, _ in store.items()) == ["r1", "r2"]
+    assert set(store.keys()) == {"r1", "r2", "r3"}
+    assert sorted(list(iter(store))) == ["r1", "r2", "r3"]
+    assert sorted(r.id for r in store.values()) == ["r1", "r2", "r3"]
+    assert sorted(k for k, _ in store.items()) == ["r1", "r2", "r3"]
     assert store.get("missing") is None

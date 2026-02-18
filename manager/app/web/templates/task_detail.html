@@ -144,6 +144,12 @@
                         <span class="metadata-label">Source file:</span>
                         <span class="text-subtle">{{ task.source_url }}</span>
                     </div>
+                    {% if task.notify_url %}
+                        <div class="metadata-item">
+                            <span class="metadata-label">Notify URL:</span>
+                            <span class="text-subtle">{{ task.notify_url }}</span>
+                        </div>
+                    {% endif %}
                     <div class="metadata-item">
                         <span class="metadata-label">Parameters:</span>
                         <span class="text-subtle">{{ task.parameters }}</span>

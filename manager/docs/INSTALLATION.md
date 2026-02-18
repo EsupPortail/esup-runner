@@ -244,6 +244,17 @@ Quick check:
 systemctl is-active --quiet esup-runner-manager && echo "OK: service is running"
 ```
 
+## 4.1) Production hardening: reverse proxy + HTTPS
+
+For security, prefer exposing the manager (API and admin UI) behind a reverse proxy such as HAProxy, Nginx, or Traefik.
+
+Recommendations:
+
+- Expose only the reverse proxy publicly on `443` (HTTPS).
+- Keep the manager service on a private interface, or localhost only when possible.
+- Forward admin endpoints (`/admin`, `/tasks`...) and API routes through the proxy.
+- Avoid direct public access to the manager process on `MANAGER_PORT`.
+
 Notes:
 
 - The service loads environment variables from `/opt/esup-runner/manager/.env`.

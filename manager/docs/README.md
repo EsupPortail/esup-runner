@@ -98,6 +98,17 @@ When the manager calls a runner, it uses the token captured at runner registrati
 
 This is the same token the runner used to call `POST /runner/register`.
 
+## Recommended network exposure (security)
+
+For production deployments, it is strongly recommended to expose the manager API and admin UI behind a reverse proxy (for example HAProxy, Nginx, or Traefik) with HTTPS enabled.
+
+Recommended setup:
+
+- Do not expose the manager process directly on the public Internet.
+- Terminate TLS on the reverse proxy and publish only HTTPS externally.
+- Keep the manager bound to a private interface or localhost whenever possible.
+- Route both API endpoints and admin endpoints (`/admin`, `/tasks`...) through the proxy.
+
 ## Task lifecycle
 
 1. **Client submits a task** to the manager via `POST /task/execute`.

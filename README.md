@@ -40,14 +40,15 @@ Recommended workflow uses the project Makefiles (they wrap `uv` and handle extra
 
 - Manager:
 	- Install deps: `cd manager && make sync-dev`
-	- Run tests: `cd manager && make test` (or `make coverage`)
-	- Run in dev: `cd manager && uv run esup-runner-manager-dev`
+	- Run tests: `cd manager && make test`
+	- Run in dev: `cd manager && make run`
 
 - Runner:
 	- Install deps: `cd runner && make sync-dev`
-	- (Optional) transcription deps: `cd runner && make sync-all` (or `make sync EXTRAS=transcription`)
+	- (Optional) transcription deps (GPU): `cd runner && make sync-all`
+	- (Optional) transcription deps (CPU): `cd runner && make sync-transcription-cpu`
 	- Run tests: `cd runner && make test`
-	- Run in dev: `cd runner && uv run esup-runner-runner-dev`
+	- Run in dev: `cd runner && make run`
 
 If you need fully reproducible installs, you can call `uv` directly with the lockfile:
 

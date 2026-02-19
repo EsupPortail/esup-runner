@@ -5,17 +5,18 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 0
 
   # Python dependencies (Manager)
   - package-ecosystem: "uv"
     directory: "/manager"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
 
   # Python dependencies (Runner)
   - package-ecosystem: "uv"
     directory: "/runner"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0

@@ -41,6 +41,7 @@ help:
 	@echo "Targets:"
 	@echo "  make sync [EXTRAS=dev]                          -> uv sync (+ extras)"
 	@echo "  make lock [EXTRAS=dev]                          -> uv lock (+ extras)"
+	@echo "  make lock-upgrade [EXTRAS=dev]                  -> uv lock --upgrade (+ extras)"
 	@echo "  make run                                        -> run the manager"
 	@echo "  make status                                     -> show manager status (best-effort)"
 	@echo "  make stop                                       -> stop the manager (best-effort)"
@@ -74,7 +75,25 @@ sync:
 
 lock:
 	@echo "==> uv lock $(EXTRA_ARGS)"
-	$(UV) lock $(EXTRA_ARGS)
+	@if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
+		$(UV) lock $(EXTRA_ARGS); \
+	else \
+		if [ -n "$(EXTRAS)" ]; then \
+			echo "==> warning: this uv version ignores lock extras; running full lock"; \
+		fi; \
+		$(UV) lock; \
+	fi
+
+lock-upgrade:
+	@echo "==> uv lock --upgrade $(EXTRA_ARGS)"
+	@if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
+		$(UV) lock --upgrade $(EXTRA_ARGS); \
+	else \
+		if [ -n "$(EXTRAS)" ]; then \
+			echo "==> warning: this uv version ignores lock extras; running full lock upgrade"; \
+		fi; \
+		$(UV) lock --upgrade; \
+	fi
 
 sync-dev:
 	@$(MAKE) sync EXTRAS=dev
@@ -181,7 +200,7 @@ docs:
 	$(PYTHON) scripts/generate_architecture_diagram.py
 	$(PYTHON) scripts/generate_tree_diagram.py
 
-.PHONY: help sync lock run status stop restart init clean create-service docs \
+.PHONY: help sync lock lock-upgrade run status stop restart init clean create-service docs \
 	sync-dev lock-dev sync-docs lock-docs \
 	check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
 	test coverage fmt fmt-check lint

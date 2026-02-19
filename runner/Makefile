@@ -36,6 +36,7 @@ help:
 	@echo "Targets:"
 	@echo "  make sync [EXTRAS=dev,transcription-gpu,transcription-cpu]	-> uv sync (+ extras)"
 	@echo "  make lock [EXTRAS=dev,transcription-gpu,transcription-cpu]	-> uv lock (+ extras)"
+	@echo "  make lock-upgrade [EXTRAS=dev,transcription-gpu,transcription-cpu] -> uv lock --upgrade (+ extras)"
 	@echo "  make run                                       -> run the app launcher"
 	@echo "  make init                                      -> init directories from .env (sudo)"
 	@echo "  make create-service                            -> install systemd service (sudo)"
@@ -81,6 +82,17 @@ lock:
 			echo "==> warning: this uv version ignores lock extras; running full lock"; \
 		fi; \
 		$(UV) lock; \
+	fi
+
+lock-upgrade:
+	@echo "==> uv lock --upgrade $(EXTRA_ARGS)"
+	@if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
+		$(UV) lock --upgrade $(EXTRA_ARGS); \
+	else \
+		if [ -n "$(EXTRAS)" ]; then \
+			echo "==> warning: this uv version ignores lock extras; running full lock upgrade"; \
+		fi; \
+		$(UV) lock --upgrade; \
 	fi
 
 lock-dev:
@@ -162,7 +174,7 @@ lint: check-lint-deps
 	$(UV) run flake8 --jobs=1 .
 	MYPY_CACHE_DIR=/tmp/mypy_cache_$(USER) $(UV) run mypy app
 
-.PHONY: help sync lock run init clean \
+.PHONY: help sync lock lock-upgrade run init clean \
 		sync-dev sync-all sync-transcription-gpu sync-transcription-cpu \
 		lock-dev lock-transcription-gpu lock-transcription-cpu lock-all \
 		check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \

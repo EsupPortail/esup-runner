@@ -106,6 +106,28 @@ body.theme-dark .stat-item:hover {
     opacity: 1;
 }
 
+/* Admin header branding */
+.admin-brand {
+    min-width: 0;
+}
+
+.admin-brand-logo {
+    height: clamp(42px, 7vw, 64px);
+    width: auto;
+    display: block;
+    flex-shrink: 0;
+}
+
+@media (max-width: 576px) {
+    .admin-brand-logo {
+        height: s mono60px;
+    }
+
+    .admin-brand h1 {
+        font-size: 1.5rem;
+    }
+}
+
 
 /* For detail page */
 .task-header {

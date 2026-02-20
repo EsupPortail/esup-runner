@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -186,3 +187,9 @@ def test_shared_store_keys_values_items_and_get(tmp_path):
     assert sorted(r.id for r in store.values()) == ["r1", "r2", "r3"]
     assert sorted(k for k, _ in store.items()) == ["r1", "r2", "r3"]
     assert store.get("missing") is None
+
+
+def test_default_state_file_is_anchored_to_manager_root():
+    store = RunnerStore(shared_enabled=False)
+    expected = (Path(__file__).resolve().parents[1] / "data" / "runners_state.json").resolve()
+    assert store._state_file.resolve() == expected

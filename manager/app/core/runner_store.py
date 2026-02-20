@@ -21,6 +21,7 @@ from app.models.models import Runner
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
+_MANAGER_ROOT = Path(__file__).resolve().parents[2]
 
 
 class RunnerStore(MutableMapping[str, Runner]):
@@ -35,7 +36,7 @@ class RunnerStore(MutableMapping[str, Runner]):
     ):
         self.shared_enabled = shared_enabled
         self._memory: Dict[str, Runner] = {}
-        self._state_file = Path(state_file)
+        self._state_file = self._resolve_state_file(state_file)
         self._lock: Optional[FileLock] = None
 
         if self.shared_enabled:
@@ -46,6 +47,18 @@ class RunnerStore(MutableMapping[str, Runner]):
             logger.info(f"Runner store initialized in shared mode: {self._state_file}")
         else:
             logger.info("Runner store initialized in in-memory mode")
+
+    @staticmethod
+    def _resolve_state_file(state_file: str) -> Path:
+        """
+        Resolve state file path.
+        Relative paths are anchored to manager project root to avoid cwd-dependent
+        writes (e.g. creating /opt/esup-runner/data when launched from monorepo root).
+        """
+        path = Path(state_file)
+        if path.is_absolute():
+            return path
+        return _MANAGER_ROOT / path
 
     def _with_lock(self, operation: Callable[[], _T]) -> _T:
         if not self.shared_enabled:

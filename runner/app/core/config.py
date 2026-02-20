@@ -91,6 +91,30 @@ def get_config():
     return _CONFIG_INSTANCE
 
 
+def reload_config_from_env():
+    """Refresh the cached config instance from current environment variables.
+
+    This updates the existing instance in-place so modules that already imported
+    ``config`` keep seeing fresh values.
+    """
+    global _CONFIG_ENV_LOADED, _CONFIG_INSTANCE, config
+
+    if not _CONFIG_ENV_LOADED:
+        _load_environment_variables()
+        _CONFIG_ENV_LOADED = True
+
+    refreshed = Config()
+
+    if _CONFIG_INSTANCE is None:
+        _CONFIG_INSTANCE = refreshed
+    else:
+        _CONFIG_INSTANCE.__dict__.clear()
+        _CONFIG_INSTANCE.__dict__.update(refreshed.__dict__)
+
+    config = _CONFIG_INSTANCE
+    return _CONFIG_INSTANCE
+
+
 def _load_environment_variables() -> None:
     """
     Load environment variables from .env file if it exists.

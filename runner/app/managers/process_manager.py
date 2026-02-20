@@ -12,7 +12,7 @@ import time
 from multiprocessing import Process
 from typing import Dict, List
 
-from app.core.config import config
+from app.core.config import config, reload_config_from_env
 from app.core.setup_logging import setup_default_logging
 
 logger = setup_default_logging()
@@ -39,14 +39,17 @@ def run_uvicorn_instance(runner_instance_id: int, runner_instance_port: int) -> 
     try:
         os.environ["RUNNER_INSTANCE_ID"] = str(runner_instance_id)
         os.environ["RUNNER_PORT"] = str(runner_instance_port)
+        # Refresh config after setting instance env vars so grouped task types are
+        # resolved per instance, not as the launcher union.
+        instance_config = reload_config_from_env()
         os.environ["RUNNER_INSTANCE_URL"] = (
-            f"{config.RUNNER_PROTOCOL}://{config.RUNNER_HOST}:{runner_instance_port}"
+            f"{instance_config.RUNNER_PROTOCOL}://{instance_config.RUNNER_HOST}:{runner_instance_port}"
         )
 
         # Dynamic GPU selection per runner instance (GPU mode only)
-        if config.ENCODING_TYPE == "GPU":
+        if instance_config.ENCODING_TYPE == "GPU":
             devices_csv = os.getenv(
-                "GPU_CUDA_VISIBLE_DEVICES", str(config.GPU_CUDA_VISIBLE_DEVICES)
+                "GPU_CUDA_VISIBLE_DEVICES", str(instance_config.GPU_CUDA_VISIBLE_DEVICES)
             )
             selected_gpu = _select_gpu_for_instance(runner_instance_id, devices_csv)
 
@@ -59,8 +62,8 @@ def run_uvicorn_instance(runner_instance_id: int, runner_instance_port: int) -> 
                 os.environ["GPU_HWACCEL_DEVICE"] = "0"
 
                 # Also patch in-process config so handlers pass the right flags
-                config.GPU_HWACCEL_DEVICE = 0
-                config.GPU_CUDA_VISIBLE_DEVICES = selected_gpu
+                instance_config.GPU_HWACCEL_DEVICE = 0
+                instance_config.GPU_CUDA_VISIBLE_DEVICES = selected_gpu
 
                 logger.info(
                     "Instance %s on port %s bound to GPU %s (from %s)",
@@ -86,7 +89,7 @@ def run_uvicorn_instance(runner_instance_id: int, runner_instance_port: int) -> 
 
         uvicorn.run(
             "app.main:app",
-            host=config.RUNNER_HOST,
+            host=instance_config.RUNNER_HOST,
             port=runner_instance_port,
             reload=False,
             log_config=log_config,

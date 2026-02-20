@@ -240,6 +240,7 @@ body.theme-dark .log-entry {
 
 .log-message {
     color: inherit;
+    white-space: pre-wrap;
     word-wrap: break-word;
     word-break: break-word;
     line-height: 1.4;

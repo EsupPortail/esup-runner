@@ -85,10 +85,60 @@ def test_logmanager_read_logs_filters_and_sorts(tmp_path: Path, logs_module):
     assert len(only_hello) == 1
     assert "hello" in only_hello[0]["raw"]
 
+    # Chronological display order (oldest -> newest)
+    ordered = manager.read_logs(limit=100)
+    assert ordered[0]["raw"].endswith("hello")
+    assert ordered[1]["raw"].endswith("boom")
+
     # Sorting + limit
     limited = manager.read_logs(limit=1)
     assert len(limited) == 1
     assert limited[0]["raw"].endswith("boom")
+
+
+def test_logmanager_groups_multiline_payloads(tmp_path: Path, logs_module):
+    log_file = tmp_path / "manager.log"
+    log_file.write_text(
+        "2026-02-12 13:56:01 - manager - WARNING - [task:_send_notify_callback:263] - "
+        "Notify URL callback failed: 403 - \n"
+        "<!DOCTYPE html>\n"
+        '<html lang="en">\n'
+        "<head>\n"
+        "  <title>403 Forbidden</title>\n"
+        "</head>\n",
+        encoding="utf-8",
+    )
+
+    manager = logs_module.LogManager([str(log_file)])
+    logs = manager.read_logs(limit=100)
+
+    assert len(logs) == 1
+    assert logs[0]["level"] == "WARNING"
+    assert "<!DOCTYPE html>" in logs[0]["message"]
+    assert "<title>403 Forbidden</title>" in logs[0]["raw"]
+
+    filtered = manager.read_logs(limit=100, search_term="forbidden")
+    assert len(filtered) == 1
+    assert filtered[0]["level"] == "WARNING"
+
+
+def test_logmanager_keeps_leading_unknown_and_skips_blank_lines(tmp_path: Path, logs_module):
+    log_file = tmp_path / "manager.log"
+    log_file.write_text(
+        "\n"
+        "leading unstructured line\n"
+        "2026-02-12 13:56:01 - manager - INFO - [x] - structured\n",
+        encoding="utf-8",
+    )
+
+    manager = logs_module.LogManager([str(log_file)])
+    logs = manager.read_logs(limit=100)
+
+    assert len(logs) == 2
+    assert any(
+        log["level"] == "UNKNOWN" and log["message"] == "leading unstructured line" for log in logs
+    )
+    assert any(log["level"] == "INFO" and log["message"] == "structured" for log in logs)
 
 
 def test_logmanager_skips_missing_file(tmp_path: Path, logs_module):

@@ -26,34 +26,58 @@ templates = Jinja2Templates(directory="app/web/templates")
 class LogParser:
     """Parser for the specific log format"""
 
+    LOG_PATTERN = re.compile(
+        r"^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - "
+        r"(?P<module>.+?) - "
+        r"(?P<level>[A-Za-z]+) - "
+        r"(?P<context>\[.*?\]) - "
+        r"(?P<message>.*)$"
+    )
+
     @staticmethod
-    def parse_log_line(line: str) -> Dict[str, str]:
+    def _strip_line_end(line: str) -> str:
+        """Strip line terminator while preserving leading/trailing visible spaces."""
+        return line.rstrip("\r\n")
+
+    @classmethod
+    def parse_structured_log_line(cls, line: str) -> Optional[Dict[str, str]]:
+        """Parse a line only if it matches the expected structured format."""
+        match = cls.LOG_PATTERN.match(line)
+        if not match:
+            return None
+
+        return {
+            "timestamp": match.group("timestamp"),
+            "module": match.group("module"),
+            "level": match.group("level").upper(),
+            "context": match.group("context"),
+            "message": match.group("message"),
+            "raw": line,
+        }
+
+    @staticmethod
+    def create_unknown_log_line(line: str) -> Dict[str, str]:
+        """Fallback for lines that don't match the structured pattern."""
+        return {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "module": "UNKNOWN",
+            "level": "UNKNOWN",
+            "context": "",
+            "message": line,
+            "raw": line,
+        }
+
+    @classmethod
+    def parse_log_line(cls, line: str) -> Dict[str, str]:
         """
         Parse a log line according to the format:
         2025-10-22 15:43:34 - runner - INFO - [encoding_handler:execute_task:134] - Encoding task completed successfully
         """
-        pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - (\w+) - (\w+) - (\[.*?\]) - (.*)"
-        match = re.match(pattern, line.strip())
-
-        if match:
-            return {
-                "timestamp": match.group(1),
-                "module": match.group(2),
-                "level": match.group(3).upper(),
-                "context": match.group(4),
-                "message": match.group(5),
-                "raw": line.strip(),
-            }
-        else:
-            # Fallback for lines that don't match the pattern
-            return {
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "module": "UNKNOWN",
-                "level": "UNKNOWN",
-                "context": "",
-                "message": line.strip(),
-                "raw": line.strip(),
-            }
+        normalized_line = cls._strip_line_end(line)
+        parsed = cls.parse_structured_log_line(normalized_line)
+        if parsed:
+            return parsed
+        return cls.create_unknown_log_line(normalized_line)
 
 
 class LogManager:
@@ -62,6 +86,45 @@ class LogManager:
     def __init__(self, log_paths: List[str]):
         self.log_paths = log_paths
         self.available_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+    @staticmethod
+    def _append_line(existing: str, line: str) -> str:
+        """Append a continuation line while preserving multi-line payloads."""
+        return f"{existing}\n{line}" if existing else line
+
+    def _parse_log_entries(self, lines: List[str]) -> List[Dict[str, str]]:
+        """
+        Parse file lines into logical log entries.
+        Lines that do not match the structured pattern are treated as continuations
+        of the previous structured entry (e.g. HTML payloads, stack traces).
+        """
+        entries: List[Dict[str, str]] = []
+        current_entry: Optional[Dict[str, str]] = None
+
+        for raw_line in lines:
+            line = LogParser._strip_line_end(raw_line)
+            structured_entry = LogParser.parse_structured_log_line(line)
+
+            if structured_entry:
+                if current_entry:
+                    entries.append(current_entry)
+                current_entry = structured_entry
+                continue
+
+            if current_entry:
+                current_entry["message"] = self._append_line(current_entry["message"], line)
+                current_entry["raw"] = self._append_line(current_entry["raw"], line)
+                continue
+
+            if not line:
+                continue
+
+            entries.append(LogParser.create_unknown_log_line(line))
+
+        if current_entry:
+            entries.append(current_entry)
+
+        return entries
 
     def read_logs(
         self,
@@ -86,9 +149,8 @@ class LogManager:
                 with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
                     lines = f.readlines()
 
-                # Parse each line
-                for line in lines:
-                    parsed_log = LogParser.parse_log_line(line)
+                # Parse each logical log entry (multi-line payloads included)
+                for parsed_log in self._parse_log_entries(lines):
 
                     # Apply level filter if specified
                     if level_filter and parsed_log["level"] not in level_filter:
@@ -104,11 +166,11 @@ class LogManager:
                 logger.error(f"Error reading log file {log_path}: {e}")
                 continue
 
-        # Sort by timestamp (most recent first)
-        all_logs.sort(key=lambda x: x["timestamp"], reverse=True)
+        # Sort by timestamp (oldest first)
+        all_logs.sort(key=lambda x: x["timestamp"])
 
-        # Limit the number of results
-        return all_logs[:limit]
+        # Keep the most recent `limit` entries while preserving oldest->newest display
+        return all_logs[-limit:]
 
     def get_logs_statistics(self, logs: List[Dict]) -> Dict[str, int]:
         """Calculate statistics by log level"""

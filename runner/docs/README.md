@@ -74,7 +74,7 @@ sudo make create-service
 5) Completion status is reported back to the Manager; background services keep storage tidy and can monitor instances.
 
 ## Configuring instances and task types
-- Configuration is driven by environment variables parsed in [app/core/config.py](app/core/config.py).
+- Configuration is driven by environment variables parsed in [app/core/config.py](../app/core/config.py).
 - Legacy syntax: set `RUNNER_INSTANCES` and a simple CSV for `RUNNER_TASK_TYPES`; every instance handles the same types.
 - Grouped syntax: set only `RUNNER_TASK_TYPES` with groups like `[2x(encoding,studio,transcription),1x(encoding,studio),1x(transcription)]`; the total instance count is inferred and per-instance task sets are expanded accordingly.
 - Base ports and URLs are derived from `RUNNER_PROTOCOL`, `RUNNER_HOST`, and `RUNNER_BASE_PORT`; the launcher offsets ports per instance.
@@ -91,27 +91,27 @@ The Manager enforces **version compatibility at MAJOR + MINOR level**.
 In other words, a runner `0.9.x` can register only to a manager `0.9.y`.
 
 ## Supported task types
-The runner ships with three handlers (see [app/task_handlers](app/task_handlers)):
+The runner ships with three handlers (see [app/task_handlers](../app/task_handlers)):
 
 ### Encoding (`encoding`)
-- Handler: [app/task_handlers/encoding/encoding_handler.py](app/task_handlers/encoding/encoding_handler.py)
+- Handler: [app/task_handlers/encoding/encoding_handler.py](../app/task_handlers/encoding/encoding_handler.py)
 - Purpose: download a media file, then invoke the FFmpeg-based encoding script to produce renditions, thumbnails, audio tracks, and metadata.
 - Inputs: media URL plus optional parameters such as `rendition`, `cut`, and `dressing`. Cut JSON format is documented in [docs/TYPE_ENCODING.md](TYPE_ENCODING.md).
 - CPU/GPU: honors `ENCODING_TYPE` and GPU-specific env vars for hwaccel.
 
 ### Studio (`studio`)
-- Handler: [app/task_handlers/studio/studio_handler.py](app/task_handlers/studio/studio_handler.py)
+- Handler: [app/task_handlers/studio/studio_handler.py](../app/task_handlers/studio/studio_handler.py)
 - Purpose: two-stage workflow. First, generate a base MP4 from a Mediapackage XML (with optional SMIL cut/layout) via the studio script; second, run the standard encoding pipeline on that base video.
 - Resilience: if GPU mode fails and `force_cpu` is not set, it retries generation on CPU before failing.
 - Parameters: accepts presenter/layout overrides, plus any encoding parameters passed through to the second stage.
 
 ### Transcription (`transcription`)
-- Handler: [app/task_handlers/transcription/transcription_handler.py](app/task_handlers/transcription/transcription_handler.py)
+- Handler: [app/task_handlers/transcription/transcription_handler.py](../app/task_handlers/transcription/transcription_handler.py)
 - Purpose: run the FFmpeg whisper filter to generate subtitles from audio/video, then package outputs (VTT by default, SRT optional) and metadata.
 - Parameters: `language`, `format` (vtt|srt), `model` (small|medium|large|turbo), `normalize` (audio pre-normalization toggle). GPU use follows `ENCODING_TYPE`.
 
 ## How tasks are processed
-- Each handler inherits from [app/task_handlers/base_handler.py](app/task_handlers/base_handler.py), which manages workspaces, downloads, input validation, and metadata writing.
+- Each handler inherits from [app/task_handlers/base_handler.py](../app/task_handlers/base_handler.py), which manages workspaces, downloads, input validation, and metadata writing.
 - Workspaces live under the storage manager base path; outputs and logs are written to an `output/` subfolder with a `task_metadata.json` summary.
 - Result manifests are written to `<STORAGE_DIR>/<task_id>/manifest.json`.
 - External scripts are executed with timeouts and inherit environment variables (CUDA hints are injected automatically when GPU mode is enabled). The timeout is controlled by `EXTERNAL_SCRIPT_TIMEOUT_SECONDS` (default `18000`).

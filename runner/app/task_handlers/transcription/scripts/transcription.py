@@ -613,19 +613,41 @@ def _run_transcription(
     return rc
 
 
+def _build_vtt_stem_candidates(audio_src: Path) -> list[str]:
+    """Build candidate stems for Whisper outputs when input filename contains dots."""
+    stem = Path(audio_src).stem
+    candidates = [stem]
+    if "." in stem:
+        parts = stem.split(".")
+        # Some Whisper CLI variants effectively truncate dotted stems.
+        for i in range(len(parts) - 1, 0, -1):
+            candidate = ".".join(parts[:i])
+            if candidate not in candidates:
+                candidates.append(candidate)
+    return candidates
+
+
+def _find_generated_vtt(audio_src: Path, work_dir: Path) -> Optional[Path]:
+    for stem in _build_vtt_stem_candidates(audio_src):
+        candidate = work_dir / f"{stem}.vtt"
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _finalize_vtt(audio_src: Path, work_dir: Path) -> int:
-    generated_vtt = work_dir / f"{Path(audio_src).stem}.vtt"
-    normalized_name = f"{Path(audio_src).stem}.vtt"
-    vtt_path = work_dir / normalized_name
+    expected_vtt = work_dir / f"{Path(audio_src).stem}.vtt"
+    generated_vtt = _find_generated_vtt(audio_src, work_dir)
     try:
-        if generated_vtt.exists():
-            if generated_vtt != vtt_path:
-                generated_vtt.replace(vtt_path)
-            print(f"VTT written to: {vtt_path}")
-            return 0
-        else:
+        if generated_vtt is None:
             print("VTT output not found after whisper execution")
             return 5
+
+        if generated_vtt != expected_vtt:
+            generated_vtt.replace(expected_vtt)
+
+        print(f"VTT written to: {expected_vtt}")
+        return 0
     except Exception as e:
         print(f"Failed to finalize VTT: {e}")
         return 6

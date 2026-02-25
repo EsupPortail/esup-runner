@@ -334,3 +334,56 @@ def test_get_info_video_handles_missing_format_duration(tmp_path):
     assert info["height"] == 720
     assert info["has_stream_video"] is True
     assert info["has_stream_audio"] is True
+
+
+def test_get_cmd_gpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+
+    cmd = enc.get_cmd_gpu("m3u8", "h264", 720, "input.mp4")
+
+    assert "-probesize 100M -analyzeduration 100M -c:v:0 h264_cuvid -i" in cmd
+    assert cmd.count("-map 0:v:0? -map 0:a?") >= 2
+    assert " -c:v h264_cuvid " not in cmd
+
+
+def test_get_cmd_cpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+    enc._choose_h264_encoder = Mock(return_value=("libx264", ""))
+
+    cmd = enc.get_cmd_cpu("m3u8", "h264", 360, "input.mp4")
+
+    assert " -probesize 100M -analyzeduration 100M -i " in cmd
+    assert "-map 0:v:0? -map 0:a?" in cmd
+
+
+def test_get_info_video_keeps_first_non_image_video_stream_as_primary(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._DEBUG = False
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+    (tmp_path / "encoding.log").write_text("")
+
+    probe_info = {
+        "format": {"duration": "12.0"},
+        "streams": [
+            {"codec_type": "video", "codec_name": "h264", "height": 1080},
+            # Secondary video stream should not override the primary one.
+            {"codec_type": "video", "codec_name": "h264", "height": 720},
+            {"codec_type": "audio", "codec_name": "aac"},
+        ],
+    }
+    enc.get_info_from_video = Mock(return_value=(probe_info, ""))
+
+    info = enc.get_info_video("input.mp4")
+
+    assert info["codec"] == "h264"
+    assert info["height"] == 1080
+    assert info["has_stream_video"] is True
+    assert info["has_stream_audio"] is True

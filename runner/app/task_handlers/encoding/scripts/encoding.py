@@ -63,6 +63,13 @@ _OVERVIEW_CONFIG = {
 # FFMPEG COMMAND TEMPLATES
 # =============================================================================
 
+# Probe more packets on malformed/fragmented MP4/MOV files where some stream
+# parameters (notably pix_fmt) arrive late.
+_INPUT_PROBE = "-probesize 100M -analyzeduration 100M"
+
+# Always target the primary video stream and optional first audio stream.
+_STREAM_MAP_PRIMARY = "-map 0:v:0? -map 0:a?"
+
 # Audio encoding templates
 MP3 = (
     "time ffmpeg -i {input} -hide_banner -y -c:a libmp3lame -q:a 2 "
@@ -80,12 +87,13 @@ EXTRACT_THUMBNAIL_1 = "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y -v
 EXTRACT_THUMBNAIL_2 = "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y -vframes 1 {output_dir}/{filename}_2.{ext}"
 
 # CPU encoding base command
-CPU = "time ffmpeg -hide_banner -y -i {input} "
+CPU = f"time ffmpeg -hide_banner -y {_INPUT_PROBE} -i {{input}} "
 
 # GPU encoding base command (using CUDA)
 GPU = (
     "time ffmpeg -y -hwaccel_device {hwaccel_device} "
-    "-hwaccel cuda -hwaccel_output_format cuda -c:v {codec}_cuvid -i {input} "
+    "-hwaccel cuda -hwaccel_output_format cuda "
+    f"{_INPUT_PROBE} -c:v:0 {{codec}}_cuvid -i {{input}} "
 )
 
 # Common encoding parameters
@@ -93,13 +101,13 @@ GPU = (
 # (like yuv420p) can make FFmpeg try to insert swscale (auto_scale), which cannot consume
 # CUDA hardware frames. Keep pix_fmt enforcement only for CPU pipelines.
 COMMON_CPU = (
-    " -c:a aac -ar 48000 -strict experimental -profile:v high "
+    f" {_STREAM_MAP_PRIMARY} -c:a aac -ar 48000 -strict experimental -profile:v high "
     '-pix_fmt yuv420p -force_key_frames "expr:gte(t,n_forced*2)" '
     "-fps_mode passthrough -preset slow -qmin 20 -qmax 50 "
 )
 
 COMMON_GPU = (
-    " -c:a aac -ar 48000 -strict experimental -profile:v high "
+    f" {_STREAM_MAP_PRIMARY} -c:a aac -ar 48000 -strict experimental -profile:v high "
     '-force_key_frames "expr:gte(t,n_forced*2)" '
     "-fps_mode passthrough -preset p4 -qmin 20 -qmax 50 "
 )
@@ -1790,6 +1798,7 @@ def get_info_video(file: str) -> dict:
 
     # Analyze streams
     streams = info.get("streams", [])
+    selected_primary_video = False
     for stream in streams:
         stream_type = stream.get("codec_type", "unknown")
         codec_name = stream.get("codec_name", "unknown")
@@ -1797,16 +1806,20 @@ def get_info_video(file: str) -> dict:
         msg += f"{stream_type}: {codec_name}\n"
 
         if stream_type == "video":
-            codec = codec_name
-            is_image_codec = any(ext in codec.lower() for ext in _IMAGE_CODEC)
+            is_image_codec = any(ext in codec_name.lower() for ext in _IMAGE_CODEC)
             if is_image_codec:
                 # It's already an image, no need to generate thumbnail
                 has_stream_thumbnail = True
             else:
-                # It's a video, we need to generate a thumbnail
+                # It's a video, we need to generate a thumbnail.
                 has_stream_video = True
                 has_stream_thumbnail = True  # Will be generated from video
-                height = stream.get("height", 0)
+                # Keep the first non-image video stream as reference because
+                # ffmpeg default stream selection uses the primary track.
+                if not selected_primary_video:
+                    codec = codec_name
+                    height = stream.get("height", 0)
+                    selected_primary_video = True
 
         elif stream_type == "audio":
             has_stream_audio = True

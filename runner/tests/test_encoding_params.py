@@ -303,3 +303,34 @@ def test_generate_overview_vtt_uses_single_row_coordinates(tmp_path):
     assert "overview.png#xywh=0,0,160,90" in vtt_content
     assert "overview.png#xywh=160,0,160,90" in vtt_content
     assert "overview.png#xywh=320,0,160,90" in vtt_content
+
+
+def test_get_info_video_handles_missing_format_duration(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._DEBUG = False
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+    (tmp_path / "encoding.log").write_text("")
+
+    probe_info = {
+        "format": {"tags": {"major_brand": "isom"}},
+        "streams": [
+            {"codec_type": "audio", "codec_name": "aac"},
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "height": 720,
+                "tags": {"DURATION": "00:00:12.500"},
+            },
+        ],
+    }
+    enc.get_info_from_video = Mock(return_value=(probe_info, ""))
+
+    info = enc.get_info_video("input.mp4")
+
+    assert info["duration"] == 12
+    assert info["codec"] == "h264"
+    assert info["height"] == 720
+    assert info["has_stream_video"] is True
+    assert info["has_stream_audio"] is True

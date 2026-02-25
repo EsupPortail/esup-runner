@@ -21,7 +21,7 @@ import urllib.request
 from functools import lru_cache
 from json.decoder import JSONDecodeError
 from timeit import default_timer as timer
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 # =============================================================================
 # INITIAL CONFIGURATION
@@ -166,6 +166,9 @@ _DRESSING_CONFIG: dict = {}
 
 # Global variable for cut configuration
 _CUT_CONFIG: dict = {}
+
+# Candidate values accepted for duration fields returned by ffprobe.
+DurationValue = Union[str, int, float, None]
 
 # =============================================================================
 # UTILITY FUNCTIONS
@@ -1669,6 +1672,77 @@ def get_info_from_video(probe_cmd: str) -> tuple[Optional[dict], str]:
     return info, msg
 
 
+def _seconds_from_timestamp(value: str) -> float:
+    """Parse ``MM:SS`` or ``HH:MM:SS(.ms)`` into seconds."""
+    parts = value.split(":")
+    if len(parts) not in (2, 3):
+        return 0.0
+    try:
+        nums = [float(part) for part in parts]
+    except (TypeError, ValueError):
+        return 0.0
+    if len(nums) == 2:
+        minutes, seconds = nums
+        return minutes * 60 + seconds
+    hours, minutes, seconds = nums
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def _duration_seconds_from_value(value: DurationValue) -> float:
+    """Convert a ffprobe-like duration value into seconds.
+
+    Accepts numeric values, numeric strings, and timestamps in ``MM:SS`` or
+    ``HH:MM:SS(.ms)`` format. Returns ``0.0`` when parsing fails.
+    """
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    s = str(value).strip()
+    if not s:
+        return 0.0
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return _seconds_from_timestamp(s)
+
+
+def _extract_duration_from_probe(info: Dict[str, Any]) -> int:
+    """Extract the best available duration (in whole seconds) from ffprobe JSON.
+
+    Reads duration candidates from ``format.duration``, stream-level durations,
+    and common ``tags`` duration fields (``DURATION``/``duration``), then keeps
+    the maximum positive value.
+    """
+    if not isinstance(info, dict):
+        return 0
+
+    candidates: list[DurationValue] = []
+
+    format_info = info.get("format")
+    if isinstance(format_info, dict):
+        candidates.append(format_info.get("duration"))
+        tags = format_info.get("tags")
+        if isinstance(tags, dict):
+            candidates.append(tags.get("DURATION"))
+            candidates.append(tags.get("duration"))
+
+    streams = info.get("streams")
+    if isinstance(streams, list):
+        for stream in streams:
+            if not isinstance(stream, dict):
+                continue
+            candidates.append(stream.get("duration"))
+            tags = stream.get("tags")
+            if isinstance(tags, dict):
+                candidates.append(tags.get("DURATION"))
+                candidates.append(tags.get("duration"))
+
+    max_duration = max((_duration_seconds_from_value(v) for v in candidates), default=0.0)
+    return int(max_duration) if max_duration > 0 else 0
+
+
 def get_info_video(file: str) -> dict:
     """
     Extract comprehensive information about video file.
@@ -1709,11 +1783,10 @@ def get_info_video(file: str) -> dict:
         msg += "\nError: Failed to get video information\n"
         return {}
 
-    # Extract duration
-    try:
-        duration = int(float("%s" % info["format"]["duration"]))
-    except (RuntimeError, KeyError, AttributeError, ValueError) as err:
-        msg += "\nUnexpected error: {0}".format(err)
+    # Extract duration (some fragmented MP4/MOV files do not expose format.duration).
+    duration = _extract_duration_from_probe(info)
+    if duration <= 0:
+        msg += "Warning: duration unavailable in ffprobe metadata; defaulting to 0\n"
 
     # Analyze streams
     streams = info.get("streams", [])

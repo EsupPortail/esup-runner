@@ -54,6 +54,9 @@ _OVERVIEW_CONFIG = {
     "thumbnail_width": 160,
     "thumbnail_height": 90,
     "interval": 1,  # Generate one thumbnail per second
+    # Keep sprite dimensions conservative for broad FFmpeg/PNG compatibility.
+    "max_sprite_width": 16384,
+    "max_sprite_height": 16384,
 }
 
 # =============================================================================
@@ -1149,6 +1152,92 @@ def _try_sprite_imagemagick_append(
         return False, f"ImageMagick sprite fallback exception: {e}\n"
 
 
+def _get_overview_max_single_row_thumbnails(thumb_width: int, thumb_height: int) -> int:
+    """
+    Return how many thumbnails can fit in a single-row sprite.
+
+    Raises:
+        ValueError: If configured dimensions are invalid or unsupported.
+    """
+    max_sprite_width = int(_OVERVIEW_CONFIG.get("max_sprite_width", 16384))
+    max_sprite_height = int(_OVERVIEW_CONFIG.get("max_sprite_height", 16384))
+
+    if thumb_width <= 0 or thumb_height <= 0:
+        raise ValueError("Invalid overview thumbnail dimensions")
+
+    if thumb_width > max_sprite_width or thumb_height > max_sprite_height:
+        raise ValueError(
+            f"Thumbnail size ({thumb_width}x{thumb_height}) exceeds max sprite "
+            f"size ({max_sprite_width}x{max_sprite_height})"
+        )
+
+    max_columns = max_sprite_width // thumb_width
+    if max_columns < 1:
+        raise ValueError(
+            f"Thumbnail width {thumb_width} is too large for max sprite width {max_sprite_width}"
+        )
+
+    return max_columns
+
+
+def _compute_overview_single_row_plan(
+    duration: int, requested_interval: int, thumb_width: int, thumb_height: int
+) -> tuple[int, int, int, int]:
+    """
+    Compute sampling plan for a single-row sprite.
+
+    Returns:
+        tuple: (effective_interval, target_count, requested_count, max_single_row_count)
+    """
+    interval = max(1, int(requested_interval))
+    requested_count = max(1, int(duration / interval))
+    max_single_row_count = _get_overview_max_single_row_thumbnails(thumb_width, thumb_height)
+
+    if requested_count <= max_single_row_count:
+        return interval, requested_count, requested_count, max_single_row_count
+
+    # Increase interval so count fits into one row.
+    effective_interval = max(1, (duration + max_single_row_count - 1) // max_single_row_count)
+    while (
+        effective_interval > 1 and int(duration / (effective_interval - 1)) <= max_single_row_count
+    ):
+        effective_interval -= 1
+
+    target_count = max(1, int(duration / effective_interval))
+    target_count = min(target_count, max_single_row_count)
+    return effective_interval, target_count, requested_count, max_single_row_count
+
+
+def _format_overview_thumbnail_plan_msg(
+    requested_count: int, num_thumbnails: int, max_single_row_count: int, interval: int
+) -> str:
+    if requested_count > num_thumbnails:
+        return (
+            f"Single-row overview requires fewer thumbnails: requested {requested_count}, "
+            f"max {max_single_row_count}. Using interval={interval}s "
+            f"({num_thumbnails} thumbnails).\n"
+        )
+    return f"Generating {num_thumbnails} overview thumbnails (1 per {interval}s)\n"
+
+
+def _build_overview_generation_result_msg(
+    temp_thumb_dir: str, expected_count: int
+) -> tuple[bool, str, int]:
+    generated_files = sorted(glob.glob(os.path.join(temp_thumb_dir, "thumb_*.png")))
+    generated_count = len(generated_files)
+    if generated_count == 0:
+        return False, "Error: FFmpeg reported success but generated no thumbnails\n", 0
+
+    if generated_count != expected_count:
+        return (
+            True,
+            f"Generated {generated_count} thumbnails (requested {expected_count})\n",
+            generated_count,
+        )
+
+    return True, f"Successfully generated {generated_count} thumbnails\n", generated_count
+
+
 def encode(
     type: str,
     format: str,
@@ -1281,14 +1370,26 @@ def generate_overview_thumbnails(
         msg += "Overview generation disabled\n"
         return True, msg, 0
 
-    interval = _OVERVIEW_CONFIG.get("interval", 1)
+    requested_interval = int(_OVERVIEW_CONFIG.get("interval", 1))
     thumb_width = _OVERVIEW_CONFIG.get("thumbnail_width", 160)
     thumb_height = _OVERVIEW_CONFIG.get("thumbnail_height", 90)
 
-    # Calculate number of thumbnails (one per interval)
-    num_thumbnails = max(1, int(duration / interval))
+    try:
+        interval, num_thumbnails, requested_count, max_single_row_count = (
+            _compute_overview_single_row_plan(
+                duration=duration,
+                requested_interval=requested_interval,
+                thumb_width=thumb_width,
+                thumb_height=thumb_height,
+            )
+        )
+    except ValueError as e:
+        msg += f"Error planning overview thumbnails: {e}\n"
+        return False, msg, 0
 
-    msg += f"Generating {num_thumbnails} overview thumbnails (1 per {interval}s)\n"
+    msg += _format_overview_thumbnail_plan_msg(
+        requested_count, num_thumbnails, max_single_row_count, interval
+    )
 
     # Create temporary directory for individual thumbnails
     temp_thumb_dir = os.path.join(output_dir, "overview_temp")
@@ -1319,8 +1420,11 @@ def generate_overview_thumbnails(
     try:
         rc, out = _run_and_collect_text(ffmpeg_cmd)
         if rc == 0:
-            msg += f"Successfully generated {num_thumbnails} thumbnails\n"
-            return True, msg, num_thumbnails
+            ok_count, count_msg, generated_count = _build_overview_generation_result_msg(
+                temp_thumb_dir, num_thumbnails
+            )
+            msg += count_msg
+            return ok_count, msg, generated_count
 
         msg += f"Error generating overview thumbnails: {rc}\n"
         if out:
@@ -1336,7 +1440,6 @@ def generate_overview_thumbnails(
 def create_overview_sprite(output_dir: str, num_thumbnails: int) -> tuple[bool, str]:
     """
     Create sprite sheet from individual thumbnails using FFmpeg tile filter.
-    Creates a single horizontal row of thumbnails (like the old system).
 
     Args:
         output_dir: Output directory
@@ -1350,13 +1453,24 @@ def create_overview_sprite(output_dir: str, num_thumbnails: int) -> tuple[bool, 
     temp_thumb_dir = os.path.join(output_dir, "overview_temp")
     sprite_path = os.path.join(output_dir, "overview.png")
 
-    # Create a single horizontal row (columns=num_thumbnails, rows=1)
-    msg += f"Creating sprite sheet: {num_thumbnails} thumbnails in 1 horizontal row\n"
-
     thumb_width = int(_OVERVIEW_CONFIG.get("thumbnail_width", 160))
     thumb_height = int(_OVERVIEW_CONFIG.get("thumbnail_height", 90))
+    try:
+        max_single_row_count = _get_overview_max_single_row_thumbnails(thumb_width, thumb_height)
+    except ValueError as e:
+        msg += f"Error creating sprite sheet: {e}\n"
+        return False, msg
 
-    # Use FFmpeg with tile filter to create sprite sheet (single row).
+    if num_thumbnails > max_single_row_count:
+        msg += (
+            f"Error creating sprite sheet: {num_thumbnails} thumbnails exceed single-row "
+            f"capacity ({max_single_row_count})\n"
+        )
+        return False, msg
+
+    msg += f"Creating sprite sheet: {num_thumbnails} thumbnails in 1 horizontal row\n"
+
+    # Use FFmpeg with tile filter to create sprite sheet.
     # Force scale to match VTT xywh coordinates.
     ffmpeg_cmd = (
         f"ffmpeg -hide_banner -y "
@@ -1418,8 +1532,11 @@ def generate_overview_vtt(output_dir: str, duration: int, num_thumbnails: int) -
     """
     msg = "--> generate_overview_vtt\n"
 
+    if num_thumbnails <= 0:
+        msg += "Error creating VTT file: no thumbnails available\n"
+        return False, msg
+
     vtt_path = os.path.join(output_dir, "overview.vtt")
-    interval = _OVERVIEW_CONFIG.get("interval", 1)
     thumb_width = _OVERVIEW_CONFIG.get("thumbnail_width", 160)
     thumb_height = _OVERVIEW_CONFIG.get("thumbnail_height", 90)
 
@@ -1429,10 +1546,12 @@ def generate_overview_vtt(output_dir: str, duration: int, num_thumbnails: int) -
 
             for i in range(num_thumbnails):
                 # Calculate time range
-                start_time = i * interval
-                end_time = min((i + 1) * interval, duration)
+                start_time = int(i * duration / num_thumbnails)
+                end_time = int(min(duration, (i + 1) * duration / num_thumbnails))
+                if end_time <= start_time:
+                    end_time = min(duration, start_time + 1)
 
-                # Calculate position in sprite (single horizontal row, y=0 always)
+                # Single-row sprite coordinates
                 x = i * thumb_width
                 y = 0
 

@@ -190,3 +190,116 @@ def test_apply_dressing_watermark_plus_credits_watermark_only_on_main(tmp_path):
     assert cc_kwargs["main_path"].endswith("_dressing_wm.mp4")
     assert cc_kwargs["opening_path"].endswith("opening.mp4")
     assert cc_kwargs["ending_path"].endswith("ending.mp4")
+
+
+def test_generate_overview_thumbnails_returns_actual_generated_count(tmp_path):
+    enc = _load_encoding_script_module()
+
+    video_dir = tmp_path / "videos"
+    output_dir = tmp_path / "out"
+    video_dir.mkdir()
+    output_dir.mkdir()
+    (video_dir / "input.mp4").write_bytes(b"fake")
+
+    enc._VIDEOS_DIR = str(video_dir)
+
+    def fake_run_and_collect(_cmd):
+        temp_dir = output_dir / "overview_temp"
+        for idx in range(3):
+            (temp_dir / f"thumb_{idx + 1:04d}.png").write_bytes(b"png")
+        return 0, ""
+
+    enc._run_and_collect_text = fake_run_and_collect
+
+    success, msg, count = enc.generate_overview_thumbnails(
+        file="input.mp4",
+        duration=10,
+        output_dir=str(output_dir),
+    )
+
+    assert success is True
+    assert count == 3
+    assert "requested 10" in msg
+
+
+def test_generate_overview_thumbnails_adjusts_interval_for_single_row_capacity(tmp_path):
+    enc = _load_encoding_script_module()
+
+    video_dir = tmp_path / "videos"
+    output_dir = tmp_path / "out"
+    video_dir.mkdir()
+    output_dir.mkdir()
+    (video_dir / "input.mp4").write_bytes(b"fake")
+
+    enc._VIDEOS_DIR = str(video_dir)
+    enc._OVERVIEW_CONFIG["interval"] = 1
+    enc._OVERVIEW_CONFIG["thumbnail_width"] = 160
+    enc._OVERVIEW_CONFIG["thumbnail_height"] = 90
+    enc._OVERVIEW_CONFIG["max_sprite_width"] = 320
+    enc._OVERVIEW_CONFIG["max_sprite_height"] = 900
+
+    def fake_run_and_collect(_cmd):
+        temp_dir = output_dir / "overview_temp"
+        for idx in range(2):
+            (temp_dir / f"thumb_{idx + 1:04d}.png").write_bytes(b"png")
+        return 0, ""
+
+    enc._run_and_collect_text = fake_run_and_collect
+
+    success, msg, count = enc.generate_overview_thumbnails(
+        file="input.mp4",
+        duration=10,
+        output_dir=str(output_dir),
+    )
+
+    assert success is True
+    assert count == 2
+    assert "requested 10, max 2" in msg
+    assert "interval=4s" in msg
+    assert "fps=1/4" in msg
+
+
+def test_create_overview_sprite_uses_single_row_layout(tmp_path):
+    enc = _load_encoding_script_module()
+
+    output_dir = tmp_path / "out"
+    temp_dir = output_dir / "overview_temp"
+    temp_dir.mkdir(parents=True)
+    for idx in range(5):
+        (temp_dir / f"thumb_{idx + 1:04d}.png").write_bytes(b"png")
+
+    captured = {}
+
+    def fake_run_shell_bytes(cmd):
+        captured["cmd"] = cmd
+        return 0, b""
+
+    enc._run_shell_bytes = fake_run_shell_bytes
+    enc._OVERVIEW_CONFIG["thumbnail_width"] = 160
+    enc._OVERVIEW_CONFIG["thumbnail_height"] = 90
+    enc._OVERVIEW_CONFIG["max_sprite_width"] = 1600
+    enc._OVERVIEW_CONFIG["max_sprite_height"] = 900
+
+    success, msg = enc.create_overview_sprite(str(output_dir), num_thumbnails=5)
+
+    assert success is True
+    assert "1 horizontal row" in msg
+    assert "tile=5x1" in captured["cmd"]
+
+
+def test_generate_overview_vtt_uses_single_row_coordinates(tmp_path):
+    enc = _load_encoding_script_module()
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    enc._OVERVIEW_CONFIG["thumbnail_width"] = 160
+    enc._OVERVIEW_CONFIG["thumbnail_height"] = 90
+
+    success, _ = enc.generate_overview_vtt(str(output_dir), duration=5, num_thumbnails=5)
+
+    assert success is True
+    vtt_content = (output_dir / "overview.vtt").read_text()
+    assert "overview.png#xywh=0,0,160,90" in vtt_content
+    assert "overview.png#xywh=160,0,160,90" in vtt_content
+    assert "overview.png#xywh=320,0,160,90" in vtt_content

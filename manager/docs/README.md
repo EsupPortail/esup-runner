@@ -356,6 +356,45 @@ Payload:
 
 Valid completion statuses: `completed`, `warning`, `failed`.
 
+### `POST /tasks/restart-selected` (admin UI helper)
+
+This endpoint is used by the `/tasks` web page bulk action **Restart selected tasks**.
+It is intended for administrators and is protected by HTTP Basic auth (same scope as the admin UI).
+
+Payload:
+
+```json
+{
+	"task_ids": [
+		"2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
+		"1b2c3d4e-5f67-8901-2345-67890abcdeff"
+	]
+}
+```
+
+Behavior:
+
+- Restarts tasks **in place**: the original `task_id` is preserved.
+- `pending` and `running` tasks are skipped (not restartable).
+- The manager rebuilds a `TaskRequest` from the stored task and requeues execution on an eligible runner.
+- A new internal `run_id` is generated for each restart, so stale async notify retries from an older run cannot overwrite the current run state.
+- Existing task artifacts are not explicitly purged by the manager before restart.
+
+Response format:
+
+```json
+{
+	"requested": 2,
+	"restarted": [
+		{"task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761"}
+	],
+	"skipped": [
+		{"task_id": "1b2c3d4e-5f67-8901-2345-67890abcdeff", "reason": "Task status 'running' cannot be restarted"}
+	],
+	"failed": []
+}
+```
+
 ### Optional: notify callback (manager → client app)
 
 If the original task request has a non-empty `notify_url`, the manager POSTs:
@@ -372,6 +411,7 @@ If the original task request has a non-empty `notify_url`, the manager POSTs:
 
 - `/admin` provides a web UI (HTTP Basic auth).
 - `/tasks` provides task browsing/search.
+- `/tasks` also provides a bulk action **Restart selected tasks** for failed/timeout/warning/completed tasks.
 
 ## Diagrams
 

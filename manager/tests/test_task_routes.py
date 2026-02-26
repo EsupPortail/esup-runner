@@ -407,6 +407,90 @@ async def test_retry_notify_callback_sleeps_when_delay_positive(
     assert slept["seconds"] == 1
 
 
+def test_task_run_matches_expected_run_id(task_module):
+    task = _task("t1", "r1", status="completed")
+    task.run_id = "run-1"
+
+    assert task_module._task_run_matches(task, "run-1") is True
+    assert task_module._task_run_matches(task, "run-2") is False
+
+
+@pytest.mark.asyncio
+async def test_retry_notify_callback_returns_when_task_becomes_stale_after_sleep(
+    monkeypatch, task_module, clean_state
+):
+    runners["r1"] = _runner("r1")
+    tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
+    tasks["t1"].run_id = "run-1"
+
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_MAX_RETRIES", 1)
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS", 1)
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_BACKOFF_FACTOR", 1)
+
+    async def fake_sleep(_seconds: float):
+        tasks["t1"].run_id = "run-2"
+
+    called = {"count": 0}
+
+    async def fake_send(*_a, **_k):
+        called["count"] += 1
+        return True, None
+
+    monkeypatch.setattr(task_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(task_module, "_send_notify_callback", fake_send)
+
+    await task_module._retry_notify_callback(
+        "t1",
+        TaskCompletionNotification(task_id="t1", status="completed"),
+        expected_run_id="run-1",
+    )
+    assert called["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_notify_callback_returns_when_run_changes_after_notify_success(
+    monkeypatch, task_module, clean_state
+):
+    runners["r1"] = _runner("r1")
+    tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
+    tasks["t1"].run_id = "run-1"
+
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_MAX_RETRIES", 1)
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_BACKOFF_FACTOR", 1)
+
+    async def fake_send(*_a, **_k):
+        tasks["t1"].run_id = "run-2"
+        return True, None
+
+    restored = {"called": False}
+
+    def fake_restore(*_a, **_k):
+        restored["called"] = True
+
+    monkeypatch.setattr(task_module, "_send_notify_callback", fake_send)
+    monkeypatch.setattr(task_module, "_restore_status_after_notify", fake_restore)
+
+    await task_module._retry_notify_callback(
+        "t1",
+        TaskCompletionNotification(task_id="t1", status="completed"),
+        expected_run_id="run-1",
+    )
+    assert restored["called"] is False
+
+
+def test_normalize_task_ids_filters_invalid_empty_and_duplicates(task_module):
+    normalized = task_module._normalize_task_ids(["  ", "t1", "t1", " t2 ", 123, "t2"])
+    assert normalized == ["t1", "t2"]
+
+
+def test_http_exception_detail_to_text_variants(task_module):
+    assert task_module._http_exception_detail_to_text("simple") == "simple"
+    assert task_module._http_exception_detail_to_text({"detail": "nested"}) == "nested"
+    assert task_module._http_exception_detail_to_text({"detail": {"code": 123}}) == "{'code': 123}"
+    assert task_module._http_exception_detail_to_text(42) == "42"
+
+
 def test_set_notify_warning_failure_without_existing_error(monkeypatch, task_module, clean_state):
     tasks["t1"] = _task("t1", "r1", status="failed")
     tasks["t1"].error = None
@@ -514,6 +598,131 @@ def test_get_task_details_api_ok(client, clean_state):
     resp = client.get("/tasks/api/t1")
     assert resp.status_code == 200
     assert resp.json()["task_id"] == "t1"
+
+
+def test_restart_selected_tasks_restarts_and_reports(monkeypatch, client, task_module, clean_state):
+    runners["r1"] = _runner("r1", url="http://r1.example")
+    tasks["t-failed"] = _task("t-failed", "r1", status="failed")
+    tasks["t-completed"] = _task("t-completed", "r1", status="completed")
+    tasks["t-running"] = _task("t-running", "r1", status="running")
+    tasks["t-failed"].client_token = "client-123"
+
+    class FakePingResponse:
+        def json(self):
+            return {"available": True, "registered": True, "task_types": ["encoding"]}
+
+    class FakeAsyncClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, *_args, **_kwargs):
+            return FakePingResponse()
+
+    async def _fake_resolve(_host: str):
+        return ["93.184.216.34"]
+
+    scheduled = {"count": 0}
+
+    def fake_create_task(coro):
+        scheduled["count"] += 1
+        # Avoid un-awaited coroutine warnings; we only need to assert scheduling.
+        coro.close()
+        return SimpleNamespace()
+
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(task_module.asyncio, "create_task", fake_create_task)
+    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve)
+    monkeypatch.setattr(task_module.config, "PRIORITIES_ENABLED", False)
+
+    resp = client.post(
+        "/tasks/restart-selected",
+        json={"task_ids": ["t-failed", "t-running", "missing", "t-completed"]},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["requested"] == 4
+    assert len(payload["restarted"]) == 2
+    assert len(payload["skipped"]) == 2
+    assert payload["failed"] == []
+    assert scheduled["count"] == 2
+
+    restarted_ids = {item["task_id"] for item in payload["restarted"]}
+    assert restarted_ids == {"t-failed", "t-completed"}
+    assert tasks["t-failed"].client_token == "client-123"
+    assert tasks["t-failed"].status == "running"
+    assert tasks["t-completed"].status == "running"
+    assert tasks["t-failed"].run_id is not None
+    assert tasks["t-completed"].run_id is not None
+
+    skipped_by_task_id = {item["task_id"]: item["reason"] for item in payload["skipped"]}
+    assert skipped_by_task_id["missing"] == "Task not found"
+    assert "cannot be restarted" in skipped_by_task_id["t-running"]
+
+
+def test_restart_selected_tasks_rejects_empty_task_ids(client, clean_state):
+    resp = client.post("/tasks/restart-selected", json={"task_ids": []})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "task_ids must contain at least one task ID"
+
+
+@pytest.mark.asyncio
+async def test_restart_selected_tasks_rejects_non_list_task_ids(task_module):
+    with pytest.raises(HTTPException) as exc:
+        await task_module.restart_selected_tasks({"task_ids": "t1"})  # type: ignore[arg-type]
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "task_ids must be a list"
+
+
+def test_restart_selected_tasks_rejects_too_many_task_ids(
+    monkeypatch, client, task_module, clean_state
+):
+    monkeypatch.setattr(task_module, "_MAX_BULK_RESTART_TASKS", 2)
+    resp = client.post("/tasks/restart-selected", json={"task_ids": ["a", "b", "c"]})
+    assert resp.status_code == 400
+    assert "Too many task IDs" in resp.json()["detail"]
+
+
+def test_restart_selected_tasks_collects_http_exception_failures(
+    monkeypatch, client, task_module, clean_state
+):
+    tasks["t1"] = _task("t1", "r1", status="failed")
+
+    async def fake_queue(*_a, **_k):
+        raise HTTPException(status_code=503, detail={"detail": "no runner"})
+
+    monkeypatch.setattr(task_module, "_queue_task_execution", fake_queue)
+
+    resp = client.post("/tasks/restart-selected", json={"task_ids": ["t1"]})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["restarted"] == []
+    assert payload["failed"] == [{"task_id": "t1", "reason": "no runner"}]
+
+
+def test_restart_selected_tasks_collects_unexpected_failures(
+    monkeypatch, client, task_module, clean_state
+):
+    tasks["t1"] = _task("t1", "r1", status="failed")
+
+    async def fake_queue(*_a, **_k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(task_module, "_queue_task_execution", fake_queue)
+
+    resp = client.post("/tasks/restart-selected", json={"task_ids": ["t1"]})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["restarted"] == []
+    assert payload["failed"] == [
+        {"task_id": "t1", "reason": "Unexpected error while restarting task"}
+    ]
 
 
 # -----------------------------
@@ -1623,6 +1832,77 @@ def test_task_completion_notify_exception_sets_warning_and_schedules_retry(
     assert tasks["t1"].error and "server error" in tasks["t1"].error
     assert "coro" in scheduled
     scheduled["coro"].close()
+
+
+@pytest.mark.asyncio
+async def test_handle_notify_callback_ignores_stale_run_after_success(
+    monkeypatch, task_module, clean_state
+):
+    runners["r1"] = _runner("r1", token="tok")
+    tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
+    tasks["t1"].run_id = "run-new"
+    stale_task = Task(**tasks["t1"].model_dump())
+    stale_task.run_id = "run-old"
+
+    async def fake_send(*_a, **_k):
+        return True, None
+
+    restored = {"called": False}
+    warned = {"called": False}
+
+    def fake_restore(*_a, **_k):
+        restored["called"] = True
+
+    def fake_warn(*_a, **_k):
+        warned["called"] = True
+
+    monkeypatch.setattr(task_module, "_send_notify_callback", fake_send)
+    monkeypatch.setattr(task_module, "_restore_status_after_notify", fake_restore)
+    monkeypatch.setattr(task_module, "_set_notify_warning", fake_warn)
+
+    await task_module._handle_notify_callback(
+        stale_task,
+        TaskCompletionNotification(task_id="t1", status="completed", error_message=None),
+    )
+
+    assert restored["called"] is False
+    assert warned["called"] is False
+
+
+@pytest.mark.asyncio
+async def test_handle_notify_callback_ignores_stale_run_after_exception(
+    monkeypatch, task_module, clean_state
+):
+    runners["r1"] = _runner("r1", token="tok")
+    tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
+    tasks["t1"].run_id = "run-new"
+    stale_task = Task(**tasks["t1"].model_dump())
+    stale_task.run_id = "run-old"
+
+    async def fake_send(*_a, **_k):
+        raise RuntimeError("boom")
+
+    warned = {"called": False}
+    scheduled = {"count": 0}
+
+    def fake_warn(*_a, **_k):
+        warned["called"] = True
+
+    def fake_create_task(_coro):
+        scheduled["count"] += 1
+        return SimpleNamespace()
+
+    monkeypatch.setattr(task_module, "_send_notify_callback", fake_send)
+    monkeypatch.setattr(task_module, "_set_notify_warning", fake_warn)
+    monkeypatch.setattr(task_module.asyncio, "create_task", fake_create_task)
+
+    await task_module._handle_notify_callback(
+        stale_task,
+        TaskCompletionNotification(task_id="t1", status="completed", error_message=None),
+    )
+
+    assert warned["called"] is False
+    assert scheduled["count"] == 0
 
 
 def test_task_completion_timeout_notify_non_200_keeps_timeout_and_schedules_retry(

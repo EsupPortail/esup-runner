@@ -243,6 +243,13 @@ class Task(BaseModel):
         None,
         description="Callback URL for task completion notification - if provided, the runner will POST the result to this URL upon task completion",
     )
+    run_id: Optional[str] = Field(
+        None,
+        description=(
+            "Manager-side execution identifier for this task record. "
+            "Changes at each (re)execution to avoid stale async updates."
+        ),
+    )
     created_at: str = Field(
         ...,
         description="Task creation timestamp in ISO format - used for auditing and cleanup of old tasks",

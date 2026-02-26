@@ -178,15 +178,27 @@
         <div class="row">
             <div class="col-12">
                 <div class="card border-0">
-                    <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Tasks</h5>
-                        <small class="text-muted">Showing {{ tasks|length }} of {{ total_tasks }} tasks</small>
+                    <div class="card-header bg-transparent border-0">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <h5 class="mb-0">Tasks</h5>
+                            <div class="d-flex align-items-center gap-2">
+                                <small id="selectionCount" class="text-muted">0 selected</small>
+                                <button id="restartSelectedBtn" class="btn btn-sm btn-outline-danger" disabled>
+                                    <i class="bi bi-arrow-repeat"></i> Restart selected tasks
+                                </button>
+                                <small class="text-muted">Showing {{ tasks|length }} of {{ total_tasks }} tasks</small>
+                            </div>
+                        </div>
+                        <div id="bulkActionFeedback" class="alert mt-3 mb-0 d-none" role="alert"></div>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
                             <table class="table table-hover mb-0">
                                 <thead>
                                     <tr>
+                                        <th style="width: 40px;">
+                                            <input type="checkbox" id="selectAllTasks" class="form-check-input" aria-label="Select all tasks">
+                                        </th>
                                         <th>Status</th>
                                         <th>Task ID</th>
                                         <th>Type</th>
@@ -198,7 +210,13 @@
                                 </thead>
                                 <tbody id="tasksTableBody">
                                     {% for task in tasks %}
-                                    <tr class="task-row" data-status="{{ task.status }}" data-type="{{ task.task_type }}">
+                                    <tr class="task-row" data-status="{{ task.status }}" data-type="{{ task.task_type }}" data-task-id="{{ task.id }}">
+                                        <td>
+                                            <input type="checkbox"
+                                                   class="form-check-input task-select-checkbox"
+                                                   data-task-id="{{ task.id }}"
+                                                   aria-label="Select task {{ task.id }}">
+                                        </td>
                                         <td>
                                             <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
                                         </td>
@@ -230,7 +248,7 @@
                                     </tr>
                                     {% else %}
                                     <tr>
-                                        <td colspan="7" class="text-center text-muted py-5">
+                                        <td colspan="8" class="text-center text-muted py-5">
                                             <i class="bi bi-inbox display-1"></i>
                                             <h5 class="mt-3">No tasks found</h5>
                                             <p class="mb-0">Try adjusting your filters or search criteria</p>
@@ -291,9 +309,43 @@
         const limitSelect = document.getElementById('limitSelect');
         const taskTypeSelect = document.getElementById('taskTypeSelect');
         const refreshBtn = document.getElementById('refreshBtn');
+        const selectAllTasks = document.getElementById('selectAllTasks');
+        const restartSelectedBtn = document.getElementById('restartSelectedBtn');
+        const selectionCount = document.getElementById('selectionCount');
+        const bulkActionFeedback = document.getElementById('bulkActionFeedback');
 
         let autoRefresh = '{{ current_filters.auto_refresh | default(0) | int }}';
         let autoRefreshInterval = null;
+
+        function getTaskSelectionCheckboxes() {
+            return Array.from(document.querySelectorAll('.task-select-checkbox'));
+        }
+
+        function setBulkActionFeedback(level, message) {
+            if (!bulkActionFeedback) {
+                return;
+            }
+
+            bulkActionFeedback.className = `alert mt-3 mb-0 alert-${level}`;
+            bulkActionFeedback.textContent = message;
+        }
+
+        function updateSelectionState() {
+            const checkboxes = getTaskSelectionCheckboxes();
+            const selectedCount = checkboxes.filter(cb => cb.checked).length;
+            const totalCount = checkboxes.length;
+
+            if (selectionCount) {
+                selectionCount.textContent = `${selectedCount} selected`;
+            }
+            if (restartSelectedBtn) {
+                restartSelectedBtn.disabled = selectedCount === 0;
+            }
+            if (selectAllTasks) {
+                selectAllTasks.checked = totalCount > 0 && selectedCount === totalCount;
+                selectAllTasks.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+            }
+        }
 
         // Filter handling
         filterAll.addEventListener('change', function() {
@@ -327,6 +379,87 @@
         refreshBtn.addEventListener('click', () => {
             window.location.reload();
         });
+
+        if (selectAllTasks) {
+            selectAllTasks.addEventListener('change', function() {
+                getTaskSelectionCheckboxes().forEach(cb => {
+                    cb.checked = this.checked;
+                });
+                updateSelectionState();
+            });
+        }
+
+        getTaskSelectionCheckboxes().forEach(cb => {
+            cb.addEventListener('change', () => {
+                updateSelectionState();
+            });
+        });
+
+        if (restartSelectedBtn) {
+            restartSelectedBtn.addEventListener('click', async () => {
+                const selectedTaskIds = getTaskSelectionCheckboxes()
+                    .filter(cb => cb.checked)
+                    .map(cb => cb.dataset.taskId)
+                    .filter(Boolean);
+
+                if (selectedTaskIds.length === 0) {
+                    return;
+                }
+
+                const confirmed = window.confirm(
+                    `Restart ${selectedTaskIds.length} selected task(s)?`
+                );
+                if (!confirmed) {
+                    return;
+                }
+
+                const initialButtonHtml = restartSelectedBtn.innerHTML;
+                restartSelectedBtn.disabled = true;
+                restartSelectedBtn.innerHTML = (
+                    '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Restarting...'
+                );
+                setBulkActionFeedback('info', 'Restart in progress...');
+
+                try {
+                    const response = await fetch('/tasks/restart-selected', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ task_ids: selectedTaskIds }),
+                    });
+                    const payload = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(payload.detail || 'Failed to restart selected tasks');
+                    }
+
+                    const restartedCount = (payload.restarted || []).length;
+                    const skippedCount = (payload.skipped || []).length;
+                    const failedCount = (payload.failed || []).length;
+
+                    const level = failedCount > 0 ? 'warning' : 'success';
+                    setBulkActionFeedback(
+                        level,
+                        `Restart done: ${restartedCount} restarted, ${skippedCount} skipped, ${failedCount} failed.`
+                    );
+
+                    if (restartedCount > 0) {
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1200);
+                    } else {
+                        restartSelectedBtn.innerHTML = initialButtonHtml;
+                        updateSelectionState();
+                    }
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    setBulkActionFeedback('danger', `Restart failed: ${message}`);
+                    restartSelectedBtn.innerHTML = initialButtonHtml;
+                    updateSelectionState();
+                }
+            });
+        }
 
         // Auto-refresh functionality
         function setupAutoRefresh() {
@@ -511,6 +644,7 @@
         if (autoRefresh > 0) {
             setupAutoRefresh();
         }
+        updateSelectionState();
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {

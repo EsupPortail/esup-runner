@@ -52,6 +52,8 @@ templates = Jinja2Templates(directory="app/web/templates")
 # ======================================================
 
 _FAILURE_TASK_STATUSES = {"failed", "timeout", "error"}
+_NON_RESTARTABLE_TASK_STATUSES = {"pending", "running"}
+_MAX_BULK_RESTART_TASKS = 200
 _MANIFEST_READ_ATTEMPTS = 5
 _MANIFEST_READ_DELAY_SECONDS = 0.2
 
@@ -115,6 +117,10 @@ def _append_task_stats_csv(task: Task) -> None:
 
 
 def _host_matches_allowlist(host: str, allowed_hosts: List[str]) -> bool:
+    """Return True when ``host`` matches one of the allowed hosts.
+
+    Exact matches and subdomains are accepted.
+    """
     host = (host or "").strip().lower().rstrip(".")
     if not host:
         return False
@@ -128,6 +134,7 @@ def _host_matches_allowlist(host: str, allowed_hosts: List[str]) -> bool:
 
 
 def _is_disallowed_ip(ip: str) -> bool:
+    """Return True when IP should be blocked for outbound callbacks."""
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
@@ -143,6 +150,7 @@ def _is_disallowed_ip(ip: str) -> bool:
 
 
 async def _resolve_host_ips(host: str) -> List[str]:
+    """Resolve all IPs for a hostname using system DNS."""
     loop = asyncio.get_running_loop()
     infos = await loop.getaddrinfo(host, None, type=socket.SOCK_STREAM)
     ips: List[str] = sorted({info[4][0] for info in infos if info and info[4]})
@@ -150,6 +158,10 @@ async def _resolve_host_ips(host: str) -> List[str]:
 
 
 def _parse_notify_url(url: str) -> tuple[ParseResult, str]:
+    """Parse and syntactically validate a notify URL.
+
+    Returns the parsed URL and normalized hostname.
+    """
     if not url:
         raise HTTPException(status_code=400, detail="notify_url is empty")
 
@@ -172,6 +184,7 @@ def _parse_notify_url(url: str) -> tuple[ParseResult, str]:
 
 
 def _validate_notify_url_host(host: str) -> None:
+    """Validate notify URL hostname against policy rules."""
     if config.NOTIFY_URL_ALLOWED_HOSTS and not _host_matches_allowlist(
         host, config.NOTIFY_URL_ALLOWED_HOSTS
     ):
@@ -183,6 +196,7 @@ def _validate_notify_url_host(host: str) -> None:
 
 
 async def _resolve_notify_url_ips(host: str) -> List[str]:
+    """Resolve notify URL host and convert DNS failures to HTTP 400."""
     try:
         ips = await _resolve_host_ips(host)
     except Exception:
@@ -195,6 +209,7 @@ async def _resolve_notify_url_ips(host: str) -> List[str]:
 
 
 def _validate_notify_url_public_ips(ips: List[str]) -> None:
+    """Reject private, loopback and reserved callback destinations."""
     for ip in ips:
         if _is_disallowed_ip(ip):
             raise HTTPException(
@@ -204,6 +219,7 @@ def _validate_notify_url_public_ips(ips: List[str]) -> None:
 
 
 async def _validate_notify_url(url: str) -> str:
+    """Run full notify URL validation and return the original URL."""
     _, host = _parse_notify_url(url)
     _validate_notify_url_host(host)
     ips = await _resolve_notify_url_ips(host)
@@ -266,6 +282,7 @@ async def _send_notify_callback(
 
 
 def _set_notify_warning(task_id: str, message: str) -> None:
+    """Persist callback warning without losing existing failure diagnostics."""
     task = tasks[task_id]
 
     if task.status in _FAILURE_TASK_STATUSES:
@@ -283,6 +300,11 @@ def _set_notify_warning(task_id: str, message: str) -> None:
 
 
 def _restore_status_after_notify(task_id: str, notification: TaskCompletionNotification) -> None:
+    """Restore task status after a successful notify callback.
+
+    Used when a prior callback failure set the task to warning; once callback
+    succeeds we re-apply the terminal status reported by the runner.
+    """
     task = tasks[task_id]
     task.status = notification.status
     task.updated_at = datetime.now().isoformat()
@@ -295,11 +317,39 @@ def _restore_status_after_notify(task_id: str, notification: TaskCompletionNotif
     save_tasks()
 
 
-async def _retry_notify_callback(task_id: str, notification: TaskCompletionNotification) -> None:
-    task = get_task_from_state(task_id)
+def _task_run_matches(task: Task | None, expected_run_id: str | None) -> bool:
+    """Return True if the task belongs to the expected execution run.
+
+    When ``expected_run_id`` is ``None``, the caller accepts any run.
+    """
     if task is None:
-        return
-    if not task.notify_url:
+        return False
+    if expected_run_id is None:
+        return True
+    return getattr(task, "run_id", None) == expected_run_id
+
+
+def _get_retry_notify_task(task_id: str, expected_run_id: str | None) -> Task | None:
+    """Get task eligible for notify retry, or ``None`` if stale/ineligible."""
+    task = get_task_from_state(task_id)
+    if not _task_run_matches(task, expected_run_id):
+        return None
+    if task is None or not task.notify_url:
+        return None
+    return task
+
+
+async def _retry_notify_callback(
+    task_id: str,
+    notification: TaskCompletionNotification,
+    expected_run_id: str | None = None,
+) -> None:
+    """Retry notify_url callback with backoff while guarding against stale runs.
+
+    If the task run changes during retries (restart with same ``task_id``), the
+    retry is canceled to avoid overwriting the new execution state.
+    """
+    if _get_retry_notify_task(task_id, expected_run_id) is None:
         return
 
     max_retries = config.COMPLETION_NOTIFY_MAX_RETRIES
@@ -310,9 +360,15 @@ async def _retry_notify_callback(task_id: str, notification: TaskCompletionNotif
         if delay_seconds > 0:
             await asyncio.sleep(delay_seconds)
 
+        current_task = _get_retry_notify_task(task_id, expected_run_id)
+        if current_task is None:
+            return
+
         try:
-            notify_ok, _ = await _send_notify_callback(task, notification)
+            notify_ok, _ = await _send_notify_callback(current_task, notification)
             if notify_ok:
+                if _get_retry_notify_task(task_id, expected_run_id) is None:
+                    return
                 _restore_status_after_notify(task_id, notification)
                 logger.info(
                     "Notify URL callback succeeded after retry "
@@ -320,7 +376,7 @@ async def _retry_notify_callback(task_id: str, notification: TaskCompletionNotif
                 )
                 return
         except Exception as e:
-            logger.error(f"Error during notify URL retry to {task.notify_url}: {str(e)}")
+            logger.error(f"Error during notify URL retry to {current_task.notify_url}: {str(e)}")
 
         delay_seconds = int(delay_seconds * backoff_factor)
 
@@ -516,6 +572,205 @@ async def get_task_details_api(task_id: str = Path(..., description="Task identi
     return task
 
 
+def _task_to_task_request(task: Task) -> TaskRequest:
+    """Build a TaskRequest payload from an existing task."""
+    return TaskRequest(
+        etab_name=task.etab_name,
+        app_name=task.app_name,
+        app_version=task.app_version,
+        task_type=task.task_type,
+        source_url=task.source_url,
+        affiliation=task.affiliation,
+        parameters=task.parameters,
+        notify_url=task.notify_url,
+    )
+
+
+def _normalize_task_ids(task_ids: List[str]) -> List[str]:
+    """Normalize, deduplicate and sanitize a list of task IDs."""
+    unique_task_ids: List[str] = []
+    seen_task_ids: set[str] = set()
+
+    for raw_task_id in task_ids:
+        if not isinstance(raw_task_id, str):
+            continue
+        task_id = raw_task_id.strip()
+        if not task_id or task_id in seen_task_ids:
+            continue
+        seen_task_ids.add(task_id)
+        unique_task_ids.append(task_id)
+
+    return unique_task_ids
+
+
+def _http_exception_detail_to_text(detail: object) -> str:
+    """Extract a human-readable message from FastAPI HTTPException details."""
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, dict) and "detail" in detail:
+        nested = detail.get("detail")
+        return nested if isinstance(nested, str) else str(nested)
+    return str(detail)
+
+
+async def _queue_task_execution(
+    task_request: TaskRequest,
+    client_token: str | None,
+    *,
+    preferred_task_id: str | None = None,
+    created_at: str | None = None,
+) -> dict:
+    """Queue a task on an available runner and schedule background execution.
+
+    Args:
+        task_request: Task payload to execute.
+        client_token: Token to persist and forward for notify callbacks.
+        preferred_task_id: Optional task ID override (used for in-place restart).
+        created_at: Optional original creation timestamp to preserve.
+    """
+    logger.info("Starting async task execution")
+    tasks_snapshot = get_tasks_snapshot()
+
+    if task_request.notify_url:
+        await _validate_notify_url(task_request.notify_url)
+
+    if config.PRIORITIES_ENABLED and would_exceed_other_domain_quota(
+        request_notify_url=task_request.notify_url,
+        tasks=tasks_snapshot,
+        runner_capacity=len(runners),
+        priority_domain=config.PRIORITY_DOMAIN,
+        max_other_percent=config.MAX_OTHER_DOMAIN_TASK_PERCENT,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=("Non-priority domain rejected: maximum other-domain task quota reached"),
+        )
+
+    for runner_id, runner in runners.items():
+        logger.info(f"Checking runner: {runner_id}")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                logger.info(f"Pinging runner at: {runner.url}/runner/ping")
+                response = await client.get(f"{runner.url}/runner/ping")
+                logger.info("Runner ping response received")
+                runner_payload = response.json()
+
+                if (
+                    runner_payload.get("available")
+                    and runner_payload.get("registered")
+                    and task_request.task_type in runner_payload.get("task_types", [])
+                ):
+                    task_id = preferred_task_id or str(uuid.uuid4())
+                    now_iso = datetime.now().isoformat()
+
+                    tasks[task_id] = Task(
+                        task_id=task_id,
+                        runner_id=runner_id,
+                        status="running",
+                        etab_name=task_request.etab_name,
+                        app_name=task_request.app_name,
+                        app_version=task_request.app_version,
+                        task_type=task_request.task_type,
+                        source_url=task_request.source_url,
+                        affiliation=task_request.affiliation,
+                        parameters=task_request.parameters,
+                        notify_url=task_request.notify_url,
+                        client_token=client_token,
+                        completion_callback=None,
+                        run_id=str(uuid.uuid4()),
+                        created_at=created_at or now_iso,
+                        updated_at=now_iso,
+                        error=None,
+                        script_output=None,
+                    )
+
+                    save_tasks()
+                    asyncio.create_task(
+                        execute_task_async_background(task_id, runner, task_request)
+                    )
+                    return {"task_id": task_id, "status": "running"}
+        except (httpx.RequestError, httpx.TimeoutException) as e:
+            logger.warning(f"Runner {runner_id} unavailable: {e}")
+            continue
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No runners available"
+    )
+
+
+@router.post(
+    "s/restart-selected",  # This makes the full path /tasks/restart-selected
+    response_model=dict,
+    summary="Restart selected tasks",
+    description="Restart selected tasks from the tasks web interface",
+    tags=["Task"],
+    dependencies=[Depends(verify_admin)],
+)
+async def restart_selected_tasks(payload: Dict[str, List[str]]) -> dict:
+    """Restart selected tasks in place while preserving each original task ID."""
+    raw_task_ids = payload.get("task_ids", [])
+    if not isinstance(raw_task_ids, list):
+        raise HTTPException(status_code=400, detail="task_ids must be a list")
+
+    task_ids = _normalize_task_ids(raw_task_ids)
+    if not task_ids:
+        raise HTTPException(status_code=400, detail="task_ids must contain at least one task ID")
+    if len(task_ids) > _MAX_BULK_RESTART_TASKS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Too many task IDs in one request ({len(task_ids)}). "
+                f"Maximum allowed: {_MAX_BULK_RESTART_TASKS}"
+            ),
+        )
+
+    restarted: List[dict[str, str]] = []
+    skipped: List[dict[str, str]] = []
+    failed: List[dict[str, str]] = []
+
+    for task_id in task_ids:
+        original_task = get_task_from_state(task_id)
+        if original_task is None:
+            skipped.append({"task_id": task_id, "reason": "Task not found"})
+            continue
+
+        if original_task.status in _NON_RESTARTABLE_TASK_STATUSES:
+            skipped.append(
+                {
+                    "task_id": task_id,
+                    "reason": f"Task status '{original_task.status}' cannot be restarted",
+                }
+            )
+            continue
+
+        task_request = _task_to_task_request(original_task)
+        try:
+            queued = await _queue_task_execution(
+                task_request,
+                getattr(original_task, "client_token", None),
+                preferred_task_id=task_id,
+                created_at=getattr(original_task, "created_at", None),
+            )
+        except HTTPException as exc:
+            failed.append(
+                {"task_id": task_id, "reason": _http_exception_detail_to_text(exc.detail)}
+            )
+            continue
+        except Exception as exc:
+            logger.exception(f"Unexpected error while restarting task {task_id}: {exc}")
+            failed.append({"task_id": task_id, "reason": "Unexpected error while restarting task"})
+            continue
+
+        restarted.append({"task_id": queued["task_id"]})
+
+    return {
+        "requested": len(task_ids),
+        "restarted": restarted,
+        "skipped": skipped,
+        "failed": failed,
+    }
+
+
 # ======================================================
 # API Endpoints
 # ======================================================
@@ -544,80 +799,7 @@ async def execute_task_async(
     Raises:
         HTTPException: If no runners are available
     """
-    logger.info("Starting async task execution")
-    tasks_snapshot = get_tasks_snapshot()
-
-    if task_request.notify_url:
-        await _validate_notify_url(task_request.notify_url)
-
-    if config.PRIORITIES_ENABLED:
-        if would_exceed_other_domain_quota(
-            request_notify_url=task_request.notify_url,
-            tasks=tasks_snapshot,
-            runner_capacity=len(runners),
-            priority_domain=config.PRIORITY_DOMAIN,
-            max_other_percent=config.MAX_OTHER_DOMAIN_TASK_PERCENT,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=("Non-priority domain rejected: maximum other-domain task quota reached"),
-            )
-
-    # Find available runner
-    for runner_id, runner in runners.items():
-        logger.info(f"Checking runner: {runner_id}")
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                logger.info(f"Pinging runner at: {runner.url}/runner/ping")
-                response = await client.get(f"{runner.url}/runner/ping")
-                logger.info("Runner ping response received")
-
-                # Runner well registered with manager, available and with the good task type
-                if (
-                    response.json().get("available")
-                    and response.json().get("registered")
-                    and task_request.task_type in response.json().get("task_types")
-                ):
-                    # Generate unique task ID
-                    task_id = str(uuid.uuid4())
-
-                    # Store initial task status
-                    tasks[task_id] = Task(
-                        task_id=task_id,
-                        runner_id=runner_id,
-                        status="running",
-                        etab_name=task_request.etab_name,
-                        app_name=task_request.app_name,
-                        app_version=task_request.app_version,
-                        task_type=task_request.task_type,
-                        source_url=task_request.source_url,
-                        affiliation=task_request.affiliation,
-                        parameters=task_request.parameters,
-                        notify_url=task_request.notify_url,
-                        client_token=current_token,
-                        completion_callback=None,
-                        created_at=datetime.now().isoformat(),
-                        updated_at=datetime.now().isoformat(),
-                        error=None,
-                        script_output=None,
-                    )
-
-                    # Save tasks state
-                    save_tasks()
-
-                    # Start task execution in background
-                    asyncio.create_task(
-                        execute_task_async_background(task_id, runner, task_request)
-                    )
-
-                    return {"task_id": task_id, "status": "running"}
-        except (httpx.RequestError, httpx.TimeoutException) as e:
-            logger.warning(f"Runner {runner_id} unavailable: {e}")
-            continue
-
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No runners available"
-    )
+    return await _queue_task_execution(task_request, current_token)
 
 
 @router.get(
@@ -748,6 +930,7 @@ async def get_task_result_file(
 
 
 def _resolve_shared_storage_base() -> PathlibPath:
+    """Resolve and validate the base shared storage directory."""
     base_dir = PathlibPath(getattr(config, "RUNNERS_STORAGE_PATH", "/tmp/esup-runner")).expanduser()
     try:
         base_resolved = base_dir.resolve(strict=False)
@@ -761,6 +944,7 @@ def _resolve_shared_storage_base() -> PathlibPath:
 
 
 def _mark_warning_as_completed(task_id: str) -> None:
+    """Convert warning status to completed after successful result fetch."""
     if tasks[task_id].status == "warning":
         tasks[task_id].status = "completed"
         tasks[task_id].error = None
@@ -768,12 +952,14 @@ def _mark_warning_as_completed(task_id: str) -> None:
 
 
 def _validate_result_path(file_path: str) -> None:
+    """Reject absolute paths and traversal in requested result paths."""
     path = PathlibPath(file_path)
     if path.is_absolute() or ".." in path.parts:
         raise HTTPException(400, "Invalid result file path")
 
 
 def _get_local_task_dir(task_id: str) -> PathlibPath:
+    """Return validated local task directory under shared storage base."""
     base_resolved = _resolve_shared_storage_base()
     task_dir = base_resolved / task_id
     try:
@@ -791,6 +977,7 @@ def _get_local_task_dir(task_id: str) -> PathlibPath:
 
 
 def _get_local_output_dir(task_id: str) -> PathlibPath:
+    """Return validated local output directory for a task."""
     task_dir = _get_local_task_dir(task_id)
     output_dir = task_dir / "output"
 
@@ -809,6 +996,7 @@ def _get_local_output_dir(task_id: str) -> PathlibPath:
 
 
 def _resolve_local_manifest_path(task_dir: PathlibPath) -> PathlibPath:
+    """Resolve the manifest path from a validated task directory."""
     manifest_path = task_dir / "manifest.json"
     try:
         return manifest_path.resolve(strict=False)
@@ -817,6 +1005,7 @@ def _resolve_local_manifest_path(task_dir: PathlibPath) -> PathlibPath:
 
 
 def _read_manifest_with_retry(manifest_resolved: PathlibPath):
+    """Read manifest JSON with short retries to absorb write races."""
     manifest_data = None
     last_json_error = False
 
@@ -841,6 +1030,7 @@ def _read_manifest_with_retry(manifest_resolved: PathlibPath):
 
 
 def _get_local_manifest(task: Task) -> JSONResponse:
+    """Return a task manifest directly from shared storage."""
     task_id = task.task_id
     task_dir = _get_local_task_dir(task_id)
     manifest_resolved = _resolve_local_manifest_path(task_dir)
@@ -854,6 +1044,7 @@ def _get_local_manifest(task: Task) -> JSONResponse:
 
 
 def _stream_local_file(task: Task, file_path: str) -> FileResponse:
+    """Stream a single task file from shared storage."""
     task_id = task.task_id
     output_dir = _get_local_output_dir(task_id)
     full_path = output_dir / file_path
@@ -1074,6 +1265,7 @@ async def task_completion(
 
 
 def _get_task_or_404(task_id: str) -> Task:
+    """Fetch task from state or raise 404."""
     task = get_task_from_state(task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
@@ -1081,12 +1273,14 @@ def _get_task_or_404(task_id: str) -> Task:
 
 
 def _get_runner_or_404(runner_id: str) -> Runner:
+    """Fetch runner from state or raise 404."""
     if runner_id not in runners:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runner not found")
     return runners[runner_id]
 
 
 def _verify_runner_token(runner: Runner, current_token: str) -> None:
+    """Ensure completion callback token belongs to the assigned runner."""
     if runner.token != current_token:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Token not authorized for this task"
@@ -1094,6 +1288,7 @@ def _verify_runner_token(runner: Runner, current_token: str) -> None:
 
 
 def _apply_task_completion_update(task: Task, notification: TaskCompletionNotification) -> None:
+    """Apply completion payload fields onto the in-memory task."""
     task.status = notification.status
     task.updated_at = datetime.now().isoformat()
 
@@ -1107,11 +1302,26 @@ def _apply_task_completion_update(task: Task, notification: TaskCompletionNotifi
 
 
 async def _handle_notify_callback(task: Task, notification: TaskCompletionNotification) -> None:
+    """Send notify callback and schedule retries when needed.
+
+    Uses ``run_id`` guards so stale callbacks cannot mutate a restarted run.
+    """
     if not task.notify_url:
         return
 
+    expected_run_id = getattr(task, "run_id", None)
+
     try:
         notify_ok, notify_error = await _send_notify_callback(task, notification)
+
+        current_task = get_task_from_state(notification.task_id)
+        if not _task_run_matches(current_task, expected_run_id):
+            logger.info(
+                "Skipping stale notify callback update for task %s (run changed)",
+                notification.task_id,
+            )
+            return
+
         if notify_ok:
             _restore_status_after_notify(notification.task_id, notification)
             return
@@ -1120,11 +1330,31 @@ async def _handle_notify_callback(task: Task, notification: TaskCompletionNotifi
             notification.task_id,
             notify_error or "Notify URL callback failed: non-200 response",
         )
-        asyncio.create_task(_retry_notify_callback(notification.task_id, notification))
+        asyncio.create_task(
+            _retry_notify_callback(
+                notification.task_id,
+                notification,
+                expected_run_id=expected_run_id,
+            )
+        )
     except Exception as e:
+        current_task = get_task_from_state(notification.task_id)
+        if not _task_run_matches(current_task, expected_run_id):
+            logger.info(
+                "Skipping stale notify callback exception update for task %s (run changed)",
+                notification.task_id,
+            )
+            return
+
         _set_notify_warning(
             notification.task_id,
             f"Notify URL callback {task.notify_url} failed: server error - {str(e)}",
         )
         logger.error(f"Error during notify URL callback to {task.notify_url}: {str(e)}")
-        asyncio.create_task(_retry_notify_callback(notification.task_id, notification))
+        asyncio.create_task(
+            _retry_notify_callback(
+                notification.task_id,
+                notification,
+                expected_run_id=expected_run_id,
+            )
+        )

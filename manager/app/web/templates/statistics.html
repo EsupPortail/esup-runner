@@ -231,7 +231,18 @@
             const statsData = JSON.parse(document.getElementById('statistics-data')?.textContent || '{}');
             const typeLabels = (statsData.by_type || []).map(item => item.label);
             const typeCounts = (statsData.by_type || []).map(item => item.count);
-            const etabLabels = (statsData.by_etab || []).map(item => item.label);
+            const MAX_ETAB_LABEL_LENGTH = 50;
+            const truncateEtabLabel = (label) => {
+                const rawLabel = String(label || '').trim();
+                const slashIndex = rawLabel.indexOf('/');
+                const slashTrimmed = slashIndex > -1 ? rawLabel.slice(0, slashIndex).trim() : rawLabel;
+                const effectiveLabel = slashTrimmed || rawLabel;
+                if (effectiveLabel.length <= MAX_ETAB_LABEL_LENGTH) {
+                    return effectiveLabel;
+                }
+                return `${effectiveLabel.slice(0, MAX_ETAB_LABEL_LENGTH - 3).trimEnd()}...`;
+            };
+            const etabLabels = (statsData.by_etab || []).map(item => truncateEtabLabel(item.label));
             const etabCounts = (statsData.by_etab || []).map(item => item.count);
             const dateLabels = (statsData.by_date || []).map(item => item.label);
             const dateCounts = (statsData.by_date || []).map(item => item.count);

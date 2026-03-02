@@ -5,6 +5,8 @@ These helpers implement a simple, config-driven policy:
   maximum percentage for non-priority tasks is configured.
 - The percentage is applied to the runner capacity (number of registered runners)
   to compute a maximum number of concurrently running non-priority tasks.
+- If capacity is greater than 0 and percentage is greater than 0, at least one
+  non-priority task is allowed.
 
 This keeps behavior deterministic without introducing a global queue.
 """
@@ -22,6 +24,15 @@ logger = setup_default_logging()
 
 
 def hostname_from_url(url: str) -> Optional[str]:
+    """Extract and normalize hostname from a URL.
+
+    Args:
+        url: URL string that may contain a hostname in netloc.
+
+    Returns:
+        Lowercased hostname when parsing succeeds and a hostname is present,
+        otherwise ``None``.
+    """
     if not url:
         logger.debug("hostname_from_url: empty url")
         return None
@@ -43,6 +54,18 @@ def hostname_from_url(url: str) -> Optional[str]:
 
 
 def is_priority_hostname(hostname: Optional[str], priority_domain: str) -> bool:
+    """Check whether a hostname belongs to the configured priority domain.
+
+    Matching is suffix-based and supports exact domain and subdomains.
+
+    Args:
+        hostname: Hostname to evaluate. ``None`` or empty values are non-priority.
+        priority_domain: Configured priority domain.
+
+    Returns:
+        ``True`` when ``hostname`` equals ``priority_domain`` or is one of its
+        subdomains, else ``False``.
+    """
     if not hostname:
         logger.debug("is_priority_hostname: no hostname")
         return False
@@ -62,11 +85,30 @@ def is_priority_hostname(hostname: Optional[str], priority_domain: str) -> bool:
 
 
 def is_priority_task(task: Task, priority_domain: str) -> bool:
+    """Determine whether a task is priority based on its ``notify_url`` hostname.
+
+    Args:
+        task: Task model to classify.
+        priority_domain: Configured priority domain.
+
+    Returns:
+        ``True`` if task notify host matches the priority domain policy.
+    """
     hostname = hostname_from_url(task.notify_url)
     return is_priority_hostname(hostname, priority_domain)
 
 
 def other_domain_running_count(tasks: Mapping[str, Task], priority_domain: str) -> int:
+    """Count running tasks that are not in the priority domain.
+
+    Args:
+        tasks: Mapping of task_id to task.
+        priority_domain: Configured priority domain used for classification.
+
+    Returns:
+        Number of tasks in status ``running`` whose notify hostname is
+        non-priority.
+    """
     count = 0
     for task in tasks.values():
         if task.status != "running":
@@ -82,9 +124,25 @@ def other_domain_running_count(tasks: Mapping[str, Task], priority_domain: str) 
 
 
 def max_other_concurrent_tasks(runner_capacity: int, max_other_percent: int) -> int:
+    """Compute max allowed concurrent non-priority tasks.
+
+    Rules:
+    - Inputs are clamped to ``capacity >= 0`` and ``0 <= percent <= 100``.
+    - Base quota is ``floor(capacity * percent / 100)``.
+    - If ``capacity > 0`` and ``percent > 0``, a minimum quota of ``1`` applies.
+
+    Args:
+        runner_capacity: Number of registered runners.
+        max_other_percent: Configured quota percentage for non-priority tasks.
+
+    Returns:
+        Maximum number of concurrently running non-priority tasks.
+    """
     capacity = max(0, int(runner_capacity))
     pct = max(0, min(100, int(max_other_percent)))
     max_other = int(math.floor(capacity * (pct / 100.0)))
+    if capacity > 0 and pct > 0:
+        max_other = max(1, max_other)
     logger.debug(
         "max_other_concurrent_tasks: capacity=%d pct=%d max_other=%d",
         capacity,
@@ -102,7 +160,22 @@ def would_exceed_other_domain_quota(
     priority_domain: str,
     max_other_percent: int,
 ) -> bool:
-    """Return True if accepting a new task would exceed the 'other domain' concurrency quota."""
+    """Check whether accepting a task would violate non-priority quota.
+
+    A priority request is always accepted by this check and never counted toward
+    the non-priority quota.
+
+    Args:
+        request_notify_url: Notify URL for the incoming task request.
+        tasks: Snapshot of existing tasks.
+        runner_capacity: Number of registered runners.
+        priority_domain: Configured priority domain.
+        max_other_percent: Configured quota percentage for non-priority tasks.
+
+    Returns:
+        ``True`` when the request is non-priority and current non-priority
+        running tasks are already at quota, else ``False``.
+    """
 
     # If request is priority, never reject here.
     request_hostname = hostname_from_url(request_notify_url)

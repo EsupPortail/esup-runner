@@ -53,9 +53,11 @@ def test_is_priority_hostname(hostname, domain, expected):
     assert is_priority_hostname(hostname, domain) is expected
 
 
-def test_quota_math_flooring():
+def test_quota_math_flooring_with_minimum_one_for_positive_percent():
     assert max_other_concurrent_tasks(10, 20) == 2
-    assert max_other_concurrent_tasks(3, 20) == 0
+    assert max_other_concurrent_tasks(3, 20) == 1
+    assert max_other_concurrent_tasks(1, 25) == 1
+    assert max_other_concurrent_tasks(0, 25) == 0
     assert max_other_concurrent_tasks(5, 0) == 0
     assert max_other_concurrent_tasks(5, 100) == 5
 

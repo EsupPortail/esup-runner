@@ -93,3 +93,28 @@ def test_other_domain_quota_allows_priority_and_rejects_other():
         )
         is False
     )
+
+
+def test_other_domain_quota_single_runner_keeps_one_slot_when_percent_positive():
+    # With one runner and a positive percentage, one non-priority slot remains available.
+    assert (
+        priorities.would_exceed_other_domain_quota(
+            request_notify_url="https://other.test",
+            tasks={},
+            runner_capacity=1,
+            priority_domain="example.com",
+            max_other_percent=25,
+        )
+        is False
+    )
+
+    assert (
+        priorities.would_exceed_other_domain_quota(
+            request_notify_url="https://other.test",
+            tasks={"o1": _task("o1", status="running", notify_url="https://other.test")},
+            runner_capacity=1,
+            priority_domain="example.com",
+            max_other_percent=25,
+        )
+        is True
+    )

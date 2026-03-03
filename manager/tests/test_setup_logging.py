@@ -13,6 +13,7 @@ from app.core import setup_logging as logging_module
 from app.core.setup_logging import (
     JSONFormatter,
     LogContext,
+    LoggerDisplayNameFilter,
     _add_file_handler,
     _add_syslog_handler,
     _coerce_log_level,
@@ -44,6 +45,23 @@ def test_json_formatter_includes_custom_fields():
     assert formatted["message"] == "hello"
 
 
+def test_json_formatter_aliases_uvicorn_error_logger_name():
+    formatter = JSONFormatter()
+    record = logging.makeLogRecord(
+        {
+            "name": "uvicorn.error",
+            "level": logging.INFO,
+            "pathname": __file__,
+            "lineno": 10,
+            "msg": "startup",
+            "func": "func",
+            "module": "mod",
+        }
+    )
+    formatted = json.loads(formatter.format(record))
+    assert formatted["logger"] == "uvicorn.server"
+
+
 def test_json_formatter_handles_exception():
     formatter = JSONFormatter()
     try:
@@ -63,6 +81,13 @@ def test_json_formatter_handles_exception():
         )
     formatted = json.loads(formatter.format(record))
     assert "exception" in formatted
+
+
+def test_logger_display_name_filter_aliases_uvicorn_error():
+    filt = LoggerDisplayNameFilter()
+    record = logging.makeLogRecord({"name": "uvicorn.error", "msg": "x", "level": logging.INFO})
+    assert filt.filter(record) is True
+    assert record.display_name == "uvicorn.server"
 
 
 def test_coerce_log_level_accepts_str_and_int():
@@ -190,6 +215,8 @@ def test_setup_uvicorn_logging_clears_existing_handlers(monkeypatch, tmp_path):
 def test_get_uvicorn_log_config_json_format():
     cfg = get_uvicorn_log_config(json_format=True)
     assert cfg["formatters"]["json"]["()"] is JSONFormatter
+    assert "display_name" in cfg["filters"]
+    assert cfg["handlers"]["default"]["filters"] == ["display_name"]
 
 
 def test_add_file_handler_success(tmp_path):
@@ -217,6 +244,9 @@ def test_add_syslog_handler_success(monkeypatch):
             pass
 
         def setLevel(self, level):
+            pass
+
+        def addFilter(self, filt):
             pass
 
     monkeypatch.setattr(logging_module, "SysLogHandler", FakeSyslog)

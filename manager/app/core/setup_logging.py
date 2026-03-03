@@ -7,12 +7,15 @@ Provides flexible logging setup with support for JSON formatting, file rotation,
 import json
 import logging
 import os
+import stat
 import sys
 from datetime import datetime
 from logging.handlers import RotatingFileHandler, SysLogHandler
 from typing import Any, Callable, Dict, Optional
 
 from app.core.config import config
+
+_DEFAULT_SYSLOG_ADDRESSES = ("/dev/log", "/var/run/syslog")
 
 
 class JSONFormatter(logging.Formatter):
@@ -215,7 +218,7 @@ def _add_file_handler(
 
 
 def _add_syslog_handler(
-    logger: logging.Logger, formatter: logging.Formatter, syslog_address: str = "/dev/log"
+    logger: logging.Logger, formatter: logging.Formatter, syslog_address: str | None = None
 ) -> None:
     """
     Add syslog handler for system-level logging.
@@ -223,15 +226,40 @@ def _add_syslog_handler(
     Args:
         logger: Logger instance to add handler to
         formatter: Formatter for the handler
-        syslog_address: Address for syslog (file path or network address)
+        syslog_address: Address for syslog (file path); auto-detected when omitted
     """
+    resolved_address = _resolve_syslog_address(syslog_address)
+    if resolved_address is None:
+        return
+
     try:
-        syslog_handler = SysLogHandler(address=syslog_address)
+        syslog_handler = SysLogHandler(address=resolved_address)
         syslog_handler.setFormatter(formatter)
         logger.addHandler(syslog_handler)
     except (OSError, ConnectionError) as e:
         # Log warning but don't fail if syslog is unavailable
-        logger.warning(f"Syslog handler could not be configured: {e}")
+        logger.warning(f"Syslog handler could not be configured ({resolved_address}): {e}")
+
+
+def _resolve_syslog_address(syslog_address: str | None) -> str | None:
+    """Resolve the first available local syslog socket path."""
+    requested = (syslog_address or "").strip()
+    if requested:
+        return requested if _is_unix_socket(requested) else None
+
+    for candidate in _DEFAULT_SYSLOG_ADDRESSES:
+        if _is_unix_socket(candidate):
+            return candidate
+    return None
+
+
+def _is_unix_socket(path: str) -> bool:
+    """Return True when the path exists and is a UNIX domain socket."""
+    try:
+        mode = os.stat(path).st_mode
+    except OSError:
+        return False
+    return stat.S_ISSOCK(mode)
 
 
 def get_logger(name: str) -> logging.Logger:

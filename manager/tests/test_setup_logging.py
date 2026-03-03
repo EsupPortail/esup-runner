@@ -17,6 +17,7 @@ from app.core.setup_logging import (
     _add_syslog_handler,
     _coerce_log_level,
     _create_formatter,
+    _resolve_syslog_address,
     get_uvicorn_log_config,
     setup_default_logging,
     setup_logging,
@@ -110,6 +111,9 @@ def test_syslog_handler_exception(monkeypatch):
             raise OSError("fail")
 
     monkeypatch.setattr(logging_module, "SysLogHandler", FailingSyslog)
+    monkeypatch.setattr(
+        logging_module, "_resolve_syslog_address", lambda *_args, **_kwargs: "/dev/log"
+    )
     _add_syslog_handler(logger, _create_formatter(False))
     assert logger.handlers == []
 
@@ -216,6 +220,9 @@ def test_add_syslog_handler_success(monkeypatch):
             pass
 
     monkeypatch.setattr(logging_module, "SysLogHandler", FakeSyslog)
+    monkeypatch.setattr(
+        logging_module, "_resolve_syslog_address", lambda *_args, **_kwargs: "/dev/log"
+    )
     _add_syslog_handler(logger, formatter)
     assert any(isinstance(h, FakeSyslog) for h in logger.handlers)
 
@@ -238,8 +245,34 @@ def test_setup_logging_non_test_run_branch(monkeypatch, tmp_path):
             pass
 
     monkeypatch.setattr(logging_module, "SysLogHandler", FakeSyslog)
+    monkeypatch.setattr(
+        logging_module, "_resolve_syslog_address", lambda *_args, **_kwargs: "/dev/log"
+    )
 
     logger = setup_logging("BranchTest", log_level=logging.DEBUG)
     # Should have console + file + syslog handlers
     assert any(isinstance(h, RotatingFileHandler) for h in logger.handlers)
     assert any(isinstance(h, FakeSyslog) for h in logger.handlers)
+
+
+def test_add_syslog_handler_skips_when_no_socket(monkeypatch):
+    logger = logging.getLogger("syslog-skip")
+    logger.handlers.clear()
+
+    class FailingIfCalled:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("SysLogHandler should not be instantiated")
+
+    monkeypatch.setattr(logging_module, "SysLogHandler", FailingIfCalled)
+    monkeypatch.setattr(logging_module, "_resolve_syslog_address", lambda *_args, **_kwargs: None)
+
+    _add_syslog_handler(logger, _create_formatter(False))
+    assert logger.handlers == []
+
+
+def test_resolve_syslog_address_uses_fallback_candidates(monkeypatch):
+    monkeypatch.setattr(
+        logging_module, "_DEFAULT_SYSLOG_ADDRESSES", ("/dev/log", "/var/run/syslog")
+    )
+    monkeypatch.setattr(logging_module, "_is_unix_socket", lambda path: path == "/var/run/syslog")
+    assert _resolve_syslog_address(None) == "/var/run/syslog"

@@ -2,7 +2,7 @@
 
 This document describes how to install and run the **ESUP Runner Manager** on a Debian/Ubuntu-like system.
 
-## Version compatibility note (Runner  Manager)
+## Version compatibility note (Runner & Manager)
 
 The Runner sends its version to the Manager in the `X-Runner-Version` header during registration/heartbeats.
 The Manager enforces compatibility at **MAJOR + MINOR** level:
@@ -216,8 +216,10 @@ curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
 
 Replace:
 
-- `<AUTHORIZED_TOKEN>` with one of your `AUTHORIZED_TOKENS__*` values from `.env`.
+- `<AUTHORIZED_TOKEN>` with one of your `AUTHORIZED_TOKENS__*` (for example `AUTHORIZED_TOKENS__runners`) values from `.env`.
 - `<MANAGER_PORT>` with the value of `MANAGER_PORT` from `.env`.
+
+The expected result is as follows: `{"status":"healthy","timestamp":"XXXX","runners":0,"tasks":0}`.
 
 ## 4) Production: systemd service
 

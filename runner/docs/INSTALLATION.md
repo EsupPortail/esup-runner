@@ -2,7 +2,7 @@
 
 This guide describes how to install and run the **Esup-Runner Runner** service on a Debian/Ubuntu server.
 
-## Version compatibility note (Runner  Manager)
+## Version compatibility note (Runner & Manager)
 
 The Runner sends its version to the Manager in the `X-Runner-Version` header during registration/heartbeats.
 The Manager enforces compatibility at **MAJOR + MINOR** level:

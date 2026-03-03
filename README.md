@@ -32,31 +32,6 @@ Each project has its own `pyproject.toml`, documentation, release process, etc.
 - Configuration: [runner/docs/RUNNER_CONFIGURATION.md](runner/docs/RUNNER_CONFIGURATION.md)
 - Versioning: [runner/docs/VERSION_MANAGEMENT.md](runner/docs/VERSION_MANAGEMENT.md)
 
-## Contributors (development)
-
-Prerequisites: Python >= 3.11, `uv`, `make`.
-
-Recommended workflow uses the project Makefiles (they wrap `uv` and handle extras):
-
-- Manager:
-	- Install deps: `cd manager && make sync-dev`
-	- Run tests: `cd manager && make test`
-	- Run in dev: `cd manager && make run`
-
-- Runner:
-	- Install deps: `cd runner && make sync-dev`
-	- (Optional) transcription deps (GPU): `cd runner && make sync-all`
-	- (Optional) transcription deps (CPU): `cd runner && make sync-transcription-cpu`
-	- Run tests: `cd runner && make test`
-	- Run in dev: `cd runner && make run`
-
-If you need fully reproducible installs, you can call `uv` directly with the lockfile:
-
-- Manager: `cd manager && uv sync --locked --extra dev`
-- Runner: `cd runner && uv sync --locked --extra dev`
-
-Build/test commands and production setup details are documented in the pages above.
-
 ## License
 
 This repository is licensed under the GPL-3.0 license. See [LICENSE](LICENSE).

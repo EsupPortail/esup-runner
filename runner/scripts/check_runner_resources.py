@@ -105,7 +105,11 @@ def _load_config():
 
 
 def _read_meminfo_gb() -> float:
-    """Read total system memory in GB from /proc/meminfo."""
+    """Read total system memory in GB.
+
+    Linux: read from /proc/meminfo.
+    macOS: fallback to `sysctl -n hw.memsize`.
+    """
     try:
         with open("/proc/meminfo", "r", encoding="utf-8") as handle:
             for line in handle:
@@ -115,6 +119,17 @@ def _read_meminfo_gb() -> float:
                     return kb / (1024.0 * 1024.0)
     except Exception:
         pass
+
+    # macOS fallback (bytes)
+    rc, out = _run(["sysctl", "-n", "hw.memsize"])
+    if rc == 0:
+        try:
+            mem_bytes = float(out.strip().splitlines()[0])
+            if mem_bytes > 0:
+                return mem_bytes / (1024.0 * 1024.0 * 1024.0)
+        except Exception:
+            pass
+
     return 0.0
 
 

@@ -13,6 +13,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, MutableMapping, Optional, TypeVar, cast, overload
+from uuid import uuid4
 
 from filelock import FileLock, Timeout
 
@@ -42,8 +43,7 @@ class RunnerStore(MutableMapping[str, Runner]):
         if self.shared_enabled:
             self._state_file.parent.mkdir(parents=True, exist_ok=True)
             self._lock = FileLock(f"{self._state_file}.lock", timeout=lock_timeout)
-            if not self._state_file.exists():
-                self._write_disk({})
+            self._initialize_state_file()
             logger.info(f"Runner store initialized in shared mode: {self._state_file}")
         else:
             logger.info("Runner store initialized in in-memory mode")
@@ -95,6 +95,23 @@ class RunnerStore(MutableMapping[str, Runner]):
             data["last_heartbeat"] = data["last_heartbeat"].isoformat()
         return data
 
+    def _initialize_state_file(self) -> None:
+        """
+        Initialize shared state file once, under lock.
+
+        On multi-worker startup, several processes can create RunnerStore at the
+        same time. The existence check must happen while holding the file lock to
+        avoid concurrent writes on the same temporary path.
+        """
+        if self._state_file.exists():
+            return
+
+        def _operation() -> None:
+            if not self._state_file.exists():
+                self._write_disk({})
+
+        self._with_lock(_operation)
+
     def _read_disk(self) -> Dict[str, Runner]:
         if not self._state_file.exists():
             return {}
@@ -126,7 +143,8 @@ class RunnerStore(MutableMapping[str, Runner]):
 
     def _write_disk(self, data: Dict[str, Runner]) -> None:
         serialized = {runner_id: self._runner_to_dict(r) for runner_id, r in data.items()}
-        tmp_path = self._state_file.with_suffix(self._state_file.suffix + ".tmp")
+        self._state_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self._state_file.with_name(f"{self._state_file.name}.{uuid4().hex}.tmp")
         with tmp_path.open("w", encoding="utf-8") as f:
             json.dump(serialized, f, indent=2, ensure_ascii=False)
         tmp_path.replace(self._state_file)

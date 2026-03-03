@@ -45,6 +45,23 @@ def test_shared_store_is_visible_across_instances(tmp_path):
     assert "r1" not in store_b
 
 
+def test_shared_store_initial_state_write_happens_under_lock(tmp_path, monkeypatch):
+    state_path = tmp_path / "runners_state.json"
+    lock_states: list[bool] = []
+    original_write_disk = RunnerStore._write_disk
+
+    def _spy_write_disk(self, data):
+        assert self._lock is not None
+        lock_states.append(self._lock.is_locked)
+        return original_write_disk(self, data)
+
+    monkeypatch.setattr(RunnerStore, "_write_disk", _spy_write_disk)
+    RunnerStore(shared_enabled=True, state_file=str(state_path), lock_timeout=1)
+
+    assert state_path.exists()
+    assert lock_states == [True]
+
+
 def test_in_memory_store_is_not_shared_between_instances(tmp_path):
     state_path = tmp_path / "runners_state.json"
     store_a = RunnerStore(shared_enabled=False, state_file=str(state_path))

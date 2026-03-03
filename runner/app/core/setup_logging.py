@@ -7,6 +7,7 @@ Provides flexible logging setup with support for JSON formatting, file rotation,
 import json
 import logging
 import os
+import stat
 import sys
 from datetime import datetime
 from logging.handlers import RotatingFileHandler, SysLogHandler
@@ -14,6 +15,22 @@ from typing import Any, Callable, Dict, Optional
 
 from app.core.config import config
 from app.core.state import get_runner_instance_id
+
+_DEFAULT_SYSLOG_ADDRESSES = ("/dev/log", "/var/run/syslog")
+_LOGGER_DISPLAY_ALIASES = {"uvicorn.error": "uvicorn.server"}
+
+
+def _resolve_display_logger_name(logger_name: str) -> str:
+    """Return a user-facing logger name, with aliases for noisy internals."""
+    return _LOGGER_DISPLAY_ALIASES.get(logger_name, logger_name)
+
+
+class LoggerDisplayNameFilter(logging.Filter):
+    """Inject a display-friendly logger name used by text formatters."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.display_name = _resolve_display_logger_name(record.name)
+        return True
 
 
 class JSONFormatter(logging.Formatter):
@@ -36,7 +53,11 @@ class JSONFormatter(logging.Formatter):
         log_record: Dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
             "level": record.levelname,
-            "logger": record.name,
+            "logger": getattr(
+                record,
+                "display_name",
+                _resolve_display_logger_name(record.name),
+            ),
             "message": record.getMessage(),
             "module": record.module,
             "function": record.funcName,
@@ -157,7 +178,7 @@ def _create_formatter(json_format: bool) -> logging.Formatter:
         return JSONFormatter()
     else:
         return logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - [%(module)s:%(funcName)s:%(lineno)d] - %(message)s",
+            "%(asctime)s - %(display_name)s - %(levelname)s - [%(module)s:%(funcName)s:%(lineno)d] - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
 
@@ -176,6 +197,7 @@ def _add_console_handler(
     console_handler = logging.StreamHandler()
     console_handler.setLevel(level)
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(LoggerDisplayNameFilter())
     logger.addHandler(console_handler)
 
 
@@ -207,13 +229,14 @@ def _add_file_handler(
         )
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
+        file_handler.addFilter(LoggerDisplayNameFilter())
         logger.addHandler(file_handler)
     except PermissionError as e:
         raise PermissionError(f"Cannot write to log file {log_path}: {e}")
 
 
 def _add_syslog_handler(
-    logger: logging.Logger, formatter: logging.Formatter, syslog_address: str = "/dev/log"
+    logger: logging.Logger, formatter: logging.Formatter, syslog_address: str | None = None
 ) -> None:
     """
     Add syslog handler for system-level logging.
@@ -221,15 +244,41 @@ def _add_syslog_handler(
     Args:
         logger: Logger instance to add handler to
         formatter: Formatter for the handler
-        syslog_address: Address for syslog (file path or network address)
+        syslog_address: Address for syslog (file path); auto-detected when omitted
     """
+    resolved_address = _resolve_syslog_address(syslog_address)
+    if resolved_address is None:
+        return
+
     try:
-        syslog_handler = SysLogHandler(address=syslog_address)
+        syslog_handler = SysLogHandler(address=resolved_address)
         syslog_handler.setFormatter(formatter)
+        syslog_handler.addFilter(LoggerDisplayNameFilter())
         logger.addHandler(syslog_handler)
     except (OSError, ConnectionError) as e:
         # Log warning but don't fail if syslog is unavailable
-        logger.warning(f"Syslog handler could not be configured: {e}")
+        logger.warning(f"Syslog handler could not be configured ({resolved_address}): {e}")
+
+
+def _resolve_syslog_address(syslog_address: str | None) -> str | None:
+    """Resolve the first available local syslog socket path."""
+    requested = (syslog_address or "").strip()
+    if requested:
+        return requested if _is_unix_socket(requested) else None
+
+    for candidate in _DEFAULT_SYSLOG_ADDRESSES:
+        if _is_unix_socket(candidate):
+            return candidate
+    return None
+
+
+def _is_unix_socket(path: str) -> bool:
+    """Return True when the path exists and is a UNIX domain socket."""
+    try:
+        mode = os.stat(path).st_mode
+    except OSError:
+        return False
+    return stat.S_ISSOCK(mode)
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -347,6 +396,7 @@ def setup_uvicorn_logging(json_format: bool = False) -> None:
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(LoggerDisplayNameFilter())
 
     try:
         file_handler = RotatingFileHandler(
@@ -357,6 +407,7 @@ def setup_uvicorn_logging(json_format: bool = False) -> None:
         )
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(formatter)
+        file_handler.addFilter(LoggerDisplayNameFilter())
     except PermissionError:
         file_handler = None
 
@@ -385,15 +436,20 @@ def get_uvicorn_log_config(runner_instance_id: int, json_format: bool = False) -
     return {
         "version": 1,
         "disable_existing_loggers": False,
+        "filters": {
+            "display_name": {
+                "()": "app.core.setup_logging.LoggerDisplayNameFilter",
+            }
+        },
         "formatters": {
             "default": {
                 "()": "uvicorn.logging.DefaultFormatter",
-                "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                "fmt": "%(asctime)s - %(display_name)s - %(levelname)s - %(message)s",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
             "access": {
                 "()": "uvicorn.logging.AccessFormatter",
-                "fmt": '%(asctime)s - %(name)s - %(levelname)s - %(client_addr)s - "%(request_line)s" %(status_code)s',
+                "fmt": '%(asctime)s - %(display_name)s - %(levelname)s - %(client_addr)s - "%(request_line)s" %(status_code)s',
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
             "json": {
@@ -405,11 +461,13 @@ def get_uvicorn_log_config(runner_instance_id: int, json_format: bool = False) -
                 "formatter": formatter,
                 "class": "logging.StreamHandler",
                 "stream": "ext://sys.stderr",
+                "filters": ["display_name"],
             },
             "access": {
                 "formatter": formatter,
                 "class": "logging.StreamHandler",
                 "stream": "ext://sys.stdout",
+                "filters": ["display_name"],
             },
             "instance_file": {
                 "formatter": formatter,
@@ -418,6 +476,7 @@ def get_uvicorn_log_config(runner_instance_id: int, json_format: bool = False) -
                 "maxBytes": 10485760,
                 "backupCount": 10,
                 "encoding": "utf-8",
+                "filters": ["display_name"],
             },
         },
         "loggers": {

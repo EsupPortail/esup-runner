@@ -3,6 +3,7 @@
 This document describes a safe **production** upgrade procedure for the *Manager*.
 
 > TL;DR
+>
 > - **PATCH**: you can usually upgrade Manager and Runner independently.
 > - **MINOR/MAJOR**: the Manager **rejects** runners whose `MAJOR.MINOR` does not match its own → plan a **coordinated** upgrade.
 
@@ -15,6 +16,7 @@ This document describes a safe **production** upgrade procedure for the *Manager
 - Configuration file: `/opt/esup-runner/manager/.env`.
 
 Useful docs:
+
 - Installation: `INSTALLATION.md`
 - Docker installation: `DOCKER.md` (if your manager is deployed in a container)
 - Changelog: `CHANGELOG.md`
@@ -32,10 +34,12 @@ The Manager enforces **MAJOR + MINOR** compatibility:
 - `PATCH` versions may differ
 
 Consequence:
+
 - If you upgrade the Manager to `X.(Y+1).Z` while your runners are still `X.Y.*`, they will no longer be able to register.
 - Same issue if you upgrade a runner to `X.(Y+1).Z` before the Manager.
 
 Recommendation:
+
 - For a **MINOR/MAJOR** bump, prepare the upgrade of both the Manager **and** the runners and do a short cutover.
 
 ---

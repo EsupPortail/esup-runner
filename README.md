@@ -1,8 +1,8 @@
-<p align="center">
-	<img src="manager/app/web/static/logo.png" alt="ESUP Runner logo" width="360" />
-</p>
-
 # ESUP Runner
+
+<p align="center">
+  <img src="manager/app/web/static/logo.png" alt="ESUP Runner logo" width="360" />
+</p>
 
 [![CI](https://github.com/EsupPortail/esup-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/EsupPortail/esup-runner/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/github/actions/workflow/status/EsupPortail/esup-runner/ci.yml?branch=main&label=coverage&suffix=%20(100%25))](https://github.com/EsupPortail/esup-runner/actions/workflows/ci.yml)

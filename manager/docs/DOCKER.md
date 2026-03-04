@@ -91,6 +91,16 @@ At minimum, review:
 - `LOG_DIRECTORY`
 - `RUNNERS_STORAGE_ENABLED` and `RUNNERS_STORAGE_PATH`
 
+For Docker deployment with a shared Docker network, set:
+
+- `MANAGER_HOST=esup-runner-manager`
+
+Important:
+
+- `MANAGER_HOST` is used both for server bind and for `MANAGER_URL`.
+- `MANAGER_URL` is injected into runner tasks as `completion_callback` (`/task/completion`).
+- If `MANAGER_HOST=0.0.0.0`, callbacks from runner may fail in Docker (`http://0.0.0.0:...` points to the runner container itself, not the manager).
+
 ## 6) Build the manager image
 
 From `/opt/esup-runner/manager`:
@@ -156,6 +166,12 @@ docker volume create esup-runner-storage
 docker volume create esup-runner-manager-data
 ```
 
+Create a dedicated Docker network shared with runner containers:
+
+```bash
+docker network inspect esup-runner-net >/dev/null 2>&1 || docker network create esup-runner-net
+```
+
 Ensure volume ownership matches `esup-runner` (important if volumes already contain root-owned files):
 
 ```bash
@@ -167,8 +183,10 @@ Run in background:
 ```bash
 docker run -d \
   --name esup-runner-manager \
+  --network esup-runner-net \
   --restart unless-stopped \
   --env-file .env \
+  -e MANAGER_HOST=esup-runner-manager \
   -p 8081:8081 \
   -v esup-runner-manager-logs:/var/log/esup-runner \
   -v esup-runner-storage:/tmp/esup-runner \
@@ -176,6 +194,10 @@ docker run -d \
   -v /opt/esup-runner/manager/.env:/app/.env:ro \
   esup-runner-manager:latest
 ```
+
+This container name (`esup-runner-manager`) is resolvable by other containers on
+`esup-runner-net` and should be used by runners with:
+`MANAGER_URL=http://esup-runner-manager:8081`.
 
 ## 8) Verify runtime
 
@@ -199,6 +221,19 @@ curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
 ```
 
 Replace `<AUTHORIZED_TOKEN>` with one of your `AUTHORIZED_TOKENS__*` values.
+
+Manual end-to-end task test (from manager sources):
+
+```bash
+cd /opt/esup-runner/manager
+uv run scripts/example_async_client.py
+```
+
+Before running this script:
+
+- Set `TOKEN` in `scripts/example_async_client.py` to one of your manager `AUTHORIZED_TOKENS__*` values.
+- Keep `MANAGER_URL` aligned with your published manager endpoint (default in Docker guide: `http://127.0.0.1:8081`).
+- Ensure at least one runner is registered and supports `TASK_TYPE` (default script value: `encoding`).
 
 Inspect mounted data paths (container must be running):
 

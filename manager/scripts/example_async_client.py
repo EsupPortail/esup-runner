@@ -48,7 +48,7 @@ import httpx
 
 # CHANGE THIS.
 # This must match one of the manager's configured AUTHORIZED_TOKENS values.
-TOKEN = "CHANGE_ME"
+TOKEN = "CHANGE_ME_RUNNERS_TOKEN"
 
 # If your manager runs elsewhere, update this URL.
 MANAGER_URL = "http://127.0.0.1:8081"

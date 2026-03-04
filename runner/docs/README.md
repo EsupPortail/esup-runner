@@ -9,6 +9,7 @@ This README explains what the runner service does, how it is started, and the ta
 ## Installation
 
 See [INSTALLATION.md](INSTALLATION.md).
+For Docker-based installation, see [DOCKER.md](DOCKER.md).
 
 ## Upgrading
 
@@ -125,7 +126,7 @@ RUNNER_BASE_PORT=8082
 RUNNER_BASE_NAME=my-runner
 RUNNER_TASK_TYPES=[2x(encoding,studio,transcription)]
 RUNNER_TOKEN=change-me-runner-token
-STORAGE_DIR=/tmp/esup-runner/storage
+STORAGE_DIR=/tmp/esup-runner
 EXTERNAL_SCRIPT_TIMEOUT_SECONDS=18000
 ENCODING_TYPE=CPU
 LOG_DIRECTORY=/var/log/esup-runner
@@ -134,6 +135,7 @@ LOG_LEVEL=INFO
 
 ## Additional references
 - Installation: [docs/INSTALLATION.md](INSTALLATION.md)
+- Docker installation: [docs/DOCKER.md](DOCKER.md)
 - FFmpeg GPU setup: [docs/FFMPEG_SETUP.md](FFMPEG_SETUP.md)
 - Upgrading: [UPGRADE.md](UPGRADE.md)
 - Task type docs: [docs/TYPE_ENCODING.md](TYPE_ENCODING.md), [docs/TYPE_STUDIO.md](TYPE_STUDIO.md), [docs/TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md)

@@ -24,6 +24,23 @@ PYTHON  ?= $(UV) run python
 
 EXTRAS  ?=
 
+# Docker build variables (can be overridden via env or make args)
+DOCKER            ?= docker
+DOCKERFILE        ?= Dockerfile
+DOCKER_IMAGE      ?= esup-runner-runner
+DOCKER_TAG        ?= latest
+ESUP_RUNNER_UID   ?= 1000
+ESUP_RUNNER_GID   ?= 1000
+DOCKER_BUILD_NETWORK ?=
+DOCKER_BUILD_OPTS ?=
+DOCKER_RUNNER_EXTRA ?=
+DOCKER_LOGS_VOLUME ?= esup-runner-runner-logs
+DOCKER_STORAGE_VOLUME ?= esup-runner-storage
+DOCKER_WHISPER_VOLUME ?= esup-runner-whisper-models
+DOCKER_LOGS_PATH ?= /var/log/esup-runner
+DOCKER_STORAGE_PATH ?= /tmp/esup-runner
+DOCKER_WHISPER_MODELS_PATH ?= /home/esup-runner/.cache/esup-runner/whisper-models
+
 # Builds the --extra ... arguments from EXTRAS=dev,transcription-gpu,transcription-cpu
 comma := ,
 empty :=
@@ -40,6 +57,8 @@ help:
 	@echo "  make run                                       -> run the app launcher"
 	@echo "  make init                                      -> init directories from .env (sudo)"
 	@echo "  make create-service                            -> install systemd service (sudo)"
+	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_RUNNER_EXTRA=transcription-cpu|transcription-gpu DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...'] -> build runner Docker image"
+	@echo "  make docker-fix-perms                          -> fix Docker volume permissions for esup-runner"
 	@echo "  make clean                                     -> remove .venv and caches"
 	@echo ""
 	@echo "Shortcuts:"
@@ -54,6 +73,9 @@ help:
 	@echo "  make sync EXTRAS=transcription-gpu"
 	@echo "  make sync EXTRAS=transcription-cpu"
 	@echo "  make lock EXTRAS=dev"
+	@echo "  make docker-build DOCKER_IMAGE=ghcr.io/<github-org>/esup-runner-runner DOCKER_TAG=v0.9.0 ESUP_RUNNER_UID=$$(id -u) ESUP_RUNNER_GID=$$(id -g)"
+	@echo "  make docker-build DOCKER_RUNNER_EXTRA=transcription-cpu"
+	@echo "  make docker-fix-perms ESUP_RUNNER_UID=$$(id -u) ESUP_RUNNER_GID=$$(id -g)"
 
 # ---------- Dependencies ----------
 
@@ -174,8 +196,26 @@ lint: check-lint-deps
 	$(UV) run flake8 --jobs=1 .
 	MYPY_CACHE_DIR=/tmp/mypy_cache_$(USER) $(UV) run mypy app
 
+docker-build:
+	@echo "==> docker build $(DOCKER_IMAGE):$(DOCKER_TAG)"
+	$(DOCKER) build $(if $(strip $(DOCKER_BUILD_NETWORK)),--network $(DOCKER_BUILD_NETWORK),) $(DOCKER_BUILD_OPTS) -f $(DOCKERFILE) \
+		--build-arg ESUP_RUNNER_UID=$(ESUP_RUNNER_UID) \
+		--build-arg ESUP_RUNNER_GID=$(ESUP_RUNNER_GID) \
+		$(if $(strip $(DOCKER_RUNNER_EXTRA)),--build-arg RUNNER_EXTRA=$(DOCKER_RUNNER_EXTRA),) \
+		-t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+
+docker-fix-perms:
+	@echo "==> fix Docker volume permissions ($(ESUP_RUNNER_UID):$(ESUP_RUNNER_GID))"
+	$(DOCKER) run --rm --user root \
+		-v $(DOCKER_LOGS_VOLUME):$(DOCKER_LOGS_PATH) \
+		-v $(DOCKER_STORAGE_VOLUME):$(DOCKER_STORAGE_PATH) \
+		-v $(DOCKER_WHISPER_VOLUME):$(DOCKER_WHISPER_MODELS_PATH) \
+		$(DOCKER_IMAGE):$(DOCKER_TAG) \
+		sh -c "chown -R $(ESUP_RUNNER_UID):$(ESUP_RUNNER_GID) $(DOCKER_LOGS_PATH) $(DOCKER_STORAGE_PATH) $(DOCKER_WHISPER_MODELS_PATH)"
+
 .PHONY: help sync lock lock-upgrade run init clean \
 		sync-dev sync-all sync-transcription-gpu sync-transcription-cpu \
 		lock-dev lock-transcription-gpu lock-transcription-cpu lock-all \
+		docker-build docker-fix-perms \
 		check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
 		test coverage fmt fmt-check lint

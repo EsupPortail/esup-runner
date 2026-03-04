@@ -108,7 +108,7 @@ Recommended setup:
 - Do not expose the manager process directly on the public Internet.
 - Terminate TLS on the reverse proxy and publish only HTTPS externally.
 - Keep the manager bound to a private interface or localhost whenever possible.
-- Route both API endpoints and admin endpoints (`/admin`, `/tasks`...) through the proxy.
+- Route both API endpoints and admin endpoints (`/admin`, `/tasks`…) through the proxy.
 
 ## Task lifecycle
 

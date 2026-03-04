@@ -61,7 +61,7 @@ def parse_mediapackage(
 def parse_smil_cut(smil_text: str) -> tuple[float | None, float | None]:
     try:
         root = ET.fromstring(smil_text)
-        # Find first <video clipBegin="..." clipEnd="..." />
+        # Find first <video clipBegin="…" clipEnd="…" />
         for el in root.iter():
             if el.tag.endswith("video"):
                 begin_raw = el.attrib.get("clipBegin")

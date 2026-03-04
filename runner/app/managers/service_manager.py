@@ -33,7 +33,7 @@ async def storage_cleanup_loop() -> None:
 
     # Perform initial cleanup immediately
     try:
-        logger.debug("Starting initial storage cleanup...")
+        logger.debug("Starting initial storage cleanup…")
         deleted_count = storage_manager.cleanup_old_files(max_file_age_days)
         if deleted_count > 0:
             logger.info(f"Initial cleanup completed: removed {deleted_count} old items")
@@ -46,7 +46,7 @@ async def storage_cleanup_loop() -> None:
             await asyncio.sleep(cleanup_interval_seconds)
 
             # Perform cleanup
-            logger.debug("Starting periodic storage cleanup...")
+            logger.debug("Starting periodic storage cleanup…")
             deleted_count = storage_manager.cleanup_old_files(max_file_age_days)
 
             if deleted_count > 0:

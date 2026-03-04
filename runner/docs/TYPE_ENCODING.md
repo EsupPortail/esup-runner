@@ -2,7 +2,7 @@
 
 This page documents the **`encoding`** runner task type: what it does and which **JSON parameters** the Manager must send.
 
-> Important: in this runner implementation, `TaskRequest.parameters` values are converted to CLI arguments using `str(...)` and then parsed with `json.loads(...)` inside the encoding script.
+> Important: in this runner implementation, `TaskRequest.parameters` values are converted to CLI arguments using `str(…)` and then parsed with `json.loads(…)` inside the encoding script.
 >
 > That means nested parameters such as `cut`, `rendition`, `dressing` **must be provided as JSON strings** (not as nested JSON objects), otherwise they may be serialized with single quotes and fail JSON parsing.
 
@@ -157,7 +157,7 @@ This example includes optional fields (`app_version`, `affiliation`, `completion
 ## Common pitfalls
 
 ### 1) Sending nested JSON objects instead of JSON strings
-The runner converts `parameters[...]` to CLI args with `str(...)`, and the encoding script does `json.loads(...)`.
+The runner converts `parameters[…]` to CLI args with `str(…)`, and the encoding script does `json.loads(…)`.
 
 If you send `parameters.cut` as an object, it may become a Python-style string with single quotes (invalid JSON) and will fail parsing.
 

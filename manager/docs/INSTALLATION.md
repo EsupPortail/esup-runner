@@ -12,6 +12,7 @@ The Manager enforces compatibility at **MAJOR + MINOR** level:
 - `PATCH` versions may differ
 
 > Assumptions
+>
 > - You have root access (or sudo).
 > - You are installing under `/opt/esup-runner`.
 
@@ -81,8 +82,8 @@ git sparse-checkout set manager
 Notes:
 
 - The `.` destination means the clone happens *in-place* in `/opt/esup-runner` (so you do **not** end up with `/opt/esup-runner/esup-runner`).
-- If `/opt/esup-runner` is not empty, `git clone ... .` will fail. In that case, choose another directory (e.g. `/opt/esup-runner-src`) or clean the existing one.
-- `git sparse-checkout set ...` defines which subdirectories are checked out. Running it again will replace the previous selection.
+- If `/opt/esup-runner` is not empty, `git clone … .` will fail. In that case, choose another directory (e.g. `/opt/esup-runner-src`) or clean the existing one.
+- `git sparse-checkout set …` defines which subdirectories are checked out. Running it again will replace the previous selection.
 
 If you plan to install **both** the manager and the runner on the same machine (recommended layout: `/opt/esup-runner/manager` and `/opt/esup-runner/runner`), use:
 
@@ -156,7 +157,7 @@ CORS_ALLOW_HEADERS=Content-Type
 
 Helpers:
 
-- Generate one API token entry (`AUTHORIZED_TOKENS__...`):
+- Generate one API token entry (`AUTHORIZED_TOKENS__…`):
 
   ```bash
   uv run scripts/generate_token.py
@@ -166,7 +167,7 @@ Helpers:
   # AUTHORIZED_TOKENS__runners=s3cr3t_token_value
   ```
 
-- Generate one admin bcrypt hash entry (`ADMIN_USERS__...`):
+- Generate one admin bcrypt hash entry (`ADMIN_USERS__…`):
 
   ```bash
   uv run scripts/generate_password.py
@@ -265,7 +266,7 @@ Recommendations:
 
 - Expose only the reverse proxy publicly on `443` (HTTPS).
 - Keep the manager service on a private interface, or localhost only when possible.
-- Forward admin endpoints (`/admin`, `/tasks`...) and API routes through the proxy.
+- Forward admin endpoints (`/admin`, `/tasks`…) and API routes through the proxy.
 - Avoid direct public access to the manager process on `MANAGER_PORT`.
 
 Notes:

@@ -68,7 +68,7 @@ _pids_listening_on_port() {
   local port="$1"
 
   if command -v ss >/dev/null 2>&1; then
-    # Extract pid=1234 from: users:(("python",pid=1234,fd=...))
+    # Extract pid=1234 from: users:(("python",pid=1234,fd=…))
     ss -lptn "sport = :${port}" 2>/dev/null \
       | awk -F'pid=' 'NR>1 {split($2,a,","); print a[1]}' \
       | awk '/^[0-9]+$/' \

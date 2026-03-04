@@ -132,11 +132,11 @@ async def reconnect_loop():  # pragma: no cover
             # Check manager health before attempting reconnection
             if await check_manager_health():
                 logger.info(
-                    f"Healthy manager detected, attempting reconnection (attempt {reconnect_attempts + 1})..."
+                    f"Healthy manager detected, attempting reconnection (attempt {reconnect_attempts + 1})…"
                 )
             else:
                 logger.warning(
-                    "Manager unhealthy, or token problem detected, waiting before retry..."
+                    "Manager unhealthy, or token problem detected, waiting before retry…"
                 )
                 await asyncio.sleep(base_reconnect_interval)
                 continue

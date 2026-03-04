@@ -79,7 +79,7 @@ def main():
         print("   No cleanup will be performed.")
         return
 
-    print(f"\n🔎 Scanning directory {config.STORAGE_DIR}...")
+    print(f"\n🔎 Scanning directory {config.STORAGE_DIR}…")
     if not os.path.exists(config.STORAGE_DIR):
         print(f"❌ Directory does not exist: {config.STORAGE_DIR}")
         return
@@ -111,7 +111,7 @@ def main():
         print("❌ Cleanup cancelled.")
         return
 
-    print("\n🔧 Running cleanup...")
+    print("\n🔧 Running cleanup…")
     try:
         deleted_count = storage_manager.cleanup_old_files(config.MAX_FILE_AGE_DAYS)
         print("\n✅ Cleanup complete!")

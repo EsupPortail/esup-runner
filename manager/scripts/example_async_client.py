@@ -25,7 +25,7 @@ How to run
 Notes
 -----
 - The Manager API expects a token configured in the manager environment
-  (`AUTHORIZED_TOKENS__...` variables).
+  (`AUTHORIZED_TOKENS__…` variables).
 - Auth header can be either:
     * `X-API-Token: <token>` (used in this script)
     * or `Authorization: Bearer <token>`
@@ -284,7 +284,7 @@ async def wait_for_terminal_state(
         if status == "warning" and error:
             print(f"Status=warning (notify callback issue): {error}")
         else:
-            print(f"Status={status!r} (waiting...) ")
+            print(f"Status={status!r} (waiting…) ")
 
         if asyncio.get_event_loop().time() >= deadline:
             raise TimeoutError(

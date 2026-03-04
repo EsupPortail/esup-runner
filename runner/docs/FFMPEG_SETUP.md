@@ -245,7 +245,7 @@ sudo apt -f install -y
 
 Notes:
 
-- Ensure the package is built with NVIDIA GPU support (`h264_nvenc`, `h264_cuvid`, `scale_npp`...).
+- Ensure the package is built with NVIDIA GPU support (`h264_nvenc`, `h264_cuvid`, `scale_npp`…).
 - Ensure the installed binary is the one used by systemd (`which ffmpeg`).
 - Keep package version aligned with the NVIDIA driver/CUDA stack.
 

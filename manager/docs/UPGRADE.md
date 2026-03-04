@@ -72,13 +72,6 @@ git pull --ff-only
 
 # Option: switch to a tagged version
 # git checkout vX.Y.Z
-
-# Sparse-checkout selection:
-# - same machine (runner + manager):
-#   git sparse-checkout set manager runner
-# - manager only:
-#   git sparse-checkout set manager
-git sparse-checkout set manager
 ```
 
 ---

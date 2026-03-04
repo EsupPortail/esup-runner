@@ -66,18 +66,14 @@ If you use sparse-checkout, ensure the correct directories are included **depend
 ```bash
 cd /opt/esup-runner
 
+# Fetch history and tags
 git fetch --tags
+
+# Update the current branch (recommended in prod: ff-only)
 git pull --ff-only
 
 # Option: switch to a tagged version
 # git checkout vX.Y.Z
-
-# Sparse-checkout selection:
-# - same machine (runner + manager):
-#   git sparse-checkout set manager runner
-# - runner only:
-#   git sparse-checkout set runner
-git sparse-checkout set runner
 ```
 
 ---

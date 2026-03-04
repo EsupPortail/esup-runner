@@ -29,6 +29,7 @@ Each project has its own `pyproject.toml`, documentation, release process, etc.
 
 - Docs home: [runner/docs/README.md](runner/docs/README.md)
 - Installation: [runner/docs/INSTALLATION.md](runner/docs/INSTALLATION.md)
+- Docker installation: [runner/docs/DOCKER.md](runner/docs/DOCKER.md)
 - Upgrade: [runner/docs/UPGRADE.md](runner/docs/UPGRADE.md)
 - Configuration: [runner/docs/RUNNER_CONFIGURATION.md](runner/docs/RUNNER_CONFIGURATION.md)
 - Versioning: [runner/docs/VERSION_MANAGEMENT.md](runner/docs/VERSION_MANAGEMENT.md)

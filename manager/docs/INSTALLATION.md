@@ -155,16 +155,26 @@ CORS_ALLOW_HEADERS=Content-Type
 
 Helpers:
 
-- Generate tokens:
+- Generate one API token entry (`AUTHORIZED_TOKENS__...`):
 
   ```bash
-  uv run scripts/generate_tokens.py
+  uv run scripts/generate_token.py
+  # Example:
+  # Token label (letters, numbers, underscores): runners
+  # Add this line to your .env file:
+  # AUTHORIZED_TOKENS__runners=s3cr3t_token_value
   ```
 
-- Generate bcrypt password hashes for admin users:
+- Generate one admin bcrypt hash entry (`ADMIN_USERS__...`):
 
   ```bash
-  uv run scripts/generate_passwords.py
+  uv run scripts/generate_password.py
+  # Example:
+  # Admin username (letters, numbers, underscores): admin
+  # Password:
+  # Confirm password:
+  # Add this line to your .env file:
+  # ADMIN_USERS__admin="s3cr3t_bcrypt_value"
   ```
 
 ### Initialize required directories

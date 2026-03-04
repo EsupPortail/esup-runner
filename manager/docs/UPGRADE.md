@@ -16,6 +16,7 @@ This document describes a safe **production** upgrade procedure for the *Manager
 
 Useful docs:
 - Installation: `INSTALLATION.md`
+- Docker installation: `DOCKER.md` (if your manager is deployed in a container)
 - Changelog: `CHANGELOG.md`
 - Version management: `VERSION_MANAGEMENT.md`
 

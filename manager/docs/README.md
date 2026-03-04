@@ -12,6 +12,7 @@ This folder contains the manager documentation.
 ## Installation
 
 See [INSTALLATION.md](INSTALLATION.md).
+For Docker-based installation, see [DOCKER.md](DOCKER.md).
 
 ## Upgrading
 

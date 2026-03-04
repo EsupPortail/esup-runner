@@ -20,6 +20,7 @@ Each project has its own `pyproject.toml`, documentation, release process, etc.
 
 - Docs home: [manager/docs/README.md](manager/docs/README.md)
 - Installation: [manager/docs/INSTALLATION.md](manager/docs/INSTALLATION.md)
+- Docker installation: [manager/docs/DOCKER.md](manager/docs/DOCKER.md)
 - Upgrade: [manager/docs/UPGRADE.md](manager/docs/UPGRADE.md)
 - Changelog: [manager/docs/CHANGELOG.md](manager/docs/CHANGELOG.md)
 - Versioning: [manager/docs/VERSION_MANAGEMENT.md](manager/docs/VERSION_MANAGEMENT.md)

@@ -28,6 +28,19 @@ PYTHON  ?= $(UV) run python
 
 EXTRAS  ?=
 
+# Docker build variables (can be overridden via env or make args)
+DOCKER            ?= docker
+DOCKERFILE        ?= Dockerfile
+DOCKER_IMAGE      ?= esup-runner-manager
+DOCKER_TAG        ?= latest
+ESUP_RUNNER_UID   ?= 1000
+ESUP_RUNNER_GID   ?= 1000
+DOCKER_BUILD_NETWORK ?=
+DOCKER_BUILD_OPTS ?=
+DOCKER_LOGS_VOLUME ?= esup-runner-manager-logs
+DOCKER_STORAGE_VOLUME ?= esup-runner-storage
+DOCKER_DATA_VOLUME ?= esup-runner-manager-data
+
 # Builds the --extra ... arguments from EXTRAS=dev,docs
 comma := ,
 empty :=
@@ -51,6 +64,8 @@ help:
 	@echo "  make fmt                                        -> format code (black + isort)"
 	@echo "  make lint                                       -> lint (flake8 + mypy)"
 	@echo "  make docs                                       -> generate docs diagrams"
+	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...'] -> build manager Docker image"
+	@echo "  make docker-fix-perms                           -> fix Docker volume permissions for esup-runner"
 	@echo "  make init                                       -> init directories from .env (sudo)"
 	@echo "  make create-service                             -> install systemd service (sudo)"
 	@echo "  make clean                                      -> remove .venv and caches"
@@ -66,6 +81,9 @@ help:
 	@echo "  make sync EXTRAS=dev"
 	@echo "  make lock EXTRAS=dev"
 	@echo "  make run"
+	@echo "  make docker-build DOCKER_IMAGE=ghcr.io/<github-org>/esup-runner-manager DOCKER_TAG=v0.9.0 ESUP_RUNNER_UID=$$(id -u) ESUP_RUNNER_GID=$$(id -g)"
+	@echo "  make docker-build DOCKER_BUILD_NETWORK=host"
+	@echo "  make docker-fix-perms ESUP_RUNNER_UID=$$(id -u) ESUP_RUNNER_GID=$$(id -g)"
 
 # ---------- Dependencies ----------
 
@@ -200,7 +218,24 @@ docs:
 	$(PYTHON) scripts/generate_architecture_diagram.py
 	$(PYTHON) scripts/generate_tree_diagram.py
 
+docker-build:
+	@echo "==> docker build $(DOCKER_IMAGE):$(DOCKER_TAG)"
+	$(DOCKER) build $(if $(strip $(DOCKER_BUILD_NETWORK)),--network $(DOCKER_BUILD_NETWORK),) $(DOCKER_BUILD_OPTS) -f $(DOCKERFILE) \
+		--build-arg ESUP_RUNNER_UID=$(ESUP_RUNNER_UID) \
+		--build-arg ESUP_RUNNER_GID=$(ESUP_RUNNER_GID) \
+		-t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+
+docker-fix-perms:
+	@echo "==> fix Docker volume permissions ($(ESUP_RUNNER_UID):$(ESUP_RUNNER_GID))"
+	$(DOCKER) run --rm --user root \
+		-v $(DOCKER_LOGS_VOLUME):/var/log/esup-runner \
+		-v $(DOCKER_STORAGE_VOLUME):/tmp/esup-runner \
+		-v $(DOCKER_DATA_VOLUME):/app/data \
+		$(DOCKER_IMAGE):$(DOCKER_TAG) \
+		sh -c "chown -R $(ESUP_RUNNER_UID):$(ESUP_RUNNER_GID) /var/log/esup-runner /tmp/esup-runner /app/data"
+
 .PHONY: help sync lock lock-upgrade run status stop restart init clean create-service docs \
 	sync-dev lock-dev sync-docs lock-docs \
+	docker-build docker-fix-perms \
 	check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
 	test coverage fmt fmt-check lint

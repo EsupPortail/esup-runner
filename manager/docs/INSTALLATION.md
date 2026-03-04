@@ -1,6 +1,7 @@
 # Installation Guide (Manager)
 
 This document describes how to install and run the **ESUP Runner Manager** on a Debian/Ubuntu-like system.
+For Docker-based deployment, see [DOCKER.md](DOCKER.md).
 
 ## Version compatibility note (Runner & Manager)
 

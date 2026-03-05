@@ -1,10 +1,23 @@
 /* More contrasted BS colors */
+.btn-outline-primary {
+  --bs-btn-color: #0D6BF4;
+}
+
 [data-bs-theme="dark"] .btn-outline-primary {
-  --bs-btn-color: #108DF3;
+  --bs-btn-color: #1099F0;
+}
+
+.btn-outline-secondary {
+  --bs-btn-color: #6C747C;
 }
 
 [data-bs-theme="dark"] .btn-outline-secondary {
   --bs-btn-color: #6A97C4;
+}
+
+.alert-info,
+[data-bs-theme="light"] .bg-body-secondary {
+  --bs-code-color: #C5257D;
 }
 
 [data-bs-theme="dark"] .alert-info {
@@ -12,6 +25,7 @@
 }
 
 [data-bs-theme="dark"] .btn-outline-danger {
+  --bs-btn-color: #F1444B;
   --bs-btn-disabled-color: #DC747D;
 }
 
@@ -232,12 +246,12 @@ body[data-bs-theme="light"] {
 .log-level-CRITICAL { border-left-color: #dc3545; background-color: rgba(220, 53, 69, 0.1); }
 .log-level-UNKNOWN { border-left-color: #6c757d; background-color: rgba(108, 117, 125, 0.05); }
 
-.theme-dark .log-level-DEBUG { background-color: rgba(108, 117, 125, 0.1); }
-.theme-dark .log-level-INFO { background-color: rgba(13, 202, 240, 0.1); }
-.theme-dark .log-level-WARNING { background-color: rgba(255, 193, 7, 0.1); }
-.theme-dark .log-level-ERROR { background-color: rgba(220, 53, 69, 0.1); }
-.theme-dark .log-level-CRITICAL { background-color: rgba(220, 53, 69, 0.2); }
-.theme-dark .log-level-UNKNOWN { background-color: rgba(108, 117, 125, 0.1); }
+[data-bs-theme="dark"] .log-level-DEBUG { background-color: rgba(108, 117, 125, 0.1); }
+[data-bs-theme="dark"] .log-level-INFO { background-color: rgba(13, 202, 240, 0.1); }
+[data-bs-theme="dark"] .log-level-WARNING { background-color: rgba(255, 193, 7, 0.1); }
+[data-bs-theme="dark"] .log-level-ERROR { background-color: rgba(220, 53, 69, 0.1); }
+[data-bs-theme="dark"] .log-level-CRITICAL { background-color: rgba(220, 53, 69, 0.2); }
+[data-bs-theme="dark"] .log-level-UNKNOWN { background-color: rgba(108, 117, 125, 0.1); }
 
 /* Level badges */
 .badge-DEBUG { background-color: #6c757d; }
@@ -288,11 +302,11 @@ body[data-bs-theme="light"] {
   border-radius: 4px;
 }
 
-.theme-dark .log-container::-webkit-scrollbar-track {
+[data-bs-theme="dark"] .log-container::-webkit-scrollbar-track {
   background: rgba(255,255,255,0.1);
 }
 
-.theme-dark .log-container::-webkit-scrollbar-thumb {
+[data-bs-theme="dark"] .log-container::-webkit-scrollbar-thumb {
   background: rgba(255,255,255,0.3);
 }
 

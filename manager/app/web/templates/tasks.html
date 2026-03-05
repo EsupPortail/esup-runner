@@ -27,10 +27,12 @@
           <div class="text-end">
             <div class="btn-group">
               <a href="/admin" class="btn btn-outline-secondary">
-                <i class="bi bi-arrow-left"></i> Back to Dashboard
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                Back to Dashboard
               </a>
               <button id="refreshBtn" class="btn btn-primary">
-                <i class="bi bi-arrow-clockwise"></i> Refresh
+                <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                Refresh
               </button>
             </div>
           </div>
@@ -41,53 +43,56 @@
     <!-- Statistics -->
     <div class="row g-3 mb-4">
       {% for status in available_statuses %}
-      {% if status_counts.get(status, 0) > 0 %}
-      <div class="col-6 col-md-4 col-lg-2 mb-3">
-        <div class="stats-card card border-0 h-100">
-          <div class="card-body text-center p-3">
-            <div class="badge badge-{{ status }} px-3 py-2 mb-2 fs-6">{{ status }}</div>
-            <div class="fs-4 fw-bold">{{ status_counts.get(status, 0) }}</div>
-            <small class="text-muted">tasks</small>
+        {% if status_counts.get(status, 0) > 0 %}
+          <div class="col-6 col-md-4 col-lg-2 mb-3">
+            <div class="stats-card card border-0 h-100">
+              <div class="card-body text-center p-3">
+                <div class="badge badge-{{ status }} px-3 py-2 mb-2 fs-6">{{ status }}</div>
+                <div class="fs-4 fw-bold">{{ status_counts.get(status, 0) }}</div>
+                <small class="text-muted">tasks</small>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-      {% endif %}
+        {% endif %}
       {% endfor %}
     </div>
 
     <!-- Active filters display -->
     {% if current_filters.statuses or current_filters.search or current_filters.task_type %}
-    <div class="row mb-3">
-      <div class="col-12">
-        <div class="card border-warning border-0">
-          <div class="card-body py-2">
-            <div class="d-flex align-items-center">
-              <small class="text-warning me-2"><i class="bi bi-funnel"></i> Active filters:</small>
-              {% if current_filters.statuses %}
-              <div class="me-2">
-                {% for status in current_filters.statuses %}
-                <span class="badge bg-warning text-dark me-1">{{ status }}</span>
-                {% endfor %}
-              </div>
-              {% endif %}
-              {% if current_filters.task_type %}
-              <div class="me-2">
-                <span class="badge bg-info me-1">Type: {{ current_filters.task_type }}</span>
-              </div>
-              {% endif %}
-              {% if current_filters.search %}
-              <div class="me-2">
-                <span class="badge bg-info me-1">Search: "{{ current_filters.search }}"</span>
-              </div>
-              {% endif %}
-              <div class="ms-auto">
-                <a href="/tasks" class="btn btn-sm btn-outline-warning">Clear all filters</a>
+      <div class="row mb-3">
+        <div class="col-12">
+          <div class="card border-warning border-0">
+            <div class="card-body py-2">
+              <div class="d-flex align-items-center">
+                <small class="me-2">
+                  <i class="bi bi-funnel" aria-hidden="true"></i>
+                  Active filters:
+                </small>
+                {% if current_filters.statuses %}
+                  <div class="me-2">
+                    {% for status in current_filters.statuses %}
+                      <span class="badge badge-{{ status }} me-1">{{ status }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+                {% if current_filters.task_type %}
+                  <div class="me-2">
+                    <span class="badge bg-info me-1">Type: {{ current_filters.task_type }}</span>
+                  </div>
+                {% endif %}
+                {% if current_filters.search %}
+                  <div class="me-2">
+                    <span class="badge bg-info me-1">Search: "{{ current_filters.search }}"</span>
+                  </div>
+                {% endif %}
+                <div class="ms-auto">
+                  <a href="/tasks" class="btn btn-sm btn-outline-secondary">Clear all filters</a>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
     {% endif %}
 
     <!-- Filters and controls -->
@@ -106,28 +111,31 @@
                   </label>
 
                   {% for status in available_statuses %}
-                  <input type="checkbox" class="btn-check status-checkbox mb-1" id="filter-{{ status }}"
-                       data-status="{{ status }}"
-                       {% if status in current_filters.statuses %}checked{% endif %} autocomplete="off">
-                  <label class="btn btn-outline-primary status-filter-btn mb-1" for="filter-{{ status }}">
-                    {{ status }} ({{ status_counts.get(status, 0) }})
-                  </label>
+                    <input type="checkbox" class="btn-check status-checkbox mb-1" id="filter-{{ status }}"
+                        data-status="{{ status }}"
+                        {% if status in current_filters.statuses %}checked{% endif %} autocomplete="off">
+                    <label class="btn btn-outline-primary status-filter-btn mb-1" for="filter-{{ status }}">
+                      {{ status }} ({{ status_counts.get(status, 0) }})
+                    </label>
                   {% endfor %}
                 </div>
               </fieldset>
               <div class="col-md-4 text-md-end">
                 <div class="btn-group">
                   {% if current_filters.auto_refresh > 0 %}
-                  <button class="btn btn-success auto-refresh-active" id="autoRefreshBtn" data-auto-refresh="true">
-                    <i class="bi bi-play-circle"></i> Auto ({{ current_filters.auto_refresh }}s)
-                  </button>
+                    <button class="btn btn-success auto-refresh-active" id="autoRefreshBtn" data-auto-refresh="true">
+                      <i class="bi bi-play-circle" aria-hidden="true"></i>
+                      Auto ({{ current_filters.auto_refresh }}s)
+                    </button>
                   {% else %}
-                  <button class="btn btn-outline-secondary" id="autoRefreshBtn" data-auto-refresh="false">
-                    <i class="bi bi-play-circle"></i> Auto-refresh
-                  </button>
+                    <button class="btn btn-outline-secondary" id="autoRefreshBtn" data-auto-refresh="false">
+                      <i class="bi bi-play-circle" aria-hidden="true"></i>
+                      Auto-refresh
+                    </button>
                   {% endif %}
                   <button class="btn btn-outline-secondary" id="clearFiltersBtn">
-                    <i class="bi bi-x-circle"></i> Clear
+                    <i class="bi bi-x-circle" aria-hidden="true"></i>
+                    Clear
                   </button>
                 </div>
               </div>
@@ -142,7 +150,8 @@
                       aria-label="Search for tasks…"
                       placeholder="Search by ID, type, URL…" value="{{ current_filters.search or '' }}">
                     <button type="submit" class="btn btn-outline-primary">
-                      <i class="bi bi-search"></i> Search
+                      <i class="bi bi-search" aria-hidden="true"></i>
+                      Search
                     </button>
                   </div>
                   {% for status in current_filters.statuses %}
@@ -193,7 +202,8 @@
               <div class="d-flex align-items-center gap-2">
                 <small id="selectionCount" class="text-muted">0 selected</small>
                 <button id="restartSelectedBtn" class="btn btn-sm btn-outline-danger" disabled>
-                  <i class="bi bi-arrow-repeat"></i> Restart selected tasks
+                  <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                  Restart selected tasks
                 </button>
                 <small class="text-muted">Showing {{ tasks|length }} of {{ total_tasks }} tasks</small>
               </div>
@@ -220,50 +230,51 @@
                 </thead>
                 <tbody id="tasksTableBody">
                   {% for task in tasks %}
-                  <tr class="task-row" data-status="{{ task.status }}" data-type="{{ task.task_type }}" data-task-id="{{ task.id }}">
-                    <td>
-                      <input type="checkbox"
-                           class="form-check-input task-select-checkbox"
-                           data-task-id="{{ task.id }}"
-                           aria-label="Select task {{ task.id }}">
-                    </td>
-                    <td>
-                      <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
-                    </td>
-                    <td>
-                      <code class="small">{{ task.id }}</code>
-                    </td>
-                    <td>
-                      <span class="badge bg-secondary">{{ task.task_type }}</span>
-                    </td>
-                    <td class="small text-muted">{{ task.created_at }}</td>
-                    <td class="small text-muted">{{ task.updated_at }}</td>
-                    <td class="small text-truncate" style="max-width: 200px;">
-                      {% if task.source_url %}
-                      <a href="{{ task.source_url }}" target="_blank" class="text-decoration-none" title="{{ task.source_url }}">
-                        {{ task.source_url[:50] }}{% if task.source_url|length > 50 %}…{% endif %}
-                      </a>
-                      {% else %}
-                      <span class="text-muted">-</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      <button class="btn btn-sm btn-outline-primary view-task-btn"
-                          data-task-id="{{ task.id }}"
-                          data-bs-toggle="modal"
-                          data-bs-target="#taskDetailModal">
-                        <i class="bi bi-eye"></i> View
-                      </button>
-                    </td>
-                  </tr>
-                  {% else %}
-                  <tr>
-                    <td colspan="8" class="text-center text-muted py-5">
-                      <i class="bi bi-inbox display-1"></i>
-                      <div class="h5 mt-3">No tasks found</div>
-                      <p class="mb-0">Try adjusting your filters or search criteria</p>
-                    </td>
-                  </tr>
+                    <tr class="task-row" data-status="{{ task.status }}" data-type="{{ task.task_type }}" data-task-id="{{ task.id }}">
+                      <td>
+                        <input type="checkbox"
+                            class="form-check-input task-select-checkbox"
+                            data-task-id="{{ task.id }}"
+                            aria-label="Select task {{ task.id }}">
+                      </td>
+                      <td>
+                        <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
+                      </td>
+                      <td>
+                        <code class="small">{{ task.id }}</code>
+                      </td>
+                      <td>
+                        <span class="badge bg-secondary">{{ task.task_type }}</span>
+                      </td>
+                      <td class="small text-muted">{{ task.created_at }}</td>
+                      <td class="small text-muted">{{ task.updated_at }}</td>
+                      <td class="small text-truncate" style="max-width: 200px;">
+                        {% if task.source_url %}
+                          <a href="{{ task.source_url }}" target="_blank" class="text-decoration-none" title="{{ task.source_url }}">
+                            {{ task.source_url[:50] }}{% if task.source_url|length > 50 %}…{% endif %}
+                          </a>
+                        {% else %}
+                          <span class="text-muted">-</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <button class="btn btn-sm btn-outline-primary view-task-btn"
+                            data-task-id="{{ task.id }}"
+                            data-bs-toggle="modal"
+                            data-bs-target="#taskDetailModal">
+                          <i class="bi bi-eye" aria-hidden="true"></i>
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                      <td colspan="8" class="text-center text-muted py-5">
+                        <i class="bi bi-inbox display-1" aria-hidden="true"></i>
+                        <div class="h5 mt-3">No tasks found</div>
+                        <p class="mb-0">Try adjusting your filters or search criteria</p>
+                      </td>
+                    </tr>
                   {% endfor %}
                 </tbody>
               </table>
@@ -480,7 +491,7 @@
 
         autoRefreshBtn.classList.add('btn-success');
         autoRefreshBtn.classList.remove('btn-outline-secondary');
-        autoRefreshBtn.innerHTML = `<i class="bi bi-pause-circle"></i> Auto (${autoRefresh}s)`;
+        autoRefreshBtn.innerHTML = `<i class="bi bi-pause-circle" aria-hidden="true"></i> Auto (${autoRefresh}s)`;
       }
     }
 
@@ -490,7 +501,7 @@
         clearInterval(autoRefreshInterval);
         this.classList.remove('btn-success');
         this.classList.add('btn-outline-secondary');
-        this.innerHTML = '<i class="bi bi-play-circle"></i> Auto-refresh';
+        this.innerHTML = '<i class="bi bi-play-circle" aria-hidden="true"></i> Auto-refresh';
         updateUrlWithFilters();
       } else {
         autoRefresh = 30;
@@ -569,72 +580,72 @@
 
           modalBody.innerHTML = `
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Task ID</h6>
+              <h3 class="h5 text-muted mb-2">Task ID</h6>
               <code>${task.task_id}</code>
             </div>
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Status</h6>
+              <h3 class="h5 text-muted mb-2">Status</h6>
               <span class="badge badge-${task.status}">${task.status}</span>
             </div>
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Task Type</h6>
+              <h3 class="h5 text-muted mb-2">Task Type</h6>
               <span class="badge bg-secondary">${task.task_type}</span>
             </div>
             ${task.etab_name ? `
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Establishment</h6>
+              <h3 class="h5 text-muted mb-2">Establishment</h6>
               <span>${task.etab_name}</span>
             </div>
             ` : ''}
             ${task.app_name ? `
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Application</h6>
+              <h3 class="h5 text-muted mb-2">Application</h6>
               <span>${task.app_name} ${task.app_version ? 'v' + task.app_version : ''}</span>
             </div>
             ` : ''}
             ${task.affiliation ? `
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Affiliation</h6>
+              <h3 class="h5 text-muted mb-2">Affiliation</h6>
               <span>${task.affiliation}</span>
             </div>
             ` : ''}
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Source URL</h6>
+              <h3 class="h5 text-muted mb-2">Source URL</h6>
               <a href="${task.source_url || '#'}" target="_blank" class="text-break">${task.source_url || 'N/A'}</a>
             </div>
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Created At</h6>
+              <h3 class="h5 text-muted mb-2">Created At</h6>
               <span>${task.created_at}</span>
             </div>
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Updated At</h6>
+              <h3 class="h5 text-muted mb-2">Updated At</h6>
               <span>${task.updated_at}</span>
             </div>
             ${task.runner_id ? `
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Assigned Runner</h6>
+              <h3 class="h5 text-muted mb-2">Assigned Runner</h6>
               <code>${task.runner_id}</code>
             </div>
             ` : ''}
             ${task.error ? `
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Error</h6>
+              <h3 class="h5 text-muted mb-2">Error</h6>
               <div class="alert alert-danger">${task.error}</div>
             </div>
             ` : ''}
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Parameters</h6>
+              <h3 class="h5 text-muted mb-2">Parameters</h6>
               <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded"><code>${JSON.stringify(task.parameters || {}, null, 2)}</code></pre>
             </div>
             ${task.script_output ? `
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Script Output</h6>
+              <h3 class="h5 text-muted mb-2">Script Output</h6>
               <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded" style="max-height: 300px; overflow-y: auto;"><code>${task.script_output}</code></pre>
             </div>
             ` : ''}
             ${task.result ? `
             <div class="mb-3">
-              <h6 class="text-muted mb-2">Result</h6>
+              <h3 class="h5 text-muted mb-2">Result</h6>
               <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded"><code>${JSON.stringify(task.result, null, 2)}</code></pre>
             </div>
             ` : ''}
@@ -642,7 +653,7 @@
         } catch (error) {
           modalBody.innerHTML = `
             <div class="alert alert-danger">
-              <i class="bi bi-exclamation-triangle me-2"></i>
+              <i class="bi bi-exclamation-triangle me-2" aria-hidden="true"></i>
               Failed to load task details: ${error.message}
             </div>
           `;

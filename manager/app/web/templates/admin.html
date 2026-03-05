@@ -159,7 +159,7 @@
               <div class="list-group-item runner {{ runner.status }}">
                 <div class="d-flex justify-content-between align-items-center">
                   <div>
-                    <h6 class="mb-1">
+                    <h3 class="h5 mb-1">
                       <a href="/admin/runner/{{ runner.id }}" class="link-body-emphasis" title="Open runner detail"
                         data-bs-toggle="tooltip">
                         {{ runner.id }}
@@ -203,7 +203,7 @@
               <div class="list-group-item task {{ task.status }}">
                 <div class="d-flex justify-content-between align-items-center">
                   <div>
-                    <h6 class="mb-1">
+                    <h3 class="h5 mb-1">
                       ID:
                       <a href="/admin/task/{{ task.id }}" class="link-body-emphasis" title="Open task detail"
                         data-bs-toggle="tooltip">
@@ -274,7 +274,7 @@
     if (reloadBtn && reloadStatus) {
       reloadBtn.addEventListener('click', async () => {
         reloadBtn.disabled = true;
-        reloadStatus.textContent = 'Reload en cours…';
+        reloadStatus.textContent = 'Reloading…';
 
         try {
           const response = await fetch('/admin/reload-config', {
@@ -291,7 +291,7 @@
           const data = await response.json();
           reloadStatus.textContent = `Reload OK (docs: ${data.api_docs_visibility})`;
         } catch (error) {
-          reloadStatus.textContent = 'Reload échoué';
+          reloadStatus.textContent = 'Reload failed';
         } finally {
           setTimeout(() => {
             reloadStatus.textContent = '';

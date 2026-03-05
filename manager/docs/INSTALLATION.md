@@ -226,6 +226,15 @@ curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
   "http://127.0.0.1:<MANAGER_PORT>/api/version"
 ```
 
+4) Optional end-to-end task test with the example async client:
+
+```bash
+cd /opt/esup-runner/manager
+RUNNER_API_TOKEN="<AUTHORIZED_TOKEN>" \
+RUNNER_MANAGER_URL="http://127.0.0.1:<MANAGER_PORT>" \
+uv run scripts/example_async_client.py
+```
+
 Replace:
 
 - `<AUTHORIZED_TOKEN>` with one of your `AUTHORIZED_TOKENS__*` (for example `AUTHORIZED_TOKENS__runners`) values from `.env`.

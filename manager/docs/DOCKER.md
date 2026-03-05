@@ -226,13 +226,16 @@ Manual end-to-end task test (from manager sources):
 
 ```bash
 cd /opt/esup-runner/manager
+RUNNER_API_TOKEN="<AUTHORIZED_TOKEN>" \
+RUNNER_MANAGER_URL="http://127.0.0.1:8081" \
 uv run scripts/example_async_client.py
 ```
 
 Before running this script:
 
-- Set `TOKEN` in `scripts/example_async_client.py` to one of your manager `AUTHORIZED_TOKENS__*` values.
-- Keep `MANAGER_URL` aligned with your published manager endpoint (default in Docker guide: `http://127.0.0.1:8081`).
+- Set `RUNNER_API_TOKEN` to one of your manager `AUTHORIZED_TOKENS__*` values.
+- Set `RUNNER_MANAGER_URL` to your published manager endpoint.
+- If the script runs from another server, avoid `127.0.0.1`; use the real manager host/IP.
 - Ensure at least one runner is registered and supports `TASK_TYPE` (default script value: `encoding`).
 
 Inspect mounted data paths (container must be running):

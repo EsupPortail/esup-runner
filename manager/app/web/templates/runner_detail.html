@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="/static/esup-runner.css?version={{ version }}">
     <script src="/static/esup-runner.js?version={{ version }}" defer></script>
 </head>
-<body class="{% if dark_mode_enabled %}theme-dark{% else %}theme-light{% endif %} container py-4">
+<body class="container py-4" data-bs-theme="{% if dark_mode_enabled %}dark{% else %}light{% endif %}">
 
     <div class="row mb-4">
         <div class="col">

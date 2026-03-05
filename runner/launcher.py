@@ -26,7 +26,7 @@ def main():
 
     try:
         # Start all instances
-        print(f"🚀 Starting {config.RUNNER_INSTANCES} runner instances...")
+        print(f"🚀 Starting {config.RUNNER_INSTANCES} runner instances…")
         manager.start_all_instances()
 
         # Display status
@@ -51,7 +51,7 @@ def main():
             manager.wait_for_termination()
 
     except KeyboardInterrupt:
-        print("\n⏹️  Shutting down all instances...")
+        print("\n⏹️  Shutting down all instances…")
         manager.stop_all_instances()
         print("✅ All instances stopped")
     except Exception as e:

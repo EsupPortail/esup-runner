@@ -41,7 +41,7 @@ Notes:
 - Multipliers must be `>= 1`.
 - Each group must contain at least one task type.
 - Whitespace is allowed.
-- Brackets `[...]` are optional (both forms are accepted).
+- Brackets `[…]` are optional (both forms are accepted).
 
 ## RUNNER_INSTANCES interaction
 

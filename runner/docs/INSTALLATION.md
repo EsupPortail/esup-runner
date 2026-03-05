@@ -99,8 +99,8 @@ cd runner
 Notes:
 
 - The `.` destination means the clone happens *in-place* in `/opt/esup-runner` (so you do **not** end up with `/opt/esup-runner/esup-runner`).
-- If `/opt/esup-runner` is not empty, `git clone ... .` will fail. In that case, choose another directory (e.g. `/opt/esup-runner-src`) or clean the existing one.
-- `git sparse-checkout set ...` defines which subdirectories are checked out. Running it again will replace the previous selection.
+- If `/opt/esup-runner` is not empty, `git clone … .` will fail. In that case, choose another directory (e.g. `/opt/esup-runner-src`) or clean the existing one.
+- `git sparse-checkout set …` defines which subdirectories are checked out. Running it again will replace the previous selection.
 
 If you plan to install **both** the runner and the manager on the same machine (recommended layout: `/opt/esup-runner/runner` and `/opt/esup-runner/manager`), use:
 

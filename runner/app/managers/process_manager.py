@@ -172,7 +172,7 @@ class UvicornProcessManager:
         """
         Start all Uvicorn instances as separate processes.
         """
-        logger.info(f"Starting {self.instances} runner instances...")
+        logger.info(f"Starting {self.instances} runner instances…")
 
         for i, port in enumerate(self.ports):
             # Ensure port is available
@@ -195,7 +195,7 @@ class UvicornProcessManager:
         """
         Stop all running Uvicorn instances gracefully.
         """
-        logger.info("Stopping all runner instances...")
+        logger.info("Stopping all runner instances…")
 
         for i, process in enumerate(self.processes):
             if process.is_alive():
@@ -204,7 +204,7 @@ class UvicornProcessManager:
                 process.join(timeout=10)  # Wait up to 10 seconds
 
                 if process.is_alive():
-                    logger.warning(f"Instance {i} did not terminate gracefully, forcing...")
+                    logger.warning(f"Instance {i} did not terminate gracefully, forcing…")
                     process.kill()
                     process.join()
 
@@ -273,7 +273,7 @@ class UvicornProcessManager:
 
                 for i, process in enumerate(self.processes):
                     if not process.is_alive():
-                        logger.warning(f"Instance {i} on port {self.ports[i]} died, restarting...")
+                        logger.warning(f"Instance {i} on port {self.ports[i]} died, restarting…")
                         self.restart_instance(i)
 
         except KeyboardInterrupt:
@@ -286,7 +286,7 @@ class UvicornProcessManager:
         try:
             # Set up signal handlers for graceful shutdown
             def signal_handler(signum, frame):
-                logger.info(f"Received signal {signum}, shutting down...")
+                logger.info(f"Received signal {signum}, shutting down…")
                 self.stop_all_instances()
                 sys.exit(0)
 
@@ -298,5 +298,5 @@ class UvicornProcessManager:
                 process.join()
 
         except KeyboardInterrupt:
-            logger.info("Keyboard interrupt received, shutting down...")
+            logger.info("Keyboard interrupt received, shutting down…")
             self.stop_all_instances()

@@ -1,7 +1,7 @@
 """
 Studio encoding task handler.
 Step 1: Run internal studio script to generate a base video (mp4) from the mediapackage XML (with optional SMIL cut and layout).
-Step 2: Run existing encoding script on the generated video to produce full outputs (mp4, m3u8, thumbnails, overview...), honoring GPU configuration.
+Step 2: Run existing encoding script on the generated video to produce full outputs (mp4, m3u8, thumbnails, overview…), honoring GPU configuration.
 """
 
 import re
@@ -218,7 +218,7 @@ class StudioEncodingHandler(BaseTaskHandler):
     def _log_studio_selected_mode(self, result: Dict[str, Any], context: str = "") -> None:
         """Log which studio pipeline mode was actually used.
 
-        studio.py prints attempts as: [FULL_GPU] ..., [GPU_ENC_ONLY] ..., [CPU] ...
+        studio.py prints attempts as: [FULL_GPU] …, [GPU_ENC_ONLY] …, [CPU] …
         The last printed label corresponds to the chosen mode (the process exits on success).
         """
 

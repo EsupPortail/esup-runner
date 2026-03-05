@@ -191,7 +191,7 @@ class Config:
 
     def __init__(self):
         """Initialize configuration values."""
-        print("Initializing configuration from environment variables...")
+        print("Initializing configuration from environment variables…")
 
         # Manager configuration
         self.MANAGER_PROTOCOL: str = os.getenv("MANAGER_PROTOCOL", "http")
@@ -291,7 +291,7 @@ class Config:
         )
 
         # OpenAPI token handling
-        # Allow providing OpenAPI token in query string (?token=...). Default False to reduce leakage.
+        # Allow providing OpenAPI token in query string (?token=…). Default False to reduce leakage.
         self.OPENAPI_ALLOW_QUERY_TOKEN: bool = _parse_bool(
             os.getenv("OPENAPI_ALLOW_QUERY_TOKEN"), default=False
         )

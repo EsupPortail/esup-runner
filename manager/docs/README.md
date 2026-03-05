@@ -1,7 +1,7 @@
 # ESUP Runner Manager
 
 <p align="center">
-	<img src="../app/web/static/manager.png" alt="Manager" width="480" />
+  <img src="../app/web/static/manager.png" alt="Manager" width="480" />
 </p>
 
 ESUP Runner Manager is the central service that orchestrates a pool of distributed runners.
@@ -64,9 +64,9 @@ At a high level, the manager:
 - Maintains an in-memory registry of runners (with heartbeats) and tasks.
 - Accepts task submissions (`POST /task/execute`) from client applications.
 - Selects the first runner that is:
-	- reachable (`GET {runner.url}/runner/ping`),
-	- `available` and `registered`,
-	- and advertises support for the requested `task_type`.
+  - reachable (`GET {runner.url}/runner/ping`),
+  - `available` and `registered`,
+  - and advertises support for the requested `task_type`.
 - Calls the runner to start execution (`POST {runner.url}/task/run`).
 - Receives completion notifications from runners (`POST /task/completion`).
 - Optionally notifies the client application back via `notify_url`.
@@ -108,7 +108,7 @@ Recommended setup:
 - Do not expose the manager process directly on the public Internet.
 - Terminate TLS on the reverse proxy and publish only HTTPS externally.
 - Keep the manager bound to a private interface or localhost whenever possible.
-- Route both API endpoints and admin endpoints (`/admin`, `/tasks`...) through the proxy.
+- Route both API endpoints and admin endpoints (`/admin`, `/tasks`…) through the proxy.
 
 ## Task lifecycle
 
@@ -118,9 +118,9 @@ Recommended setup:
 4. **Runner executes** the job and writes outputs.
 5. **Runner notifies completion** back to the manager via `POST /task/completion`.
 6. **Client retrieves status/results** from the manager:
-	 - Status: `GET /task/status/{task_id}`
-	 - Manifest: `GET /task/result/{task_id}`
-	 - Files: `GET /task/result/{task_id}/file/{file_path}`
+   - Status: `GET /task/status/{task_id}`
+   - Manifest: `GET /task/result/{task_id}`
+   - Files: `GET /task/result/{task_id}/file/{file_path}`
 
 Notes:
 
@@ -144,14 +144,14 @@ Payload (`TaskRequest`):
 
 ```json
 {
-	"etab_name": "My institution",
-	"app_name": "My app",
-	"app_version": "4.0.0",
-	"task_type": "encoding",
-	"source_url": "https://example.org/input.mp4",
-	"affiliation": "staff",
-	"parameters": {},
-	"notify_url": "https://client.example.org/runner_manager_webhook"
+  "etab_name": "My institution",
+  "app_name": "My app",
+  "app_version": "4.0.0",
+  "task_type": "encoding",
+  "source_url": "https://example.org/input.mp4",
+  "affiliation": "staff",
+  "parameters": {},
+  "notify_url": "https://client.example.org/runner_manager_webhook"
 }
 ```
 
@@ -161,19 +161,19 @@ Examples by task type:
 
 ```json
 {
-	"etab_name": "University Video Platform",
-	"app_name": "Esup-Pod",
-	"app_version": "4.0.0",
-	"task_type": "encoding",
-	"source_url": "https://video.example.org/media/video.mp4",
-	"notify_url": "https://pod.example.org/api/runner_manager_webhook/",
-	"parameters": {
-		"rendition": {
-			"360": "640x360",
-			"720": "1280x720",
-			"1080": "1920x1080"
-		}
-	}
+  "etab_name": "University Video Platform",
+  "app_name": "Esup-Pod",
+  "app_version": "4.0.0",
+  "task_type": "encoding",
+  "source_url": "https://video.example.org/media/video.mp4",
+  "notify_url": "https://pod.example.org/api/runner_manager_webhook/",
+  "parameters": {
+    "rendition": {
+      "360": "640x360",
+      "720": "1280x720",
+      "1080": "1920x1080"
+    }
+  }
 }
 ```
 
@@ -181,13 +181,13 @@ Examples by task type:
 
 ```json
 {
-	"etab_name": "University Video Platform",
-	"app_name": "Esup-Pod",
-	"app_version": "4.0.0",
-	"task_type": "studio",
-	"source_url": "https://video.example.org/media/opencast-files/abcd-efgh/abcd-efgh.xml",
-	"notify_url": "",
-	"parameters": {}
+  "etab_name": "University Video Platform",
+  "app_name": "Esup-Pod",
+  "app_version": "4.0.0",
+  "task_type": "studio",
+  "source_url": "https://video.example.org/media/opencast-files/abcd-efgh/abcd-efgh.xml",
+  "notify_url": "",
+  "parameters": {}
 }
 ```
 
@@ -195,17 +195,17 @@ Examples by task type:
 
 ```json
 {
-	"etab_name": "University Video Platform",
-	"app_name": "Esup-Pod",
-	"app_version": "4.0.0",
-	"task_type": "transcription",
-	"source_url": "https://video.example.org/media/audio-or-video.mp4",
-	"notify_url": "https://pod.example.org/api/runner_manager_webhook/",
-	"parameters": {
-		"language": "fr",
-		"output_formats": ["vtt", "srt", "txt"],
-		"diarization": false
-	}
+  "etab_name": "University Video Platform",
+  "app_name": "Esup-Pod",
+  "app_version": "4.0.0",
+  "task_type": "transcription",
+  "source_url": "https://video.example.org/media/audio-or-video.mp4",
+  "notify_url": "https://pod.example.org/api/runner_manager_webhook/",
+  "parameters": {
+    "language": "fr",
+    "output_formats": ["vtt", "srt", "txt"],
+    "diarization": false
+  }
 }
 ```
 
@@ -219,9 +219,9 @@ Used for runner selection. The manager requires this JSON shape:
 
 ```json
 {
-	"available": true,
-	"registered": true,
-	"task_types": ["encoding", "studio", "transcription"]
+  "available": true,
+  "registered": true,
+  "task_types": ["encoding", "studio", "transcription"]
 }
 ```
 
@@ -240,16 +240,16 @@ Common JSON envelope (forwarded from the client `TaskRequest`, with extra fields
 
 ```json
 {
-	"task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
-	"etab_name": "My institution",
-	"app_name": "My app",
-	"app_version": "4.0.0",
-	"task_type": "encoding",
-	"source_url": "https://example.org/input.mp4",
-	"affiliation": "staff",
-	"parameters": {},
-	"notify_url": "https://client.example.org/runner_manager_webhook",
-	"completion_callback": "https://manager.example.org/task/completion"
+  "task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
+  "etab_name": "My institution",
+  "app_name": "My app",
+  "app_version": "4.0.0",
+  "task_type": "encoding",
+  "source_url": "https://example.org/input.mp4",
+  "affiliation": "staff",
+  "parameters": {},
+  "notify_url": "https://client.example.org/runner_manager_webhook",
+  "completion_callback": "https://manager.example.org/task/completion"
 }
 ```
 
@@ -259,22 +259,22 @@ The `parameters` object is **task-type specific** and is interpreted by the runn
 
 ```json
 {
-	"task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
-	"etab_name": "University Video Platform",
-	"app_name": "Esup-Pod",
-	"app_version": "4.0.0",
-	"task_type": "encoding",
-	"source_url": "https://video.example.org/media/video.mp4",
-	"affiliation": "staff",
-	"notify_url": "https://pod.example.org/api/runner_manager_webhook/",
-	"completion_callback": "https://manager.example.org/task/completion",
-	"parameters": {
-		"rendition": {
-			"360": "640x360",
-			"720": "1280x720",
-			"1080": "1920x1080"
-		}
-	}
+  "task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
+  "etab_name": "University Video Platform",
+  "app_name": "Esup-Pod",
+  "app_version": "4.0.0",
+  "task_type": "encoding",
+  "source_url": "https://video.example.org/media/video.mp4",
+  "affiliation": "staff",
+  "notify_url": "https://pod.example.org/api/runner_manager_webhook/",
+  "completion_callback": "https://manager.example.org/task/completion",
+  "parameters": {
+    "rendition": {
+      "360": "640x360",
+      "720": "1280x720",
+      "1080": "1920x1080"
+    }
+  }
 }
 ```
 
@@ -282,16 +282,16 @@ The `parameters` object is **task-type specific** and is interpreted by the runn
 
 ```json
 {
-	"task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
-	"etab_name": "University Video Platform",
-	"app_name": "Esup-Pod",
-	"app_version": "4.0.0",
-	"task_type": "studio",
-	"source_url": "https://video.example.org/media/opencast-files/abcd-efgh/abcd-efgh.xml",
-	"affiliation": "staff",
-	"notify_url": "https://pod.example.org/api/runner_manager_webhook/",
-	"completion_callback": "https://manager.example.org/task/completion",
-	"parameters": {}
+  "task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
+  "etab_name": "University Video Platform",
+  "app_name": "Esup-Pod",
+  "app_version": "4.0.0",
+  "task_type": "studio",
+  "source_url": "https://video.example.org/media/opencast-files/abcd-efgh/abcd-efgh.xml",
+  "affiliation": "staff",
+  "notify_url": "https://pod.example.org/api/runner_manager_webhook/",
+  "completion_callback": "https://manager.example.org/task/completion",
+  "parameters": {}
 }
 ```
 
@@ -299,20 +299,20 @@ The `parameters` object is **task-type specific** and is interpreted by the runn
 
 ```json
 {
-	"task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
-	"etab_name": "University Video Platform",
-	"app_name": "Esup-Pod",
-	"app_version": "4.0.0",
-	"task_type": "transcription",
-	"source_url": "https://video.example.org/media/audio-or-video.mp4",
-	"affiliation": "staff",
-	"notify_url": "https://pod.example.org/api/runner_manager_webhook/",
-	"completion_callback": "https://manager.example.org/task/completion",
-	"parameters": {
-		"language": "fr",
-		"output_formats": ["vtt", "srt", "txt"],
-		"diarization": false
-	}
+  "task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
+  "etab_name": "University Video Platform",
+  "app_name": "Esup-Pod",
+  "app_version": "4.0.0",
+  "task_type": "transcription",
+  "source_url": "https://video.example.org/media/audio-or-video.mp4",
+  "affiliation": "staff",
+  "notify_url": "https://pod.example.org/api/runner_manager_webhook/",
+  "completion_callback": "https://manager.example.org/task/completion",
+  "parameters": {
+    "language": "fr",
+    "output_formats": ["vtt", "srt", "txt"],
+    "diarization": false
+  }
 }
 ```
 
@@ -348,10 +348,10 @@ Payload:
 
 ```json
 {
-	"task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
-	"status": "completed",
-	"error_message": null,
-	"script_output": "ffmpeg finished successfully"
+  "task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
+  "status": "completed",
+  "error_message": null,
+  "script_output": "ffmpeg finished successfully"
 }
 ```
 
@@ -366,10 +366,10 @@ Payload:
 
 ```json
 {
-	"task_ids": [
-		"2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
-		"1b2c3d4e-5f67-8901-2345-67890abcdeff"
-	]
+  "task_ids": [
+    "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
+    "1b2c3d4e-5f67-8901-2345-67890abcdeff"
+  ]
 }
 ```
 
@@ -385,14 +385,14 @@ Response format:
 
 ```json
 {
-	"requested": 2,
-	"restarted": [
-		{"task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761"}
-	],
-	"skipped": [
-		{"task_id": "1b2c3d4e-5f67-8901-2345-67890abcdeff", "reason": "Task status 'running' cannot be restarted"}
-	],
-	"failed": []
+  "requested": 2,
+  "restarted": [
+    {"task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761"}
+  ],
+  "skipped": [
+    {"task_id": "1b2c3d4e-5f67-8901-2345-67890abcdeff", "reason": "Task status 'running' cannot be restarted"}
+  ],
+  "failed": []
 }
 ```
 
@@ -402,9 +402,9 @@ If the original task request has a non-empty `notify_url`, the manager POSTs:
 
 ```json
 {
-	"task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
-	"status": "completed",
-	"script_output": "..."
+  "task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
+  "status": "completed",
+  "script_output": "…"
 }
 ```
 

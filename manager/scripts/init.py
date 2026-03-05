@@ -22,7 +22,7 @@ ENV_KEYS = ("LOG_DIRECTORY", "RUNNERS_STORAGE_PATH")
 
 
 def _strip_quotes(value: str) -> str:
-    # Remove optional surrounding quotes to support values like "..." or '...'.
+    # Remove optional surrounding quotes to support values like "…" or '…'.
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
         return value[1:-1]
     return value

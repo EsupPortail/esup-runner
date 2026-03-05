@@ -1,662 +1,683 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tasks Management</title>
-    <link rel="icon" type="image/png" href="/static/favicon.png?version={{ version }}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tasks Management</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png?version={{ version }}">
 
-    <!-- Bootstrap -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <!-- App -->
-    <link rel="stylesheet" href="/static/esup-runner.css?version={{ version }}">
-    <script src="/static/esup-runner.js?version={{ version }}" defer></script>
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <!-- App -->
+  <link rel="stylesheet" href="/static/esup-runner.css?version={{ version }}">
+  <script src="/static/esup-runner.js?version={{ version }}" defer></script>
 </head>
-<body class="{% if dark_mode_enabled %}theme-dark{% else %}theme-light{% endif %} container py-4">
-    <div class="container">
-        <!-- Header -->
-        <div class="row mb-4">
-            <div class="col">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h1 class="h2 mb-2">Tasks Management</h1>
-                        <p class="text-subtle mb-0">View and search all tasks in the system</p>
-                    </div>
-                    <div class="text-end">
-                        <div class="btn-group">
-                            <a href="/admin" class="btn btn-outline-secondary">
-                                <i class="bi bi-arrow-left"></i> Back to Dashboard
-                            </a>
-                            <button id="refreshBtn" class="btn btn-primary">
-                                <i class="bi bi-arrow-clockwise"></i> Refresh
-                            </button>
-                        </div>
-                    </div>
-                </div>
+<body class="container py-4" data-bs-theme="{% if dark_mode_enabled %}dark{% else %}light{% endif %}">
+  <div class="container">
+    <!-- Header -->
+    <header class="row mb-4">
+      <div class="col">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <h1 class="h2 mb-2">Tasks Management</h1>
+            <p class="text-subtle mb-0">View and search all tasks in the system</p>
+          </div>
+          <div class="text-end">
+            <div class="btn-group">
+              <a href="/admin" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                Back to Dashboard
+              </a>
+              <button id="refreshBtn" class="btn btn-primary">
+                <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                Refresh
+              </button>
             </div>
+          </div>
         </div>
+      </div>
+    </header>
 
-        <!-- Statistics -->
-        <div class="row g-3 mb-4">
-            {% for status in available_statuses %}
-            {% if status_counts.get(status, 0) > 0 %}
-            <div class="col-6 col-md-4 col-lg-2 mb-3">
-                <div class="stats-card card border-0 h-100">
-                    <div class="card-body text-center p-3">
-                        <div class="badge badge-{{ status }} px-3 py-2 mb-2 fs-6">{{ status }}</div>
-                        <div class="fs-4 fw-bold">{{ status_counts.get(status, 0) }}</div>
-                        <small class="text-muted">tasks</small>
-                    </div>
-                </div>
+    <!-- Statistics -->
+    <div class="row g-3 mb-4">
+      {% for status in available_statuses %}
+        {% if status_counts.get(status, 0) > 0 %}
+          <div class="col-6 col-md-4 col-lg-2 mb-3">
+            <div class="stats-card card border-0 h-100">
+              <div class="card-body text-center p-3">
+                <div class="badge badge-{{ status }} px-3 py-2 mb-2 fs-6">{{ status }}</div>
+                <div class="fs-4 fw-bold">{{ status_counts.get(status, 0) }}</div>
+                <small class="text-muted">tasks</small>
+              </div>
             </div>
-            {% endif %}
-            {% endfor %}
-        </div>
-
-        <!-- Active filters display -->
-        {% if current_filters.statuses or current_filters.search or current_filters.task_type %}
-        <div class="row mb-3">
-            <div class="col-12">
-                <div class="card border-warning border-0">
-                    <div class="card-body py-2">
-                        <div class="d-flex align-items-center">
-                            <small class="text-warning me-2"><i class="bi bi-funnel"></i> Active filters:</small>
-                            {% if current_filters.statuses %}
-                            <div class="me-2">
-                                {% for status in current_filters.statuses %}
-                                <span class="badge bg-warning text-dark me-1">{{ status }}</span>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
-                            {% if current_filters.task_type %}
-                            <div class="me-2">
-                                <span class="badge bg-info me-1">Type: {{ current_filters.task_type }}</span>
-                            </div>
-                            {% endif %}
-                            {% if current_filters.search %}
-                            <div class="me-2">
-                                <span class="badge bg-info me-1">Search: "{{ current_filters.search }}"</span>
-                            </div>
-                            {% endif %}
-                            <div class="ms-auto">
-                                <a href="/tasks" class="btn btn-sm btn-outline-warning">Clear all filters</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+          </div>
         {% endif %}
-
-        <!-- Filters and controls -->
-        <div class="row mb-3">
-            <div class="col-12">
-                <div class="card border-0">
-                    <div class="card-body">
-                        <div class="row align-items-center mb-3">
-                            <div class="col-md-8">
-                                <h6 class="mb-2">Filter by status:</h6>
-                                <div class="btn-group flex-wrap" role="group">
-                                    <input type="checkbox" class="btn-check" id="filter-all"
-                                           {% if not current_filters.statuses %}checked{% endif %} autocomplete="off">
-                                    <label class="btn btn-outline-primary status-filter-btn mb-1" for="filter-all" data-status="all">
-                                        All
-                                    </label>
-
-                                    {% for status in available_statuses %}
-                                    <input type="checkbox" class="btn-check status-checkbox mb-1" id="filter-{{ status }}"
-                                           data-status="{{ status }}"
-                                           {% if status in current_filters.statuses %}checked{% endif %} autocomplete="off">
-                                    <label class="btn btn-outline-primary status-filter-btn mb-1" for="filter-{{ status }}">
-                                        {{ status }} ({{ status_counts.get(status, 0) }})
-                                    </label>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                            <div class="col-md-4 text-md-end">
-                                <div class="btn-group">
-                                    {% if current_filters.auto_refresh > 0 %}
-                                    <button class="btn btn-success auto-refresh-active" id="autoRefreshBtn" data-auto-refresh="true">
-                                        <i class="bi bi-play-circle"></i> Auto ({{ current_filters.auto_refresh }}s)
-                                    </button>
-                                    {% else %}
-                                    <button class="btn btn-outline-secondary" id="autoRefreshBtn" data-auto-refresh="false">
-                                        <i class="bi bi-play-circle"></i> Auto-refresh
-                                    </button>
-                                    {% endif %}
-                                    <button class="btn btn-outline-secondary" id="clearFiltersBtn">
-                                        <i class="bi bi-x-circle"></i> Clear
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Search and task type filter -->
-                        <div class="row">
-                            <div class="col-md-6 mb-2">
-                                <form method="get" class="d-flex">
-                                    <input type="text" name="search" class="form-control me-2"
-                                           placeholder="Search by ID, type, URL..." value="{{ current_filters.search or '' }}">
-                                    {% for status in current_filters.statuses %}
-                                    <input type="hidden" name="status" value="{{ status }}">
-                                    {% endfor %}
-                                    {% if current_filters.task_type %}
-                                    <input type="hidden" name="task_type" value="{{ current_filters.task_type }}">
-                                    {% endif %}
-                                    <button type="submit" class="btn btn-outline-primary">
-                                        <i class="bi bi-search"></i> Search
-                                    </button>
-                                </form>
-                            </div>
-                            <div class="col-md-3 mb-2">
-                                <select class="form-select" id="taskTypeSelect">
-                                    <option value="">All task types</option>
-                                    {% for task_type in available_task_types %}
-                                    <option value="{{ task_type }}" {% if current_filters.task_type == task_type %}selected{% endif %}>
-                                        {{ task_type }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-md-3 mb-2 text-md-end">
-                                <select class="form-select" id="limitSelect">
-                                    <option value="50" {% if current_filters.limit == 50 %}selected{% endif %}>50 tasks</option>
-                                    <option value="100" {% if current_filters.limit == 100 %}selected{% endif %}>100 tasks</option>
-                                    <option value="500" {% if current_filters.limit == 500 %}selected{% endif %}>500 tasks</option>
-                                    <option value="1000" {% if current_filters.limit == 1000 %}selected{% endif %}>All tasks</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tasks display -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card border-0">
-                    <div class="card-header bg-transparent border-0">
-                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <h5 class="mb-0">Tasks</h5>
-                            <div class="d-flex align-items-center gap-2">
-                                <small id="selectionCount" class="text-muted">0 selected</small>
-                                <button id="restartSelectedBtn" class="btn btn-sm btn-outline-danger" disabled>
-                                    <i class="bi bi-arrow-repeat"></i> Restart selected tasks
-                                </button>
-                                <small class="text-muted">Showing {{ tasks|length }} of {{ total_tasks }} tasks</small>
-                            </div>
-                        </div>
-                        <div id="bulkActionFeedback" class="alert mt-3 mb-0 d-none" role="alert"></div>
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
-                                <thead>
-                                    <tr>
-                                        <th style="width: 40px;">
-                                            <input type="checkbox" id="selectAllTasks" class="form-check-input" aria-label="Select all tasks">
-                                        </th>
-                                        <th>Status</th>
-                                        <th>Task ID</th>
-                                        <th>Type</th>
-                                        <th>Created</th>
-                                        <th>Updated</th>
-                                        <th>Source URL</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tasksTableBody">
-                                    {% for task in tasks %}
-                                    <tr class="task-row" data-status="{{ task.status }}" data-type="{{ task.task_type }}" data-task-id="{{ task.id }}">
-                                        <td>
-                                            <input type="checkbox"
-                                                   class="form-check-input task-select-checkbox"
-                                                   data-task-id="{{ task.id }}"
-                                                   aria-label="Select task {{ task.id }}">
-                                        </td>
-                                        <td>
-                                            <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
-                                        </td>
-                                        <td>
-                                            <code class="small">{{ task.id }}</code>
-                                        </td>
-                                        <td>
-                                            <span class="badge bg-secondary">{{ task.task_type }}</span>
-                                        </td>
-                                        <td class="small text-muted">{{ task.created_at }}</td>
-                                        <td class="small text-muted">{{ task.updated_at }}</td>
-                                        <td class="small text-truncate" style="max-width: 200px;">
-                                            {% if task.source_url %}
-                                            <a href="{{ task.source_url }}" target="_blank" class="text-decoration-none" title="{{ task.source_url }}">
-                                                {{ task.source_url[:50] }}{% if task.source_url|length > 50 %}...{% endif %}
-                                            </a>
-                                            {% else %}
-                                            <span class="text-muted">-</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>
-                                            <button class="btn btn-sm btn-outline-primary view-task-btn"
-                                                    data-task-id="{{ task.id }}"
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#taskDetailModal">
-                                                <i class="bi bi-eye"></i> View
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {% else %}
-                                    <tr>
-                                        <td colspan="8" class="text-center text-muted py-5">
-                                            <i class="bi bi-inbox display-1"></i>
-                                            <h5 class="mt-3">No tasks found</h5>
-                                            <p class="mb-0">Try adjusting your filters or search criteria</p>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="row mt-3">
-            <div class="col-12">
-                <div class="text-center text-muted">
-                    <small>
-                        Last update: <span id="lastUpdate">{{ now.strftime('%Y-%m-%d %H:%M:%S') }}</span> •
-                        {{ total_tasks }} total tasks
-                    </small>
-                </div>
-            </div>
-        </div>
+      {% endfor %}
     </div>
 
-    <!-- Task Detail Modal -->
-    <div class="modal fade" id="taskDetailModal" tabindex="-1" aria-labelledby="taskDetailModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="taskDetailModalLabel">Task Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    <!-- Active filters display -->
+    {% if current_filters.statuses or current_filters.search or current_filters.task_type %}
+      <div class="row mb-3">
+        <div class="col-12">
+          <div class="card border-warning border-0">
+            <div class="card-body py-2">
+              <div class="d-flex align-items-center">
+                <small class="me-2">
+                  <i class="bi bi-funnel" aria-hidden="true"></i>
+                  Active filters:
+                </small>
+                {% if current_filters.statuses %}
+                  <div class="me-2">
+                    {% for status in current_filters.statuses %}
+                      <span class="badge badge-{{ status }} me-1">{{ status }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+                {% if current_filters.task_type %}
+                  <div class="me-2">
+                    <span class="badge bg-info me-1">Type: {{ current_filters.task_type }}</span>
+                  </div>
+                {% endif %}
+                {% if current_filters.search %}
+                  <div class="me-2">
+                    <span class="badge bg-info me-1">Search: "{{ current_filters.search }}"</span>
+                  </div>
+                {% endif %}
+                <div class="ms-auto">
+                  <a href="/tasks" class="btn btn-sm btn-outline-secondary">Clear all filters</a>
                 </div>
-                <div class="modal-body" id="taskDetailBody">
-                    <div class="text-center py-5">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
+              </div>
             </div>
+          </div>
         </div>
+      </div>
+    {% endif %}
+
+    <!-- Filters and controls -->
+    <div class="row mb-3">
+      <div class="col-12">
+        <div class="card border-0">
+          <div class="card-body">
+            <div class="row align-items-center mb-3">
+              <fieldset class="col-md-8">
+                <legend class="h5 mb-2">Filter by status:</legend>
+                <div class="btn-group flex-wrap" role="group">
+                  <input type="checkbox" class="btn-check" id="filter-all"
+                       {% if not current_filters.statuses %}checked{% endif %} autocomplete="off">
+                  <label class="btn btn-outline-primary status-filter-btn mb-1" for="filter-all" data-status="all">
+                    All
+                  </label>
+
+                  {% for status in available_statuses %}
+                    <input type="checkbox" class="btn-check status-checkbox mb-1" id="filter-{{ status }}"
+                        data-status="{{ status }}"
+                        {% if status in current_filters.statuses %}checked{% endif %} autocomplete="off">
+                    <label class="btn btn-outline-primary status-filter-btn mb-1" for="filter-{{ status }}">
+                      {{ status }} ({{ status_counts.get(status, 0) }})
+                    </label>
+                  {% endfor %}
+                </div>
+              </fieldset>
+              <div class="col-md-4 text-md-end">
+                <div class="btn-group">
+                  {% if current_filters.auto_refresh > 0 %}
+                    <button class="btn btn-success auto-refresh-active" id="autoRefreshBtn" data-auto-refresh="true">
+                      <i class="bi bi-play-circle" aria-hidden="true"></i>
+                      Auto ({{ current_filters.auto_refresh }}s)
+                    </button>
+                  {% else %}
+                    <button class="btn btn-outline-secondary" id="autoRefreshBtn" data-auto-refresh="false">
+                      <i class="bi bi-play-circle" aria-hidden="true"></i>
+                      Auto-refresh
+                    </button>
+                  {% endif %}
+                  <button class="btn btn-outline-secondary" id="clearFiltersBtn">
+                    <i class="bi bi-x-circle" aria-hidden="true"></i>
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Search and task type filter -->
+            <div class="row">
+              <div class="col-md-6 mb-2">
+                <form method="get" class="d-flex">
+                  <div class="input-group mb-3">
+                    <input type="text" name="search" class="form-control"
+                      aria-label="Search for tasks…"
+                      placeholder="Search by ID, type, URL…" value="{{ current_filters.search or '' }}">
+                    <button type="submit" class="btn btn-outline-primary">
+                      <i class="bi bi-search" aria-hidden="true"></i>
+                      Search
+                    </button>
+                  </div>
+                  {% for status in current_filters.statuses %}
+                    <input type="hidden" name="status" value="{{ status }}">
+                  {% endfor %}
+                  {% if current_filters.task_type %}
+                    <input type="hidden" name="task_type" value="{{ current_filters.task_type }}">
+                  {% endif %}
+                </form>
+              </div>
+              <div class="col-md-3 mb-2">
+                <div class="input-group">
+                  <label for="taskTypeSelect" class="input-group-text">Task types</label>
+                  <select class="form-select" id="taskTypeSelect">
+                    <option value="">All task types</option>
+                    {% for task_type in available_task_types %}
+                    <option value="{{ task_type }}" {% if current_filters.task_type == task_type %}selected{% endif %}>
+                      {{ task_type }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+              <div class="col-md-3 mb-2 text-md-end">
+                <div class="input-group">
+                  <label for="limitSelect" class="input-group-text">Max. lines to show</label>
+                  <select class="form-select" id="limitSelect">
+                    <option value="50" {% if current_filters.limit == 50 %}selected{% endif %}>50 tasks</option>
+                    <option value="100" {% if current_filters.limit == 100 %}selected{% endif %}>100 tasks</option>
+                    <option value="500" {% if current_filters.limit == 500 %}selected{% endif %}>500 tasks</option>
+                    <option value="1000" {% if current_filters.limit == 1000 %}selected{% endif %}>All tasks</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Bootstrap 5 JavaScript -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Tasks display -->
+    <div class="row">
+      <div class="col-12">
+        <div class="card border-0">
+          <div class="card-header bg-transparent border-0">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <h2 class="h3 mb-0">Tasks</h2>
+              <div class="d-flex align-items-center gap-2">
+                <small id="selectionCount" class="text-muted">0 selected</small>
+                <button id="restartSelectedBtn" class="btn btn-sm btn-outline-danger" disabled>
+                  <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                  Restart selected tasks
+                </button>
+                <small class="text-muted">Showing {{ tasks|length }} of {{ total_tasks }} tasks</small>
+              </div>
+            </div>
+            <div id="bulkActionFeedback" class="alert mt-3 mb-0 d-none" role="alert"></div>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-hover mb-0">
+                <thead>
+                  <tr>
+                    <th style="width: 40px;">
+                      <label class="visually-hidden" for="selectAllTasks">Select all tasks</label>
+                      <input type="checkbox" id="selectAllTasks" class="form-check-input">
+                    </th>
+                    <th>Status</th>
+                    <th>Task ID</th>
+                    <th>Type</th>
+                    <th>Created</th>
+                    <th>Updated</th>
+                    <th>Source URL</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="tasksTableBody">
+                  {% for task in tasks %}
+                    <tr class="task-row" data-status="{{ task.status }}" data-type="{{ task.task_type }}" data-task-id="{{ task.id }}">
+                      <td>
+                        <input type="checkbox"
+                            class="form-check-input task-select-checkbox"
+                            data-task-id="{{ task.id }}"
+                            aria-label="Select task {{ task.id }}">
+                      </td>
+                      <td>
+                        <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
+                      </td>
+                      <td>
+                        <code class="small">{{ task.id }}</code>
+                      </td>
+                      <td>
+                        <span class="badge bg-secondary">{{ task.task_type }}</span>
+                      </td>
+                      <td class="small text-muted">{{ task.created_at }}</td>
+                      <td class="small text-muted">{{ task.updated_at }}</td>
+                      <td class="small text-truncate" style="max-width: 200px;">
+                        {% if task.source_url %}
+                          <a href="{{ task.source_url }}" target="_blank" class="text-decoration-none" title="{{ task.source_url }}">
+                            {{ task.source_url[:50] }}{% if task.source_url|length > 50 %}…{% endif %}
+                          </a>
+                        {% else %}
+                          <span class="text-muted">-</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <button class="btn btn-sm btn-outline-primary view-task-btn"
+                            data-task-id="{{ task.id }}"
+                            data-bs-toggle="modal"
+                            data-bs-target="#taskDetailModal">
+                          <i class="bi bi-eye" aria-hidden="true"></i>
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                      <td colspan="8" class="text-center text-muted py-5">
+                        <i class="bi bi-inbox display-1" aria-hidden="true"></i>
+                        <div class="h5 mt-3">No tasks found</div>
+                        <p class="mb-0">Try adjusting your filters or search criteria</p>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <script>
-        const statusCheckboxes = document.querySelectorAll('.status-checkbox');
-        const filterAll = document.getElementById('filter-all');
-        const clearFiltersBtn = document.getElementById('clearFiltersBtn');
-        const autoRefreshBtn = document.getElementById('autoRefreshBtn');
-        const limitSelect = document.getElementById('limitSelect');
-        const taskTypeSelect = document.getElementById('taskTypeSelect');
-        const refreshBtn = document.getElementById('refreshBtn');
-        const selectAllTasks = document.getElementById('selectAllTasks');
-        const restartSelectedBtn = document.getElementById('restartSelectedBtn');
-        const selectionCount = document.getElementById('selectionCount');
-        const bulkActionFeedback = document.getElementById('bulkActionFeedback');
+    <!-- Footer -->
+    <footer class="row mt-3">
+      <div class="col-12">
+        <div class="text-center text-muted">
+          <small>
+            Last update: <span id="lastUpdate">{{ now.strftime('%Y-%m-%d %H:%M:%S') }}</span> •
+            {{ total_tasks }} total tasks
+          </small>
+        </div>
+      </div>
+    </footer>
+  </div>
 
-        let autoRefresh = '{{ current_filters.auto_refresh | default(0) | int }}';
-        let autoRefreshInterval = null;
+  <!-- Task Detail Modal -->
+  <div class="modal fade" id="taskDetailModal" tabindex="-1" aria-labelledby="taskDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h3" id="taskDetailModalLabel">Task Details</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="taskDetailBody">
+          <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading…</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        function getTaskSelectionCheckboxes() {
-            return Array.from(document.querySelectorAll('.task-select-checkbox'));
+  <!-- Bootstrap 5 JavaScript -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const statusCheckboxes = document.querySelectorAll('.status-checkbox');
+    const filterAll = document.getElementById('filter-all');
+    const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+    const autoRefreshBtn = document.getElementById('autoRefreshBtn');
+    const limitSelect = document.getElementById('limitSelect');
+    const taskTypeSelect = document.getElementById('taskTypeSelect');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const selectAllTasks = document.getElementById('selectAllTasks');
+    const restartSelectedBtn = document.getElementById('restartSelectedBtn');
+    const selectionCount = document.getElementById('selectionCount');
+    const bulkActionFeedback = document.getElementById('bulkActionFeedback');
+
+    let autoRefresh = '{{ current_filters.auto_refresh | default(0) | int }}';
+    let autoRefreshInterval = null;
+
+    function getTaskSelectionCheckboxes() {
+      return Array.from(document.querySelectorAll('.task-select-checkbox'));
+    }
+
+    function setBulkActionFeedback(level, message) {
+      if (!bulkActionFeedback) {
+        return;
+      }
+
+      bulkActionFeedback.className = `alert mt-3 mb-0 alert-${level}`;
+      bulkActionFeedback.textContent = message;
+    }
+
+    function updateSelectionState() {
+      const checkboxes = getTaskSelectionCheckboxes();
+      const selectedCount = checkboxes.filter(cb => cb.checked).length;
+      const totalCount = checkboxes.length;
+
+      if (selectionCount) {
+        selectionCount.textContent = `${selectedCount} selected`;
+      }
+      if (restartSelectedBtn) {
+        restartSelectedBtn.disabled = selectedCount === 0;
+      }
+      if (selectAllTasks) {
+        selectAllTasks.checked = totalCount > 0 && selectedCount === totalCount;
+        selectAllTasks.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+      }
+    }
+
+    // Filter handling
+    filterAll.addEventListener('change', function() {
+      if (this.checked) {
+        statusCheckboxes.forEach(cb => cb.checked = false);
+      }
+      updateUrlWithFilters();
+    });
+
+    statusCheckboxes.forEach(cb => {
+      cb.addEventListener('change', function() {
+        if (!this.checked) {
+          filterAll.checked = false;
         }
+        updateUrlWithFilters();
+      });
+    });
 
-        function setBulkActionFeedback(level, message) {
-            if (!bulkActionFeedback) {
-                return;
-            }
+    clearFiltersBtn.addEventListener('click', () => {
+      window.location.href = '/tasks';
+    });
 
-            bulkActionFeedback.className = `alert mt-3 mb-0 alert-${level}`;
-            bulkActionFeedback.textContent = message;
-        }
+    limitSelect.addEventListener('change', function() {
+      updateUrlWithFilters();
+    });
 
-        function updateSelectionState() {
-            const checkboxes = getTaskSelectionCheckboxes();
-            const selectedCount = checkboxes.filter(cb => cb.checked).length;
-            const totalCount = checkboxes.length;
+    taskTypeSelect.addEventListener('change', function() {
+      updateUrlWithFilters();
+    });
 
-            if (selectionCount) {
-                selectionCount.textContent = `${selectedCount} selected`;
-            }
-            if (restartSelectedBtn) {
-                restartSelectedBtn.disabled = selectedCount === 0;
-            }
-            if (selectAllTasks) {
-                selectAllTasks.checked = totalCount > 0 && selectedCount === totalCount;
-                selectAllTasks.indeterminate = selectedCount > 0 && selectedCount < totalCount;
-            }
-        }
+    refreshBtn.addEventListener('click', () => {
+      window.location.reload();
+    });
 
-        // Filter handling
-        filterAll.addEventListener('change', function() {
-            if (this.checked) {
-                statusCheckboxes.forEach(cb => cb.checked = false);
-            }
-            updateUrlWithFilters();
-        });
-
-        statusCheckboxes.forEach(cb => {
-            cb.addEventListener('change', function() {
-                if (!this.checked) {
-                    filterAll.checked = false;
-                }
-                updateUrlWithFilters();
-            });
-        });
-
-        clearFiltersBtn.addEventListener('click', () => {
-            window.location.href = '/tasks';
-        });
-
-        limitSelect.addEventListener('change', function() {
-            updateUrlWithFilters();
-        });
-
-        taskTypeSelect.addEventListener('change', function() {
-            updateUrlWithFilters();
-        });
-
-        refreshBtn.addEventListener('click', () => {
-            window.location.reload();
-        });
-
-        if (selectAllTasks) {
-            selectAllTasks.addEventListener('change', function() {
-                getTaskSelectionCheckboxes().forEach(cb => {
-                    cb.checked = this.checked;
-                });
-                updateSelectionState();
-            });
-        }
-
+    if (selectAllTasks) {
+      selectAllTasks.addEventListener('change', function() {
         getTaskSelectionCheckboxes().forEach(cb => {
-            cb.addEventListener('change', () => {
-                updateSelectionState();
-            });
+          cb.checked = this.checked;
         });
-
-        if (restartSelectedBtn) {
-            restartSelectedBtn.addEventListener('click', async () => {
-                const selectedTaskIds = getTaskSelectionCheckboxes()
-                    .filter(cb => cb.checked)
-                    .map(cb => cb.dataset.taskId)
-                    .filter(Boolean);
-
-                if (selectedTaskIds.length === 0) {
-                    return;
-                }
-
-                const confirmed = window.confirm(
-                    `Restart ${selectedTaskIds.length} selected task(s)?`
-                );
-                if (!confirmed) {
-                    return;
-                }
-
-                const initialButtonHtml = restartSelectedBtn.innerHTML;
-                restartSelectedBtn.disabled = true;
-                restartSelectedBtn.innerHTML = (
-                    '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Restarting...'
-                );
-                setBulkActionFeedback('info', 'Restart in progress...');
-
-                try {
-                    const response = await fetch('/tasks/restart-selected', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ task_ids: selectedTaskIds }),
-                    });
-                    const payload = await response.json();
-
-                    if (!response.ok) {
-                        throw new Error(payload.detail || 'Failed to restart selected tasks');
-                    }
-
-                    const restartedCount = (payload.restarted || []).length;
-                    const skippedCount = (payload.skipped || []).length;
-                    const failedCount = (payload.failed || []).length;
-
-                    const level = failedCount > 0 ? 'warning' : 'success';
-                    setBulkActionFeedback(
-                        level,
-                        `Restart done: ${restartedCount} restarted, ${skippedCount} skipped, ${failedCount} failed.`
-                    );
-
-                    if (restartedCount > 0) {
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1200);
-                    } else {
-                        restartSelectedBtn.innerHTML = initialButtonHtml;
-                        updateSelectionState();
-                    }
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    setBulkActionFeedback('danger', `Restart failed: ${message}`);
-                    restartSelectedBtn.innerHTML = initialButtonHtml;
-                    updateSelectionState();
-                }
-            });
-        }
-
-        // Auto-refresh functionality
-        function setupAutoRefresh() {
-            if (autoRefresh > 0) {
-                autoRefreshInterval = setInterval(() => {
-                    window.location.reload();
-                }, autoRefresh * 1000);
-
-                autoRefreshBtn.classList.add('btn-success');
-                autoRefreshBtn.classList.remove('btn-outline-secondary');
-                autoRefreshBtn.innerHTML = `<i class="bi bi-pause-circle"></i> Auto (${autoRefresh}s)`;
-            }
-        }
-
-        autoRefreshBtn.addEventListener('click', function() {
-            if (autoRefresh > 0) {
-                autoRefresh = 0;
-                clearInterval(autoRefreshInterval);
-                this.classList.remove('btn-success');
-                this.classList.add('btn-outline-secondary');
-                this.innerHTML = '<i class="bi bi-play-circle"></i> Auto-refresh';
-                updateUrlWithFilters();
-            } else {
-                autoRefresh = 30;
-                setupAutoRefresh();
-                updateUrlWithFilters();
-            }
-        });
-
-        // Update URL with current filters
-        function updateUrlWithFilters() {
-            const selectedStatuses = Array.from(statusCheckboxes)
-                .filter(cb => cb.checked)
-                .map(cb => cb.dataset.status);
-
-            const params = new URLSearchParams();
-
-            selectedStatuses.forEach(status => {
-                params.append('status', status);
-            });
-
-            params.append('limit', limitSelect.value);
-
-            if (taskTypeSelect.value) {
-                params.append('task_type', taskTypeSelect.value);
-            }
-
-            const searchInput = document.querySelector('input[name="search"]');
-            if (searchInput && searchInput.value) {
-                params.append('search', searchInput.value);
-            }
-
-            if (autoRefresh > 0) {
-                params.append('auto_refresh', autoRefresh);
-            }
-
-            window.location.href = `/tasks?${params.toString()}`;
-        }
-
-        // Update timestamp
-        function updateLastUpdate() {
-            const now = new Date();
-            const elem = document.getElementById('lastUpdate');
-            if (elem) {
-                elem.textContent = now.toLocaleString('en-US', {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit'
-                });
-            }
-        }
-
-        setInterval(updateLastUpdate, 1000);
-
-        // Task detail modal
-        document.querySelectorAll('.view-task-btn').forEach(btn => {
-            btn.addEventListener('click', async function() {
-                const taskId = this.dataset.taskId;
-                const modalBody = document.getElementById('taskDetailBody');
-
-                modalBody.innerHTML = `
-                    <div class="text-center py-5">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                    </div>
-                `;
-
-                try {
-                    const response = await fetch(`/tasks/api/${taskId}`);
-                    if (!response.ok) throw new Error('Failed to fetch task details');
-
-                    const task = await response.json();
-
-                    modalBody.innerHTML = `
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Task ID</h6>
-                            <code>${task.task_id}</code>
-                        </div>
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Status</h6>
-                            <span class="badge badge-${task.status}">${task.status}</span>
-                        </div>
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Task Type</h6>
-                            <span class="badge bg-secondary">${task.task_type}</span>
-                        </div>
-                        ${task.etab_name ? `
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Establishment</h6>
-                            <span>${task.etab_name}</span>
-                        </div>
-                        ` : ''}
-                        ${task.app_name ? `
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Application</h6>
-                            <span>${task.app_name} ${task.app_version ? 'v' + task.app_version : ''}</span>
-                        </div>
-                        ` : ''}
-                        ${task.affiliation ? `
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Affiliation</h6>
-                            <span>${task.affiliation}</span>
-                        </div>
-                        ` : ''}
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Source URL</h6>
-                            <a href="${task.source_url || '#'}" target="_blank" class="text-break">${task.source_url || 'N/A'}</a>
-                        </div>
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Created At</h6>
-                            <span>${task.created_at}</span>
-                        </div>
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Updated At</h6>
-                            <span>${task.updated_at}</span>
-                        </div>
-                        ${task.runner_id ? `
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Assigned Runner</h6>
-                            <code>${task.runner_id}</code>
-                        </div>
-                        ` : ''}
-                        ${task.error ? `
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Error</h6>
-                            <div class="alert alert-danger">${task.error}</div>
-                        </div>
-                        ` : ''}
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Parameters</h6>
-                            <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded"><code>${JSON.stringify(task.parameters || {}, null, 2)}</code></pre>
-                        </div>
-                        ${task.script_output ? `
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Script Output</h6>
-                            <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded" style="max-height: 300px; overflow-y: auto;"><code>${task.script_output}</code></pre>
-                        </div>
-                        ` : ''}
-                        ${task.result ? `
-                        <div class="mb-3">
-                            <h6 class="text-muted mb-2">Result</h6>
-                            <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded"><code>${JSON.stringify(task.result, null, 2)}</code></pre>
-                        </div>
-                        ` : ''}
-                    `;
-                } catch (error) {
-                    modalBody.innerHTML = `
-                        <div class="alert alert-danger">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            Failed to load task details: ${error.message}
-                        </div>
-                    `;
-                }
-            });
-        });
-
-        // Initialize auto-refresh if enabled
-        if (autoRefresh > 0) {
-            setupAutoRefresh();
-        }
         updateSelectionState();
+      });
+    }
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'r' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                window.location.reload();
-            }
-            if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                document.querySelector('input[name="search"]').focus();
-            }
+    getTaskSelectionCheckboxes().forEach(cb => {
+      cb.addEventListener('change', () => {
+        updateSelectionState();
+      });
+    });
+
+    if (restartSelectedBtn) {
+      restartSelectedBtn.addEventListener('click', async () => {
+        const selectedTaskIds = getTaskSelectionCheckboxes()
+          .filter(cb => cb.checked)
+          .map(cb => cb.dataset.taskId)
+          .filter(Boolean);
+
+        if (selectedTaskIds.length === 0) {
+          return;
+        }
+
+        const confirmed = window.confirm(
+          `Restart ${selectedTaskIds.length} selected task(s)?`
+        );
+        if (!confirmed) {
+          return;
+        }
+
+        const initialButtonHtml = restartSelectedBtn.innerHTML;
+        restartSelectedBtn.disabled = true;
+        restartSelectedBtn.innerHTML = (
+          '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Restarting…'
+        );
+        setBulkActionFeedback('info', 'Restart in progress…');
+
+        try {
+          const response = await fetch('/tasks/restart-selected', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ task_ids: selectedTaskIds }),
+          });
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.detail || 'Failed to restart selected tasks');
+          }
+
+          const restartedCount = (payload.restarted || []).length;
+          const skippedCount = (payload.skipped || []).length;
+          const failedCount = (payload.failed || []).length;
+
+          const level = failedCount > 0 ? 'warning' : 'success';
+          setBulkActionFeedback(
+            level,
+            `Restart done: ${restartedCount} restarted, ${skippedCount} skipped, ${failedCount} failed.`
+          );
+
+          if (restartedCount > 0) {
+            setTimeout(() => {
+              window.location.reload();
+            }, 1200);
+          } else {
+            restartSelectedBtn.innerHTML = initialButtonHtml;
+            updateSelectionState();
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setBulkActionFeedback('danger', `Restart failed: ${message}`);
+          restartSelectedBtn.innerHTML = initialButtonHtml;
+          updateSelectionState();
+        }
+      });
+    }
+
+    // Auto-refresh functionality
+    function setupAutoRefresh() {
+      if (autoRefresh > 0) {
+        autoRefreshInterval = setInterval(() => {
+          window.location.reload();
+        }, autoRefresh * 1000);
+
+        autoRefreshBtn.classList.add('btn-success');
+        autoRefreshBtn.classList.remove('btn-outline-secondary');
+        autoRefreshBtn.innerHTML = `<i class="bi bi-pause-circle" aria-hidden="true"></i> Auto (${autoRefresh}s)`;
+      }
+    }
+
+    autoRefreshBtn.addEventListener('click', function() {
+      if (autoRefresh > 0) {
+        autoRefresh = 0;
+        clearInterval(autoRefreshInterval);
+        this.classList.remove('btn-success');
+        this.classList.add('btn-outline-secondary');
+        this.innerHTML = '<i class="bi bi-play-circle" aria-hidden="true"></i> Auto-refresh';
+        updateUrlWithFilters();
+      } else {
+        autoRefresh = 30;
+        setupAutoRefresh();
+        updateUrlWithFilters();
+      }
+    });
+
+    // Update URL with current filters
+    function updateUrlWithFilters() {
+      const selectedStatuses = Array.from(statusCheckboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.dataset.status);
+
+      const params = new URLSearchParams();
+
+      selectedStatuses.forEach(status => {
+        params.append('status', status);
+      });
+
+      params.append('limit', limitSelect.value);
+
+      if (taskTypeSelect.value) {
+        params.append('task_type', taskTypeSelect.value);
+      }
+
+      const searchInput = document.querySelector('input[name="search"]');
+      if (searchInput && searchInput.value) {
+        params.append('search', searchInput.value);
+      }
+
+      if (autoRefresh > 0) {
+        params.append('auto_refresh', autoRefresh);
+      }
+
+      window.location.href = `/tasks?${params.toString()}`;
+    }
+
+    // Update timestamp
+    function updateLastUpdate() {
+      const now = new Date();
+      const elem = document.getElementById('lastUpdate');
+      if (elem) {
+        elem.textContent = now.toLocaleString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
         });
-    </script>
+      }
+    }
+
+    setInterval(updateLastUpdate, 1000);
+
+    // Task detail modal
+    document.querySelectorAll('.view-task-btn').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        const taskId = this.dataset.taskId;
+        const modalBody = document.getElementById('taskDetailBody');
+
+        modalBody.innerHTML = `
+          <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading…</span>
+            </div>
+          </div>
+        `;
+
+        try {
+          const response = await fetch(`/tasks/api/${taskId}`);
+          if (!response.ok) throw new Error('Failed to fetch task details');
+
+          const task = await response.json();
+
+          modalBody.innerHTML = `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Task ID</h6>
+              <code>${task.task_id}</code>
+            </div>
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Status</h6>
+              <span class="badge badge-${task.status}">${task.status}</span>
+            </div>
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Task Type</h6>
+              <span class="badge bg-secondary">${task.task_type}</span>
+            </div>
+            ${task.etab_name ? `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Establishment</h6>
+              <span>${task.etab_name}</span>
+            </div>
+            ` : ''}
+            ${task.app_name ? `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Application</h6>
+              <span>${task.app_name} ${task.app_version ? 'v' + task.app_version : ''}</span>
+            </div>
+            ` : ''}
+            ${task.affiliation ? `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Affiliation</h6>
+              <span>${task.affiliation}</span>
+            </div>
+            ` : ''}
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Source URL</h6>
+              <a href="${task.source_url || '#'}" target="_blank" class="text-break">${task.source_url || 'N/A'}</a>
+            </div>
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Created At</h6>
+              <span>${task.created_at}</span>
+            </div>
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Updated At</h6>
+              <span>${task.updated_at}</span>
+            </div>
+            ${task.runner_id ? `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Assigned Runner</h6>
+              <code>${task.runner_id}</code>
+            </div>
+            ` : ''}
+            ${task.error ? `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Error</h6>
+              <div class="alert alert-danger">${task.error}</div>
+            </div>
+            ` : ''}
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Parameters</h6>
+              <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded"><code>${JSON.stringify(task.parameters || {}, null, 2)}</code></pre>
+            </div>
+            ${task.script_output ? `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Script Output</h6>
+              <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded" style="max-height: 300px; overflow-y: auto;"><code>${task.script_output}</code></pre>
+            </div>
+            ` : ''}
+            ${task.result ? `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Result</h6>
+              <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded"><code>${JSON.stringify(task.result, null, 2)}</code></pre>
+            </div>
+            ` : ''}
+          `;
+        } catch (error) {
+          modalBody.innerHTML = `
+            <div class="alert alert-danger">
+              <i class="bi bi-exclamation-triangle me-2" aria-hidden="true"></i>
+              Failed to load task details: ${error.message}
+            </div>
+          `;
+        }
+      });
+    });
+
+    // Initialize auto-refresh if enabled
+    if (autoRefresh > 0) {
+      setupAutoRefresh();
+    }
+    updateSelectionState();
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'r' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        window.location.reload();
+      }
+      if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        document.querySelector('input[name="search"]').focus();
+      }
+    });
+  </script>
 </body>
 </html>

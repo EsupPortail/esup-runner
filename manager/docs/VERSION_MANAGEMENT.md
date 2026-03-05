@@ -11,16 +11,19 @@ This project follows **Semantic Versioning (SemVer)**: `MAJOR.MINOR.PATCH`
 ## 📁 Version files
 
 ### Primary files
+
 - `app/__version__.py` — single source of truth for the version
 - `VERSION` — plain text file with the version number
 - `CHANGELOG.md` — detailed history of changes
 
 ### Configuration files
+
 - `pyproject.toml` — modern Python configuration (reads from `__version__.py`)
 
 ## 🛠️ Using the management script
 
 ### Show current version
+
 ```bash
 uv run scripts/manage_version.py show
 ```
@@ -28,24 +31,31 @@ uv run scripts/manage_version.py show
 ### Bump the version
 
 #### Patch (1.0.0 → 1.0.1)
+
 For minor bug fixes:
+
 ```bash
 uv run scripts/manage_version.py bump patch
 ```
 
 #### Minor (1.0.0 → 1.1.0)
+
 For backward-compatible features:
+
 ```bash
 uv run scripts/manage_version.py bump minor
 ```
 
 #### Major (1.0.0 → 2.0.0)
+
 For breaking changes:
+
 ```bash
 uv run scripts/manage_version.py bump major
 ```
 
 ### Set a specific version
+
 ```bash
 uv run scripts/manage_version.py set 2.1.3
 ```
@@ -53,17 +63,21 @@ uv run scripts/manage_version.py set 2.1.3
 ## 📝 Release process
 
 ### 1. Update the version
+
 ```bash
 # Example for a patch release
 uv run scripts/manage_version.py bump patch
 ```
 
 ### 2. Update CHANGELOG.md
+
 Add a section for the new version with:
+
 - Release date
 - Sections: Added, Changed, Deprecated, Removed, Fixed, Security
 
 Example:
+
 ```markdown
 ## [1.0.1] - 2025-11-04
 
@@ -76,17 +90,20 @@ Example:
 ```
 
 ### 3. Commit changes
+
 ```bash
 git add app/__version__.py VERSION CHANGELOG.md
 git commit -m "chore: bump version to X.Y.Z"
 ```
 
 ### 4. Create a Git tag
+
 ```bash
 git tag -a vX.Y.Z -m "Release version X.Y.Z"
 ```
 
 ### 5. Push changes
+
 ```bash
 git push origin main
 git push origin vX.Y.Z
@@ -95,17 +112,20 @@ git push origin vX.Y.Z
 ## 🔍 Version checks
 
 ### From Python
+
 ```python
 from app import __version__
 print(__version__)  # 1.0.0
 ```
 
 ### From the API
+
 ```bash
 curl -H "X-API-Token: YOUR_TOKEN" https://localhost:8000/api/version
 ```
 
 Response:
+
 ```json
 {
   "version": "1.0.0",
@@ -122,6 +142,7 @@ Response:
 ```
 
 ### From the VERSION file
+
 ```bash
 cat VERSION
 ```
@@ -129,11 +150,13 @@ cat VERSION
 ## 📊 Version endpoints
 
 ### GET /api/version
+
 Returns all version information for the API.
 
 **Authentication required**: Yes (API token)
 
 **Response**:
+
 ```json
 {
   "version": "1.0.0",
@@ -150,25 +173,29 @@ Returns all version information for the API.
 ```
 
 ### GET /
+
 The root endpoint also includes the version:
+
 ```json
 {
   "message": "Runner Manager API",
   "version": "1.0.0",
-  "documentation": { ... },
-  ...
+  "documentation": { … },
+  …
 }
 ```
 
 ## 🔄 Development workflow
 
 ### Feature development
+
 1. Create a branch: `git checkout -b feature/my-feature`
 2. Develop and test
 3. Update CHANGELOG.md under [Unreleased]
 4. Open a PR
 
 ### Before a release
+
 1. Merge all PRs planned for the release
 2. Review CHANGELOG.md
 3. Bump the appropriate version
@@ -177,6 +204,7 @@ The root endpoint also includes the version:
 ## 📦 Installation and distribution
 
 ### Local install
+
 ```bash
 uv sync --locked --extra dev
 ```
@@ -184,11 +212,13 @@ uv sync --locked --extra dev
 > Note: dependencies include `jinja2` (HTML templates) and `bcrypt` (password hashing).
 
 ### Build the package
+
 ```bash
 uv build
 ```
 
 ### Publish to PyPI (if applicable)
+
 ```bash
 uv publish
 ```
@@ -205,6 +235,7 @@ uv publish
 ## 🆘 Troubleshooting
 
 ### The displayed version is incorrect
+
 ```bash
 # Check consistency
 uv run scripts/manage_version.py show
@@ -213,11 +244,13 @@ uv run python -c "from app import __version__; print(__version__)"
 ```
 
 ### Reset to a specific version
+
 ```bash
 uv run scripts/manage_version.py set 1.0.0
 ```
 
 ### Git version does not match
+
 ```bash
 # List tags
 git tag -l

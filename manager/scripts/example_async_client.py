@@ -9,7 +9,9 @@ cloning the project can do a quick manual test.
 
 What you should have to change
 ------------------------------
-Only the TOKEN below.
+Set the token (and optionally manager URL) either:
+1) by editing `TOKEN` / `MANAGER_URL` below, or
+2) with environment variables `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL`.
 
 What this script does
 ---------------------
@@ -21,6 +23,9 @@ What this script does
 How to run
 ----------
     uv run scripts/example_async_client.py
+
+Or with environment variables (recommended):
+    RUNNER_API_TOKEN=... RUNNER_MANAGER_URL=http://manager-host:8081 uv run scripts/example_async_client.py
 
 Notes
 -----
@@ -35,10 +40,11 @@ Notes
 """
 
 import asyncio
+import os
 import re
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -46,12 +52,12 @@ import httpx
 # Configuration
 # ---------------------------------------------------------------------------
 
-# CHANGE THIS.
+# CHANGE THIS, or set RUNNER_API_TOKEN in your shell environment.
 # This must match one of the manager's configured AUTHORIZED_TOKENS values.
-TOKEN = "CHANGE_ME_RUNNERS_TOKEN"
+TOKEN = os.getenv("RUNNER_API_TOKEN", "CHANGE_ME_RUNNERS_TOKEN")
 
-# If your manager runs elsewhere, update this URL.
-MANAGER_URL = "http://127.0.0.1:8081"
+# If your manager runs elsewhere, update this URL or set RUNNER_MANAGER_URL.
+MANAGER_URL = os.getenv("RUNNER_MANAGER_URL", "http://127.0.0.1:8081")
 
 # You typically do NOT need to change the values below for a quick manual test.
 
@@ -109,6 +115,26 @@ def _safe_filename(file_path: str) -> str:
     return flattened or "download.bin"
 
 
+def _is_placeholder_token(token: str) -> bool:
+    """Detect missing token values."""
+    stripped = token.strip()
+    return not stripped
+
+
+def _connect_error_help(base_url: str) -> str:
+    """Build a readable troubleshooting message for connection failures."""
+    parts = urlsplit(base_url)
+    host = parts.hostname or "<unknown-host>"
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    return (
+        f"Cannot connect to manager at {base_url}\n"
+        "Checks:\n"
+        f"- If this script runs on another server, do not use 127.0.0.1; use the real manager host/IP (current host={host}).\n"
+        f"- Ensure TCP port {port} is reachable from this machine (firewall, reverse-proxy, bind address).\n"
+        f"- Quick test: curl -i {base_url}/api/version -H 'X-API-Token: <token>'"
+    )
+
+
 async def _raise_for_http_error(response: httpx.Response) -> None:
     """Provide a helpful error message instead of a generic exception."""
     if response.status_code < 400:
@@ -136,7 +162,10 @@ async def _raise_for_http_error(response: httpx.Response) -> None:
 async def check_auth(client: httpx.AsyncClient, base_url: str, token: str) -> dict[str, Any]:
     """Step 1: sanity-check that the manager is reachable and the token is valid."""
     url = f"{base_url}/api/version"
-    resp = await client.get(url, headers=_auth_headers(token))
+    try:
+        resp = await client.get(url, headers=_auth_headers(token))
+    except httpx.ConnectError as exc:
+        raise SystemExit(_connect_error_help(base_url)) from exc
     await _raise_for_http_error(resp)
     return resp.json()
 
@@ -373,8 +402,8 @@ async def maybe_download_first_file(
 
 async def main():
     # Fail fast: we do not want people to accidentally run with a committed token.
-    if TOKEN.strip() == "CHANGE_ME":
-        raise SystemExit("Please set TOKEN at the top of this file.")
+    if _is_placeholder_token(TOKEN):
+        raise SystemExit("Please set a non-empty token in TOKEN or RUNNER_API_TOKEN.")
 
     base_url = _normalize_base_url(MANAGER_URL)
 

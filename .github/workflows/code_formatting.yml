@@ -41,7 +41,7 @@ jobs:
           pip install black
 
       - name: Running Black
-        run: black . -l 90
+        run: black .
 
       - name: Check for modified files
         id: black-git-check

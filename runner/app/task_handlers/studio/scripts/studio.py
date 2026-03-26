@@ -19,6 +19,7 @@ from functools import lru_cache
 
 
 def fetch_text(url: str) -> str:
+    """Fetch and return text content from a URL."""
     import requests  # type: ignore[import-untyped]
 
     r = requests.get(url, timeout=(10, 180))
@@ -29,6 +30,7 @@ def fetch_text(url: str) -> str:
 def parse_mediapackage(
     xml_text: str,
 ) -> tuple[str | None, str | None, str, str | None]:
+    """Extract track URLs, presenter layout, and SMIL URL from a mediapackage XML."""
     ns = {"mp": "http://mediapackage.opencastproject.org"}
     root = ET.fromstring(xml_text)
     presenter_layout = root.attrib.get("presenter", "mid")
@@ -59,6 +61,7 @@ def parse_mediapackage(
 
 
 def parse_smil_cut(smil_text: str) -> tuple[float | None, float | None]:
+    """Parse clip begin and end times from a SMIL cutting document."""
     try:
         root = ET.fromstring(smil_text)
         # Find first <video clipBegin="…" clipEnd="…" />
@@ -73,6 +76,7 @@ def parse_smil_cut(smil_text: str) -> tuple[float | None, float | None]:
 
 
 def parse_time(val: str | None) -> float | None:
+    """Parse a SMIL time value into seconds."""
     if not val:
         return None
     if val.endswith("s"):
@@ -98,16 +102,19 @@ def _first_token(val: str | None, default: str) -> str:
 
 
 def _download_allowed_hosts_from_env() -> list[str]:
+    """Return the configured allowlist of download hosts."""
     allowed_hosts_raw = os.getenv("DOWNLOAD_ALLOWED_HOSTS", "")
     return [h.strip().lower().rstrip(".") for h in allowed_hosts_raw.split(",") if h.strip()]
 
 
 def _download_allow_private_networks_from_env() -> bool:
+    """Return whether private-network downloads are allowed."""
     allow_private_raw = os.getenv("DOWNLOAD_ALLOW_PRIVATE_NETWORKS", "true")
     return allow_private_raw.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
 
 
 def _host_is_allowed(host: str, allowed_hosts: list[str]) -> bool:
+    """Return whether a host matches the configured allowlist."""
     for allowed in allowed_hosts:
         if host == allowed or host.endswith("." + allowed):
             return True
@@ -115,6 +122,7 @@ def _host_is_allowed(host: str, allowed_hosts: list[str]) -> bool:
 
 
 def _host_resolves_to_public_ip(host: str) -> tuple[bool, str]:
+    """Check whether a host resolves only to public IP addresses."""
     import ipaddress
     import socket
 
@@ -148,6 +156,7 @@ def _host_resolves_to_public_ip(host: str) -> tuple[bool, str]:
 def _download_http_source(
     url: str, work_dir: str, label: str, parsed: urllib.parse.ParseResult
 ) -> str:
+    """Download an HTTP(S) source into the work directory."""
     os.makedirs(work_dir, exist_ok=True)
     base = os.path.basename(parsed.path) or f"{label}.mp4"
     base = base.split("?")[0] or f"{label}.mp4"
@@ -245,6 +254,7 @@ def _has_decoder(decoder: str) -> bool:
 
 
 def probe_codec(source: str) -> str:
+    """Probe the primary video codec name for a source file."""
     cmd = [
         "ffprobe",
         "-v",
@@ -334,6 +344,7 @@ def _nvenc_preflight() -> tuple[bool, str]:
 
 
 def probe_height(source: str) -> int:
+    """Probe the primary video height for a source file."""
     cmd = [
         "ffprobe",
         "-v",
@@ -357,6 +368,7 @@ def probe_height(source: str) -> int:
 
 
 def build_filter(pres_h: int, pers_h: int, presenter: str) -> str:
+    """Build the FFmpeg filter graph for the requested studio layout."""
     if presenter not in {"mid", "piph", "pipb"}:
         presenter = "mid"
     if presenter in ("piph", "pipb") and pres_h > 0 and pers_h > 0:
@@ -387,6 +399,7 @@ def build_filter(pres_h: int, pers_h: int, presenter: str) -> str:
 
 
 def filter_available(name: str) -> bool:
+    """Return whether FFmpeg exposes a given filter."""
     try:
         out = subprocess.run(
             ["ffmpeg", "-hide_banner", "-filters"],
@@ -400,6 +413,7 @@ def filter_available(name: str) -> bool:
 
 
 def _set_cuda_env(args: argparse.Namespace) -> None:
+    """Populate CUDA-related environment variables from CLI arguments."""
     if args.cuda_visible_devices:
         os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
     if args.cuda_device_order:
@@ -409,6 +423,7 @@ def _set_cuda_env(args: argparse.Namespace) -> None:
 
 
 def build_input_args(pres_url, pers_url, args):
+    """Build FFmpeg input arguments and probe source heights."""
     input_args = ""
     pres_h = pers_h = 0
     if pres_url and pers_url:
@@ -427,6 +442,7 @@ def build_input_args(pres_url, pers_url, args):
 
 
 def build_subtime(clip_begin, clip_end):
+    """Build FFmpeg seek arguments from optional clip times."""
     if clip_begin is not None and clip_end is not None and clip_end > clip_begin:
         duration = clip_end - clip_begin
         return f"-ss {clip_begin:.3f} -t {duration:.3f} "
@@ -438,6 +454,7 @@ def build_subtime(clip_begin, clip_end):
 
 
 def build_pipeline(pres_url, pers_url, pres_h, pers_h, presenter_layout, args, input_args):
+    """Choose the best available studio pipeline and return its components."""
     cpu_encoder, enc_warn = _choose_h264_encoder()
     if enc_warn:
         print(enc_warn.strip())
@@ -461,12 +478,14 @@ def build_pipeline(pres_url, pers_url, pres_h, pers_h, presenter_layout, args, i
 
 
 def _is_gpu_requested(args: argparse.Namespace) -> bool:
+    """Return whether GPU processing is requested and not force-disabled."""
     if (args.encoding_type or "CPU").upper() != "GPU":
         return False
     return (args.force_cpu or "").lower() not in ("true", "1", "yes")
 
 
 def _build_nvenc_video_codec(args: argparse.Namespace) -> str:
+    """Build the NVENC video codec options string for studio encoding."""
     nvenc_preset = _first_token(args.studio_preset, "p4")
     nvenc_cq = _first_token(args.studio_crf, "")
     rc_opt = f"-preset {nvenc_preset} "
@@ -476,6 +495,7 @@ def _build_nvenc_video_codec(args: argparse.Namespace) -> str:
 
 
 def _even_or_default_height(height: int, default: int) -> int:
+    """Return an even output height, falling back to a default value."""
     h = height or default
     return h if (h % 2) == 0 else h + 1
 
@@ -487,6 +507,7 @@ def _prepare_full_gpu_inputs(
     presenter_layout: str,
     args: argparse.Namespace,
 ) -> tuple[str, int, int, str] | None:
+    """Prepare inputs and sizing values for a full GPU studio pipeline."""
     if not (pres_url and pers_url):
         return None
     if not _is_gpu_requested(args):
@@ -525,6 +546,7 @@ def _prepare_full_gpu_inputs(
 def _build_full_gpu_filtergraph(
     *, presenter_layout: str, height: int, pip_h: int, overlay_pos: str
 ) -> str:
+    """Build the filter graph used by the full GPU studio pipeline."""
     # Filtergraph:
     # - For mid: still uses software hstack after hwdownload.
     # - For piph/pipb: uses overlay_cuda then hwdownload.
@@ -616,6 +638,7 @@ def _build_gpu_encode_only_pipeline(
 def _load_mediapackage_and_layout(
     args: argparse.Namespace,
 ) -> tuple[str | None, str | None, str, str | None]:
+    """Load mediapackage metadata and resolve the effective presenter layout."""
     xml_text = fetch_text(args.xml_url)
     pres_url, pers_url, presenter_layout, smil_url = parse_mediapackage(xml_text)
     if args.presenter:
@@ -624,6 +647,7 @@ def _load_mediapackage_and_layout(
 
 
 def _build_map_opts(pres_url_local: str | None, pers_url_local: str | None) -> str:
+    """Build FFmpeg stream mapping options for the current studio inputs."""
     if pres_url_local and pers_url_local:
         return '-map "[vout]" -map 0:a? '
     return "-map 0:v -map 0:a? "
@@ -680,6 +704,7 @@ def _build_cpu_pipeline(
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for the studio generator script."""
     parser = argparse.ArgumentParser(description="Studio base video generator")
     parser.add_argument("--xml-url", required=True, help="Mediapackage XML URL")
     parser.add_argument("--base-dir", required=True, help="Base directory for input files")
@@ -719,6 +744,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def _load_clip_times(smil_url: str | None) -> tuple[float | None, float | None]:
+    """Load optional clip begin and end times from a SMIL URL."""
     if not smil_url:
         return None, None
     try:
@@ -743,7 +769,10 @@ def _run_pipelines(
     output_opts: str,
     output_path: str,
 ) -> int:
+    """Execute studio pipeline attempts in fallback order until one succeeds."""
+
     def _run_attempt(label: str, input_args: str, subcmd: str, video_codec: str) -> int:
+        """Run one concrete FFmpeg studio pipeline attempt."""
         vc = video_codec
         sc = subcmd
         if "libx264" in (vc or ""):
@@ -798,6 +827,7 @@ def _run_pipelines(
 
 
 def _main_impl(args: argparse.Namespace) -> int:
+    """Run the studio generation workflow and return an exit code."""
     base_dir = args.base_dir
     work_dir = os.path.join(base_dir, args.work_dir)
     os.makedirs(work_dir, exist_ok=True)
@@ -840,6 +870,7 @@ def _main_impl(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
+    """Parse CLI arguments and exit with the studio workflow status."""
     args = _build_arg_parser().parse_args()
     sys.exit(_main_impl(args))
 

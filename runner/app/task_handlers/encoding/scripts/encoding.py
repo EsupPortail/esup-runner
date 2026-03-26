@@ -14,6 +14,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 import time
 import unicodedata
 import urllib.parse
@@ -181,6 +182,10 @@ DurationValue = Union[str, int, float, None]
 # =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
+
+
+class EncodingValidationError(RuntimeError):
+    """Raised when the input media should not be encoded."""
 
 
 def timestamp_to_seconds(timestamp: str) -> int:
@@ -558,6 +563,7 @@ def launch_cmd(ffmpeg_cmd: str, type: str, format: str) -> tuple[bool, str]:
 
 
 def _safe_filename_from_url(url: str) -> str:
+    """Return a sanitized filename derived from a URL."""
     parsed = urllib.parse.urlparse(url)
     name = os.path.basename(parsed.path) or "asset"
     name = sanitize_filename(name)
@@ -567,16 +573,19 @@ def _safe_filename_from_url(url: str) -> str:
 
 
 def _download_allowed_hosts_from_env() -> list[str]:
+    """Return the configured allowlist of download hosts."""
     allowed_hosts_raw = os.getenv("DOWNLOAD_ALLOWED_HOSTS", "")
     return [h.strip().lower().rstrip(".") for h in allowed_hosts_raw.split(",") if h.strip()]
 
 
 def _download_allow_private_networks_from_env() -> bool:
+    """Return whether private-network downloads are allowed."""
     allow_private_raw = os.getenv("DOWNLOAD_ALLOW_PRIVATE_NETWORKS", "true")
     return allow_private_raw.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
 
 
 def _host_is_allowed(host: str, allowed_hosts: list[str]) -> bool:
+    """Return whether a host matches the configured allowlist."""
     for allowed in allowed_hosts:
         if host == allowed or host.endswith("." + allowed):
             return True
@@ -584,6 +593,7 @@ def _host_is_allowed(host: str, allowed_hosts: list[str]) -> bool:
 
 
 def _validate_host_resolves_to_public_ip(host: str) -> None:
+    """Reject hosts that do not resolve to public IP addresses."""
     import ipaddress
     import socket
 
@@ -675,6 +685,7 @@ def _probe_duration_seconds(path: str) -> float:
 
 
 def _probe_has_audio(path: str) -> bool:
+    """Return whether the media contains a primary audio stream."""
     cmd = [
         "ffprobe",
         "-v",
@@ -721,12 +732,14 @@ def _build_normalize_1080p_filter(label_in: str, label_out: str) -> str:
 
 
 def _run_ffmpeg_cmd(ffmpeg_cmd: str, log_type: str) -> bool:
+    """Run an FFmpeg command and append its output to the encoding log."""
     ok, out = launch_cmd(ffmpeg_cmd, log_type, "")
     encode_log(out)
     return ok
 
 
 def _create_cut_intermediate(input_path: str, output_path: str, start: str, end: str) -> bool:
+    """Create an intermediate file with the requested cut applied."""
     encoder, _ = _choose_h264_encoder()
     ffmpeg_cmd = (
         "ffmpeg -hide_banner -threads 0 -y "
@@ -746,6 +759,7 @@ def _create_watermarked_intermediate(
     position_orig: str,
     opacity_percent: str,
 ) -> bool:
+    """Create an intermediate file with a watermark applied."""
     encoder, _ = _choose_h264_encoder()
     try:
         opacity = float(opacity_percent) / 100.0 if opacity_percent not in (None, "") else 1.0
@@ -779,6 +793,7 @@ def _create_watermarked_intermediate(
 
 
 def _parse_duration_seconds_fallback(value: Optional[str]) -> float:
+    """Parse a fallback duration string into seconds."""
     if value is None:
         return 0.0
     s = str(value).strip()
@@ -798,11 +813,13 @@ def _create_credits_concat_intermediate(
     ending_duration_hint: Optional[str],
     output_path: str,
 ) -> bool:
+    """Concatenate optional opening/ending credits around the main video."""
     encoder, _ = _choose_h264_encoder()
     inputs: list[str] = []
     segments: list[dict] = []
 
     def add_segment(path: str, duration_hint: Optional[str]):
+        """Register a concat segment with its duration and audio presence."""
         duration = _probe_duration_seconds(path)
         if duration <= 0:
             duration = _parse_duration_seconds_fallback(duration_hint)
@@ -870,6 +887,7 @@ def _create_credits_concat_intermediate(
 def _apply_cut_for_dressing(
     current_main_path: str, base: str, has_opening: bool, has_ending: bool
 ) -> tuple[str, str]:
+    """Apply the configured cut before adding credits in dressing mode."""
     msg = ""
     global SUBTIME, EFFECTIVE_DURATION
     cut_start = (_CUT_CONFIG or {}).get("start")
@@ -900,6 +918,7 @@ def _apply_watermark_for_dressing(
     dressing_config: dict,
     assets_dir: str,
 ) -> tuple[str, str]:
+    """Apply watermark dressing to the current main video when configured."""
     msg = ""
     watermark_url = dressing_config.get("watermark")
     if not watermark_url:
@@ -939,6 +958,7 @@ def _apply_credits_for_dressing(
     dressing_config: dict,
     assets_dir: str,
 ) -> tuple[str, str]:
+    """Apply opening and ending credits during dressing when configured."""
     msg = ""
     opening_video_url = dressing_config.get("opening_credits_video")
     opening_duration_hint = dressing_config.get("opening_credits_video_duration")
@@ -1044,6 +1064,7 @@ def _build_encode_video_job(
     file: str,
     filename: str,
 ) -> tuple[str, str, Dict[str, object], bool, Dict[str, Any]]:
+    """Build the FFmpeg command and metadata for a video encode job."""
     if encoder_type == "gpu":
         ffmpeg_cmd = get_cmd_gpu(format, codec, height, file)
     else:
@@ -1061,6 +1082,7 @@ def _build_encode_video_job(
 def _build_encode_audio_job(
     *, kind: str, file: str, filename: str
 ) -> tuple[str, str, Dict[str, object], bool, Dict[str, Any]]:
+    """Build the FFmpeg command and metadata for an audio encode job."""
     if kind == "mp3":
         ffmpeg_cmd = MP3.format(
             input=os.path.join(_VIDEOS_DIR, file),
@@ -1092,6 +1114,7 @@ def _build_encode_thumbnail_job(
     duration: int,
     thumbnail_index: int,
 ) -> tuple[str, str, Dict[str, object], bool, Dict[str, Any]]:
+    """Build the FFmpeg command and metadata for a thumbnail extraction job."""
     percentages = [0.25, 0.50, 0.75]
     timestamp = int(duration * percentages[thumbnail_index]) if duration > 0 else 0
     templates = [EXTRACT_THUMBNAIL_0, EXTRACT_THUMBNAIL_1, EXTRACT_THUMBNAIL_2]
@@ -1112,11 +1135,13 @@ def _build_encode_thumbnail_job(
 
 
 def _run_and_collect_text(cmd: list[str]) -> tuple[int, str]:
+    """Run a command and return its exit code with merged text output."""
     out = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     return int(out.returncode), out.stdout or ""
 
 
 def _run_shell_bytes(cmd: str) -> tuple[int, bytes]:
+    """Run a shell-like command string and return bytes output."""
     out = subprocess.run(
         shlex.split(cmd),
         stdout=subprocess.PIPE,
@@ -1132,6 +1157,7 @@ def _try_sprite_imagemagick_append(
     num_thumbnails: int,
     sprite_path: str,
 ) -> tuple[bool, str]:
+    """Try to build the overview sprite with ImageMagick as a fallback."""
     local_msg = ""
     try:
         png_files = sorted(glob.glob(os.path.join(temp_thumb_dir, "thumb_*.png")))
@@ -1222,6 +1248,7 @@ def _compute_overview_single_row_plan(
 def _format_overview_thumbnail_plan_msg(
     requested_count: int, num_thumbnails: int, max_single_row_count: int, interval: int
 ) -> str:
+    """Return a human-readable message for the overview thumbnail plan."""
     if requested_count > num_thumbnails:
         return (
             f"Single-row overview requires fewer thumbnails: requested {requested_count}, "
@@ -1234,6 +1261,7 @@ def _format_overview_thumbnail_plan_msg(
 def _build_overview_generation_result_msg(
     temp_thumb_dir: str, expected_count: int
 ) -> tuple[bool, str, int]:
+    """Summarize the thumbnail generation result from the temp directory."""
     generated_files = sorted(glob.glob(os.path.join(temp_thumb_dir, "thumb_*.png")))
     generated_count = len(generated_files)
     if generated_count == 0:
@@ -2031,6 +2059,7 @@ def add_info_video(key: str, value, append: bool = False):
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for the encoding script."""
     parser = argparse.ArgumentParser(description="Video encoding script")
     parser.add_argument("--encoding-type", required=True, help="CPU or GPU encoding type (Ex: CPU)")
     parser.add_argument("--base-dir", required=True, help="Base directory for input files")
@@ -2074,6 +2103,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def _parse_rendition_config(args, msg: str) -> str:
+    """Parse and apply rendition configuration from CLI arguments."""
     if args.rendition:
         try:
             rendition_config = json.loads(args.rendition)
@@ -2086,6 +2116,7 @@ def _parse_rendition_config(args, msg: str) -> str:
 
 
 def _parse_cut_config(args, msg: str) -> str:
+    """Parse and apply cut configuration from CLI arguments."""
     global _CUT_CONFIG, SUBTIME, EFFECTIVE_DURATION
     _CUT_CONFIG = {}
     EFFECTIVE_DURATION = 0
@@ -2125,6 +2156,7 @@ def _parse_cut_config(args, msg: str) -> str:
 
 
 def _parse_dressing_config(args, msg: str) -> str:
+    """Parse and apply dressing configuration from CLI arguments."""
     global _DRESSING_CONFIG
     _DRESSING_CONFIG = {}
     if args.dressing:
@@ -2138,6 +2170,7 @@ def _parse_dressing_config(args, msg: str) -> str:
 
 
 def _apply_cli_config(args) -> str:
+    """Apply CLI options to the script's global runtime configuration."""
     msg = ""
     global _DEBUG, _VIDEOS_DIR, _VIDEOS_OUTPUT_DIR, _ENCODING_TYPE, _HWACCEL_DEVICE
     _DEBUG = args.debug and args.debug.lower() == "true"
@@ -2186,6 +2219,7 @@ def _apply_cli_config(args) -> str:
 
 
 def _prepare_input_file(args) -> tuple[str, str]:
+    """Validate and normalize the input file before encoding."""
     msg = ""
     input_file = os.path.basename(args.input_file) if args.input_file else ""
     path_file = os.path.join(_VIDEOS_DIR, input_file)
@@ -2214,9 +2248,10 @@ def _prepare_input_file(args) -> tuple[str, str]:
 
 
 def _compute_working_duration(info_video: dict) -> tuple[int, str]:
+    """Compute the effective duration used for the encoding workflow."""
     global SUBTIME
     msg = ""
-    if EFFECTIVE_DURATION > 0:
+    if _CUT_CONFIG.get("start") and _CUT_CONFIG.get("end"):
         working_duration = EFFECTIVE_DURATION
         msg += f"Using effective duration from cut: {working_duration} seconds\n"
     else:
@@ -2226,7 +2261,42 @@ def _compute_working_duration(info_video: dict) -> tuple[int, str]:
     return working_duration, msg
 
 
+def _validate_source_media_info(info_video: dict) -> None:
+    """Validate that probed media metadata describes a readable source file."""
+    if not isinstance(info_video, dict) or not info_video:
+        raise EncodingValidationError(
+            "Encoding aborted: source file does not appear to be a valid video file."
+        )
+
+    has_readable_media_stream = any(
+        info_video.get(stream_flag, False)
+        for stream_flag in ("has_stream_video", "has_stream_audio")
+    )
+    if not has_readable_media_stream:
+        raise EncodingValidationError(
+            "Encoding aborted: source file does not appear to be a valid video file "
+            "(no readable audio/video streams found)."
+        )
+
+
+def _validate_working_duration(working_duration: int) -> None:
+    """Reject zero-duration inputs before starting FFmpeg encoding jobs."""
+    if working_duration > 0:
+        return
+
+    cut_start = _CUT_CONFIG.get("start")
+    cut_end = _CUT_CONFIG.get("end")
+    if cut_start and cut_end:
+        raise EncodingValidationError(
+            "Encoding aborted: effective video duration is 0 seconds after applying cut "
+            f"(start={cut_start}, end={cut_end})."
+        )
+
+    raise EncodingValidationError("Encoding aborted: input video duration is 0 seconds.")
+
+
 def _process_encoding(args) -> str:
+    """Run the end-to-end encoding workflow for the provided CLI arguments."""
     msg = ""
     filename, prep_msg = _prepare_input_file(args)
     msg += prep_msg
@@ -2234,8 +2304,10 @@ def _process_encoding(args) -> str:
         return msg
 
     info_video = get_info_video(filename)
+    _validate_source_media_info(info_video)
     working_duration, duration_msg = _compute_working_duration(info_video)
     msg += duration_msg
+    _validate_working_duration(working_duration)
 
     info_video["duration"] = working_duration
     info_video["effective_duration"] = working_duration
@@ -2263,7 +2335,15 @@ def main():
     args = parser.parse_args()
 
     msg += _apply_cli_config(args)
-    msg += _process_encoding(args)
+    try:
+        msg += _process_encoding(args)
+    except EncodingValidationError as exc:
+        error_message = str(exc)
+        msg += f"Error: {error_message}\n"
+        add_info_video("error", error_message)
+        encode_log(msg)
+        print(error_message, file=sys.stderr)
+        raise SystemExit(1)
 
     encode_log(msg)
 

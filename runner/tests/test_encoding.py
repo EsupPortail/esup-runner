@@ -51,3 +51,28 @@ def test_encoding_handler_success(mock_get, mock_run):
     assert "script_output" in res
     assert "input_path" in res and isinstance(res["input_path"], str)
     assert "output_dir" in res and isinstance(res["output_dir"], str)
+
+
+def test_encoding_handler_returns_explicit_script_error(monkeypatch):
+    handler = VideoEncodingHandler()
+
+    monkeypatch.setattr(
+        handler,
+        "download_source_file",
+        lambda source_url, dest_file: {"success": True, "file_path": dest_file},
+    )
+    monkeypatch.setattr(
+        handler,
+        "run_external_script",
+        lambda script_path, args, timeout=0: {
+            "success": False,
+            "returncode": 1,
+            "stdout": "",
+            "stderr": "Encoding aborted: input video duration is 0 seconds.\n",
+        },
+    )
+
+    res = handler.execute_task("task-enc-001", make_task_request())
+
+    assert res["success"] is False
+    assert res["error"] == "Encoding aborted: input video duration is 0 seconds."

@@ -149,7 +149,7 @@ class VideoEncodingHandler(BaseTaskHandler):
 
             # Check for errors
             if not script_result["success"]:
-                results["error"] = script_result.get("error", "Encoding failed")
+                results["error"] = self._extract_script_error(script_result)
 
             # Save metadata
             self.save_task_metadata(task_id, results, output_dir)
@@ -157,9 +157,7 @@ class VideoEncodingHandler(BaseTaskHandler):
             if script_result["success"]:
                 self.logger.info(f"Encoding task {task_id} completed successfully")
             else:
-                self.logger.error(
-                    f"Encoding task {task_id} failed: {script_result.get('error', 'Unknown error')}"
-                )
+                self.logger.error(f"Encoding task {task_id} failed: {results['error']}")
 
             return results
 
@@ -231,6 +229,25 @@ class VideoEncodingHandler(BaseTaskHandler):
         #        args.extend([f"--{key}", str(value)])
 
         return args
+
+    def _extract_script_error(self, script_result: Dict[str, Any]) -> str:
+        """Build a readable error message from an external script result."""
+        error = str(script_result.get("error") or "").strip()
+        if error:
+            return error
+
+        for stream_name in ("stderr", "stdout"):
+            text = str(script_result.get(stream_name) or "").strip()
+            if not text:
+                continue
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            if lines:
+                return lines[-1]
+
+        returncode = script_result.get("returncode")
+        if returncode not in (None, 0):
+            return f"Encoding failed (exit code {returncode})"
+        return "Encoding failed"
 
     @classmethod
     def get_description(cls) -> str:

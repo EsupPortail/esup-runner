@@ -2,6 +2,8 @@ import importlib.util
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 from app.task_handlers.encoding.encoding_handler import VideoEncodingHandler
 
 
@@ -387,3 +389,85 @@ def test_get_info_video_keeps_first_non_image_video_stream_as_primary(tmp_path):
     assert info["height"] == 1080
     assert info["has_stream_video"] is True
     assert info["has_stream_audio"] is True
+
+
+def test_process_encoding_rejects_zero_second_input(tmp_path):
+    enc = _load_encoding_script_module()
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "encoding.log").write_text("")
+
+    enc._VIDEOS_OUTPUT_DIR = str(output_dir)
+    enc._CUT_CONFIG = {}
+    enc.EFFECTIVE_DURATION = 0
+    enc._prepare_input_file = Mock(return_value=("input.mp4", "input prepared\n"))
+    enc.get_info_video = Mock(
+        return_value={
+            "duration": 0,
+            "codec": "h264",
+            "height": 720,
+            "has_stream_video": True,
+            "has_stream_thumbnail": True,
+            "has_stream_audio": False,
+        }
+    )
+    enc.launch_encode = Mock()
+
+    with pytest.raises(enc.EncodingValidationError, match="input video duration is 0 seconds"):
+        enc._process_encoding(args=Mock())
+
+    enc.launch_encode.assert_not_called()
+
+
+def test_process_encoding_rejects_invalid_source_video_file(tmp_path):
+    enc = _load_encoding_script_module()
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "encoding.log").write_text("")
+
+    enc._VIDEOS_OUTPUT_DIR = str(output_dir)
+    enc._prepare_input_file = Mock(return_value=("fake-video.mp4", "input prepared\n"))
+    enc.get_info_video = Mock(return_value={})
+    enc.launch_encode = Mock()
+
+    with pytest.raises(
+        enc.EncodingValidationError,
+        match="source file does not appear to be a valid video file",
+    ):
+        enc._process_encoding(args=Mock())
+
+    enc.launch_encode.assert_not_called()
+
+
+def test_process_encoding_rejects_zero_second_effective_duration_after_cut(tmp_path):
+    enc = _load_encoding_script_module()
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "encoding.log").write_text("")
+
+    enc._VIDEOS_OUTPUT_DIR = str(output_dir)
+    enc._CUT_CONFIG = {"start": "00:00:05", "end": "00:00:05"}
+    enc.EFFECTIVE_DURATION = 0
+    enc._prepare_input_file = Mock(return_value=("input.mp4", "input prepared\n"))
+    enc.get_info_video = Mock(
+        return_value={
+            "duration": 12,
+            "codec": "h264",
+            "height": 720,
+            "has_stream_video": True,
+            "has_stream_thumbnail": True,
+            "has_stream_audio": False,
+        }
+    )
+    enc.launch_encode = Mock()
+
+    with pytest.raises(
+        enc.EncodingValidationError,
+        match="effective video duration is 0 seconds after applying cut",
+    ):
+        enc._process_encoding(args=Mock())
+
+    enc.launch_encode.assert_not_called()

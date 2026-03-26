@@ -22,6 +22,7 @@ from typing import Any, Callable, Dict, Optional
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the transcription script."""
     parser = argparse.ArgumentParser(description="Generate subtitles using openai-whisper CLI")
     # Defaults from environment for standalone usage
     default_use_gpu = "true" if os.getenv("ENCODING_TYPE", "CPU").upper() == "GPU" else "false"
@@ -112,6 +113,7 @@ _WHISPER_HELP_CACHE: Optional[str] = None
 
 
 def _get_whisper_help_text(debug: bool = False) -> str:
+    """Return cached `whisper --help` output for CLI feature detection."""
     global _WHISPER_HELP_CACHE
     if _WHISPER_HELP_CACHE is not None:
         return _WHISPER_HELP_CACHE
@@ -127,6 +129,7 @@ def _get_whisper_help_text(debug: bool = False) -> str:
 
 
 def _cli_supports_option(possible_flags: list[str], debug: bool = False) -> Optional[str]:
+    """Return the first supported CLI flag among the provided alternatives."""
     help_text = _get_whisper_help_text(debug=debug)
     for flag in possible_flags:
         if flag in help_text:
@@ -290,6 +293,7 @@ def _build_whisper_command(
     vad_filter: bool,
     debug: bool,
 ) -> list[str]:
+    """Build the base Whisper CLI command for a transcription run."""
     cmd = [
         "whisper",
         str(audio_path),
@@ -313,6 +317,7 @@ def _build_whisper_command(
 
 
 def _prepare_whisper_env(use_gpu: bool, gpu_device: int) -> tuple[list[str], Dict[str, str]]:
+    """Prepare Whisper CLI device arguments and environment variables."""
     env = os.environ.copy()
     device_args: list[str] = []
     if use_gpu:
@@ -331,6 +336,7 @@ def _prepare_whisper_env(use_gpu: bool, gpu_device: int) -> tuple[list[str], Dic
 
 
 def _detect_language_from_stdout(stdout: str, language: str) -> Optional[str]:
+    """Extract the detected language code from Whisper CLI stdout when auto mode is used."""
     if language and language.lower() != "auto":
         return None
     for line in (stdout or "").splitlines():
@@ -386,6 +392,7 @@ def run_whisper_cli(
 
 
 def _import_whisper_modules() -> tuple[Optional[Any], Optional[Any], Optional[Callable[..., Any]]]:
+    """Import Whisper Python API modules and return them when available."""
     try:
         import torch  # type: ignore
         import whisper  # type: ignore
@@ -398,6 +405,7 @@ def _import_whisper_modules() -> tuple[Optional[Any], Optional[Any], Optional[Ca
 
 
 def _load_whisper_model(model_name: str, device: str) -> Optional[Any]:
+    """Load a Whisper model on the requested device."""
     try:
         import whisper  # type: ignore
 
@@ -408,6 +416,7 @@ def _load_whisper_model(model_name: str, device: str) -> Optional[Any]:
 
 
 def _build_transcribe_kwargs(language: str, vad_filter: bool, device: str) -> Dict[str, object]:
+    """Build keyword arguments for a Whisper Python transcription call."""
     kwargs: Dict[str, object] = {"fp16": device == "cuda"}
     if language and language.lower() != "auto":
         kwargs["language"] = language
@@ -418,6 +427,7 @@ def _build_transcribe_kwargs(language: str, vad_filter: bool, device: str) -> Di
 def _transcribe_audio(
     wmodel: Any, audio_path: Path, transcribe_kwargs: Dict[str, object]
 ) -> Optional[Dict[str, object]]:
+    """Run Whisper transcription and gracefully retry without unsupported options."""
     try:
         return wmodel.transcribe(str(audio_path), **transcribe_kwargs)  # type: ignore
     except TypeError:
@@ -430,6 +440,7 @@ def _transcribe_audio(
 
 
 def _extract_detected_language(result: Dict[str, object]) -> Optional[str]:
+    """Extract the detected language code from a Whisper Python result."""
     try:
         return str(result.get("language")) if isinstance(result, dict) else None
     except Exception:
@@ -444,6 +455,7 @@ def _write_vtt_result(
     word_options: Dict[str, object],
     debug: bool,
 ) -> bool:
+    """Write a Whisper transcription result to a VTT file."""
     try:
         writer = get_writer("vtt", str(out_dir))
         filename_stem = Path(audio_path).stem
@@ -513,6 +525,7 @@ def run_whisper_python(
 
 
 def _probe_duration_seconds(path: Path, debug: bool = False) -> float:
+    """Probe the media duration in seconds with ffprobe."""
     try:
         cmd = [
             "ffprobe",
@@ -534,6 +547,7 @@ def _probe_duration_seconds(path: Path, debug: bool = False) -> float:
 
 
 def _compute_timeout(args: argparse.Namespace, input_path: Path, debug: bool) -> int:
+    """Compute a runtime timeout from media duration and CLI settings."""
     dur = _probe_duration_seconds(input_path, debug=debug)
     try:
         timeout_factor = float(args.timeout_factor)
@@ -550,6 +564,7 @@ def _compute_timeout(args: argparse.Namespace, input_path: Path, debug: bool) ->
 def _prepare_audio_source(
     args: argparse.Namespace, input_path: Path, work_dir: Path, timeout_sec: int, debug: bool
 ) -> tuple[int, Optional[Path]]:
+    """Prepare the audio source file used for transcription."""
     input_is_mp3 = input_path.suffix.lower() == ".mp3"
     mp3_path = work_dir / f"{Path(args.input_file).stem}.mp3"
 
@@ -583,6 +598,7 @@ def _prepare_audio_source(
 def _run_transcription(
     args: argparse.Namespace, audio_src: Path, work_dir: Path, timeout_sec: int, debug: bool
 ) -> int:
+    """Run transcription via the Python API first, then CLI as a fallback."""
     rc, detected_lang = run_whisper_python(
         audio_path=audio_src,
         out_dir=work_dir,
@@ -628,6 +644,7 @@ def _build_vtt_stem_candidates(audio_src: Path) -> list[str]:
 
 
 def _find_generated_vtt(audio_src: Path, work_dir: Path) -> Optional[Path]:
+    """Locate the generated VTT file for a Whisper output stem."""
     for stem in _build_vtt_stem_candidates(audio_src):
         candidate = work_dir / f"{stem}.vtt"
         if candidate.exists():
@@ -636,6 +653,7 @@ def _find_generated_vtt(audio_src: Path, work_dir: Path) -> Optional[Path]:
 
 
 def _finalize_vtt(audio_src: Path, work_dir: Path) -> int:
+    """Rename the generated VTT file to the expected final output name."""
     expected_vtt = work_dir / f"{Path(audio_src).stem}.vtt"
     generated_vtt = _find_generated_vtt(audio_src, work_dir)
     try:
@@ -654,6 +672,7 @@ def _finalize_vtt(audio_src: Path, work_dir: Path) -> int:
 
 
 def main() -> int:
+    """Run the transcription script end to end and return an exit code."""
     args = parse_args()
 
     base_dir = Path(args.base_dir)

@@ -110,7 +110,7 @@ app = [
 # ============================================================================
 [tool.black]
 line-length = 100
-target-version = ["py311", "py312", "py313", "py314"]
+target-version = ["py311"]
 
 # ============================================================================
 # isort Configuration - Inherits from root config

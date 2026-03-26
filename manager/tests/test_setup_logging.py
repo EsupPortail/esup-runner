@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import stat
 import sys
 from logging.handlers import RotatingFileHandler
 
@@ -18,6 +19,7 @@ from app.core.setup_logging import (
     _add_syslog_handler,
     _coerce_log_level,
     _create_formatter,
+    _is_unix_socket,
     _resolve_syslog_address,
     get_uvicorn_log_config,
     setup_default_logging,
@@ -306,3 +308,32 @@ def test_resolve_syslog_address_uses_fallback_candidates(monkeypatch):
     )
     monkeypatch.setattr(logging_module, "_is_unix_socket", lambda path: path == "/var/run/syslog")
     assert _resolve_syslog_address(None) == "/var/run/syslog"
+
+
+def test_resolve_syslog_address_requested_socket(monkeypatch):
+    monkeypatch.setattr(logging_module, "_is_unix_socket", lambda path: path == "/dev/log")
+    assert _resolve_syslog_address("/dev/log") == "/dev/log"
+
+
+def test_resolve_syslog_address_returns_none_when_no_candidate(monkeypatch):
+    monkeypatch.setattr(
+        logging_module, "_DEFAULT_SYSLOG_ADDRESSES", ("/dev/log", "/var/run/syslog")
+    )
+    monkeypatch.setattr(logging_module, "_is_unix_socket", lambda _path: False)
+    assert _resolve_syslog_address(None) is None
+
+
+def test_is_unix_socket_true(monkeypatch):
+    class _StatResult:
+        st_mode = stat.S_IFSOCK
+
+    monkeypatch.setattr(logging_module.os, "stat", lambda _path: _StatResult())
+    assert _is_unix_socket("/dev/log") is True
+
+
+def test_is_unix_socket_handles_oserror(monkeypatch):
+    def _raise_oserror(_path):
+        raise OSError("missing")
+
+    monkeypatch.setattr(logging_module.os, "stat", _raise_oserror)
+    assert _is_unix_socket("/missing") is False

@@ -56,9 +56,21 @@ class TaskDispatcher:
 
             # Validate parameters
             if not handler.validate_parameters(task_request.parameters):
+                invalid_getter = getattr(handler, "get_invalid_parameters", None)
+                invalid_parameters = (
+                    invalid_getter(task_request.parameters) if callable(invalid_getter) else []
+                )
+                invalid_suffix = (
+                    f" (invalid fields: {', '.join(invalid_parameters)})"
+                    if invalid_parameters
+                    else ""
+                )
                 return {
                     "success": False,
-                    "error": f"Invalid parameters for task type: {task_request.task_type}",
+                    "error": (
+                        f"Invalid parameters for task type: {task_request.task_type}"
+                        f"{invalid_suffix}"
+                    ),
                 }
 
             # Create workspace for this task

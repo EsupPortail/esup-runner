@@ -1,33 +1,58 @@
-# Makefile — Esup-Runner Manager (uv + extras)
+# Makefile - Esup-Runner Manager Service
 #
-# Extras: dev
+# Purpose:
+# - Provide a single command entrypoint for dependency sync, lock management,
+#   service lifecycle commands, tests/quality, docs generation, and Docker build.
 #
-# Usage:
+# Supported extras:
+# - dev
+#
+# Common workflows:
+# - Bootstrap environment:
 #   make sync
 #   make sync-dev
 #   make sync EXTRAS=dev
-#
+# - Update lock file:
 #   make lock
 #   make lock-dev
-#   make lock EXTRAS=dev
-#
+#   make lock-upgrade EXTRAS=dev
+# - Run and operations:
 #   make run
+#   make status
+#   make stop
+#   make restart
+# - Quality and docs:
 #   make test
 #   make coverage
 #   make fmt
 #   make lint
 #   make ci
 #   make docs
-#   make init
-#   make clean
+#
+# Important variables:
+# - EXTRAS: comma-separated extras list (example: EXTRAS=dev)
+# - UV, PYTHON: command wrappers used by all uv/python targets
+# - DOCKER_*: image name/tag and container build/runtime options
 #
 # Notes:
-# - uv sync does not install optional dependencies without --extra.
+# - uv sync does not install optional dependencies unless extras are provided.
+# - Quality commands do not auto-install dev dependencies.
+#
+# Troubleshooting:
+# - Missing dev tools (pytest/black/isort/mypy): run `make sync-dev`.
+# - Optional deps not installed: use `make sync EXTRAS=dev` explicitly.
+# - After lock update, refresh env with `make sync`.
 
 UV      ?= uv
 PYTHON  ?= $(UV) run python
 
 EXTRAS  ?=
+
+# ---------------------------------------------------------------------------
+# Readability helpers
+# ---------------------------------------------------------------------------
+# Regex used to detect whether the local uv version supports `--extra` on lock.
+UV_LOCK_EXTRA_REGEX := --extra([[:space:]]|$$)
 
 # Docker build variables (can be overridden via env or make args)
 DOCKER            ?= docker
@@ -56,24 +81,24 @@ help:
 	@echo "  make sync [EXTRAS=dev]                          -> uv sync (+ extras)"
 	@echo "  make lock [EXTRAS=dev]                          -> uv lock (+ extras)"
 	@echo "  make lock-upgrade [EXTRAS=dev]                  -> uv lock --upgrade (+ extras)"
-	@echo "  make run                                        -> run the manager"
-	@echo "  make status                                     -> show manager status (best-effort)"
-	@echo "  make stop                                       -> stop the manager (best-effort)"
-	@echo "  make restart                                    -> restart the manager (systemd or local)"
-	@echo "  make test                                       -> run tests"
-	@echo "  make coverage                                   -> run tests with coverage"
-	@echo "  make fmt                                        -> format code (black + isort)"
-	@echo "  make lint                                       -> lint (flake8 + mypy)"
-	@echo "  make ci                                         -> run local pre-PR checks (fmt + lint + test + coverage)"
-	@echo "  make docs                                       -> generate docs diagrams"
-	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...'] -> build manager Docker image"
-	@echo "  make docker-fix-perms                           -> fix Docker volume permissions for esup-runner"
-	@echo "  make init                                       -> init directories from .env (sudo)"
-	@echo "  make create-service                             -> install systemd service (sudo)"
-	@echo "  make clean                                      -> remove .venv and caches"
+	@echo "  make run  -> run the manager"
+	@echo "  make status  -> show manager status (best-effort)"
+	@echo "  make stop  -> stop the manager (best-effort)"
+	@echo "  make restart  -> restart the manager (systemd or local)"
+	@echo "  make test  -> run tests"
+	@echo "  make coverage  -> run tests with coverage"
+	@echo "  make fmt  -> format code (black + isort)"
+	@echo "  make lint  -> lint (flake8 + mypy)"
+	@echo "  make ci  -> run local pre-PR checks (fmt + lint + test + coverage)"
+	@echo "  make docs  -> generate docs diagrams"
+	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...']  -> build manager Docker image"
+	@echo "  make docker-fix-perms  -> fix Docker volume permissions for esup-runner"
+	@echo "  make init  -> init directories from .env (sudo)"
+	@echo "  make create-service  -> install systemd service (sudo)"
+	@echo "  make clean  -> remove .venv and caches"
 	@echo ""
 	@echo "Shortcuts:"
-	@echo "  make sync-dev | lock-dev | sync-docs | lock-docs"
+	@echo "  make sync-dev | make lock-dev | make sync-docs | make lock-docs"
 	@echo ""
 	@echo "Quality commands (fmt/lint/test/coverage) do NOT auto-sync dev deps."
 	@echo "Run: make sync-dev (once) if needed."
@@ -94,8 +119,11 @@ sync:
 	$(UV) sync $(EXTRA_ARGS)
 
 lock:
+	# lock
+	# Create or refresh uv.lock for the selected extras.
+	# Falls back to a full lock when the installed uv version does not support lock extras.
 	@echo "==> uv lock $(EXTRA_ARGS)"
-	@if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
+	@if $(UV) lock --help | grep -Eq -- '$(UV_LOCK_EXTRA_REGEX)'; then \
 		$(UV) lock $(EXTRA_ARGS); \
 	else \
 		if [ -n "$(EXTRAS)" ]; then \
@@ -105,8 +133,11 @@ lock:
 	fi
 
 lock-upgrade:
+	# lock-upgrade
+	# Upgrade dependencies in uv.lock, optionally scoped by extras.
+	# Falls back to a full lock upgrade when lock extras are unsupported.
 	@echo "==> uv lock --upgrade $(EXTRA_ARGS)"
-	@if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
+	@if $(UV) lock --help | grep -Eq -- '$(UV_LOCK_EXTRA_REGEX)'; then \
 		$(UV) lock --upgrade $(EXTRA_ARGS); \
 	else \
 		if [ -n "$(EXTRAS)" ]; then \
@@ -130,6 +161,8 @@ lock-docs:
 # ---------- Execution ----------
 
 run:
+	# run
+	# Start the manager process and normalize Ctrl+C (130) to a clean exit.
 	@echo "==> run the manager"
 	@set +e; \
 	$(UV) run esup-runner-manager; \
@@ -141,14 +174,20 @@ run:
 	exit $$code
 
 status:
+	# status
+	# Best-effort status report via helper script.
 	@echo "==> manager status"
 	@bash scripts/status_manager.sh
 
 stop:
+	# stop
+	# Best-effort stop via helper script.
 	@echo "==> stop the manager"
 	@bash scripts/stop_manager.sh
 
 restart:
+	# restart
+	# Restart via helper script (systemd-aware when available).
 	@echo "==> restart the manager"
 	@bash scripts/restart_manager.sh
 
@@ -222,6 +261,8 @@ ci:
 	@$(MAKE) coverage
 
 docs:
+	# docs
+	# Generate architecture and tree diagrams using project scripts.
 	@echo "==> docs (diagrams)"
 	@$(MAKE) sync EXTRAS=docs
 	$(PYTHON) scripts/generate_architecture_diagram.py

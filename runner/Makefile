@@ -1,24 +1,43 @@
-# Makefile — Esup-Runner (uv + extras)
+# Makefile - Esup-Runner Runner Service
 #
-# Extras: dev, transcription-gpu, transcription-cpu
+# Purpose:
+# - Centralize day-to-day commands for dependency sync, lock maintenance,
+#   local run, quality checks, and Docker image build.
 #
-# Usage:
+# Supported extras:
+# - dev, transcription-gpu, transcription-cpu
+#
+# Common workflows:
+# - Bootstrap environment:
 #   make sync
 #   make sync-dev
 #   make sync-transcription-gpu
 #   make sync-transcription-cpu
-# 	make sync-all
-#
+#   make sync-all
+# - Update lock file:
 #   make lock
-#   make lock-transcription-gpu
-#   make lock-transcription-cpu
 #   make lock EXTRAS=dev,transcription-gpu
-#
+#   make lock-upgrade
+# - GPU lock profiles:
+#   make lock-upgrade-gpu-12
+#   make lock-upgrade-gpu-latest
+# - Run and quality:
 #   make run
 #   make ci
 #
+# Important variables:
+# - EXTRAS: comma-separated extras list (example: EXTRAS=dev,transcription-gpu)
+# - UV, PYTHON: command wrappers used by all uv/python targets
+# - DOCKER_*: image name/tag and container build/runtime options
+#
 # Notes:
-# - uv sync does not install optional dependencies without --extra.
+# - uv sync does not install optional dependencies unless extras are provided.
+# - Quality commands do not auto-install dev dependencies.
+#
+# Troubleshooting:
+# - Missing dev tools (pytest/ruff/mypy): run `make sync-dev` or `make sync-all`.
+# - GPU transcription not available at runtime: run `make check-gpu`.
+# - Need a CUDA 12-compatible lock: run `make lock-upgrade-gpu-12`.
 
 UV      ?= uv
 PYTHON  ?= $(UV) run python
@@ -52,20 +71,23 @@ EXTRA_ARGS := $(strip $(foreach e,$(subst $(comma),$(space),$(EXTRAS)),--extra $
 
 help:
 	@echo "Targets:"
-	@echo "  make sync [EXTRAS=dev,transcription-gpu,transcription-cpu]	-> uv sync (+ extras)"
-	@echo "  make lock [EXTRAS=dev,transcription-gpu,transcription-cpu]	-> uv lock (+ extras)"
-	@echo "  make lock-upgrade [EXTRAS=dev,transcription-gpu,transcription-cpu] -> uv lock --upgrade (+ extras)"
-	@echo "  make run                                       -> run the app launcher"
-	@echo "  make init                                      -> init directories from .env (sudo)"
-	@echo "  make create-service                            -> install systemd service (sudo)"
-	@echo "  make ci                                        -> run local pre-PR checks (fmt + lint + test + coverage)"
+	@echo "  make sync [EXTRAS=dev,transcription-gpu,transcription-cpu]  -> uv sync (+ extras)"
+	@echo "  make lock [EXTRAS=dev,transcription-gpu,transcription-cpu]  -> uv lock (+ extras)"
+	@echo "  make lock-upgrade [EXTRAS=dev,transcription-gpu,transcription-cpu]  -> uv lock --upgrade (+ extras)"
+	@echo "  make run  -> run the app launcher"
+	@echo "  make check-gpu  -> verify torch CUDA runtime availability"
+	@echo "  make init  -> init directories from .env (sudo)"
+	@echo "  make create-service  -> install systemd service (sudo)"
+	@echo "  make ci  -> run local pre-PR checks (fmt + lint + test + coverage)"
 	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_RUNNER_EXTRA=transcription-cpu|transcription-gpu DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...'] -> build runner Docker image"
-	@echo "  make docker-fix-perms                          -> fix Docker volume permissions for esup-runner"
-	@echo "  make clean                                     -> remove .venv and caches"
+	@echo "  make docker-fix-perms  -> fix Docker volume permissions for esup-runner"
+	@echo "  make clean  -> remove .venv and caches"
 	@echo ""
 	@echo "Shortcuts:"
-	@echo "  make sync-dev | sync-transcription-gpu | sync-transcription-cpu | make sync-all"
-	@echo "  make lock-dev | lock-transcription-gpu | lock-transcription-cpu | make lock-all"
+	@echo "  make sync-dev | make sync-transcription-gpu | make sync-transcription-cpu | make sync-all"
+	@echo "  make lock-dev | make lock-transcription-gpu | make lock-transcription-cpu | make lock-all"
+	@echo "  make lock-upgrade-gpu-12  -> uv.lock upgrade with CUDA12-compatible torch"
+	@echo "  make lock-upgrade-gpu-latest  -> uv.lock upgrade with latest GPU torch stack"
 	@echo ""
 	@echo "Quality commands (fmt/lint/test/coverage) do NOT auto-sync dev deps."
 	@echo "Run: make sync-dev or make sync-all (once) if needed."
@@ -119,6 +141,41 @@ lock-upgrade:
 		$(UV) lock --upgrade; \
 	fi
 
+# lock-upgrade-gpu-12
+# Generate a lockfile compatible with CUDA 12 on Linux x86_64.
+# Strategy:
+# - Temporarily inject torch==2.10.0 in base dependencies for this command only.
+# - Run lock upgrade with UV_NO_SOURCES=1 to avoid source-table side effects.
+# - Restore pyproject.toml even if the lock command fails.
+lock-upgrade-gpu-12:
+	@echo "==> uv lock --upgrade with dev + transcription-gpu (temporary torch==2.10.0 pin for CUDA12)"
+	@set -e; \
+	backup=$$(mktemp); \
+	cp pyproject.toml "$$backup"; \
+	trap 'cp "$$backup" pyproject.toml; rm -f "$$backup"' EXIT; \
+	perl -0777 -i -pe 's/dependencies = \[\n(.*?)\n\]/dependencies = [\n$$1\n    "torch==2.10.0 ; sys_platform == '\''linux'\'' and platform_machine == '\''x86_64'\''",\n]/s' pyproject.toml; \
+	if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
+		UV_NO_SOURCES=1 $(UV) lock --upgrade --extra dev --extra transcription-gpu; \
+	else \
+		echo "==> warning: this uv version ignores lock extras; running full lock upgrade"; \
+		UV_NO_SOURCES=1 $(UV) lock --upgrade; \
+	fi; \
+	cp "$$backup" pyproject.toml; \
+	rm -f "$$backup"; \
+	trap - EXIT
+
+# lock-upgrade-gpu-latest
+# Upgrade the lockfile against the latest available GPU torch stack.
+# We also disable sources-table resolution to keep behavior predictable across uv versions.
+lock-upgrade-gpu-latest:
+	@echo "==> uv lock --upgrade with dev + transcription-gpu (latest GPU torch stack)"
+	@if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
+		UV_NO_SOURCES=1 $(UV) lock --upgrade --extra dev --extra transcription-gpu -P torch; \
+	else \
+		echo "==> warning: this uv version ignores lock extras; running full lock upgrade without sources and with torch upgrade"; \
+		UV_NO_SOURCES=1 $(UV) lock --upgrade -P torch; \
+	fi
+
 lock-dev:
 	@$(MAKE) lock EXTRAS=dev
 
@@ -136,6 +193,10 @@ lock-transcription-cpu:
 run:
 	@echo "==> run the app launcher"
 	$(UV) run esup-runner-runner
+
+check-gpu:
+	@echo "==> checking torch CUDA availability"
+	@$(UV) run python -c "import sys; import torch; print(f'torch={torch.__version__}'); print(f'cuda_build={torch.version.cuda}'); ok=torch.cuda.is_available(); print(f'cuda_available={ok}'); print(f'gpu_count={torch.cuda.device_count() if ok else 0}'); sys.exit(0 if ok else 1)"
 
 # ---------- Utilities ----------
 
@@ -224,7 +285,7 @@ docker-fix-perms:
 
 .PHONY: help sync lock lock-upgrade run init clean \
 		sync-dev sync-all sync-transcription-gpu sync-transcription-cpu \
-		lock-dev lock-transcription-gpu lock-transcription-cpu lock-all \
+		lock-dev lock-transcription-gpu lock-transcription-cpu lock-all lock-upgrade-gpu-12 lock-upgrade-gpu-latest \
 		docker-build docker-fix-perms \
 		check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
-		test coverage fmt fmt-check lint ci
+		test coverage fmt fmt-check lint ci check-gpu

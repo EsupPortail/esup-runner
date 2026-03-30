@@ -155,6 +155,20 @@ Notes:
 - `sync-transcription-cpu` forces `torch` from the PyTorch CPU index (Linux x86_64), which avoids `nvidia-*` packages.
 - `sync-transcription-gpu` keeps the default `torch` resolution, intended for GPU/CUDA environments.
 
+### Optional: GPU lock strategy (when maintaining `uv.lock`)
+
+These commands are useful only when you need to regenerate or upgrade `uv.lock` for GPU transcription environments.
+
+- `make lock-upgrade-gpu-12`
+  - Utility: forces a CUDA 12-compatible lock resolution for GPU transcription.
+  - Use this when: your production hosts are pinned to CUDA 12.x / older NVIDIA stacks and you want to avoid drift to newer CUDA stacks.
+
+- `make lock-upgrade-gpu-latest`
+  - Utility: upgrades the lock against the latest available GPU torch/CUDA stack.
+  - Use this when: your GPU hosts are up to date and you want to follow latest supported GPU dependencies.
+
+After either command, apply the lockfile on the target host with the appropriate sync command (for example `make sync-transcription-gpu`).
+
 ### Verification checks
 
 Before starting the service, you can run a few built-in checks from `/opt/esup-runner/runner`.

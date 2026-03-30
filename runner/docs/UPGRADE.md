@@ -120,6 +120,25 @@ cd /opt/esup-runner/runner
 make sync-transcription-gpu
 ```
 
+### Optional: refresh `uv.lock` for GPU environments
+
+Use these commands only when you intentionally update the lockfile during an upgrade.
+
+- `make lock-upgrade-gpu-12`
+  - Utility: regenerate the lockfile with a CUDA 12-compatible GPU stack.
+  - Typical case: production servers still run CUDA 12.x / older NVIDIA compatibility constraints.
+
+- `make lock-upgrade-gpu-latest`
+  - Utility: regenerate the lockfile against the latest GPU torch/CUDA stack.
+  - Typical case: production GPU servers are fully updated and you want the latest stack.
+
+Then re-apply dependencies with:
+
+```bash
+cd /opt/esup-runner/runner
+make sync-transcription-gpu
+```
+
 ---
 
 ## 6) Pre-start checks

@@ -501,6 +501,18 @@ async def view_tasks(
                 or search_lower in str(t.task_type).lower()
                 or (t.source_url and search_lower in t.source_url.lower())
                 or (t.etab_name and search_lower in t.etab_name.lower())
+                or (
+                    (t.parameters or {}).get("video_id")
+                    and search_lower in str((t.parameters or {}).get("video_id")).lower()
+                )
+                or (
+                    (t.parameters or {}).get("video_slug")
+                    and search_lower in str((t.parameters or {}).get("video_slug")).lower()
+                )
+                or (
+                    (t.parameters or {}).get("video_title")
+                    and search_lower in str((t.parameters or {}).get("video_title")).lower()
+                )
             )
         ]
 

@@ -405,6 +405,31 @@ def _detect_language_from_stdout(stdout: str, language: str) -> Optional[str]:
     return None
 
 
+def _resolve_effective_use_gpu(requested_use_gpu: bool, debug: bool) -> bool:
+    """Return whether CUDA can actually be used for this run.
+
+    When GPU is requested but CUDA is unavailable (driver/runtime mismatch,
+    CPU-only environment, etc.), transcription transparently falls back to CPU.
+    """
+    if not requested_use_gpu:
+        return False
+
+    try:
+        import torch  # type: ignore
+
+        if torch.cuda.is_available():
+            return True
+
+        print("CUDA requested but unavailable; falling back to CPU for transcription")
+        return False
+    except Exception as e:
+        if debug:
+            print(f"Failed to probe CUDA availability ({e}); falling back to CPU")
+        else:
+            print("Failed to probe CUDA availability; falling back to CPU")
+        return False
+
+
 def run_whisper_cli(
     audio_path: Path,
     out_dir: Path,
@@ -557,6 +582,11 @@ def run_whisper_python(
         print(f"Loading whisper model '{model_name}' on {device} (dtype={dtype})")
 
     wmodel = _load_whisper_model(model_name, device)
+    if wmodel is None and device == "cuda":
+        print("Retrying whisper model load on CPU")
+        device = "cpu"
+        wmodel = _load_whisper_model(model_name, device)
+
     if wmodel is None:
         return 10, None
 
@@ -655,12 +685,15 @@ def _run_transcription(
     args: argparse.Namespace, audio_src: Path, work_dir: Path, timeout_sec: int, debug: bool
 ) -> int:
     """Run transcription via the Python API first, then CLI as a fallback."""
+    requested_use_gpu = args.use_gpu == "true"
+    effective_use_gpu = _resolve_effective_use_gpu(requested_use_gpu, debug)
+
     rc, detected_lang = run_whisper_python(
         audio_path=audio_src,
         out_dir=work_dir,
         language=args.language,
         model=args.model,
-        use_gpu=(args.use_gpu == "true"),
+        use_gpu=effective_use_gpu,
         gpu_device=int(args.gpu_device),
         vad_filter=(args.vad_filter == "true"),
         vtt_highlight_words=(str(args.vtt_highlight_words).lower() == "true"),
@@ -674,7 +707,7 @@ def _run_transcription(
             out_dir=work_dir,
             language=args.language,
             model=args.model,
-            use_gpu=(args.use_gpu == "true"),
+            use_gpu=effective_use_gpu,
             gpu_device=int(args.gpu_device),
             vad_filter=(args.vad_filter == "true"),
             timeout_sec=timeout_sec,

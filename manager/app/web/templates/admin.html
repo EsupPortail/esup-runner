@@ -203,12 +203,24 @@
               <div class="list-group-item task {{ task.status }}">
                 <div class="d-flex justify-content-between align-items-center">
                   <div>
-                    <h3 class="h5 mb-1">
-                      ID:
-                      <a href="/admin/task/{{ task.id }}" class="link-body-emphasis" title="Open task detail"
+                    <h3 class="h6 mb-1">
+                      <span class="me-1" title="Task ID" data-bs-toggle="tooltip" aria-label="Task ID">
+                        <i class="bi bi-list-task" aria-hidden="true"></i>
+                      </span>
+                      <span class="visually-hidden">Task ID:</span>
+                      <a href="/admin/task/{{ task.id }}" class="link-body-emphasis me-2" title="Open task detail"
                         data-bs-toggle="tooltip">
                         {{ task.id }}
                       </a>
+                      {% if task.video_id %}
+                        <span class="d-inline-flex align-items-center gap-1 ms-1 text-subtle">
+                          <span title="Video ID" data-bs-toggle="tooltip" aria-label="Video ID">
+                            <i class="bi bi-film" aria-hidden="true"></i>
+                          </span>
+                          <span class="visually-hidden">Video ID:</span>
+                          <span>{{ task.video_id }}</span>
+                        </span>
+                      {% endif %}
                       {% set task_icons = {
                       'encoding': {'icon': 'bi-explicit', 'title': 'Encoding task.'},
                       'studio': {'icon': 'bi-record-btn', 'title': 'Studio task.'},
@@ -216,8 +228,10 @@
                       } %}
                       {% if task_icons.get(task.task_type) %}&nbsp;<i title="{{ task_icons[task.task_type].title }}"
                         class="bi {{ task_icons[task.task_type].icon }}" data-bs-toggle="tooltip"></i>{% endif %}
-                    </h6>
-                    <small class="text-subtle">Runner: {{ task.runner_id }} (<i>{{ task.created_at }}</i>)</small>
+                    </h3>
+                    <small class="d-block text-subtle">
+                      Runner: {{ task.runner_id }} (<i>{{ task.created_at_display }}</i>)
+                    </small>
                   </div>
                   <span class="badge
                       {% if task.status == 'pending' %}bg-warning text-dark

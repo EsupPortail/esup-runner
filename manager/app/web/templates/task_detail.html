@@ -144,6 +144,24 @@
               <span class="text-subtle">{{ task.affiliation }}</span>
             </div>
           {% endif %}
+          {% if task.parameters and task.parameters.get("video_id") %}
+            <div class="metadata-item">
+              <span class="metadata-label">Video ID:</span>
+              <span class="text-subtle">{{ task.parameters.get("video_id") }}</span>
+            </div>
+          {% endif %}
+          {% if task.parameters and task.parameters.get("video_slug") %}
+            <div class="metadata-item">
+              <span class="metadata-label">Video Slug:</span>
+              <span class="text-subtle">{{ task.parameters.get("video_slug") }}</span>
+            </div>
+          {% endif %}
+          {% if task.parameters and task.parameters.get("video_title") %}
+            <div class="metadata-item">
+              <span class="metadata-label">Video Title:</span>
+              <span class="text-subtle">{{ task.parameters.get("video_title") }}</span>
+            </div>
+          {% endif %}
           <div class="metadata-item">
             <span class="metadata-label">Source file:</span>
             <span class="text-subtle">{{ task.source_url }}</span>

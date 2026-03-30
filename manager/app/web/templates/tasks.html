@@ -148,7 +148,7 @@
                   <div class="input-group mb-3">
                     <input type="text" name="search" class="form-control"
                       aria-label="Search for tasks…"
-                      placeholder="Search by ID, type, URL…" value="{{ current_filters.search or '' }}">
+                      placeholder="Search by ID, type, URL, video metadata…" value="{{ current_filters.search or '' }}">
                     <button type="submit" class="btn btn-outline-primary">
                       <i class="bi bi-search" aria-hidden="true"></i>
                       Search
@@ -577,6 +577,9 @@
           if (!response.ok) throw new Error('Failed to fetch task details');
 
           const task = await response.json();
+          const videoId = task.parameters?.video_id || '';
+          const videoSlug = task.parameters?.video_slug || '';
+          const videoTitle = task.parameters?.video_title || '';
 
           modalBody.innerHTML = `
             <div class="mb-3">
@@ -607,6 +610,24 @@
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Affiliation</h6>
               <span>${task.affiliation}</span>
+            </div>
+            ` : ''}
+            ${videoId ? `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Video ID</h6>
+              <span>${videoId}</span>
+            </div>
+            ` : ''}
+            ${videoSlug ? `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Video Slug</h6>
+              <span>${videoSlug}</span>
+            </div>
+            ` : ''}
+            ${videoTitle ? `
+            <div class="mb-3">
+              <h3 class="h5 text-muted mb-2">Video Title</h6>
+              <span>${videoTitle}</span>
             </div>
             ` : ''}
             <div class="mb-3">

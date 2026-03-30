@@ -24,6 +24,17 @@ class TranscriptionHandler(BaseTaskHandler):
     """
 
     task_type = "transcription"
+    possible_params = {
+        "language",
+        "format",
+        "model",
+        "model_type",
+        "duration",
+        "normalize",
+        "video_id",
+        "video_slug",
+        "video_title",
+    }
 
     def __init__(self):
         super().__init__()
@@ -37,9 +48,28 @@ class TranscriptionHandler(BaseTaskHandler):
         - language: language code or 'auto'
         - format: output subtitle format (vtt|srt), default vtt
         - model: logical whisper model (small|medium|large|turbo)
+        - duration/model_type: legacy compatibility metadata from manager payloads
+        - video_id/video_slug/video_title: optional tracking metadata
         """
-        # No required params for transcription
+        required_params: List[str] = []
+        self.last_invalid_parameters = self.get_invalid_parameters(parameters)
+
+        # Check required parameters
+        for param in required_params:
+            if param not in parameters:
+                self.logger.error(f"Missing required parameter: {param}")
+                return False
+
+        # Check for unknown parameters
+        if self.last_invalid_parameters:
+            self.logger.error("Parameters not allowed: " + ", ".join(self.last_invalid_parameters))
+            return False
+
         return True
+
+    def get_invalid_parameters(self, parameters: Dict[str, Any]) -> List[str]:
+        """Return unsupported parameter names for transcription requests."""
+        return sorted([param for param in parameters if param not in self.possible_params])
 
     def execute_task(self, task_id: str, task_request: TaskRequest) -> Dict[str, Any]:
         try:
@@ -133,6 +163,14 @@ class TranscriptionHandler(BaseTaskHandler):
         # Model selection: allow per-task override or fallback to config
         logical_model = str(parameters.get("model", config.WHISPER_MODEL)).lower()
         args.extend(["--model", logical_model])
+
+        # Optional video identification metadata (tracking only).
+        if "video_id" in parameters:
+            args.extend(["--video-id", str(parameters["video_id"])])
+        if "video_slug" in parameters:
+            args.extend(["--video-slug", str(parameters["video_slug"])])
+        if "video_title" in parameters:
+            args.extend(["--video-title", str(parameters["video_title"])])
 
         # GPU hints
         use_gpu = "true" if config.whisper_use_gpu() else "false"

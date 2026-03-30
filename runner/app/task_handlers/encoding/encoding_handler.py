@@ -23,6 +23,14 @@ class VideoEncodingHandler(BaseTaskHandler):
     """
 
     task_type = "encoding"
+    possible_params = {
+        "rendition",
+        "cut",
+        "dressing",
+        "video_id",
+        "video_slug",
+        "video_title",
+    }
 
     def __init__(self):
         """Initialize video encoding handler."""
@@ -40,7 +48,7 @@ class VideoEncodingHandler(BaseTaskHandler):
             bool: True if parameters are valid
         """
         required_params: List[str] = []
-        possible_params = ["rendition", "cut", "dressing"]
+        self.last_invalid_parameters = self.get_invalid_parameters(parameters)
 
         # Check required parameters
         for param in required_params:
@@ -49,12 +57,15 @@ class VideoEncodingHandler(BaseTaskHandler):
                 return False
 
         # Check for unknown parameters
-        for param in parameters:
-            if param not in possible_params:
-                self.logger.error(f"Parameter not allowed: {param}")
-                return False
+        if self.last_invalid_parameters:
+            self.logger.error("Parameters not allowed: " + ", ".join(self.last_invalid_parameters))
+            return False
 
         return True
+
+    def get_invalid_parameters(self, parameters: Dict[str, Any]) -> List[str]:
+        """Return unsupported parameter names for encoding requests."""
+        return sorted([param for param in parameters if param not in self.possible_params])
 
     def execute_task(self, task_id: str, task_request: TaskRequest) -> Dict[str, Any]:
         """
@@ -222,10 +233,18 @@ class VideoEncodingHandler(BaseTaskHandler):
         if "dressing" in parameters:
             args.extend(["--dressing", str(parameters["dressing"])])
 
+        # Optional video identification metadata (tracking only).
+        if "video_id" in parameters:
+            args.extend(["--video-id", str(parameters["video_id"])])
+        if "video_slug" in parameters:
+            args.extend(["--video-slug", str(parameters["video_slug"])])
+        if "video_title" in parameters:
+            args.extend(["--video-title", str(parameters["video_title"])])
+
         # Add any additional parameters (excluding already processed ones)
         # Potentially useful for future extensions
         # for key, value in parameters.items():
-        #    if key not in ["rendition", "cut", "dressing"]:
+        #    if key not in ["rendition", "cut", "dressing", "video_id", "video_slug", "video_title"]:
         #        args.extend([f"--{key}", str(value)])
 
         return args

@@ -16,14 +16,35 @@ from app.task_handlers.base_handler import BaseTaskHandler
 
 class StudioEncodingHandler(BaseTaskHandler):
     task_type = "studio"
+    possible_params = {
+        "presenter",
+        "force_cpu",
+        "studio_crf",
+        "studio_preset",
+        "studio_audio_bitrate",
+        "studio_allow_nvenc",
+        "rendition",
+        "cut",
+        "dressing",
+        "video_id",
+        "video_slug",
+        "video_title",
+    }
 
     def __init__(self):
         super().__init__()
         self.scripts_dir = Path(__file__).parent / "scripts"
 
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
-        # Allow optional overrides like presenter layout, rendition, etc.
+        self.last_invalid_parameters = self.get_invalid_parameters(parameters)
+        if self.last_invalid_parameters:
+            self.logger.error("Parameters not allowed: " + ", ".join(self.last_invalid_parameters))
+            return False
         return True
+
+    def get_invalid_parameters(self, parameters: Dict[str, Any]) -> list[str]:
+        """Return unsupported parameter names for studio requests."""
+        return sorted([param for param in parameters if param not in self.possible_params])
 
     def execute_task(self, task_id: str, task_request: TaskRequest) -> Dict[str, Any]:
         try:
@@ -386,12 +407,27 @@ class StudioEncodingHandler(BaseTaskHandler):
         exclude = {
             "rendition",
             "cut",
+            "dressing",
+            "video_id",
+            "video_slug",
+            "video_title",
             "presenter",
             "studio_crf",
             "studio_preset",
             "studio_audio_bitrate",
+            "studio_allow_nvenc",
             "force_cpu",
         }
+
+        if "dressing" in parameters:
+            args.extend(["--dressing", str(parameters["dressing"])])
+        if "video_id" in parameters:
+            args.extend(["--video-id", str(parameters["video_id"])])
+        if "video_slug" in parameters:
+            args.extend(["--video-slug", str(parameters["video_slug"])])
+        if "video_title" in parameters:
+            args.extend(["--video-title", str(parameters["video_title"])])
+
         for k, v in parameters.items():
             if k not in exclude:
                 args.extend([f"--{k}", str(v)])

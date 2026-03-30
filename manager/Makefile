@@ -16,6 +16,7 @@
 #   make coverage
 #   make fmt
 #   make lint
+#   make ci
 #   make docs
 #   make init
 #   make clean
@@ -63,6 +64,7 @@ help:
 	@echo "  make coverage                                   -> run tests with coverage"
 	@echo "  make fmt                                        -> format code (black + isort)"
 	@echo "  make lint                                       -> lint (flake8 + mypy)"
+	@echo "  make ci                                         -> run local pre-PR checks (fmt + lint + test + coverage)"
 	@echo "  make docs                                       -> generate docs diagrams"
 	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...'] -> build manager Docker image"
 	@echo "  make docker-fix-perms                           -> fix Docker volume permissions for esup-runner"
@@ -73,7 +75,7 @@ help:
 	@echo "Shortcuts:"
 	@echo "  make sync-dev | lock-dev | sync-docs | lock-docs"
 	@echo ""
-	@echo "Quality commands (fmt/test/lint) do NOT auto-sync dev deps."
+	@echo "Quality commands (fmt/lint/test/coverage) do NOT auto-sync dev deps."
 	@echo "Run: make sync-dev (once) if needed."
 	@echo ""
 	@echo "Examples:"
@@ -212,6 +214,13 @@ lint: check-lint-deps
 	$(UV) run flake8 .
 	$(UV) run mypy app
 
+ci:
+	@echo "==> local pre-PR checks (fmt + lint + test + coverage)"
+	@$(MAKE) fmt
+	@$(MAKE) lint
+	@$(MAKE) test
+	@$(MAKE) coverage
+
 docs:
 	@echo "==> docs (diagrams)"
 	@$(MAKE) sync EXTRAS=docs
@@ -238,4 +247,4 @@ docker-fix-perms:
 	sync-dev lock-dev sync-docs lock-docs \
 	docker-build docker-fix-perms \
 	check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
-	test coverage fmt fmt-check lint
+	test coverage fmt fmt-check lint ci

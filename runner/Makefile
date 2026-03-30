@@ -15,6 +15,7 @@
 #   make lock EXTRAS=dev,transcription-gpu
 #
 #   make run
+#   make ci
 #
 # Notes:
 # - uv sync does not install optional dependencies without --extra.
@@ -57,6 +58,7 @@ help:
 	@echo "  make run                                       -> run the app launcher"
 	@echo "  make init                                      -> init directories from .env (sudo)"
 	@echo "  make create-service                            -> install systemd service (sudo)"
+	@echo "  make ci                                        -> run local pre-PR checks (fmt + lint + test + coverage)"
 	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_RUNNER_EXTRA=transcription-cpu|transcription-gpu DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...'] -> build runner Docker image"
 	@echo "  make docker-fix-perms                          -> fix Docker volume permissions for esup-runner"
 	@echo "  make clean                                     -> remove .venv and caches"
@@ -65,7 +67,7 @@ help:
 	@echo "  make sync-dev | sync-transcription-gpu | sync-transcription-cpu | make sync-all"
 	@echo "  make lock-dev | lock-transcription-gpu | lock-transcription-cpu | make lock-all"
 	@echo ""
-	@echo "Quality commands (fmt/test/lint) do NOT auto-sync dev deps."
+	@echo "Quality commands (fmt/lint/test/coverage) do NOT auto-sync dev deps."
 	@echo "Run: make sync-dev or make sync-all (once) if needed."
 	@echo ""
 	@echo "Examples:"
@@ -196,6 +198,13 @@ lint: check-lint-deps
 	$(UV) run flake8 --jobs=1 .
 	MYPY_CACHE_DIR=/tmp/mypy_cache_$(USER) $(UV) run mypy app
 
+ci:
+	@echo "==> local pre-PR checks (fmt + lint + test + coverage)"
+	@$(MAKE) fmt
+	@$(MAKE) lint
+	@$(MAKE) test
+	@$(MAKE) coverage
+
 docker-build:
 	@echo "==> docker build $(DOCKER_IMAGE):$(DOCKER_TAG)"
 	$(DOCKER) build $(if $(strip $(DOCKER_BUILD_NETWORK)),--network $(DOCKER_BUILD_NETWORK),) $(DOCKER_BUILD_OPTS) -f $(DOCKERFILE) \
@@ -218,4 +227,4 @@ docker-fix-perms:
 		lock-dev lock-transcription-gpu lock-transcription-cpu lock-all \
 		docker-build docker-fix-perms \
 		check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
-		test coverage fmt fmt-check lint
+		test coverage fmt fmt-check lint ci

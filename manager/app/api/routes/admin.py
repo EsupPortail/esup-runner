@@ -40,6 +40,20 @@ templates = Jinja2Templates(directory="app/web/templates")
 # ======================================================
 
 
+def _format_datetime_without_milliseconds(value: str | None) -> str:
+    """Format ISO datetime values to second precision for compact UI display."""
+    if not value:
+        return ""
+
+    raw = str(value).strip()
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        return datetime.fromisoformat(normalized).strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        # Fallback for non-ISO inputs: strip fractional part when present.
+        return raw.split(".", 1)[0].replace("T", " ")
+
+
 @router.get(
     "",
     summary="Admin Dashboard",
@@ -84,6 +98,7 @@ async def admin_dashboard(request: Request):
 
     tasks_data = []
     for task_id, task in tasks_snapshot.items():
+        params = getattr(task, "parameters", {}) or {}
         tasks_data.append(
             {
                 "id": task_id,
@@ -91,6 +106,8 @@ async def admin_dashboard(request: Request):
                 "status": task.status,
                 "task_type": getattr(task, "task_type", None),
                 "created_at": task.created_at,
+                "created_at_display": _format_datetime_without_milliseconds(task.created_at),
+                "video_id": params.get("video_id"),
             }
         )
 

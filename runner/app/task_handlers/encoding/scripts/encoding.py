@@ -176,6 +176,9 @@ _DRESSING_CONFIG: dict = {}
 # Global variable for cut configuration
 _CUT_CONFIG: dict = {}
 
+# Global variable for optional video identification metadata
+_VIDEO_IDENTIFICATION: dict = {}
+
 # Candidate values accepted for duration fields returned by ffprobe.
 DurationValue = Union[str, int, float, None]
 
@@ -2099,6 +2102,21 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         required=False,
         help='Dressing configuration JSON string (Ex: \'{"watermark": "https://pod.univ.fr/media/files/xxx/watermark.png", "watermark_position": "En haut \\u00e0 droite", "watermark_position_orig": "top_right", "watermark_opacity": "100"}"\')',
     )
+    parser.add_argument(
+        "--video-id",
+        required=False,
+        help="Optional external video identifier used for tracing (Ex: 12345).",
+    )
+    parser.add_argument(
+        "--video-slug",
+        required=False,
+        help="Optional external video slug used for tracing (Ex: introduction-python).",
+    )
+    parser.add_argument(
+        "--video-title",
+        required=False,
+        help="Optional external video title used for tracing.",
+    )
     return parser
 
 
@@ -2169,6 +2187,28 @@ def _parse_dressing_config(args, msg: str) -> str:
     return msg
 
 
+def _parse_video_identification(args, msg: str) -> str:
+    """Parse optional video identification metadata from CLI arguments."""
+    global _VIDEO_IDENTIFICATION
+    _VIDEO_IDENTIFICATION = {}
+
+    optional_values = {
+        "video_id": args.video_id,
+        "video_slug": args.video_slug,
+        "video_title": args.video_title,
+    }
+    for key, value in optional_values.items():
+        if value is not None and str(value).strip():
+            _VIDEO_IDENTIFICATION[key] = str(value)
+
+    if _VIDEO_IDENTIFICATION:
+        msg += (
+            "Video identification metadata received: "
+            f"{json.dumps(_VIDEO_IDENTIFICATION, ensure_ascii=False)}\n"
+        )
+    return msg
+
+
 def _apply_cli_config(args) -> str:
     """Apply CLI options to the script's global runtime configuration."""
     msg = ""
@@ -2182,6 +2222,7 @@ def _apply_cli_config(args) -> str:
     msg = _parse_rendition_config(args, msg)
     msg = _parse_cut_config(args, msg)
     msg = _parse_dressing_config(args, msg)
+    msg = _parse_video_identification(args, msg)
 
     if _ENCODING_TYPE.upper() == "GPU":
         # If CUDA_VISIBLE_DEVICES isolates a single GPU, the in-process ordinal is 0.
@@ -2313,6 +2354,8 @@ def _process_encoding(args) -> str:
     info_video["effective_duration"] = working_duration
     if EFFECTIVE_DURATION > 0:
         info_video["cut_applied"] = True
+    if _VIDEO_IDENTIFICATION:
+        info_video.update(_VIDEO_IDENTIFICATION)
 
     msg += "\n" + json.dumps(info_video, indent=2) + "\n"
 

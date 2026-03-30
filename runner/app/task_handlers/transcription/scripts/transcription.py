@@ -14,6 +14,7 @@ Usage example:
 """
 
 import argparse
+import json
 import os
 import shlex
 import subprocess
@@ -21,7 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse command-line arguments for the transcription script."""
     parser = argparse.ArgumentParser(description="Generate subtitles using openai-whisper CLI")
     # Defaults from environment for standalone usage
@@ -44,6 +45,21 @@ def parse_args() -> argparse.Namespace:
         "--model",
         default=os.getenv("WHISPER_MODEL", "small"),
         help="Whisper model name (tiny|base|small|medium|large[/-v3]|turbo)",
+    )
+    parser.add_argument(
+        "--video-id",
+        default="",
+        help="Optional external video identifier used for tracing (Ex: 12345).",
+    )
+    parser.add_argument(
+        "--video-slug",
+        default="",
+        help="Optional external video slug used for tracing (Ex: introduction-python).",
+    )
+    parser.add_argument(
+        "--video-title",
+        default="",
+        help="Optional external video title used for tracing.",
     )
     # legacy options removed: model-path, models-dir
     parser.add_argument(
@@ -105,7 +121,47 @@ def parse_args() -> argparse.Namespace:
         "--vtt-max-line-count", default="2", help="Max number of lines per subtitle"
     )
     parser.add_argument("--vtt-max-line-width", default="40", help="Max characters per line")
-    return parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def _extract_video_identification(args: argparse.Namespace) -> Dict[str, str]:
+    """Extract optional video identification metadata from CLI args."""
+    values = {
+        "video_id": args.video_id,
+        "video_slug": args.video_slug,
+        "video_title": args.video_title,
+    }
+    return {
+        key: str(value) for key, value in values.items() if value is not None and str(value).strip()
+    }
+
+
+def _write_video_identification_metadata(
+    work_dir: Path, metadata: Dict[str, str], debug: bool = False
+) -> None:
+    """Persist optional video identification metadata into info_video.json."""
+    if not metadata:
+        return
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    info_path = work_dir / "info_video.json"
+    data: Dict[str, Any] = {}
+    try:
+        if info_path.exists():
+            loaded = json.loads(info_path.read_text(encoding="utf-8") or "{}")
+            if isinstance(loaded, dict):
+                data = loaded
+    except Exception:
+        data = {}
+
+    data.update(metadata)
+    info_path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    if debug:
+        print(f"Video identification metadata written to: {info_path}")
 
 
 # Cache for CLI help to feature-detect options
@@ -679,6 +735,7 @@ def main() -> int:
     input_path = base_dir / args.input_file
     work_dir = base_dir / args.work_dir
     debug = str(args.debug).lower() in ("true", "1", "yes")
+    video_identification = _extract_video_identification(args)
 
     if not input_path.exists():
         print(f"Input file not found: {input_path}")
@@ -693,7 +750,12 @@ def main() -> int:
     if rc != 0:
         return rc
 
-    return _finalize_vtt(audio_src, work_dir)
+    rc = _finalize_vtt(audio_src, work_dir)
+    if rc != 0:
+        return rc
+
+    _write_video_identification_metadata(work_dir, video_identification, debug)
+    return 0
 
 
 if __name__ == "__main__":

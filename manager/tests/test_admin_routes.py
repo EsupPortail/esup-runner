@@ -64,7 +64,14 @@ def _make_runner(runner_id: str, *, seconds_ago: int = 0) -> Runner:
     )
 
 
-def _make_task(task_id: str, runner_id: str, *, created_at: str, status: str = "completed") -> Task:
+def _make_task(
+    task_id: str,
+    runner_id: str,
+    *,
+    created_at: str,
+    status: str = "completed",
+    parameters: dict | None = None,
+) -> Task:
     now = datetime.now().isoformat()
     return Task(
         task_id=task_id,
@@ -76,7 +83,7 @@ def _make_task(task_id: str, runner_id: str, *, created_at: str, status: str = "
         task_type="encoding",
         source_url="https://example.com/video.mp4",
         affiliation=None,
-        parameters={},
+        parameters=parameters or {},
         notify_url="https://example.com/notify",
         completion_callback=None,
         created_at=created_at,
@@ -86,11 +93,36 @@ def _make_task(task_id: str, runner_id: str, *, created_at: str, status: str = "
     )
 
 
+def test_format_datetime_without_milliseconds_formats_iso_values():
+    assert (
+        admin_routes._format_datetime_without_milliseconds("2026-01-02T03:04:05.123456")
+        == "2026-01-02 03:04:05"
+    )
+    assert (
+        admin_routes._format_datetime_without_milliseconds("2026-01-02T03:04:05Z")
+        == "2026-01-02 03:04:05"
+    )
+
+
+def test_format_datetime_without_milliseconds_handles_empty_and_invalid_values():
+    assert admin_routes._format_datetime_without_milliseconds(None) == ""
+    assert admin_routes._format_datetime_without_milliseconds("") == ""
+    assert (
+        admin_routes._format_datetime_without_milliseconds("2026-01-02T03:04:05.abc")
+        == "2026-01-02 03:04:05"
+    )
+
+
 def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
     runners["r1"] = _make_runner("r1", seconds_ago=10)
 
     tasks["t_old"] = _make_task("t_old", "r1", created_at="2026-01-01T00:00:00")
-    tasks["t_new"] = _make_task("t_new", "r1", created_at="2026-01-02T00:00:00")
+    tasks["t_new"] = _make_task(
+        "t_new",
+        "r1",
+        created_at="2026-01-02T00:00:00.123456",
+        parameters={"video_id": "vid-001", "video_slug": "new-video", "video_title": "New Video"},
+    )
 
     admin_client.cookies.set("theme", "dark")
     resp = admin_client.get("/admin")
@@ -98,6 +130,11 @@ def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
 
     # Newer task should appear before older one in rendered HTML
     assert resp.text.find("t_new") < resp.text.find("t_old")
+    assert "vid-001" in resp.text
+    assert "new-video" not in resp.text
+    assert "New Video" not in resp.text
+    assert "2026-01-02 00:00:00" in resp.text
+    assert "2026-01-02T00:00:00.123456" not in resp.text
 
 
 def test_task_detail_not_found(admin_client, clean_state):
@@ -107,11 +144,23 @@ def test_task_detail_not_found(admin_client, clean_state):
 
 def test_task_detail_ok(admin_client, clean_state):
     runners["r1"] = _make_runner("r1")
-    tasks["t1"] = _make_task("t1", "r1", created_at="2026-01-01T00:00:00")
+    tasks["t1"] = _make_task(
+        "t1",
+        "r1",
+        created_at="2026-01-01T00:00:00",
+        parameters={
+            "video_id": "video-123",
+            "video_slug": "video-slug-123",
+            "video_title": "Video Title 123",
+        },
+    )
 
     resp = admin_client.get("/admin/task/t1")
     assert resp.status_code == 200
     assert "t1" in resp.text
+    assert "video-123" in resp.text
+    assert "video-slug-123" in resp.text
+    assert "Video Title 123" in resp.text
 
 
 def test_runner_detail_not_found(admin_client, clean_state):

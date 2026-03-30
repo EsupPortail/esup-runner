@@ -81,6 +81,37 @@ async def test_dispatch_task_invalid_params(dispatcher):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_task_invalid_params_includes_field_names(dispatcher, monkeypatch):
+    class InvalidFieldsHandler(DummyHandler):
+        def validate_parameters(self, parameters):
+            return False
+
+        def get_invalid_parameters(self, parameters):
+            return ["duration", "model_type"]
+
+    class Manager:
+        def get_handler(self, task_type):
+            return InvalidFieldsHandler if task_type == "dummy" else None
+
+        def list_handlers(self):
+            return {"dummy": "dummy handler"}
+
+    monkeypatch.setattr("app.services.task_dispatcher.task_handler_manager", Manager())
+
+    request = SimpleNamespace(
+        task_id="t2b",
+        task_type="dummy",
+        parameters={"duration": 17.0, "model_type": "WHISPER"},
+        source_url="http://x",
+    )
+
+    result = await dispatcher.dispatch_task(task_id="t2b", task_request=request)
+    assert result["success"] is False
+    assert "Invalid parameters for task type: dummy" in result["error"]
+    assert "invalid fields: duration, model_type" in result["error"]
+
+
+@pytest.mark.asyncio
 async def test_dispatch_task_missing_handler(dispatcher, monkeypatch):
     # Force manager to return None
     class NoneManager:

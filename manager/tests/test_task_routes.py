@@ -586,6 +586,32 @@ def test_view_tasks_search_task_type_and_status_counts_else(
     assert payload["status_counts"]["custom-status"] == 1
 
 
+def test_view_tasks_search_matches_video_identification_fields(client, clean_state):
+    runners["r1"] = _runner("r1")
+    tasks["t1"] = _task("t1", "r1", status="completed")
+    tasks["t2"] = _task("t2", "r1", status="completed")
+    tasks["t1"].parameters = {
+        "video_id": "vid-2026-0001",
+        "video_slug": "my-course-video",
+        "video_title": "My Course Video",
+    }
+
+    resp_by_id = client.get("/tasks?search=vid-2026")
+    assert resp_by_id.status_code == 200
+    assert "t1" in resp_by_id.text
+    assert "t2" not in resp_by_id.text
+
+    resp_by_slug = client.get("/tasks?search=my-course-video")
+    assert resp_by_slug.status_code == 200
+    assert "t1" in resp_by_slug.text
+    assert "t2" not in resp_by_slug.text
+
+    resp_by_title = client.get("/tasks?search=course video")
+    assert resp_by_title.status_code == 200
+    assert "t1" in resp_by_title.text
+    assert "t2" not in resp_by_title.text
+
+
 def test_get_task_details_api_404(client, clean_state):
     resp = client.get("/tasks/api/nope")
     assert resp.status_code == 404

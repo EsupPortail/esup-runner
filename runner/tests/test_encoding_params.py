@@ -19,13 +19,16 @@ def _load_encoding_script_module():
     return module
 
 
-def test_build_script_arguments_includes_cut_and_dressing():
+def test_build_script_arguments_includes_cut_dressing_and_video_identification():
     handler = VideoEncodingHandler()
 
     params = {
         "rendition": '{"360": {"resolution": "640x360", "encode_mp4": true}}',
         "cut": '{"start": "00:00:05", "end": "00:00:10", "initial_duration": "00:01:00"}',
         "dressing": '{"watermark": "https://example.org/wm.png", "watermark_position_orig": "top_right", "watermark_opacity": "100"}',
+        "video_id": "12345",
+        "video_slug": "intro-python",
+        "video_title": "Introduction to Python",
     }
 
     args = handler._build_script_arguments(
@@ -37,8 +40,62 @@ def test_build_script_arguments_includes_cut_and_dressing():
 
     assert "--cut" in args
     assert "--dressing" in args
+    assert "--video-id" in args
+    assert "--video-slug" in args
+    assert "--video-title" in args
     assert args[args.index("--cut") + 1] == params["cut"]
     assert args[args.index("--dressing") + 1] == params["dressing"]
+    assert args[args.index("--video-id") + 1] == params["video_id"]
+    assert args[args.index("--video-slug") + 1] == params["video_slug"]
+    assert args[args.index("--video-title") + 1] == params["video_title"]
+
+
+def test_validate_parameters_accepts_video_identification_fields():
+    handler = VideoEncodingHandler()
+
+    assert (
+        handler.validate_parameters(
+            {
+                "rendition": "{}",
+                "cut": "{}",
+                "dressing": "{}",
+                "video_id": "abc123",
+                "video_slug": "my-video",
+                "video_title": "My Video",
+            }
+        )
+        is True
+    )
+    assert handler.validate_parameters({"unknown": "value"}) is False
+    assert handler.get_invalid_parameters({"unknown": "value"}) == ["unknown"]
+
+
+def test_encoding_script_parser_accepts_video_identification_flags():
+    enc = _load_encoding_script_module()
+    parser = enc._build_arg_parser()
+
+    args = parser.parse_args(
+        [
+            "--encoding-type",
+            "CPU",
+            "--base-dir",
+            "/tmp/base",
+            "--input-file",
+            "input.mp4",
+            "--work-dir",
+            "output",
+            "--video-id",
+            "vid-001",
+            "--video-slug",
+            "sample-video",
+            "--video-title",
+            "Sample Video",
+        ]
+    )
+
+    assert args.video_id == "vid-001"
+    assert args.video_slug == "sample-video"
+    assert args.video_title == "Sample Video"
 
 
 def test_apply_dressing_watermark_only_switches_input(tmp_path):

@@ -59,6 +59,11 @@ class BaseTaskHandler(ABC):
         """
         self.workspace_dir = Path(tempfile.mkdtemp(prefix="task_"))
         self.logger = setup_default_logging()
+        self.last_invalid_parameters: List[str] = []
+
+    def get_invalid_parameters(self, parameters: Dict[str, Any]) -> List[str]:
+        """Return the list of invalid parameter names for the current payload."""
+        return []
 
     @abstractmethod
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:

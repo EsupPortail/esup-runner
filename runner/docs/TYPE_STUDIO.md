@@ -43,13 +43,14 @@ These parameters are passed to stage 2 (final encoding):
 - `cut` (JSON string): see [docs/TYPE_ENCODING.md](TYPE_ENCODING.md)
 - `rendition` (JSON string): see [docs/TYPE_ENCODING.md](TYPE_ENCODING.md)
 - `dressing` (JSON string): supported and passed through to `encoding.py`.
+- `video_id`, `video_slug`, `video_title` (optional scalar values): identification/tracking metadata.
 
 > Important: `cut`, `rendition`, and `dressing` must be provided as JSON strings (see the note in [docs/TYPE_ENCODING.md](TYPE_ENCODING.md)).
 
 ### Strictness / compatibility note
 The `studio` handler passes additional parameters to `encoding.py` as `--<key> <value>`.
 
-If the Manager sends a parameter name that is **not supported by `encoding.py`** (currently only `--rendition`, `--cut`, `--dressing`), the encoding stage may fail with an argparse error.
+If the Manager sends a parameter name that is not in the supported `studio` parameter list, the task is rejected at validation time with an explicit error listing invalid fields.
 
 Recommended: for `studio` tasks, only send the parameters documented on this page.
 
@@ -70,7 +71,10 @@ Recommended: for `studio` tasks, only send the parameters documented on this pag
     "studio_audio_bitrate": "128k",
     "cut": "{\"start\":\"00:00:10\",\"end\":\"00:01:00\"}",
     "rendition": "{\"360\":{\"encode_mp4\":true},\"720\":{\"encode_mp4\":true},\"1080\":{\"encode_mp4\":false}}",
-    "dressing": "{\"watermark\":\"https://example.org/wm.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}"
+    "dressing": "{\"watermark\":\"https://example.org/wm.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}",
+    "video_id": "12345",
+    "video_slug": "intro-to-python-2026",
+    "video_title": "Intro to Python (2026)"
   }
 }
 ```
@@ -97,7 +101,10 @@ This example includes optional fields (`app_version`, `affiliation`, `completion
 
     "cut": "{\"start\":\"00:00:10\",\"end\":\"00:01:00\"}",
     "rendition": "{\"360\":{\"encode_mp4\":true},\"720\":{\"encode_mp4\":true},\"1080\":{\"encode_mp4\":false}}",
-    "dressing": "{\"watermark\":\"https://example.org/assets/watermark.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}"
+    "dressing": "{\"watermark\":\"https://example.org/assets/watermark.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}",
+    "video_id": "12345",
+    "video_slug": "intro-to-python-2026",
+    "video_title": "Intro to Python (2026)"
   },
   "notify_url": "https://manager.example.org/api/tasks/callback",
   "completion_callback": "https://manager.example.org/api/tasks/completion-callback"

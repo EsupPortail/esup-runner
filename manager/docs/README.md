@@ -57,6 +57,16 @@ sudo make init
 sudo make create-service
 ```
 
+## Local pre-PR checks
+
+Run this convenience target locally before opening a PR:
+
+```bash
+make ci
+```
+
+`make ci` is local and runs `make fmt`, `make lint`, `make test`, and `make coverage` in order.
+
 ## What the manager does
 
 At a high level, the manager:
@@ -172,7 +182,10 @@ Examples by task type:
       "360": "640x360",
       "720": "1280x720",
       "1080": "1920x1080"
-    }
+    },
+    "video_id": "12345",
+    "video_slug": "intro-to-python-2026",
+    "video_title": "Intro to Python (2026)"
   }
 }
 ```
@@ -273,7 +286,10 @@ The `parameters` object is **task-type specific** and is interpreted by the runn
       "360": "640x360",
       "720": "1280x720",
       "1080": "1920x1080"
-    }
+    },
+    "video_id": "12345",
+    "video_slug": "intro-to-python-2026",
+    "video_title": "Intro to Python (2026)"
   }
 }
 ```
@@ -412,6 +428,7 @@ If the original task request has a non-empty `notify_url`, the manager POSTs:
 
 - `/admin` provides a web UI (HTTP Basic auth).
 - `/tasks` provides task browsing/search.
+- Video tracking metadata (`video_id`, `video_slug`, `video_title`) is visible in task details and searchable from `/tasks`.
 - `/tasks` also provides a bulk action **Restart selected tasks** for failed/timeout/warning/completed tasks.
 
 ## Diagrams

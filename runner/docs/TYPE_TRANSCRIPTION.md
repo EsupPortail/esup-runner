@@ -35,6 +35,10 @@ Parameters are sent in `TaskRequest.parameters`.
 
 Note: the script maps some aliases (e.g. `large` -> `large-v3`).
 
+### Compatibility metadata
+- `model_type`: optional compatibility field accepted from Manager payloads (ignored by the transcription logic).
+- `duration`: optional compatibility field accepted from Manager payloads (ignored by the transcription logic).
+
 ### `normalize`
 - Type: bool
 - Default: `false`
@@ -45,6 +49,19 @@ Note: the script maps some aliases (e.g. `large` -> `large-v3`).
 - Default: `vtt`
 
 Current limitation: the transcription script only accepts `vtt`. Sending `format=srt` will fail argument validation.
+
+### Video identification metadata
+Optional parameters used for identification/tracking only:
+
+- `video_id`
+- `video_slug`
+- `video_title`
+
+These values are:
+- accepted by the transcription handler,
+- forwarded to the transcription script,
+- written to `info_video.json` when present,
+- not used to alter transcription behavior.
 
 ## GPU behavior
 GPU usage is controlled by runner configuration (`ENCODING_TYPE=GPU`) and is not selected per-task by the Manager.
@@ -60,9 +77,14 @@ GPU usage is controlled by runner configuration (`ENCODING_TYPE=GPU`) and is not
   "notify_url": "https://manager.example.org/callback",
   "parameters": {
     "language": "auto",
+    "duration": 17.0,
     "model": "turbo",
+    "model_type": "WHISPER",
     "normalize": false,
-    "format": "vtt"
+    "format": "vtt",
+    "video_id": "12345",
+    "video_slug": "intro-to-python-2026",
+    "video_title": "Intro to Python (2026)"
   }
 }
 ```
@@ -81,9 +103,14 @@ This example includes optional fields (`app_version`, `affiliation`, `completion
   "affiliation": "student",
   "parameters": {
     "language": "auto",
+    "duration": 17.0,
     "model": "turbo",
+    "model_type": "WHISPER",
     "normalize": false,
-    "format": "vtt"
+    "format": "vtt",
+    "video_id": "12345",
+    "video_slug": "intro-to-python-2026",
+    "video_title": "Intro to Python (2026)"
   },
   "notify_url": "https://manager.example.org/api/tasks/callback",
   "completion_callback": "https://manager.example.org/api/tasks/completion-callback"

@@ -62,6 +62,16 @@ sudo make init
 sudo make create-service
 ```
 
+## Local pre-PR checks
+
+Run this convenience target locally before opening a PR:
+
+```bash
+make ci
+```
+
+`make ci` is local and runs `make fmt`, `make lint`, `make test`, and `make coverage` in order.
+
 ## What the runner is
 - A FastAPI service that receives tasks from the Manager, downloads required media, executes processing scripts, and pushes results back.
 - Each runtime process is an "instance"; multi-instance mode lets you spread different task types across processes.
@@ -97,19 +107,19 @@ The runner ships with three handlers (see [app/task_handlers](../app/task_handle
 ### Encoding (`encoding`)
 - Handler: [app/task_handlers/encoding/encoding_handler.py](../app/task_handlers/encoding/encoding_handler.py)
 - Purpose: download a media file, then invoke the FFmpeg-based encoding script to produce renditions, thumbnails, audio tracks, and metadata.
-- Inputs: media URL plus optional parameters such as `rendition`, `cut`, and `dressing`. Cut JSON format is documented in [docs/TYPE_ENCODING.md](TYPE_ENCODING.md).
+- Inputs: media URL plus optional parameters such as `rendition`, `cut`, `dressing`, and tracking metadata (`video_id`, `video_slug`, `video_title`). Cut JSON format is documented in [docs/TYPE_ENCODING.md](TYPE_ENCODING.md).
 - CPU/GPU: honors `ENCODING_TYPE` and GPU-specific env vars for hwaccel.
 
 ### Studio (`studio`)
 - Handler: [app/task_handlers/studio/studio_handler.py](../app/task_handlers/studio/studio_handler.py)
 - Purpose: two-stage workflow. First, generate a base MP4 from a Mediapackage XML (with optional SMIL cut/layout) via the studio script; second, run the standard encoding pipeline on that base video.
 - Resilience: if GPU mode fails and `force_cpu` is not set, it retries generation on CPU before failing.
-- Parameters: accepts presenter/layout overrides, plus any encoding parameters passed through to the second stage.
+- Parameters: accepts presenter/layout overrides, encoding parameters (`cut`, `rendition`, `dressing`) and tracking metadata (`video_id`, `video_slug`, `video_title`) passed through to the second stage.
 
 ### Transcription (`transcription`)
 - Handler: [app/task_handlers/transcription/transcription_handler.py](../app/task_handlers/transcription/transcription_handler.py)
 - Purpose: run the FFmpeg whisper filter to generate subtitles from audio/video, then package outputs (VTT by default, SRT optional) and metadata.
-- Parameters: `language`, `format` (vtt|srt), `model` (small|medium|large|turbo), `normalize` (audio pre-normalization toggle). GPU use follows `ENCODING_TYPE`.
+- Parameters: `language`, `format` (vtt|srt), `model` (small|medium|large|turbo), `normalize` (audio pre-normalization toggle), plus tracking metadata (`video_id`, `video_slug`, `video_title`). GPU use follows `ENCODING_TYPE`.
 
 ## How tasks are processed
 - Each handler inherits from [app/task_handlers/base_handler.py](../app/task_handlers/base_handler.py), which manages workspaces, downloads, input validation, and metadata writing.

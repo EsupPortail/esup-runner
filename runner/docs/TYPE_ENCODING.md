@@ -13,6 +13,7 @@ This page documents the **`encoding`** runner task type: what it does and which 
   - [rendition](#rendition)
   - [cut](#cut)
   - [dressing](#dressing)
+  - [video identification metadata](#video-identification-metadata)
 - [Example Manager payload](#example-manager-payload)
 - [Full TaskRequest example](#full-taskrequest-example)
 - [Error handling](#error-handling)
@@ -35,6 +36,9 @@ Outputs typically include:
 
 ## Manager parameters (JSON strings)
 All parameters are optional.
+
+`rendition`, `cut`, and `dressing` are JSON strings.
+`video_id`, `video_slug`, and `video_title` are plain scalar values (typically strings).
 
 ### `rendition`
 Rendition configuration used to enable/disable MP4 outputs per resolution.
@@ -108,6 +112,19 @@ Apply “dressing” transformations **before** the final encoding:
 3) Credits are concatenated around the main video.
 4) Final encoding runs on the resulting intermediate file.
 
+### Video identification metadata
+Optional parameters used for identification/tracking only:
+
+- `video_id`
+- `video_slug`
+- `video_title`
+
+These values are:
+- accepted by the encoding handler,
+- forwarded to the encoding script,
+- written to `info_video.json` when present,
+- not used to alter encoding behavior.
+
 ## Example Manager payload
 Example of a task request (showing the important parts):
 
@@ -122,7 +139,10 @@ Example of a task request (showing the important parts):
   "parameters": {
     "cut": "{\"start\":\"00:00:10\",\"end\":\"00:00:40\",\"initial_duration\":\"00:17:00\"}",
     "rendition": "{\"360\":{\"encode_mp4\":true},\"720\":{\"encode_mp4\":true},\"1080\":{\"encode_mp4\":false}}",
-    "dressing": "{\"watermark\":\"https://example.org/wm.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}"
+    "dressing": "{\"watermark\":\"https://example.org/wm.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}",
+    "video_id": "12345",
+    "video_slug": "intro-to-python-2026",
+    "video_title": "Intro to Python (2026)"
   }
 }
 ```
@@ -142,7 +162,10 @@ This example includes optional fields (`app_version`, `affiliation`, `completion
   "parameters": {
     "cut": "{\"start\":\"00:00:10\",\"end\":\"00:00:40\",\"initial_duration\":\"00:10:00\"}",
     "rendition": "{\"360\":{\"resolution\":\"640x360\",\"encode_mp4\":true},\"720\":{\"resolution\":\"1280x720\",\"encode_mp4\":true},\"1080\":{\"resolution\":\"1920x1080\",\"encode_mp4\":false}}",
-    "dressing": "{\"watermark\":\"https://example.org/assets/watermark.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}"
+    "dressing": "{\"watermark\":\"https://example.org/assets/watermark.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}",
+    "video_id": "12345",
+    "video_slug": "intro-to-python-2026",
+    "video_title": "Intro to Python (2026)"
   },
   "notify_url": "https://manager.example.org/api/tasks/callback",
   "completion_callback": "https://manager.example.org/api/tasks/completion-callback"
@@ -162,6 +185,8 @@ The runner converts `parameters[…]` to CLI args with `str(…)`, and the encod
 If you send `parameters.cut` as an object, it may become a Python-style string with single quotes (invalid JSON) and will fail parsing.
 
 Recommended: send `cut`, `rendition`, and `dressing` as **JSON strings**.
+
+`video_id`, `video_slug`, and `video_title` should remain plain values (no nested JSON needed).
 
 ### 2) Escaping JSON correctly in a JSON payload
 Because the outer request is JSON and inner values are JSON strings, you must escape double-quotes inside.

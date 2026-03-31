@@ -105,6 +105,27 @@ At minimum, review:
 - `AUTHORIZED_TOKENS__*` (clients and runners)
 - `ADMIN_USERS__*` (for the `/admin` dashboard)
 - `LOG_DIRECTORY`
+- `NOTIFY_URL_ALLOWED_HOSTS`, `NOTIFY_URL_ALLOW_PRIVATE_NETWORKS` (if tasks use `notify_url`)
+
+#### `notify_url` callback restrictions
+
+If task requests use `notify_url`, the manager validates the callback target before sending any outbound request.
+
+By default, `NOTIFY_URL_ALLOW_PRIVATE_NETWORKS=false`, so the manager rejects callback targets whose hostname resolves to any of the following:
+
+- Invalid IP addresses, for example `999.999.999.999`, `abc`, or `2001:db8:::1`
+- Private addresses, for example `10.0.0.1`, `172.16.0.5`, `192.168.1.10`, or `fd00::1`
+- Loopback addresses, for example `127.0.0.1` or `::1`
+- Link-local addresses, for example `169.254.1.1` or `fe80::1`
+- Multicast addresses, for example `224.0.0.1` or `ff02::1`
+- Reserved addresses, for example `240.0.0.1`
+- Unspecified addresses, for example `0.0.0.0` or `::`
+
+Additional notes:
+
+- `localhost` is also rejected before DNS resolution.
+- `NOTIFY_URL_ALLOWED_HOSTS` can be used to restrict callbacks to a specific hostname allowlist.
+- Set `NOTIFY_URL_ALLOW_PRIVATE_NETWORKS=true` only if you intentionally allow callbacks to internal/private network destinations that you control.
 
 #### CORS configuration (`CORS_ALLOW_*`)
 

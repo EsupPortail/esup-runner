@@ -261,6 +261,7 @@ Notes:
 
 - If `RUNNER_BASE_PORT` in `.env` is not `8082`, update `-p`.
 - If `RUNNER_INSTANCES>1`, publish the full port range (`RUNNER_BASE_PORT ... RUNNER_BASE_PORT + RUNNER_INSTANCES - 1`).
+- Example: if `RUNNER_BASE_PORT=8082` and `RUNNER_INSTANCES=3`, publish `8082`, `8083`, and `8084` (for example `-p 8082-8084:8082-8084`).
 - If `STORAGE_DIR` is not `/tmp/esup-runner`, update the volume target in `-v esup-runner-storage:...`.
 - `MANAGER_URL` should target the manager container name on the same network, for example `http://esup-runner-manager:8081`.
 - `RUNNER_HOST` should be a manager-reachable hostname on the same network (for example `esup-runner-runner`), not `0.0.0.0`.

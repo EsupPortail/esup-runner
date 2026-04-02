@@ -43,6 +43,7 @@ def test_build_script_arguments_includes_video_identification():
     assert args[args.index("--video-id") + 1] == params["video_id"]
     assert args[args.index("--video-slug") + 1] == params["video_slug"]
     assert args[args.index("--video-title") + 1] == params["video_title"]
+    assert "--huggingface-models-dir" in args
 
 
 def test_validate_parameters_accepts_video_identification_fields():
@@ -90,3 +91,22 @@ def test_transcription_script_parser_accepts_video_identification_flags():
     assert args.video_id == "vid-001"
     assert args.video_slug == "sample-video"
     assert args.video_title == "Sample Video"
+
+
+def test_transcription_script_parser_accepts_huggingface_models_dir_flag():
+    tr = _load_transcription_script_module()
+
+    args = tr.parse_args(
+        [
+            "--base-dir",
+            "/tmp/base",
+            "--input-file",
+            "input.mp4",
+            "--work-dir",
+            "output",
+            "--huggingface-models-dir",
+            "/tmp/hf-cache",
+        ]
+    )
+
+    assert args.huggingface_models_dir == "/tmp/hf-cache"

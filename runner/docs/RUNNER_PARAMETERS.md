@@ -19,6 +19,7 @@ LOG_LEVEL=INFO
 ENCODING_TYPE=CPU
 GPU_CUDA_PATH=/usr/local/cuda-13.2
 WHISPER_MODEL=turbo
+HUGGINGFACE_MODELS_DIR=/home/esup-runner/.cache/esup-runner/huggingface
 WHISPER_LANGUAGE=auto
 ```
 
@@ -54,8 +55,25 @@ WHISPER_LANGUAGE=auto
 
 ## Transcription / Whisper
 - `WHISPER_MODEL` (default `small`): Logical whisper model (`small|medium|large|turbo`). Turbo recommended.
-- `WHISPER_MODELS_DIR` (default `/tmp/esup-runner/whisper-models`): Cache directory.
-- `WHISPER_LANGUAGE` (default `auto`): Default language; can be overridden per task.
+- `WHISPER_MODELS_DIR` (default `/home/esup-runner/.cache/esup-runner/whisper-models`): Cache directory.
+- `HUGGINGFACE_MODELS_DIR` (default `/home/esup-runner/.cache/esup-runner/huggingface`): Cache directory used for Hugging Face translation models loaded by the transcription pipeline.
+- `WHISPER_LANGUAGE` (default `auto`): Default final subtitle language; `auto` keeps the detected spoken language, while an explicit `fr`/`en` target can trigger subtitle translation after transcription.
+- `WHISPER_CHUNK_THRESHOLD_SECONDS` (optional override): If unset, the runner chooses a hardware-aware default: `800` on CPU and `1800` on GPU.
+
+Current built-in translation support:
+- `fr -> en`
+- `en -> fr`
+
+Translation model selection is hardware-aware:
+- CPU runners use lighter Marian models (`opus-mt-en-fr` / `opus-mt-fr-en`)
+- GPU runners use larger `tc-big` Marian models (`opus-mt-tc-big-en-fr` / `opus-mt-tc-big-fr-en`)
+
+As a result, translation quality can depend slightly on available resources, especially whether the runner is operating in GPU mode.
+
+Compatibility note:
+- For target languages outside the dedicated local `fr <-> en` translation pipeline, the runner falls back to Whisper's historical best-effort multilingual behavior.
+- This keeps broader language coverage, but quality is usually less predictable than the dedicated local FR/EN translation models.
+
 
 ## Notifications
 - `SMTP_SERVER`, `SMTP_PORT` (default `25`), `SMTP_SENDER`, `MANAGER_EMAIL`: Optional email settings for failure notifications.
@@ -75,4 +93,5 @@ WHISPER_LANGUAGE=auto
 
 ## Related docs
 - Task type grouping and multi-instance details: [docs/RUNNER_CONFIGURATION.md](RUNNER_CONFIGURATION.md)
+- Transcription-specific behavior and exit codes: [docs/TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md)
 - Cut parameter specifics for encoding tasks: [docs/TYPE_ENCODING.md](TYPE_ENCODING.md)

@@ -3,7 +3,12 @@
 This page documents the **`transcription`** runner task type: what it does and which parameters the Manager can pass.
 
 ## What it does
-The `transcription` task downloads a media file and generates subtitles using the OpenAI Whisper CLI.
+The `transcription` task downloads a media file and generates subtitles using Whisper.
+
+Behavior depends on the requested `language`:
+- `language=auto`: subtitles stay in the detected spoken language
+- `language=<code>` and detected source language matches that code: normal transcription
+- `language=<code>` and detected source language differs: the runner transcribes in the source language first, then translates the VTT while preserving timestamps
 
 Implementation:
 - Handler: [app/task_handlers/transcription/transcription_handler.py](../app/task_handlers/transcription/transcription_handler.py)
@@ -27,6 +32,19 @@ Parameters are sent in `TaskRequest.parameters`.
 - Type: string
 - Default: runner env `WHISPER_LANGUAGE` (usually `auto`)
 - Examples: `"auto"`, `"fr"`, `"en"`
+
+Semantics:
+- `auto`: keep the detected spoken language
+- explicit code such as `fr` or `en`: request the final subtitle language
+
+Current translation support:
+- `fr -> en`
+- `en -> fr`
+
+When translation happens, the translated subtitles remain the main `<stem>.vtt` output and the source-language subtitles are also kept as a sidecar `<stem>.source-<lang>.webvtt.txt`.
+The sidecar intentionally does not use the `.vtt` extension, so client applications that pick the first VTT file only see the final deliverable subtitles.
+The runner also records runtime metadata in `info_video.json`, including the detected source language, final subtitle language, and the translation model that was actually used.
+The local translation models used by this task are cached under `HUGGINGFACE_MODELS_DIR`.
 
 ### `model`
 - Type: string
@@ -65,6 +83,42 @@ These values are:
 
 ## GPU behavior
 GPU usage is controlled by runner configuration (`ENCODING_TYPE=GPU`) and is not selected per-task by the Manager.
+
+## Translation behavior
+- The transcription pass always starts in source-language auto-detection mode.
+- Translation is only triggered after Whisper has detected the spoken language and only when the final requested subtitle language differs.
+- The runner currently uses internal local FR<->EN translation models.
+- CPU runners use lighter `Helsinki-NLP/opus-mt-en-fr` / `Helsinki-NLP/opus-mt-fr-en` models.
+- GPU runners use larger `Helsinki-NLP/opus-mt-tc-big-en-fr` / `Helsinki-NLP/opus-mt-tc-big-fr-en` models.
+- Because of that hardware-aware selection, translation quality can vary slightly across deployments. GPU runners usually have a little more headroom for higher-quality translation models.
+- For target languages outside the dedicated local `fr <-> en` pipeline, the runner falls back to the historical Whisper-only behavior and re-runs Whisper with the requested subtitle language.
+- That Whisper fallback is only a compatibility path. It can still be useful for broader language coverage (`de`, `es`, ...), but its quality is less predictable than the dedicated local FR/EN translation pipeline.
+- `info_video.json` explicitly indicates whether a task used `local_translation`, `whisper_legacy_fallback`, or no translation at all.
+- If the media contains no speech and Whisper produces an empty VTT, the runner keeps that empty VTT as a valid result and skips translation instead of failing.
+
+## Transcription exit codes
+The external script returns `0` on success. The most common non-zero exit codes are:
+
+| Code | Meaning | Typical cause |
+| --- | --- | --- |
+| `2` | Input file not found | The downloaded media file is missing from the task workspace |
+| `5` | Expected VTT output not found | Whisper did not produce the subtitle file the runner expected |
+| `6` | VTT finalization failed | Rename/post-processing of the generated VTT failed |
+| `7` | VTT validation failed | The output VTT looks unreadable or clearly truncated |
+| `10` | Whisper model load failed | Whisper could not start the requested model on the selected runtime |
+| `20` | Whisper returned no usable result | The Python API returned no structured transcription result |
+| `21` | VTT writing failed | Whisper result could not be serialized to WebVTT |
+| `22` | Chunk extraction failed | `ffmpeg` failed while cutting one temporary audio chunk |
+| `30` | Unsupported local translation pair | A dedicated local translation model is not available for the requested pair |
+| `31` | Translation backend unavailable | `transformers` / `sentencepiece` / translation model loading failed |
+| `32` | Translation failed | The subtitle translation step failed while processing cues |
+| `33` | Translation decision failed | A target subtitle language was requested, but the runner could not determine a spoken source language |
+| `124` | Timeout | `ffmpeg` or Whisper CLI exceeded the allowed runtime |
+
+Notes:
+- The dedicated local translation path currently only covers `fr <-> en`.
+- For other target languages, the runner falls back to Whisper's historical multilingual behavior instead of returning `30` in normal operation.
+- Some non-zero codes can still come directly from external tools (`ffmpeg`, Whisper CLI) when the runner intentionally propagates the underlying process failure.
 
 ## Example Manager payload
 ```json

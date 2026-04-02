@@ -108,5 +108,30 @@ ENCODING_TYPE=CPU
 # Transcription (Whisper) settings
 WHISPER_MODEL=turbo
 WHISPER_MODELS_DIR=/home/user/.cache/esup-runner/whisper-models
+HUGGINGFACE_MODELS_DIR=/home/esup-runner/.cache/esup-runner/huggingface
 WHISPER_LANGUAGE=auto
 ```
+
+`WHISPER_LANGUAGE` now expresses the final subtitle language:
+- `auto`: keep the detected spoken language
+- explicit `fr` or `en`: request subtitles in that language; when it differs from the detected spoken language, the runner transcribes first and then translates the VTT
+
+The built-in subtitle translation currently supports:
+- `fr -> en`
+- `en -> fr`
+
+`HUGGINGFACE_MODELS_DIR` controls where the local translation models are cached on disk.
+
+The translation backend is selected automatically from the available hardware:
+- CPU mode: lighter Marian translation models
+- GPU mode: larger `tc-big` Marian translation models
+
+Because of that, translation quality may vary slightly between CPU and GPU deployments. The runner writes the effective languages and translation model used for each task into `info_video.json`.
+
+For target languages outside the dedicated local `fr <-> en` translation pipeline, the runner keeps backward compatibility by falling back to Whisper's legacy best-effort multilingual behavior. This broadens language coverage, but quality is generally less predictable than the dedicated local FR/EN translation path.
+
+For `WHISPER_CHUNK_THRESHOLD_SECONDS`, the runner uses a hardware-aware default when the variable is unset:
+- `800` on CPU
+- `1800` on GPU
+
+Set `WHISPER_CHUNK_THRESHOLD_SECONDS` only if you explicitly need to override that behavior.

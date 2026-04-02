@@ -51,6 +51,7 @@ Before any upgrade:
   - `LOG_DIRECTORY` (default: `/var/log/esup-runner`)
 - For transcription runners:
   - `WHISPER_MODELS_DIR` (model cache)
+  - `HUGGINGFACE_MODELS_DIR` (translation model cache)
 
 ---
 

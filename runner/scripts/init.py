@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Initialize required directories from .env.
 
-Creates LOG_DIRECTORY, STORAGE_DIR and WHISPER_MODELS_DIR (if set)
-then assigns ownership to the invoking user/group.
+Creates LOG_DIRECTORY, STORAGE_DIR, WHISPER_MODELS_DIR and
+HUGGINGFACE_MODELS_DIR (if set), then assigns ownership to the invoking
+user/group.
 
 Must be run with sudo to set ownership correctly, but will fall back to current user if not.
 
@@ -19,7 +20,14 @@ from pathlib import Path
 from typing import Dict, Iterable
 
 # Environment keys that define required directories.
-ENV_KEYS = ("LOG_DIRECTORY", "STORAGE_DIR", "WHISPER_MODELS_DIR")
+# Keep translation-model cache handling aligned with Whisper so both caches can
+# be provisioned up front by `make init`.
+ENV_KEYS = (
+    "LOG_DIRECTORY",
+    "STORAGE_DIR",
+    "WHISPER_MODELS_DIR",
+    "HUGGINGFACE_MODELS_DIR",
+)
 
 
 def _strip_quotes(value: str) -> str:

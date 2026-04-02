@@ -1,6 +1,15 @@
 """
-Transcription task handler using FFmpeg whisper filter.
-Generates subtitles (VTT) from a video source using ffmpeg 8 + whisper.
+Transcription task handler for Whisper-based subtitle generation.
+
+The public API keeps a single `language` parameter:
+- `auto` keeps subtitles in the detected spoken language
+- an explicit language requests subtitles in that final language, which may
+  trigger a translation step after source-language transcription
+
+When a translation happens, only the final deliverable keeps the `.vtt`
+extension. The preserved source-language sidecar is written with a non-`.vtt`
+filename so client applications that pick the first VTT file do not consume the
+wrong subtitle track.
 """
 
 from pathlib import Path
@@ -45,7 +54,7 @@ class TranscriptionHandler(BaseTaskHandler):
         Validate transcription parameters.
 
         Optional supported parameters:
-        - language: language code or 'auto'
+        - language: final subtitle language code or 'auto'
         - format: output subtitle format (vtt|srt), default vtt
         - model: logical whisper model (small|medium|large|turbo)
         - duration/model_type: legacy compatibility metadata from manager payloads
@@ -156,13 +165,16 @@ class TranscriptionHandler(BaseTaskHandler):
         fmt = str(parameters.get("format", "vtt")).lower()
         args.extend(["--format", fmt])
 
-        # Language
+        # Final subtitle language. The script will keep the detected spoken
+        # language when this stays on `auto`, or translate after transcription
+        # when an explicit target language differs from the source language.
         language = str(parameters.get("language", config.WHISPER_LANGUAGE))
         args.extend(["--language", language])
 
         # Model selection: allow per-task override or fallback to config
         logical_model = str(parameters.get("model", config.WHISPER_MODEL)).lower()
         args.extend(["--model", logical_model])
+        args.extend(["--huggingface-models-dir", str(config.HUGGINGFACE_MODELS_DIR)])
 
         # Optional video identification metadata (tracking only).
         if "video_id" in parameters:

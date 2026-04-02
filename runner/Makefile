@@ -57,9 +57,11 @@ DOCKER_RUNNER_EXTRA ?=
 DOCKER_LOGS_VOLUME ?= esup-runner-runner-logs
 DOCKER_STORAGE_VOLUME ?= esup-runner-storage
 DOCKER_WHISPER_VOLUME ?= esup-runner-whisper-models
+DOCKER_HUGGINGFACE_VOLUME ?= esup-runner-huggingface-models
 DOCKER_LOGS_PATH ?= /var/log/esup-runner
 DOCKER_STORAGE_PATH ?= /tmp/esup-runner
 DOCKER_WHISPER_MODELS_PATH ?= /home/esup-runner/.cache/esup-runner/whisper-models
+DOCKER_HUGGINGFACE_MODELS_PATH ?= /home/esup-runner/.cache/esup-runner/huggingface
 
 # Builds the --extra ... arguments from EXTRAS=dev,transcription-gpu,transcription-cpu
 comma := ,
@@ -280,8 +282,9 @@ docker-fix-perms:
 		-v $(DOCKER_LOGS_VOLUME):$(DOCKER_LOGS_PATH) \
 		-v $(DOCKER_STORAGE_VOLUME):$(DOCKER_STORAGE_PATH) \
 		-v $(DOCKER_WHISPER_VOLUME):$(DOCKER_WHISPER_MODELS_PATH) \
+		-v $(DOCKER_HUGGINGFACE_VOLUME):$(DOCKER_HUGGINGFACE_MODELS_PATH) \
 		$(DOCKER_IMAGE):$(DOCKER_TAG) \
-		sh -c "chown -R $(ESUP_RUNNER_UID):$(ESUP_RUNNER_GID) $(DOCKER_LOGS_PATH) $(DOCKER_STORAGE_PATH) $(DOCKER_WHISPER_MODELS_PATH)"
+		sh -c "chown -R $(ESUP_RUNNER_UID):$(ESUP_RUNNER_GID) $(DOCKER_LOGS_PATH) $(DOCKER_STORAGE_PATH) $(DOCKER_WHISPER_MODELS_PATH) $(DOCKER_HUGGINGFACE_MODELS_PATH)"
 
 .PHONY: help sync lock lock-upgrade run init clean \
 		sync-dev sync-all sync-transcription-gpu sync-transcription-cpu \

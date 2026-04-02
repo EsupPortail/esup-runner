@@ -216,6 +216,7 @@ Create volumes:
 docker volume create esup-runner-runner-logs
 docker volume create esup-runner-storage
 docker volume create esup-runner-whisper-models
+docker volume create esup-runner-huggingface-models
 ```
 
 Create (or reuse) the Docker network shared with the manager:
@@ -230,14 +231,15 @@ Ensure volume ownership matches `esup-runner` (important if volumes already cont
 make docker-fix-perms ESUP_RUNNER_UID=$(id -u) ESUP_RUNNER_GID=$(id -g)
 ```
 
-If you changed `STORAGE_DIR` or `WHISPER_MODELS_DIR`, adjust mount paths in `docker-fix-perms`:
+If you changed `STORAGE_DIR`, `WHISPER_MODELS_DIR`, or `HUGGINGFACE_MODELS_DIR`, adjust mount paths in `docker-fix-perms`:
 
 ```bash
 make docker-fix-perms \
   ESUP_RUNNER_UID=$(id -u) \
   ESUP_RUNNER_GID=$(id -g) \
   DOCKER_STORAGE_PATH=/path/from/STORAGE_DIR \
-  DOCKER_WHISPER_MODELS_PATH=/path/from/WHISPER_MODELS_DIR
+  DOCKER_WHISPER_MODELS_PATH=/path/from/WHISPER_MODELS_DIR \
+  DOCKER_HUGGINGFACE_MODELS_PATH=/path/from/HUGGINGFACE_MODELS_DIR
 ```
 
 Run in background:
@@ -253,11 +255,13 @@ docker run -d \
   -v esup-runner-runner-logs:/var/log/esup-runner \
   -v esup-runner-storage:/tmp/esup-runner \
   -v esup-runner-whisper-models:/home/esup-runner/.cache/esup-runner/whisper-models \
+  -v esup-runner-huggingface-models:/home/esup-runner/.cache/esup-runner/huggingface \
   -v /opt/esup-runner/runner/.env:/app/.env:ro \
   esup-runner-runner:latest
 ```
 
 Notes:
+- Mounting `HUGGINGFACE_MODELS_DIR` keeps local subtitle translation models across container recreations, just like `WHISPER_MODELS_DIR` does for Whisper models.
 
 - If `RUNNER_BASE_PORT` in `.env` is not `8082`, update `-p`.
 - If `RUNNER_INSTANCES>1`, publish the full port range (`RUNNER_BASE_PORT ... RUNNER_BASE_PORT + RUNNER_INSTANCES - 1`).

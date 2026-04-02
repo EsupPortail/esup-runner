@@ -45,6 +45,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     LOG_DIRECTORY=/var/log/esup-runner \
     STORAGE_DIR=/tmp/esup-runner \
     WHISPER_MODELS_DIR=/home/esup-runner/.cache/esup-runner/whisper-models \
+    HUGGINGFACE_MODELS_DIR=/home/esup-runner/.cache/esup-runner/huggingface \
     ENCODING_TYPE=CPU
 
 # Runtime dependencies (CPU FFmpeg tools).
@@ -55,7 +56,7 @@ RUN apt-get update && \
 # Create dedicated non-root user and writable runtime directories.
 RUN groupadd --gid "${ESUP_RUNNER_GID}" esup-runner && \
     useradd --uid "${ESUP_RUNNER_UID}" --gid "${ESUP_RUNNER_GID}" --home-dir /home/esup-runner --create-home --shell /usr/sbin/nologin esup-runner && \
-    mkdir -p /var/log/esup-runner /tmp/esup-runner /home/esup-runner/.cache/esup-runner/whisper-models && \
+    mkdir -p /var/log/esup-runner /tmp/esup-runner /home/esup-runner/.cache/esup-runner/whisper-models /home/esup-runner/.cache/esup-runner/huggingface && \
     chown -R esup-runner:esup-runner /var/log/esup-runner /tmp/esup-runner /home/esup-runner /app
 
 # Copy the built app and virtual environment with correct ownership.

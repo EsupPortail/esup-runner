@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Initialize required directories from .env.
+"""Initialize required directories from environment, .env, and defaults.
 
 Creates LOG_DIRECTORY, STORAGE_DIR, WHISPER_MODELS_DIR and
-HUGGINGFACE_MODELS_DIR (if set), then assigns ownership to the invoking
-user/group.
+HUGGINGFACE_MODELS_DIR, then assigns ownership to the invoking user/group.
 
 Must be run with sudo to set ownership correctly, but will fall back to current user if not.
 
@@ -17,7 +16,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Mapping
 
 # Environment keys that define required directories.
 # Keep translation-model cache handling aligned with Whisper so both caches can
@@ -28,6 +27,14 @@ ENV_KEYS = (
     "WHISPER_MODELS_DIR",
     "HUGGINGFACE_MODELS_DIR",
 )
+
+# Keep these defaults aligned with app/core/config.py.
+DEFAULT_DIRECTORY_VALUES = {
+    "LOG_DIRECTORY": "/var/log/esup-runner",
+    "STORAGE_DIR": "/tmp/esup-runner/storage",
+    "WHISPER_MODELS_DIR": "/home/esup-runner/.cache/esup-runner/whisper-models",
+    "HUGGINGFACE_MODELS_DIR": "/home/esup-runner/.cache/esup-runner/huggingface",
+}
 
 
 def _strip_quotes(value: str) -> str:
@@ -69,11 +76,33 @@ def resolve_target_uid_gid() -> tuple[int, int]:
     return os.getuid(), os.getgid()
 
 
-def collect_directories(env: Dict[str, str]) -> Iterable[Path]:
-    # Build the list of directories to create from .env values.
+def resolve_directory_value(
+    key: str,
+    env: Dict[str, str],
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    # Match config.py precedence: process environment, then .env, then code default.
+    if environ is None:
+        environ = os.environ
+
+    value = environ.get(key)
+    if value is not None:
+        return value
+
+    if key in env:
+        return env[key]
+
+    return DEFAULT_DIRECTORY_VALUES.get(key, "")
+
+
+def collect_directories(
+    env: Dict[str, str],
+    environ: Mapping[str, str] | None = None,
+) -> Iterable[Path]:
+    # Build the list of directories to create from environment/.env/default values.
     dirs = []
     for key in ENV_KEYS:
-        value = env.get(key)
+        value = resolve_directory_value(key, env, environ)
         if value:
             dirs.append(Path(value).expanduser())
     return dirs

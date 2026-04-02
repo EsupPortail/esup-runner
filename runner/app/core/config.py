@@ -339,7 +339,11 @@ class Config:
         self.WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "small").lower()
         # Directory where whisper models (.gguf/.bin) are stored
         self.WHISPER_MODELS_DIR: str = os.getenv(
-            "WHISPER_MODELS_DIR", "/tmp/esup-runner/whisper-models"
+            "WHISPER_MODELS_DIR", "/home/esup-runner/.cache/esup-runner/whisper-models"
+        )
+        # Directory where Hugging Face translation models are cached
+        self.HUGGINGFACE_MODELS_DIR: str = os.getenv(
+            "HUGGINGFACE_MODELS_DIR", "/home/esup-runner/.cache/esup-runner/huggingface"
         )
         # Default language (e.g., 'auto', 'fr', 'en')
         self.WHISPER_LANGUAGE: str = os.getenv("WHISPER_LANGUAGE", "auto")

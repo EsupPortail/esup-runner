@@ -63,6 +63,7 @@ _GPU_CHUNK_THRESHOLD_SECONDS = 1800
 # knob, even though the CLI still exposes them for ad hoc maintenance runs.
 _DEFAULT_CHUNK_DURATION_SECONDS = 300
 _DEFAULT_CHUNK_OVERLAP_SECONDS = 3
+_DEFAULT_WHISPER_MODELS_DIR = "/home/esup-runner/.cache/esup-runner/whisper-models"
 _DEFAULT_HUGGINGFACE_MODELS_DIR = "/home/esup-runner/.cache/esup-runner/huggingface"
 
 # Translation remains intentionally internal for now: the public API keeps a
@@ -129,6 +130,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--model",
         default=os.getenv("WHISPER_MODEL", "small"),
         help="Whisper model name (tiny|base|small|medium|large[/-v3]|turbo)",
+    )
+    parser.add_argument(
+        "--whisper-models-dir",
+        default=os.getenv("WHISPER_MODELS_DIR", _DEFAULT_WHISPER_MODELS_DIR),
+        help="Directory used to cache Whisper models",
     )
     parser.add_argument(
         "--video-id",
@@ -482,6 +488,7 @@ def _build_whisper_command(
     audio_path: Path,
     out_dir: Path,
     model_name: str,
+    whisper_models_dir: Optional[str],
     language: str,
     vad_filter: bool,
     debug: bool,
@@ -501,6 +508,15 @@ def _build_whisper_command(
     ]
     if language and language.lower() != "auto":
         cmd += ["--language", language]
+
+    normalized_models_dir = str(whisper_models_dir or "").strip()
+    if normalized_models_dir:
+        model_dir_flag = _cli_supports_option(["--model_dir", "--model-dir"], debug=debug)
+        if model_dir_flag is not None:
+            cmd += [model_dir_flag, normalized_models_dir]
+        elif debug:
+            print("whisper CLI does not support model_dir option; using default cache path")
+
     vad_flag = _cli_supports_option(["--vad_filter", "--vad-filter"], debug=debug)
     if vad_flag is not None:
         cmd += [vad_flag, "true" if vad_filter else "false"]
@@ -572,6 +588,7 @@ def run_whisper_cli(
     out_dir: Path,
     language: str,
     model: str,
+    whisper_models_dir: Optional[str],
     use_gpu: bool,
     gpu_device: int,
     vad_filter: bool,
@@ -586,6 +603,7 @@ def run_whisper_cli(
         audio_path=audio_path,
         out_dir=out_dir,
         model_name=model_name,
+        whisper_models_dir=whisper_models_dir,
         language=language,
         vad_filter=vad_filter,
         debug=debug,
@@ -622,10 +640,21 @@ def _import_whisper_modules() -> tuple[Optional[Any], Optional[Any], Optional[Ca
         return None, None, None
 
 
-def _load_whisper_model(model_name: str, device: str) -> Optional[Any]:
+def _load_whisper_model(
+    model_name: str, device: str, whisper_models_dir: Optional[str] = None
+) -> Optional[Any]:
     """Load a Whisper model on the requested device."""
     try:
         import whisper  # type: ignore
+
+        normalized_models_dir = str(whisper_models_dir or "").strip()
+        if normalized_models_dir:
+            Path(normalized_models_dir).mkdir(parents=True, exist_ok=True)
+            return whisper.load_model(
+                model_name,
+                device=device,
+                download_root=normalized_models_dir,
+            )
 
         return whisper.load_model(model_name, device=device)
     except Exception as e:
@@ -1935,6 +1964,7 @@ def _run_whisper_with_explicit_language(
         out_dir=work_dir,
         language=language,
         model=logical_model,
+        whisper_models_dir=str(whisper_fallback_options.get("whisper_models_dir", "")),
         use_gpu=use_gpu,
         gpu_device=int(whisper_fallback_options["gpu_device"]),
         vad_filter=bool(whisper_fallback_options["vad_filter"]),
@@ -1955,6 +1985,7 @@ def _run_whisper_with_explicit_language(
             out_dir=work_dir,
             language=language,
             model=logical_model,
+            whisper_models_dir=str(whisper_fallback_options.get("whisper_models_dir", "")),
             use_gpu=use_gpu,
             gpu_device=int(whisper_fallback_options["gpu_device"]),
             vad_filter=bool(whisper_fallback_options["vad_filter"]),
@@ -2255,6 +2286,7 @@ def _maybe_translate_final_vtt(
 def _load_whisper_runtime_model(
     torch: Any,
     model: str,
+    whisper_models_dir: Optional[str],
     use_gpu: bool,
     debug: bool,
 ) -> tuple[int, Optional[Any], str]:
@@ -2265,11 +2297,11 @@ def _load_whisper_runtime_model(
     if debug:
         print(f"Loading whisper model '{model_name}' on {device} (dtype={dtype})")
 
-    wmodel = _load_whisper_model(model_name, device)
+    wmodel = _load_whisper_model(model_name, device, whisper_models_dir=whisper_models_dir)
     if wmodel is None and device == "cuda":
         print("Retrying whisper model load on CPU")
         device = "cpu"
-        wmodel = _load_whisper_model(model_name, device)
+        wmodel = _load_whisper_model(model_name, device, whisper_models_dir=whisper_models_dir)
 
     if wmodel is None:
         return 10, None, device
@@ -2492,6 +2524,7 @@ def run_whisper_python(
     out_dir: Path,
     language: str,
     model: str,
+    whisper_models_dir: Optional[str],
     use_gpu: bool,
     gpu_device: int,
     vad_filter: bool,
@@ -2519,6 +2552,7 @@ def run_whisper_python(
     rc, wmodel, device = _load_whisper_runtime_model(
         torch=torch,
         model=model,
+        whisper_models_dir=whisper_models_dir,
         use_gpu=use_gpu,
         debug=debug,
     )
@@ -2656,6 +2690,7 @@ def _run_transcription(
         out_dir=work_dir,
         language=transcription_language,
         model=args.model,
+        whisper_models_dir=str(args.whisper_models_dir),
         use_gpu=effective_use_gpu,
         gpu_device=int(args.gpu_device),
         vad_filter=(args.vad_filter == "true"),
@@ -2674,6 +2709,7 @@ def _run_transcription(
             out_dir=work_dir,
             language=transcription_language,
             model=args.model,
+            whisper_models_dir=str(args.whisper_models_dir),
             use_gpu=effective_use_gpu,
             gpu_device=int(args.gpu_device),
             vad_filter=(args.vad_filter == "true"),
@@ -2886,6 +2922,7 @@ def main() -> int:
 
     whisper_fallback_options = {
         "model": args.model,
+        "whisper_models_dir": str(args.whisper_models_dir),
         "use_gpu": effective_use_gpu,
         "gpu_device": int(args.gpu_device),
         "vad_filter": args.vad_filter == "true",

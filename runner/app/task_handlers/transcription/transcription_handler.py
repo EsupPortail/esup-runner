@@ -174,6 +174,7 @@ class TranscriptionHandler(BaseTaskHandler):
         # Model selection: allow per-task override or fallback to config
         logical_model = str(parameters.get("model", config.WHISPER_MODEL)).lower()
         args.extend(["--model", logical_model])
+        args.extend(["--whisper-models-dir", str(config.WHISPER_MODELS_DIR)])
         args.extend(["--huggingface-models-dir", str(config.HUGGINGFACE_MODELS_DIR)])
 
         # Optional video identification metadata (tracking only).

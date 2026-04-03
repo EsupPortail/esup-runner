@@ -1,4 +1,6 @@
 import importlib.util
+import sys
+import types
 from pathlib import Path
 
 
@@ -210,6 +212,30 @@ def test_parse_args_uses_default_huggingface_models_dir(monkeypatch):
     )
 
     assert args.huggingface_models_dir == tr._DEFAULT_HUGGINGFACE_MODELS_DIR
+
+
+def test_load_whisper_model_uses_configured_download_root(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    captured = {}
+
+    def fake_load_model(model_name, device=None, download_root=None):
+        captured["model_name"] = model_name
+        captured["device"] = device
+        captured["download_root"] = download_root
+        return object()
+
+    fake_whisper = types.SimpleNamespace(load_model=fake_load_model)
+    monkeypatch.setitem(sys.modules, "whisper", fake_whisper)
+
+    target_dir = tmp_path / "whisper-cache"
+    loaded = tr._load_whisper_model("small", "cpu", whisper_models_dir=str(target_dir))
+
+    assert loaded is not None
+    assert captured["model_name"] == "small"
+    assert captured["device"] == "cpu"
+    assert captured["download_root"] == str(target_dir)
+    assert target_dir.is_dir()
 
 
 def test_prepare_huggingface_models_dir_creates_directory(tmp_path):

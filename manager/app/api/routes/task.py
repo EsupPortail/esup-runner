@@ -28,6 +28,7 @@ from app.core.auth import verify_admin, verify_token
 from app.core.config import config
 from app.core.priorities import would_exceed_other_domain_quota
 from app.core.setup_logging import setup_default_logging
+from app.core.state import delete_task as delete_task_from_state
 from app.core.state import get_task as get_task_from_state
 from app.core.state import get_tasks_snapshot, runners, save_tasks, tasks
 from app.models.models import (
@@ -52,7 +53,9 @@ templates = Jinja2Templates(directory="app/web/templates")
 # ======================================================
 
 _FAILURE_TASK_STATUSES = {"failed", "timeout", "error"}
+_NON_DELETABLE_TASK_STATUSES = {"pending", "running"}
 _NON_RESTARTABLE_TASK_STATUSES = {"pending", "running"}
+_MAX_BULK_DELETE_TASKS = 200
 _MAX_BULK_RESTART_TASKS = 200
 _MANIFEST_READ_ATTEMPTS = 5
 _MANIFEST_READ_DELAY_SECONDS = 0.2
@@ -476,7 +479,7 @@ async def view_tasks(
     all_tasks_list = list(get_tasks_snapshot().values())
 
     # Available statuses and task types
-    available_statuses = ["pending", "running", "completed", "failed", "warning"]
+    available_statuses = ["pending", "running", "completed", "failed", "warning", "timeout"]
     available_task_types = list(set(task.task_type for task in all_tasks_list if task.task_type))
 
     # Apply filters
@@ -708,6 +711,72 @@ async def _queue_task_execution(
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No runners available"
     )
+
+
+@router.post(
+    "s/delete-selected",  # This makes the full path /tasks/delete-selected
+    response_model=dict,
+    summary="Delete selected tasks",
+    description="Delete selected tasks from the tasks web interface",
+    tags=["Task"],
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_selected_tasks(payload: Dict[str, List[str]]) -> dict:
+    """Delete selected tasks from the manager state and persistence."""
+    raw_task_ids = payload.get("task_ids", [])
+    if not isinstance(raw_task_ids, list):
+        raise HTTPException(status_code=400, detail="task_ids must be a list")
+
+    task_ids = _normalize_task_ids(raw_task_ids)
+    if not task_ids:
+        raise HTTPException(status_code=400, detail="task_ids must contain at least one task ID")
+    if len(task_ids) > _MAX_BULK_DELETE_TASKS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Too many task IDs in one request ({len(task_ids)}). "
+                f"Maximum allowed: {_MAX_BULK_DELETE_TASKS}"
+            ),
+        )
+
+    deleted: List[dict[str, str]] = []
+    skipped: List[dict[str, str]] = []
+    failed: List[dict[str, str]] = []
+
+    for task_id in task_ids:
+        original_task = get_task_from_state(task_id)
+        if original_task is None:
+            skipped.append({"task_id": task_id, "reason": "Task not found"})
+            continue
+
+        if original_task.status in _NON_DELETABLE_TASK_STATUSES:
+            skipped.append(
+                {
+                    "task_id": task_id,
+                    "reason": f"Task status '{original_task.status}' cannot be deleted",
+                }
+            )
+            continue
+
+        try:
+            deleted_ok = delete_task_from_state(task_id)
+        except Exception as exc:
+            logger.exception(f"Unexpected error while deleting task {task_id}: {exc}")
+            failed.append({"task_id": task_id, "reason": "Unexpected error while deleting task"})
+            continue
+
+        if not deleted_ok:
+            failed.append({"task_id": task_id, "reason": "Task deletion failed"})
+            continue
+
+        deleted.append({"task_id": task_id})
+
+    return {
+        "requested": len(task_ids),
+        "deleted": deleted,
+        "skipped": skipped,
+        "failed": failed,
+    }
 
 
 @router.post(

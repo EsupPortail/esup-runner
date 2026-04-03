@@ -137,6 +137,29 @@ def test_parse_updated_at_branches():
     assert state._parse_updated_at("not-a-date") == datetime.min
 
 
+def test_get_deleted_task_ids_handles_exception(monkeypatch):
+    def _raise():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(state.persistence, "get_deleted_task_ids", _raise)
+    assert state._get_deleted_task_ids() == set()
+
+
+def test_merge_tasks_with_persistence_skips_local_deleted(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+    state.tasks["local-deleted"] = _task("local-deleted")
+
+    monkeypatch.setattr(state.persistence, "get_deleted_task_ids", lambda: {"local-deleted"})
+    monkeypatch.setattr(state.persistence, "load_tasks", lambda *_, **__: {})
+
+    merged = state._merge_tasks_with_persistence()
+    assert "local-deleted" not in merged
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
 def test_save_tasks_production_skips_invalid_persisted_task(monkeypatch):
     original_tasks = dict(state.tasks)
     state.tasks.clear()
@@ -178,6 +201,23 @@ def test_get_task_non_production_returns_local_without_persistence(monkeypatch):
     state.tasks.update(original_tasks)
 
 
+def test_get_task_returns_none_for_deleted_task(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+    state.tasks["t-deleted"] = _task("t-deleted")
+
+    monkeypatch.setattr(
+        state.persistence, "is_task_deleted", lambda task_id: task_id == "t-deleted"
+    )
+
+    loaded = state.get_task("t-deleted")
+    assert loaded is None
+    assert "t-deleted" not in state.tasks
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
 def test_get_task_invalid_persisted_payload_uses_local(monkeypatch):
     original_tasks = dict(state.tasks)
     state.tasks.clear()
@@ -189,6 +229,42 @@ def test_get_task_invalid_persisted_payload_uses_local(monkeypatch):
     loaded = state.get_task("t1")
     assert loaded is not None
     assert loaded.task_id == "t1"
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
+def test_get_task_returns_none_when_missing_everywhere_in_production(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+
+    monkeypatch.setattr(state, "IS_PRODUCTION", True)
+    monkeypatch.setattr(state.persistence, "load_task", lambda _task_id: None)
+
+    loaded = state.get_task("absent")
+    assert loaded is None
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
+def test_get_task_keeps_local_when_persisted_is_not_newer(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+
+    local = _task("t1", updated_at="2026-02-16T10:10:00")
+    persisted = _task("t1", updated_at="2026-02-16T10:10:00")
+    persisted.status = "completed"
+    local.status = "running"
+    state.tasks["t1"] = local
+
+    monkeypatch.setattr(state, "IS_PRODUCTION", True)
+    monkeypatch.setattr(state.persistence, "load_task", lambda _task_id: persisted.model_dump())
+
+    loaded = state.get_task("t1")
+    assert loaded is not None
+    assert loaded.status == "running"
+    assert state.tasks["t1"].status == "running"
 
     state.tasks.clear()
     state.tasks.update(original_tasks)
@@ -243,6 +319,38 @@ def test_get_tasks_snapshot_production_merges_and_refreshes_cache(monkeypatch):
     state.tasks.update(original_tasks)
 
 
+def test_get_tasks_snapshot_filters_deleted_tasks(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+    state.tasks["shared"] = _task("shared", updated_at="2026-02-16T10:00:00")
+    state.tasks["local-deleted"] = _task("local-deleted", updated_at="2026-02-16T10:00:00")
+
+    persisted_shared = _task("shared", updated_at="2026-02-16T10:05:00")
+    persisted_shared.status = "completed"
+
+    monkeypatch.setattr(state, "IS_PRODUCTION", True)
+    monkeypatch.setattr(
+        state.persistence, "get_deleted_task_ids", lambda: {"local-deleted", "persisted-deleted"}
+    )
+    monkeypatch.setattr(
+        state.persistence,
+        "load_tasks",
+        lambda *_, **__: {
+            "shared": persisted_shared.model_dump(),
+            "persisted-deleted": _task("persisted-deleted").model_dump(),
+        },
+    )
+
+    snapshot = state.get_tasks_snapshot()
+
+    assert set(snapshot.keys()) == {"shared"}
+    assert snapshot["shared"].status == "completed"
+    assert set(state.tasks.keys()) == {"shared"}
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
 def test_save_tasks_production_merges_and_upserts(monkeypatch):
     original_tasks = dict(state.tasks)
     state.tasks.clear()
@@ -272,6 +380,61 @@ def test_save_tasks_production_merges_and_upserts(monkeypatch):
     assert "persisted" in captured["payload"]
     assert "local" in state.tasks
     assert "persisted" in state.tasks
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
+def test_delete_task_removes_from_memory_when_persistence_succeeds(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+    state.tasks["t1"] = _task("t1")
+    state.tasks["t1"].status = "completed"
+
+    monkeypatch.setattr(state.persistence, "delete_task", lambda task_id: task_id == "t1")
+
+    assert state.delete_task("t1") is True
+    assert "t1" not in state.tasks
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
+def test_delete_task_keeps_memory_when_persistence_fails(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+    state.tasks["t1"] = _task("t1")
+    state.tasks["t1"].status = "completed"
+
+    monkeypatch.setattr(state.persistence, "delete_task", lambda _task_id: False)
+
+    assert state.delete_task("t1") is False
+    assert "t1" in state.tasks
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
+def test_delete_task_refuses_pending_or_running(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+    state.tasks["t-running"] = _task("t-running")
+    state.tasks["t-pending"] = _task("t-pending")
+    state.tasks["t-pending"].status = "pending"
+
+    called = {"count": 0}
+
+    def _delete_task(_task_id):
+        called["count"] += 1
+        return True
+
+    monkeypatch.setattr(state.persistence, "delete_task", _delete_task)
+
+    assert state.delete_task("t-running") is False
+    assert state.delete_task("t-pending") is False
+    assert "t-running" in state.tasks
+    assert "t-pending" in state.tasks
+    assert called["count"] == 0
 
     state.tasks.clear()
     state.tasks.update(original_tasks)

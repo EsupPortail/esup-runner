@@ -227,6 +227,57 @@ def test_load_historical_tasks_and_available_dates(tmp_path):
     assert len(dates) == 2
 
 
+def test_delete_task_marks_tombstone_and_hides_all_copies(tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+    today = date.today()
+    older = today - timedelta(days=1)
+
+    today_dir = tmp_path / today.strftime("%Y-%m-%d")
+    older_dir = tmp_path / older.strftime("%Y-%m-%d")
+    today_dir.mkdir(parents=True)
+    older_dir.mkdir(parents=True)
+
+    (today_dir / "shared.json").write_text(
+        json.dumps({"task_id": "shared", "status": "completed"}),
+        encoding="utf-8",
+    )
+    (older_dir / "shared.json").write_text(
+        json.dumps({"task_id": "shared", "status": "pending"}),
+        encoding="utf-8",
+    )
+    (today_dir / "kept.json").write_text(
+        json.dumps({"task_id": "kept", "status": "running"}),
+        encoding="utf-8",
+    )
+
+    assert persistence.delete_task("shared") is True
+    assert persistence.is_task_deleted("shared") is True
+    assert persistence.get_deleted_task_ids() == {"shared"}
+    assert not (today_dir / "shared.json").exists()
+    assert not (older_dir / "shared.json").exists()
+    assert persistence.load_task("shared") is None
+
+    loaded = persistence.load_tasks(load_all=True)
+    assert "shared" not in loaded
+    assert loaded["kept"]["task_id"] == "kept"
+
+
+def test_upsert_tasks_skips_tombstoned_tasks(tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+    deleted_dir = tmp_path / ".deleted"
+    deleted_dir.mkdir(parents=True)
+    (deleted_dir / "gone.json").write_text(
+        json.dumps({"task_id": "gone", "deleted_at": datetime.now().isoformat()}),
+        encoding="utf-8",
+    )
+
+    assert persistence.upsert_tasks({"gone": _task("gone"), "kept": _task("kept")}) is True
+
+    today_dir = tmp_path / datetime.now().strftime("%Y-%m-%d")
+    assert not (today_dir / "gone.json").exists()
+    assert (today_dir / "kept.json").exists()
+
+
 def test_cleanup_old_files_and_storage_info(tmp_path):
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     old_day = date.today() - timedelta(days=2)
@@ -462,3 +513,213 @@ def test_safe_persistence_retries_upsert_and_load_task(monkeypatch, tmp_path):
         data_directory=tmp_path, lock_timeout=1, max_retries=2
     )
     assert safe_load_fail.load_task("x") is None
+
+
+def test_get_deleted_task_ids_handles_non_dict_invalid_and_timeout(monkeypatch, tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+    deleted_dir = tmp_path / ".deleted"
+    deleted_dir.mkdir(parents=True)
+
+    # Non-dict payload should fallback to filename stem.
+    (deleted_dir / "from-stem.json").write_text(json.dumps(["x"]), encoding="utf-8")
+    # Invalid payload should be ignored.
+    (deleted_dir / "invalid.json").write_text("{broken", encoding="utf-8")
+
+    deleted = persistence.get_deleted_task_ids()
+    assert "from-stem" in deleted
+
+    class TimeoutLock:
+        def __enter__(self):
+            raise Timeout("lock-timeout")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(persistence, "_get_deleted_lock", lambda: TimeoutLock())
+    assert persistence.get_deleted_task_ids() == set()
+
+
+def test_is_task_deleted_timeout_fallback(tmp_path, monkeypatch):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+    tombstone = persistence._get_deleted_task_file_path("ghost")
+    tombstone.parent.mkdir(parents=True, exist_ok=True)
+    tombstone.write_text(json.dumps({"task_id": "ghost"}), encoding="utf-8")
+
+    class TimeoutLock:
+        def __enter__(self):
+            raise Timeout("lock-timeout")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(persistence, "_get_deleted_lock", lambda: TimeoutLock())
+    assert persistence.is_task_deleted("ghost") is True
+
+
+def test_delete_current_date_files_for_deleted_tasks_handles_oserror(monkeypatch, tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+    persistence.save_tasks({"t1": _task("t1")})
+
+    def failing_unlink(self, *args, **kwargs):
+        if self.name == "t1.json":
+            raise OSError("cannot-delete")
+        return None
+
+    monkeypatch.setattr(persistence_module.Path, "unlink", failing_unlink)
+    persistence._delete_current_date_files_for_deleted_tasks({"t1"})
+
+
+def test_delete_task_handles_tombstone_write_failures(monkeypatch, tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+
+    class TimeoutLock:
+        def __enter__(self):
+            raise Timeout("lock-timeout")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(persistence, "_get_deleted_lock", lambda: TimeoutLock())
+    assert persistence.delete_task("t-timeout") is False
+
+    persistence2 = DailyJSONPersistence(data_directory=tmp_path / "second", lock_timeout=1)
+
+    def failing_dump(*_args, **_kwargs):
+        raise RuntimeError("dump-fail")
+
+    monkeypatch.setattr(persistence_module.json, "dump", failing_dump)
+    assert persistence2.delete_task("t-generic") is False
+
+
+def test_delete_task_handles_timeout_oserror_and_generic_during_file_cleanup(monkeypatch, tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+    original_filelock = persistence_module.FileLock
+
+    target_day = date.today()
+    day_dir = tmp_path / target_day.strftime("%Y-%m-%d")
+    day_dir.mkdir(parents=True, exist_ok=True)
+    (day_dir / "victim.json").write_text(json.dumps({"task_id": "victim"}), encoding="utf-8")
+
+    class NoopLock:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    persistence._get_deleted_directory_path().mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(persistence, "_get_deleted_lock", lambda: NoopLock())
+
+    class TimeoutFileLock:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            raise Timeout("timeout")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(persistence_module, "FileLock", TimeoutFileLock)
+    assert persistence.delete_task("victim") is True
+
+    # OSError branch
+    day_dir.mkdir(parents=True, exist_ok=True)
+    (day_dir / "victim.json").write_text(json.dumps({"task_id": "victim"}), encoding="utf-8")
+    monkeypatch.setattr(persistence_module, "FileLock", original_filelock)
+
+    def unlink_oserror(self, *args, **kwargs):
+        if self.name == "victim.json":
+            raise OSError("cannot-delete")
+        return None
+
+    monkeypatch.setattr(persistence_module.Path, "unlink", unlink_oserror)
+    assert persistence.delete_task("victim") is True
+
+    # Generic exception branch
+    day_dir.mkdir(parents=True, exist_ok=True)
+    (day_dir / "victim.json").write_text(json.dumps({"task_id": "victim"}), encoding="utf-8")
+
+    def unlink_generic(self, *args, **kwargs):
+        if self.name == "victim.json":
+            raise RuntimeError("generic-delete-error")
+        return None
+
+    monkeypatch.setattr(persistence_module.Path, "unlink", unlink_generic)
+    assert persistence.delete_task("victim") is True
+
+
+def test_load_task_success_and_deleted_filters(tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+    today_dir = tmp_path / date.today().strftime("%Y-%m-%d")
+    today_dir.mkdir(parents=True)
+
+    (today_dir / "found.json").write_text(
+        json.dumps({"task_id": "found", "status": "completed"}), encoding="utf-8"
+    )
+    found = persistence.load_task("found")
+    assert found is not None
+    assert found["task_id"] == "found"
+
+    merged: dict[str, dict] = {}
+    persistence._merge_tasks_for_date(date.today(), merged, {"found"})
+    assert merged == {}
+
+    single_day = persistence._load_single_date_tasks(date.today())
+    assert "found" in single_day
+
+    deleted_dir = tmp_path / ".deleted"
+    deleted_dir.mkdir(parents=True, exist_ok=True)
+    (deleted_dir / "found.json").write_text(
+        json.dumps({"task_id": "found", "deleted_at": datetime.now().isoformat()}),
+        encoding="utf-8",
+    )
+    filtered = persistence._load_single_date_tasks(date.today())
+    assert "found" not in filtered
+
+
+def test_safe_persistence_retries_delete_task(monkeypatch, tmp_path):
+    calls = {"delete": 0}
+
+    def flaky_delete(self, _task_id):
+        calls["delete"] += 1
+        if calls["delete"] == 1:
+            raise RuntimeError("boom")
+        return True
+
+    def failing_delete(self, _task_id):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr(DailyJSONPersistence, "delete_task", flaky_delete)
+    safe = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=2)
+    assert safe.delete_task("x") is True
+
+    monkeypatch.setattr(DailyJSONPersistence, "delete_task", failing_delete)
+    safe_fail = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=2)
+    assert safe_fail.delete_task("x") is False
+
+
+def test_delete_current_date_files_for_deleted_tasks_deletes_existing_file(tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+    persistence.save_tasks({"t1": _task("t1")})
+
+    task_file = persistence._get_task_file_path("t1")
+    assert task_file.exists()
+
+    persistence._delete_current_date_files_for_deleted_tasks({"t1"})
+    assert not task_file.exists()
+
+
+def test_load_task_continues_when_target_file_missing(tmp_path):
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+    today_dir = tmp_path / date.today().strftime("%Y-%m-%d")
+    today_dir.mkdir(parents=True, exist_ok=True)
+    (today_dir / "other.json").write_text(json.dumps({"task_id": "other"}), encoding="utf-8")
+
+    assert persistence.load_task("missing") is None
+
+
+def test_safe_persistence_delete_task_returns_false_when_super_returns_false(monkeypatch, tmp_path):
+    monkeypatch.setattr(DailyJSONPersistence, "delete_task", lambda self, _task_id: False)
+    safe = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=2)
+    assert safe.delete_task("x") is False

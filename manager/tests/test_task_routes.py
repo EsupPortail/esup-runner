@@ -626,6 +626,83 @@ def test_get_task_details_api_ok(client, clean_state):
     assert resp.json()["task_id"] == "t1"
 
 
+def test_delete_selected_tasks_deletes_and_reports(monkeypatch, client, task_module, clean_state):
+    runners["r1"] = _runner("r1")
+    tasks["t-completed"] = _task("t-completed", "r1", status="completed")
+    tasks["t-failed"] = _task("t-failed", "r1", status="failed")
+    tasks["t-running"] = _task("t-running", "r1", status="running")
+
+    deleted_calls: list[str] = []
+
+    def fake_delete(task_id: str) -> bool:
+        deleted_calls.append(task_id)
+        if task_id == "t-failed":
+            return False
+        tasks.pop(task_id, None)
+        return True
+
+    monkeypatch.setattr(task_module, "delete_task_from_state", fake_delete)
+
+    resp = client.post(
+        "/tasks/delete-selected",
+        json={"task_ids": ["t-completed", "t-running", "missing", "t-failed"]},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["requested"] == 4
+    assert payload["deleted"] == [{"task_id": "t-completed"}]
+    assert payload["failed"] == [{"task_id": "t-failed", "reason": "Task deletion failed"}]
+
+    skipped_by_task_id = {item["task_id"]: item["reason"] for item in payload["skipped"]}
+    assert skipped_by_task_id["missing"] == "Task not found"
+    assert "cannot be deleted" in skipped_by_task_id["t-running"]
+    assert deleted_calls == ["t-completed", "t-failed"]
+    assert "t-completed" not in tasks
+
+
+def test_delete_selected_tasks_rejects_empty_task_ids(client, clean_state):
+    resp = client.post("/tasks/delete-selected", json={"task_ids": []})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "task_ids must contain at least one task ID"
+
+
+@pytest.mark.asyncio
+async def test_delete_selected_tasks_rejects_non_list_task_ids(task_module):
+    with pytest.raises(HTTPException) as exc:
+        await task_module.delete_selected_tasks({"task_ids": "t1"})  # type: ignore[arg-type]
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "task_ids must be a list"
+
+
+def test_delete_selected_tasks_rejects_too_many_task_ids(
+    monkeypatch, client, task_module, clean_state
+):
+    monkeypatch.setattr(task_module, "_MAX_BULK_DELETE_TASKS", 2)
+    resp = client.post("/tasks/delete-selected", json={"task_ids": ["a", "b", "c"]})
+    assert resp.status_code == 400
+    assert "Too many task IDs" in resp.json()["detail"]
+
+
+def test_delete_selected_tasks_collects_unexpected_failures(
+    monkeypatch, client, task_module, clean_state
+):
+    tasks["t1"] = _task("t1", "r1", status="completed")
+
+    def fake_delete(*_a, **_k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(task_module, "delete_task_from_state", fake_delete)
+
+    resp = client.post("/tasks/delete-selected", json={"task_ids": ["t1"]})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["deleted"] == []
+    assert payload["failed"] == [
+        {"task_id": "t1", "reason": "Unexpected error while deleting task"}
+    ]
+
+
 def test_restart_selected_tasks_restarts_and_reports(monkeypatch, client, task_module, clean_state):
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t-failed"] = _task("t-failed", "r1", status="failed")

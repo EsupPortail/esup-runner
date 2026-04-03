@@ -267,6 +267,7 @@ body[data-bs-theme="light"] {
 .badge-completed { background-color: #198754; }
 .badge-failed { background-color: #dc3545; }
 .badge-warning { background-color: #ffc107; color: #000; }
+.badge-timeout { background-color: #fd7e14; color: #000; }
 
 /* Filters and controls */
 .level-filter-btn.active {

@@ -151,6 +151,8 @@ def get_task_stats() -> Dict[str, int]:
         "failed": len([t for t in tasks.values() if t.status == "failed"]),
         "running": len([t for t in tasks.values() if t.status == "running"]),
         "pending": len([t for t in tasks.values() if t.status == "pending"]),
+        "warning": len([t for t in tasks.values() if t.status == "warning"]),
+        "timeout": len([t for t in tasks.values() if t.status == "timeout"]),
         **status_counts,
     }
     return stats

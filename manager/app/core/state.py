@@ -17,6 +17,7 @@ from app.models.models import Runner, Task
 
 logger = logging.getLogger(__name__)
 IS_PRODUCTION = config.ENVIRONMENT.lower() == "production"
+NON_DELETABLE_TASK_STATUSES = {"pending", "running"}
 
 # Initialize persistence with safe retry mechanism
 persistence = SafeDailyJSONPersistence(
@@ -55,20 +56,45 @@ def _pick_newest_task(local_task: Task, persisted_task: Task) -> Task:
     return local_task if local_ts >= persisted_ts else persisted_task
 
 
+def _get_deleted_task_ids() -> set[str]:
+    """Return the current set of deleted task IDs from persistence."""
+    try:
+        return persistence.get_deleted_task_ids()
+    except Exception as exc:
+        logger.warning(f"Failed to load deleted task IDs: {exc}")
+        return set()
+
+
+def _purge_deleted_tasks_from_memory(deleted_task_ids: Optional[set[str]] = None) -> None:
+    """Remove tombstoned tasks from the in-memory cache."""
+    deleted_ids = deleted_task_ids if deleted_task_ids is not None else _get_deleted_task_ids()
+    if not deleted_ids:
+        return
+
+    for task_id in list(tasks.keys()):
+        if task_id in deleted_ids:
+            del tasks[task_id]
+
+
 def _merge_tasks_with_persistence() -> Dict[str, Task]:
     """
     Merge local in-memory tasks with persisted tasks, keeping freshest updates.
     """
+    deleted_task_ids = _get_deleted_task_ids()
     persisted_data = persistence.load_tasks()
     merged_tasks: Dict[str, Task] = {}
 
     for task_id, task_data in persisted_data.items():
+        if task_id in deleted_task_ids:
+            continue
         try:
             merged_tasks[task_id] = Task(**task_data)
         except Exception as exc:
             logger.warning(f"Skipping invalid persisted task {task_id}: {exc}")
 
     for task_id, local_task in tasks.items():
+        if task_id in deleted_task_ids:
+            continue
         if task_id in merged_tasks:
             merged_tasks[task_id] = _pick_newest_task(local_task, merged_tasks[task_id])
         else:
@@ -84,6 +110,8 @@ def save_tasks() -> bool:
     Returns:
         bool: True if save was successful
     """
+    _purge_deleted_tasks_from_memory()
+
     if IS_PRODUCTION:
         # Multi-worker mode: upsert merged state without deleting sibling worker tasks.
         merged_tasks = _merge_tasks_with_persistence()
@@ -105,6 +133,10 @@ def get_task(task_id: str) -> Optional[Task]:
     """
     Retrieve a task from memory and, in production mode, fallback to persistence.
     """
+    if persistence.is_task_deleted(task_id):
+        tasks.pop(task_id, None)
+        return None
+
     local_task = tasks.get(task_id)
 
     if not IS_PRODUCTION:
@@ -148,6 +180,9 @@ def get_tasks_snapshot() -> Dict[str, Task]:
 
     In production, refreshes from shared persistence and updates local cache.
     """
+    deleted_task_ids = _get_deleted_task_ids()
+    _purge_deleted_tasks_from_memory(deleted_task_ids)
+
     if not IS_PRODUCTION:
         return dict(tasks)
 
@@ -155,6 +190,23 @@ def get_tasks_snapshot() -> Dict[str, Task]:
     tasks.clear()
     tasks.update(merged_tasks)
     return dict(merged_tasks)
+
+
+def delete_task(task_id: str) -> bool:
+    """Delete a task from persistence and the in-memory cache."""
+    task = tasks.get(task_id)
+    if task is not None and task.status in NON_DELETABLE_TASK_STATUSES:
+        logger.info(f"Refusing to delete task {task_id} with protected status '{task.status}'")
+        return False
+
+    deleted = persistence.delete_task(task_id)
+    if not deleted:
+        return False
+
+    tasks.pop(task_id, None)
+    _purge_deleted_tasks_from_memory({task_id})
+    logger.info(f"Deleted task {task_id} from manager state")
+    return True
 
 
 def force_save_tasks() -> bool:

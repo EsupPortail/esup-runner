@@ -8,7 +8,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from filelock import FileLock, Timeout
 
@@ -44,6 +44,10 @@ class DailyJSONPersistence:
             target_date = datetime.now().date()
         return target_date.strftime("%Y-%m-%d")
 
+    def _sanitize_task_id(self, task_id: str) -> str:
+        """Sanitize a task ID for filesystem usage."""
+        return task_id.replace("/", "_").replace("\\", "_")
+
     def _get_directory_path(self, target_date: Optional[date] = None) -> Path:
         """
         Get directory path for a specific date.
@@ -69,9 +73,28 @@ class DailyJSONPersistence:
             Path: Full path to the task JSON file
         """
         directory = self._get_directory_path(target_date)
-        # Sanitize task_id for filename
-        safe_task_id = task_id.replace("/", "_").replace("\\", "_")
+        safe_task_id = self._sanitize_task_id(task_id)
         return directory / f"{safe_task_id}.json"
+
+    def _get_deleted_directory_path(self) -> Path:
+        """Return the tombstone directory used to track deleted tasks."""
+        return self.data_directory / ".deleted"
+
+    def _get_deleted_lock_path(self) -> Path:
+        """Return the lock path for deleted task tombstones."""
+        return self._get_deleted_directory_path() / ".lock"
+
+    def _get_deleted_task_file_path(self, task_id: str) -> Path:
+        """Return the tombstone path for a deleted task."""
+        deleted_directory = self._get_deleted_directory_path()
+        safe_task_id = self._sanitize_task_id(task_id)
+        return deleted_directory / f"{safe_task_id}.json"
+
+    def _get_deleted_lock(self) -> FileLock:
+        """Return the lock guarding deleted task tombstones."""
+        deleted_directory = self._get_deleted_directory_path()
+        deleted_directory.mkdir(parents=True, exist_ok=True)
+        return FileLock(self._get_deleted_lock_path(), timeout=self.lock_timeout)
 
     def _get_lock_path(self, target_date: Optional[date] = None) -> Path:
         """
@@ -106,6 +129,134 @@ class DailyJSONPersistence:
         assert self._current_lock is not None  # Always set in the if block above
         return self._current_lock
 
+    def _get_deleted_task_ids(self) -> Set[str]:
+        """Load deleted task IDs from tombstone files."""
+        deleted_directory = self._get_deleted_directory_path()
+        if not deleted_directory.exists():
+            return set()
+
+        deleted_task_ids: Set[str] = set()
+
+        try:
+            lock = self._get_deleted_lock()
+            with lock:
+                for tombstone_path in deleted_directory.glob("*.json"):
+                    try:
+                        with open(tombstone_path, "r", encoding="utf-8") as f:
+                            payload = json.load(f)
+
+                        if isinstance(payload, dict):
+                            task_id = str(payload.get("task_id", tombstone_path.stem))
+                        else:
+                            task_id = tombstone_path.stem
+                        deleted_task_ids.add(task_id)
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not read deleted task tombstone {tombstone_path}: {e}"
+                        )
+        except Timeout:
+            logger.warning(
+                "Could not acquire deleted-task lock while reading tombstones "
+                f"(timeout after {self.lock_timeout}s)"
+            )
+
+        return deleted_task_ids
+
+    def get_deleted_task_ids(self) -> Set[str]:
+        """Return the set of deleted task IDs currently recorded."""
+        return self._get_deleted_task_ids()
+
+    def is_task_deleted(self, task_id: str) -> bool:
+        """Return True when the task is marked as deleted."""
+        tombstone_path = self._get_deleted_task_file_path(task_id)
+        if not tombstone_path.exists():
+            return False
+
+        try:
+            lock = self._get_deleted_lock()
+            with lock:
+                return tombstone_path.exists()
+        except Timeout:
+            logger.warning(
+                "Could not acquire deleted-task lock while checking tombstone "
+                f"for {task_id} (timeout after {self.lock_timeout}s)"
+            )
+            return tombstone_path.exists()
+
+    def _filter_deleted_tasks(self, tasks: Dict[str, Task]) -> tuple[Dict[str, Task], Set[str]]:
+        """Remove tombstoned tasks from a task mapping before persisting it."""
+        deleted_task_ids = self._get_deleted_task_ids()
+        if not deleted_task_ids:
+            return dict(tasks), deleted_task_ids
+
+        filtered_tasks = {
+            task_id: task for task_id, task in tasks.items() if task_id not in deleted_task_ids
+        }
+        return filtered_tasks, deleted_task_ids
+
+    def _delete_current_date_files_for_deleted_tasks(self, deleted_task_ids: Set[str]) -> None:
+        """Remove current-day persisted files for tombstoned task IDs."""
+        for task_id in deleted_task_ids:
+            task_file = self._get_task_file_path(task_id)
+            if not task_file.exists():
+                continue
+            try:
+                task_file.unlink()
+                logger.debug(f"Deleted current-day tombstoned task file: {task_file}")
+            except OSError as e:
+                logger.error(f"Error deleting tombstoned task file {task_file}: {e}")
+
+    def delete_task(self, task_id: str) -> bool:
+        """Permanently delete a task record across all persisted day directories."""
+        tombstone = {
+            "task_id": task_id,
+            "deleted_at": datetime.now().isoformat(),
+        }
+        tombstone_path = self._get_deleted_task_file_path(task_id)
+
+        try:
+            deleted_lock = self._get_deleted_lock()
+            with deleted_lock:
+                temp_path = tombstone_path.with_suffix(".tmp")
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(tombstone, f, indent=2, ensure_ascii=False)
+                temp_path.replace(tombstone_path)
+        except Timeout:
+            logger.error(
+                "Could not acquire deleted-task lock while deleting task "
+                f"{task_id} (timeout after {self.lock_timeout}s)"
+            )
+            return False
+        except Exception as e:
+            logger.error(f"Error writing deleted-task tombstone for {task_id}: {e}")
+            return False
+
+        deleted_files = 0
+        for target_date in self.list_available_dates():
+            lock_path = self._get_lock_path(target_date)
+            lock = FileLock(lock_path, timeout=self.lock_timeout)
+            task_file = self._get_task_file_path(task_id, target_date)
+
+            try:
+                with lock:
+                    if task_file.exists():
+                        task_file.unlink()
+                        deleted_files += 1
+                        logger.info(f"Deleted task file {task_file}")
+            except Timeout:
+                logger.warning(
+                    f"Could not acquire lock for {target_date} while deleting task {task_id}"
+                )
+            except OSError as e:
+                logger.error(f"Error deleting task file {task_file}: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error deleting task file {task_file}: {e}")
+
+        logger.info(
+            f"Task {task_id} marked as deleted with {deleted_files} persisted file(s) removed"
+        )
+        return True
+
     def save_tasks(self, tasks: Dict[str, Task]) -> bool:
         """
         Save tasks to today's directory with one JSON file per task.
@@ -117,18 +268,21 @@ class DailyJSONPersistence:
             bool: True if successful, False otherwise
         """
         try:
+            tasks_to_save, deleted_task_ids = self._filter_deleted_tasks(tasks)
             directory = self._get_directory_path()
             directory.mkdir(parents=True, exist_ok=True)
 
             # Use filelock for atomic write operation
             lock = self._get_current_lock()
             with lock:
+                self._delete_current_date_files_for_deleted_tasks(deleted_task_ids)
+
                 # Get existing task files to detect deletions
                 existing_files = set(directory.glob("*.json"))
                 current_task_files = set()
 
                 # Save each task to its own file
-                for task_id, task in tasks.items():
+                for task_id, task in tasks_to_save.items():
                     task_file = self._get_task_file_path(task_id)
                     current_task_files.add(task_file)
 
@@ -161,7 +315,7 @@ class DailyJSONPersistence:
                         except OSError as e:
                             logger.error(f"Error deleting {file_path}: {e}")
 
-            logger.info(f"Successfully saved {len(tasks)} tasks to {directory}")
+            logger.info(f"Successfully saved {len(tasks_to_save)} tasks to {directory}")
             return True
 
         except Timeout:
@@ -186,7 +340,8 @@ class DailyJSONPersistence:
         Returns:
             bool: True if successful, False otherwise
         """
-        if not tasks:
+        tasks_to_upsert, deleted_task_ids = self._filter_deleted_tasks(tasks)
+        if not tasks_to_upsert and not deleted_task_ids:
             return True
 
         try:
@@ -195,7 +350,9 @@ class DailyJSONPersistence:
 
             lock = self._get_current_lock()
             with lock:
-                for task_id, task in tasks.items():
+                self._delete_current_date_files_for_deleted_tasks(deleted_task_ids)
+
+                for task_id, task in tasks_to_upsert.items():
                     task_file = self._get_task_file_path(task_id)
 
                     if hasattr(task, "model_dump"):
@@ -215,7 +372,7 @@ class DailyJSONPersistence:
 
                     temp_path.replace(task_file)
 
-            logger.info(f"Successfully upserted {len(tasks)} tasks to {directory}")
+            logger.info(f"Successfully upserted {len(tasks_to_upsert)} tasks to {directory}")
             return True
 
         except Timeout:
@@ -237,6 +394,10 @@ class DailyJSONPersistence:
         Returns:
             Optional[Dict[str, Any]]: Task data when found, otherwise None
         """
+        if self.is_task_deleted(task_id):
+            logger.info(f"Skipping deleted task {task_id}")
+            return None
+
         today = datetime.now().date()
         ordered_dates = [today] + [d for d in reversed(self.list_available_dates()) if d != today]
 
@@ -320,6 +481,7 @@ class DailyJSONPersistence:
         """Load and merge tasks from all available date directories."""
         logger.info("Loading tasks from all available directories")
         available_dates = self.list_available_dates()
+        deleted_task_ids = self._get_deleted_task_ids()
 
         if not available_dates:
             logger.info("No task directories found")
@@ -327,18 +489,24 @@ class DailyJSONPersistence:
 
         tasks_data: Dict[str, Any] = {}
         for date_to_load in sorted(available_dates, reverse=True):
-            self._merge_tasks_for_date(date_to_load, tasks_data)
+            self._merge_tasks_for_date(date_to_load, tasks_data, deleted_task_ids)
 
         logger.info(
             f"Successfully loaded {len(tasks_data)} tasks from {len(available_dates)} directories"
         )
         return tasks_data
 
-    def _merge_tasks_for_date(self, date_to_load: date, tasks_data: Dict[str, Any]) -> None:
+    def _merge_tasks_for_date(
+        self,
+        date_to_load: date,
+        tasks_data: Dict[str, Any],
+        deleted_task_ids: Optional[Set[str]] = None,
+    ) -> None:
         """Merge tasks from a single date directory into tasks_data without overwriting newer entries."""
         directory = self._get_directory_path(date_to_load)
         lock_path = self._get_lock_path(date_to_load)
         lock = FileLock(lock_path, timeout=self.lock_timeout)
+        deleted_ids = deleted_task_ids or set()
 
         try:
             with lock:
@@ -348,6 +516,9 @@ class DailyJSONPersistence:
                         continue
 
                     task_id, task_data, metadata = result
+                    if task_id in deleted_ids:
+                        logger.info(f"✗ Skipped deleted task {task_id} from {date_to_load}")
+                        continue
                     if task_id in tasks_data:
                         logger.info(
                             f"✗ Skipped older version of task {task_id} from {date_to_load}"
@@ -366,6 +537,7 @@ class DailyJSONPersistence:
     def _load_single_date_tasks(self, target_date: date) -> Dict[str, Any]:
         """Load tasks from a specific date directory."""
         directory = self._get_directory_path(target_date)
+        deleted_task_ids = self._get_deleted_task_ids()
 
         if not directory.exists():
             logger.info(f"No tasks directory found for date {target_date}")
@@ -381,6 +553,9 @@ class DailyJSONPersistence:
                     result = self._read_task_file(task_file, keep_metadata=False)
                     if result:
                         task_id, task_data, metadata = result
+                        if task_id in deleted_task_ids:
+                            logger.info(f"Skipping deleted task {task_id} from {directory}")
+                            continue
                         tasks_data[task_id] = task_data
             logger.info(f"Successfully loaded {len(tasks_data)} tasks from {directory}")
             return tasks_data
@@ -574,3 +749,19 @@ class SafeDailyJSONPersistence(DailyJSONPersistence):
                     return None
                 logger.warning(f"Load task attempt {attempt + 1} failed, retrying: {e}")
         return None
+
+    def delete_task(self, task_id: str) -> bool:
+        """Delete a task with retry mechanism."""
+        for attempt in range(self.max_retries):
+            try:
+                result = super().delete_task(task_id)
+                if result:
+                    return True
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    logger.error(
+                        f"Failed to delete task {task_id} after {self.max_retries} attempts: {e}"
+                    )
+                    return False
+                logger.warning(f"Delete task attempt {attempt + 1} failed, retrying: {e}")
+        return False

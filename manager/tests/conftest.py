@@ -20,6 +20,7 @@ warnings.filterwarnings(
 warnings.filterwarnings("ignore", message="Duplicate Operation ID.*", category=UserWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="fastapi.openapi.utils")
 
+from app.core import state as state_module
 from app.core.config import config
 
 
@@ -35,6 +36,33 @@ def ensure_test_tokens(monkeypatch):
     yield
 
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", original_tokens)
+
+
+@pytest.fixture(autouse=True)
+def isolate_deleted_task_tombstones(monkeypatch):
+    """Keep tests independent from real deleted-task tombstones in ./data/.deleted."""
+
+    monkeypatch.setattr(state_module.persistence, "get_deleted_task_ids", lambda: set())
+    monkeypatch.setattr(state_module.persistence, "is_task_deleted", lambda _task_id: False)
+
+    yield
+
+
+@pytest.fixture(autouse=True)
+def isolate_runtime_state(monkeypatch):
+    """Isolate mutable runtime state and force development mode for deterministic tests."""
+
+    original_tasks = dict(state_module.tasks)
+
+    state_module.tasks.clear()
+
+    monkeypatch.setattr(state_module, "IS_PRODUCTION", False)
+    monkeypatch.setattr(config, "ENVIRONMENT", "development")
+
+    yield
+
+    state_module.tasks.clear()
+    state_module.tasks.update(original_tasks)
 
 
 @pytest.fixture

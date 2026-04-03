@@ -221,7 +221,7 @@
                   <tr>
                     <th style="width: 40px;">
                       <label class="visually-hidden" for="selectAllTasks">Select all tasks</label>
-                      <input type="checkbox" id="selectAllTasks" class="form-check-input">
+                      <input type="checkbox" id="selectAllTasks" class="form-check-input" autocomplete="off">
                     </th>
                     <th>Status</th>
                     <th>Task ID</th>
@@ -239,6 +239,7 @@
                         <input type="checkbox"
                             class="form-check-input task-select-checkbox"
                             data-task-id="{{ task.id }}"
+                          autocomplete="off"
                             aria-label="Select task {{ task.id }}">
                       </td>
                       <td>
@@ -376,6 +377,22 @@
       }
     }
 
+    function clearTaskSelection() {
+      getTaskSelectionCheckboxes().forEach(cb => {
+        cb.checked = false;
+      });
+      if (selectAllTasks) {
+        selectAllTasks.checked = false;
+        selectAllTasks.indeterminate = false;
+      }
+      updateSelectionState();
+    }
+
+    function reloadTasksList() {
+      clearTaskSelection();
+      window.location.reload();
+    }
+
     // Filter handling
     filterAll.addEventListener('change', function() {
       if (this.checked) {
@@ -406,7 +423,7 @@
     });
 
     refreshBtn.addEventListener('click', () => {
-      window.location.reload();
+      reloadTasksList();
     });
 
     if (selectAllTasks) {
@@ -478,7 +495,7 @@
 
           if (deletedCount > 0) {
             setTimeout(() => {
-              window.location.reload();
+              reloadTasksList();
             }, 1200);
           } else {
             deleteSelectedBtn.innerHTML = initialButtonHtml;
@@ -544,7 +561,7 @@
 
           if (restartedCount > 0) {
             setTimeout(() => {
-              window.location.reload();
+              reloadTasksList();
             }, 1200);
           } else {
             restartSelectedBtn.innerHTML = initialButtonHtml;
@@ -563,7 +580,7 @@
     function setupAutoRefresh() {
       if (autoRefresh > 0) {
         autoRefreshInterval = setInterval(() => {
-          window.location.reload();
+          reloadTasksList();
         }, autoRefresh * 1000);
 
         autoRefreshBtn.classList.add('btn-success');
@@ -634,6 +651,10 @@
     }
 
     setInterval(updateLastUpdate, 1000);
+
+    // Firefox may restore checkbox states on reload; enforce a clean selection state.
+    clearTaskSelection();
+    window.addEventListener('pagehide', clearTaskSelection);
 
     // Task detail modal
     document.querySelectorAll('.view-task-btn').forEach(btn => {

@@ -239,6 +239,7 @@
                       {% elif task.status == 'warning' %}bg-warning text-dark
                       {% elif task.status == 'completed' %}bg-success
                       {% elif task.status == 'failed' %}bg-danger
+                      {% elif task.status == 'timeout' %}badge-timeout
                       {% else %}bg-secondary{% endif %}">
                     {{ task.status }}
                   </span>

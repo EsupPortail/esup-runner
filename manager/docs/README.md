@@ -122,6 +122,11 @@ Recommended setup:
 
 ## Task lifecycle
 
+Current note:
+
+- The `pending` status is kept in the data model for compatibility and possible future queueing workflows.
+- In the current manager implementation, tasks are effectively created directly in `running`, so `pending` is not actively used by the normal execution flow today.
+
 1. **Client submits a task** to the manager via `POST /task/execute`.
 2. **Manager selects an eligible runner** by calling `GET {runner.url}/runner/ping`.
 3. **Manager starts the task** on that runner via `POST {runner.url}/task/run`.
@@ -393,6 +398,7 @@ Behavior:
 
 - Restarts tasks **in place**: the original `task_id` is preserved.
 - `pending` and `running` tasks are skipped (not restartable).
+  Note: `pending` is currently reserved for compatibility and future use; the normal manager flow does not create tasks in `pending` today.
 - The manager rebuilds a `TaskRequest` from the stored task and requeues execution on an eligible runner.
 - A new internal `run_id` is generated for each restart, so stale async notify retries from an older run cannot overwrite the current run state.
 - Existing task artifacts are not explicitly purged by the manager before restart.
@@ -407,6 +413,46 @@ Response format:
   ],
   "skipped": [
     {"task_id": "1b2c3d4e-5f67-8901-2345-67890abcdeff", "reason": "Task status 'running' cannot be restarted"}
+  ],
+  "failed": []
+}
+```
+
+### `POST /tasks/delete-selected` (admin UI helper)
+
+This endpoint is used by the `/tasks` web page bulk action **Delete selected tasks**.
+It is intended for administrators and is protected by HTTP Basic auth (same scope as the admin UI).
+
+Payload:
+
+```json
+{
+  "task_ids": [
+    "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761",
+    "1b2c3d4e-5f67-8901-2345-67890abcdeff"
+  ]
+}
+```
+
+Behavior:
+
+- Deletes the selected task records from the manager state and persisted task JSON files.
+- `pending` and `running` tasks are skipped (not deletable).
+  Note: `pending` is currently reserved for compatibility and future use; the normal manager flow does not create tasks in `pending` today.
+- Missing tasks are reported in `skipped`.
+- Unexpected internal errors are reported in `failed`.
+- Existing task artifacts are not explicitly purged by the manager when deleting a task record.
+
+Response format:
+
+```json
+{
+  "requested": 2,
+  "deleted": [
+    {"task_id": "2f53b18a-1c09-4cdb-b31d-6a68f3e6a761"}
+  ],
+  "skipped": [
+    {"task_id": "1b2c3d4e-5f67-8901-2345-67890abcdeff", "reason": "Task status 'running' cannot be deleted"}
   ],
   "failed": []
 }

@@ -59,6 +59,8 @@
         {% if task.status == 'completed' %}border-success
         {% elif task.status == 'pending' %}border-warning
         {% elif task.status == 'failed' %}border-danger
+        {% elif task.status == 'warning' %}border-warning
+          {% elif task.status == 'timeout' %}border-warning
         {% else %}border-primary{% endif %}">
         <div class="row align-items-center">
           <div class="col-md-8">
@@ -73,6 +75,8 @@
               {% if task.status == 'pending' %}bg-warning text-dark
               {% elif task.status == 'completed' %}bg-success
               {% elif task.status == 'failed' %}bg-danger
+              {% elif task.status == 'warning' %}bg-warning text-dark
+              {% elif task.status == 'timeout' %}badge-timeout
               {% else %}bg-secondary{% endif %}">
               {{ task.status | upper }}
             </span>
@@ -110,6 +114,8 @@
               {% if task.status == 'pending' %}bg-warning text-dark
               {% elif task.status == 'completed' %}bg-success
               {% elif task.status == 'failed' %}bg-danger
+              {% elif task.status == 'warning' %}bg-warning text-dark
+              {% elif task.status == 'timeout' %}badge-timeout
               {% else %}bg-secondary{% endif %}">
               {{ task.status }}
             </span>

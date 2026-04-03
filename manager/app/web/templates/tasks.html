@@ -201,7 +201,11 @@
               <h2 class="h3 mb-0">Tasks</h2>
               <div class="d-flex align-items-center gap-2">
                 <small id="selectionCount" class="text-muted">0 selected</small>
-                <button id="restartSelectedBtn" class="btn btn-sm btn-outline-danger" disabled>
+                <button id="deleteSelectedBtn" class="btn btn-sm btn-outline-danger" disabled>
+                  <i class="bi bi-trash" aria-hidden="true"></i>
+                  Delete selected tasks
+                </button>
+                <button id="restartSelectedBtn" class="btn btn-sm btn-outline-primary" disabled>
                   <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
                   Restart selected tasks
                 </button>
@@ -331,6 +335,7 @@
     const taskTypeSelect = document.getElementById('taskTypeSelect');
     const refreshBtn = document.getElementById('refreshBtn');
     const selectAllTasks = document.getElementById('selectAllTasks');
+    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
     const restartSelectedBtn = document.getElementById('restartSelectedBtn');
     const selectionCount = document.getElementById('selectionCount');
     const bulkActionFeedback = document.getElementById('bulkActionFeedback');
@@ -358,6 +363,9 @@
 
       if (selectionCount) {
         selectionCount.textContent = `${selectedCount} selected`;
+      }
+      if (deleteSelectedBtn) {
+        deleteSelectedBtn.disabled = selectedCount === 0;
       }
       if (restartSelectedBtn) {
         restartSelectedBtn.disabled = selectedCount === 0;
@@ -415,6 +423,75 @@
         updateSelectionState();
       });
     });
+
+    if (deleteSelectedBtn) {
+      deleteSelectedBtn.addEventListener('click', async () => {
+        const selectedTaskIds = getTaskSelectionCheckboxes()
+          .filter(cb => cb.checked)
+          .map(cb => cb.dataset.taskId)
+          .filter(Boolean);
+
+        if (selectedTaskIds.length === 0) {
+          return;
+        }
+
+        const confirmed = window.confirm(
+          `Delete ${selectedTaskIds.length} selected task(s)? This cannot be undone.`
+        );
+        if (!confirmed) {
+          return;
+        }
+
+        const initialButtonHtml = deleteSelectedBtn.innerHTML;
+        deleteSelectedBtn.disabled = true;
+        if (restartSelectedBtn) {
+          restartSelectedBtn.disabled = true;
+        }
+        deleteSelectedBtn.innerHTML = (
+          '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Deleting…'
+        );
+        setBulkActionFeedback('info', 'Deletion in progress…');
+
+        try {
+          const response = await fetch('/tasks/delete-selected', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ task_ids: selectedTaskIds }),
+          });
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.detail || 'Failed to delete selected tasks');
+          }
+
+          const deletedCount = (payload.deleted || []).length;
+          const skippedCount = (payload.skipped || []).length;
+          const failedCount = (payload.failed || []).length;
+
+          const level = failedCount > 0 ? 'warning' : 'success';
+          setBulkActionFeedback(
+            level,
+            `Deletion done: ${deletedCount} deleted, ${skippedCount} skipped, ${failedCount} failed.`
+          );
+
+          if (deletedCount > 0) {
+            setTimeout(() => {
+              window.location.reload();
+            }, 1200);
+          } else {
+            deleteSelectedBtn.innerHTML = initialButtonHtml;
+            updateSelectionState();
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setBulkActionFeedback('danger', `Deletion failed: ${message}`);
+          deleteSelectedBtn.innerHTML = initialButtonHtml;
+          updateSelectionState();
+        }
+      });
+    }
 
     if (restartSelectedBtn) {
       restartSelectedBtn.addEventListener('click', async () => {

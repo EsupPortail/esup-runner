@@ -177,11 +177,13 @@ Before starting the service, you can run a few built-in checks from `/opt/esup-r
 uv run scripts/check_version.py
 uv run scripts/check_ffmpeg.py
 uv run scripts/check_runner_resources.py
+uv run scripts/check_runner_storage.py
 ```
 
 Notes:
 - These scripts may read your configuration from `.env`, so make sure it is present and correctly configured.
 - A successful check should exit with code `0`; any non-zero exit code indicates something to fix (missing binary, wrong permissions, insufficient disk/RAM, etc.).
+- `check_runner_storage.py` validates free space in `LOG_DIRECTORY`, `STORAGE_DIR`, `HUGGINGFACE_MODELS_DIR`, and `WHISPER_MODELS_DIR`.
 
 ## 4) Run
 

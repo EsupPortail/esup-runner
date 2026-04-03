@@ -150,10 +150,12 @@ From `/opt/esup-runner/runner`:
 uv run scripts/check_version.py
 uv run scripts/check_ffmpeg.py
 uv run scripts/check_runner_resources.py
+uv run scripts/check_runner_storage.py
 ```
 
 - `check_ffmpeg.py` helps catch codec/build issues early.
-- `check_runner_resources.py` validates disk/RAM/config.
+- `check_runner_resources.py` validates CPU/RAM/GPU/config.
+- `check_runner_storage.py` validates free space and permissions for configured storage directories.
 
 ---
 

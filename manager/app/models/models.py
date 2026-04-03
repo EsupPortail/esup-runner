@@ -201,7 +201,7 @@ class Task(BaseModel):
     )
     status: str = Field(
         ...,
-        description="Task status: pending, running, completed, failed, timeout - tracks task progression through workflow states",
+        description="Task status: pending, running, completed, failed, warning, timeout - tracks task progression through workflow states",
     )
     etab_name: str = Field(
         ..., description="Name of the institution or organization requesting the task"

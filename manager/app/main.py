@@ -6,7 +6,8 @@ This module defines a FastAPI application for managing distributed runners and e
 It handles:
 - Runner registration and heartbeat monitoring
 - Task execution delegation to runners
-- Task lifecycle (pending, running, completed, failed, timeout)
+- Task lifecycle (pending, running, completed, warning, failed, timeout).
+  The `pending` status is kept for compatibility and possible future use, but the current manager flow creates tasks directly in `running`.
 - Admin dashboards and API endpoints for monitoring
 """
 

@@ -571,6 +571,7 @@ async def view_tasks(
 @router.get(
     "s/api/{task_id}",  # This makes the full path /tasks/api/{task_id}
     response_model=Task,
+    response_model_exclude={"client_token"},
     summary="Get task details API",
     description="API endpoint to get detailed task information",
     tags=["Task"],
@@ -584,7 +585,7 @@ async def get_task_details_api(task_id: str = Path(..., description="Task identi
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    return task
+    return _redact_task_for_api(task)
 
 
 def _task_to_task_request(task: Task) -> TaskRequest:
@@ -599,6 +600,15 @@ def _task_to_task_request(task: Task) -> TaskRequest:
         parameters=task.parameters,
         notify_url=task.notify_url,
     )
+
+
+def _redact_task_for_api(task: Task) -> Task:
+    """Return a task copy with sensitive fields removed from API payloads."""
+    if hasattr(task, "model_copy"):
+        return task.model_copy(update={"client_token": None})
+    copied = task.copy(deep=True)
+    copied.client_token = None
+    return copied
 
 
 def _normalize_task_ids(task_ids: List[str]) -> List[str]:
@@ -886,6 +896,7 @@ async def execute_task_async(
 @router.get(
     "/status/{task_id}",
     response_model=Task,
+    response_model_exclude={"client_token"},
     summary="Get task status",
     description="Retrieve status of a specific task",
     tags=["Task"],
@@ -912,12 +923,13 @@ async def get_task_status(task_id: str = Path(..., description="Task identifier 
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
-    return task
+    return _redact_task_for_api(task)
 
 
 @router.get(
     "/list",
     response_model=Dict[str, Task],
+    response_model_exclude={"__all__": {"client_token"}},
     summary="List all tasks",
     description="Return status of all current tasks",
     tags=["Task"],
@@ -931,7 +943,7 @@ async def list_tasks() -> Dict[str, Task]:
         Dict[str, Task]: Dictionary of task IDs to task objects
     """
     all_tasks: Dict[str, Task] = get_tasks_snapshot()
-    return all_tasks
+    return {task_id: _redact_task_for_api(task) for task_id, task in all_tasks.items()}
 
 
 @router.get(

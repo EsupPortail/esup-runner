@@ -47,14 +47,7 @@ class VideoEncodingHandler(BaseTaskHandler):
         Returns:
             bool: True if parameters are valid
         """
-        required_params: List[str] = []
         self.last_invalid_parameters = self.get_invalid_parameters(parameters)
-
-        # Check required parameters
-        for param in required_params:
-            if param not in parameters:
-                self.logger.error(f"Missing required parameter: {param}")
-                return False
 
         # Check for unknown parameters
         if self.last_invalid_parameters:
@@ -129,7 +122,7 @@ class VideoEncodingHandler(BaseTaskHandler):
             # Determine which script to use
             script_path = self.scripts_dir / "encoding.py"
 
-            if not script_path:
+            if not script_path.exists():
                 return {"success": False, "error": f"No script available: {script_path}"}
 
             # Build script arguments

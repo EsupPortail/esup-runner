@@ -40,6 +40,8 @@ _CONFIG_ENV_KEYS = [
     "CORS_ALLOW_HEADERS",
     "NOTIFY_URL_ALLOWED_HOSTS",
     "NOTIFY_URL_ALLOW_PRIVATE_NETWORKS",
+    "RUNNER_URL_ALLOWED_HOSTS",
+    "RUNNER_URL_ALLOW_PRIVATE_NETWORKS",
     "OPENAPI_ALLOW_QUERY_TOKEN",
 ]
 
@@ -279,15 +281,32 @@ class Config:
         ] or ["*"]
 
         # Outbound notify_url callback hardening
-        # Optional allowlist of notify_url hosts (comma-separated). Empty means "allow any public host".
+        # Optional allowlist of notify_url hostnames (comma-separated).
+        # Empty means allow any host (subject to private-network policy below).
         self.NOTIFY_URL_ALLOWED_HOSTS = [
             h.strip().lower()
             for h in (os.getenv("NOTIFY_URL_ALLOWED_HOSTS", "") or "").split(",")
             if h.strip()
         ]
-        # If true, allow notify_url resolving to private/loopback networks.
+        # Allow notify_url resolving to private/loopback networks.
+        # Default False; set True only if you control internal callbacks.
         self.NOTIFY_URL_ALLOW_PRIVATE_NETWORKS: bool = _parse_bool(
             os.getenv("NOTIFY_URL_ALLOW_PRIVATE_NETWORKS"), default=False
+        )
+
+        # Runner registration hardening
+        # Optional allowlist of runner URL hostnames (comma-separated).
+        # Empty means allow any host (subject to private-network policy below).
+        self.RUNNER_URL_ALLOWED_HOSTS = [
+            h.strip().lower()
+            for h in (os.getenv("RUNNER_URL_ALLOWED_HOSTS", "") or "").split(",")
+            if h.strip()
+        ]
+        # Allow runner URLs resolving to private/loopback networks.
+        # Default True, as runners are often on the same network.
+        # Set False to require runner URLs resolving to public IPs.
+        self.RUNNER_URL_ALLOW_PRIVATE_NETWORKS: bool = _parse_bool(
+            os.getenv("RUNNER_URL_ALLOW_PRIVATE_NETWORKS"), default=True
         )
 
         # OpenAPI token handling

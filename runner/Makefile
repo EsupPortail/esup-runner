@@ -82,6 +82,7 @@ help:
 	@echo "  make create-service  -> install systemd service (sudo)"
 	@echo "  make ci  -> run local pre-PR checks (fmt + lint + test + coverage)"
 	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_RUNNER_EXTRA=transcription-cpu|transcription-gpu DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...'] -> build runner Docker image"
+	@echo "  make release-dry-run TAG=runner-vX.Y.Z  -> run release.yml locally with act (no push)"
 	@echo "  make docker-fix-perms  -> fix Docker volume permissions for esup-runner"
 	@echo "  make clean  -> remove .venv and caches"
 	@echo ""
@@ -99,7 +100,7 @@ help:
 	@echo "  make sync EXTRAS=transcription-gpu"
 	@echo "  make sync EXTRAS=transcription-cpu"
 	@echo "  make lock EXTRAS=dev"
-	@echo "  make docker-build DOCKER_IMAGE=ghcr.io/<github-org>/esup-runner-runner DOCKER_TAG=v0.9.0 ESUP_RUNNER_UID=$$(id -u) ESUP_RUNNER_GID=$$(id -g)"
+	@echo "  make docker-build DOCKER_IMAGE=ghcr.io/<github-org>/esup-runner-runner DOCKER_TAG=v1.0.0 ESUP_RUNNER_UID=$$(id -u) ESUP_RUNNER_GID=$$(id -g)"
 	@echo "  make docker-build DOCKER_RUNNER_EXTRA=transcription-cpu"
 	@echo "  make docker-fix-perms ESUP_RUNNER_UID=$$(id -u) ESUP_RUNNER_GID=$$(id -g)"
 
@@ -268,6 +269,36 @@ ci:
 	@$(MAKE) test
 	@$(MAKE) coverage
 
+release-dry-run:
+	@if [ -z "$(TAG)" ]; then \
+		printf '%s\n' "==> TAG is required." "    Example: make release-dry-run TAG=runner-v1.0.0"; \
+		exit 1; \
+	fi
+	@if ! printf '%s\n' "$(TAG)" | grep -Eq '^runner-v[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		printf '%s\n' "==> TAG must follow runner-vMAJOR.MINOR.PATCH." "    Example: make release-dry-run TAG=runner-v1.0.0"; \
+		exit 1; \
+	fi
+	@if ! command -v act >/dev/null 2>&1; then \
+		printf '%s\n' \
+			"==> act is not installed." \
+			"    On Debian, you can install it with:" \
+			"    curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash" \
+			"    See: https://nektosact.com/installation/"; \
+		exit 1; \
+	fi
+	@if ! command -v $(DOCKER) >/dev/null 2>&1; then \
+		printf '%s\n' "==> Docker is required by act but was not found ($(DOCKER))."; \
+		exit 1; \
+	fi
+	@echo "==> release dry-run via act ($(TAG))"
+	@set -e; \
+	repo_root=$$(git rev-parse --show-toplevel 2>/dev/null || pwd); \
+	event_file=$$(mktemp); \
+	trap 'rm -f "$$event_file"' EXIT; \
+	printf '{\n  "inputs": {\n    "release_tag": "%s"\n  }\n}\n' "$(TAG)" > "$$event_file"; \
+	cd "$$repo_root"; \
+	act workflow_dispatch -W .github/workflows/release.yml -e "$$event_file" -j docker
+
 docker-build:
 	@echo "==> docker build $(DOCKER_IMAGE):$(DOCKER_TAG)"
 	$(DOCKER) build $(if $(strip $(DOCKER_BUILD_NETWORK)),--network $(DOCKER_BUILD_NETWORK),) $(DOCKER_BUILD_OPTS) -f $(DOCKERFILE) \
@@ -289,6 +320,6 @@ docker-fix-perms:
 .PHONY: help sync lock lock-upgrade run init clean \
 		sync-dev sync-all sync-transcription-gpu sync-transcription-cpu \
 		lock-dev lock-transcription-gpu lock-transcription-cpu lock-all lock-upgrade-gpu-12 lock-upgrade-gpu-latest \
-		docker-build docker-fix-perms \
+		release-dry-run docker-build docker-fix-perms \
 		check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
 		test coverage fmt fmt-check lint ci check-gpu

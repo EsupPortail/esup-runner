@@ -656,6 +656,35 @@
     clearTaskSelection();
     window.addEventListener('pagehide', clearTaskSelection);
 
+    function escapeHtml(value) {
+      const raw = value === null || value === undefined ? '' : String(value);
+      return raw
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function sanitizeTaskStatus(status) {
+      const allowed = new Set(['pending', 'running', 'completed', 'failed', 'warning', 'timeout']);
+      const normalized = String(status || '').trim().toLowerCase();
+      return allowed.has(normalized) ? normalized : 'unknown';
+    }
+
+    function toSafeUrl(url) {
+      if (!url) return '#';
+      try {
+        const parsed = new URL(String(url), window.location.origin);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return '#';
+        }
+        return parsed.href;
+      } catch (_error) {
+        return '#';
+      }
+    }
+
     // Task detail modal
     document.querySelectorAll('.view-task-btn').forEach(btn => {
       btn.addEventListener('click', async function() {
@@ -671,43 +700,59 @@
         `;
 
         try {
-          const response = await fetch(`/tasks/api/${taskId}`);
+          const response = await fetch(`/tasks/api/${encodeURIComponent(taskId)}`);
           if (!response.ok) throw new Error('Failed to fetch task details');
 
           const task = await response.json();
-          const videoId = task.parameters?.video_id || '';
-          const videoSlug = task.parameters?.video_slug || '';
-          const videoTitle = task.parameters?.video_title || '';
+          const status = sanitizeTaskStatus(task.status);
+          const taskIdDisplay = escapeHtml(task.task_id);
+          const taskTypeDisplay = escapeHtml(task.task_type);
+          const etabName = escapeHtml(task.etab_name);
+          const appName = escapeHtml(task.app_name);
+          const appVersion = escapeHtml(task.app_version);
+          const affiliation = escapeHtml(task.affiliation);
+          const videoId = escapeHtml(task.parameters?.video_id || '');
+          const videoSlug = escapeHtml(task.parameters?.video_slug || '');
+          const videoTitle = escapeHtml(task.parameters?.video_title || '');
+          const sourceUrlText = escapeHtml(task.source_url || 'N/A');
+          const sourceUrlHref = escapeHtml(toSafeUrl(task.source_url));
+          const createdAt = escapeHtml(task.created_at);
+          const updatedAt = escapeHtml(task.updated_at);
+          const runnerId = escapeHtml(task.runner_id);
+          const errorText = escapeHtml(task.error);
+          const parametersJson = escapeHtml(JSON.stringify(task.parameters || {}, null, 2));
+          const scriptOutput = escapeHtml(task.script_output);
+          const resultJson = escapeHtml(JSON.stringify(task.result, null, 2));
 
           modalBody.innerHTML = `
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Task ID</h6>
-              <code>${task.task_id}</code>
+              <code>${taskIdDisplay}</code>
             </div>
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Status</h6>
-              <span class="badge badge-${task.status}">${task.status}</span>
+              <span class="badge badge-${status}">${escapeHtml(status)}</span>
             </div>
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Task Type</h6>
-              <span class="badge bg-secondary">${task.task_type}</span>
+              <span class="badge bg-secondary">${taskTypeDisplay}</span>
             </div>
             ${task.etab_name ? `
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Establishment</h6>
-              <span>${task.etab_name}</span>
+              <span>${etabName}</span>
             </div>
             ` : ''}
             ${task.app_name ? `
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Application</h6>
-              <span>${task.app_name} ${task.app_version ? 'v' + task.app_version : ''}</span>
+              <span>${appName} ${task.app_version ? 'v' + appVersion : ''}</span>
             </div>
             ` : ''}
             ${task.affiliation ? `
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Affiliation</h6>
-              <span>${task.affiliation}</span>
+              <span>${affiliation}</span>
             </div>
             ` : ''}
             ${videoId ? `
@@ -730,50 +775,51 @@
             ` : ''}
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Source URL</h6>
-              <a href="${task.source_url || '#'}" target="_blank" class="text-break">${task.source_url || 'N/A'}</a>
+              <a href="${sourceUrlHref}" target="_blank" rel="noopener noreferrer" class="text-break">${sourceUrlText}</a>
             </div>
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Created At</h6>
-              <span>${task.created_at}</span>
+              <span>${createdAt}</span>
             </div>
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Updated At</h6>
-              <span>${task.updated_at}</span>
+              <span>${updatedAt}</span>
             </div>
             ${task.runner_id ? `
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Assigned Runner</h6>
-              <code>${task.runner_id}</code>
+              <code>${runnerId}</code>
             </div>
             ` : ''}
             ${task.error ? `
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Error</h6>
-              <div class="alert alert-danger">${task.error}</div>
+              <div class="alert alert-danger">${errorText}</div>
             </div>
             ` : ''}
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Parameters</h6>
-              <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded"><code>${JSON.stringify(task.parameters || {}, null, 2)}</code></pre>
+              <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded"><code>${parametersJson}</code></pre>
             </div>
             ${task.script_output ? `
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Script Output</h6>
-              <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded" style="max-height: 300px; overflow-y: auto;"><code>${task.script_output}</code></pre>
+              <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded" style="max-height: 300px; overflow-y: auto;"><code>${scriptOutput}</code></pre>
             </div>
             ` : ''}
             ${task.result ? `
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Result</h6>
-              <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded"><code>${JSON.stringify(task.result, null, 2)}</code></pre>
+              <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded"><code>${resultJson}</code></pre>
             </div>
             ` : ''}
           `;
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
           modalBody.innerHTML = `
             <div class="alert alert-danger">
               <i class="bi bi-exclamation-triangle me-2" aria-hidden="true"></i>
-              Failed to load task details: ${error.message}
+              Failed to load task details: ${escapeHtml(message)}
             </div>
           `;
         }

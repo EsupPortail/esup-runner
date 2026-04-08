@@ -620,10 +620,33 @@ def test_get_task_details_api_404(client, clean_state):
 def test_get_task_details_api_ok(client, clean_state):
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
+    tasks["t1"].client_token = "client-secret"
 
     resp = client.get("/tasks/api/t1")
     assert resp.status_code == 200
     assert resp.json()["task_id"] == "t1"
+    assert "client_token" not in resp.json()
+
+
+def test_redact_task_for_api_legacy_copy_branch(task_module):
+    class LegacyTask:
+        def __init__(self):
+            self.client_token = "legacy-secret"
+            self.copy_deep_arg = None
+
+        def copy(self, deep: bool = False):
+            self.copy_deep_arg = deep
+            copied = LegacyTask()
+            copied.client_token = self.client_token
+            return copied
+
+    legacy = LegacyTask()
+
+    redacted = task_module._redact_task_for_api(legacy)  # type: ignore[arg-type]
+
+    assert legacy.copy_deep_arg is True
+    assert redacted is not legacy
+    assert redacted.client_token is None
 
 
 def test_delete_selected_tasks_deletes_and_reports(monkeypatch, client, task_module, clean_state):
@@ -968,19 +991,23 @@ def test_get_task_status_404(client, clean_state):
 def test_get_task_status_ok(client, clean_state):
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
+    tasks["t1"].client_token = "client-secret"
 
     resp = client.get("/task/status/t1")
     assert resp.status_code == 200
     assert resp.json()["task_id"] == "t1"
+    assert "client_token" not in resp.json()
 
 
 def test_list_tasks_returns_dict(client, clean_state):
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
+    tasks["t1"].client_token = "client-secret"
 
     resp = client.get("/task/list")
     assert resp.status_code == 200
     assert "t1" in resp.json()
+    assert "client_token" not in resp.json()["t1"]
 
 
 # -----------------------------

@@ -60,14 +60,7 @@ class TranscriptionHandler(BaseTaskHandler):
         - duration/model_type: legacy compatibility metadata from manager payloads
         - video_id/video_slug/video_title: optional tracking metadata
         """
-        required_params: List[str] = []
         self.last_invalid_parameters = self.get_invalid_parameters(parameters)
-
-        # Check required parameters
-        for param in required_params:
-            if param not in parameters:
-                self.logger.error(f"Missing required parameter: {param}")
-                return False
 
         # Check for unknown parameters
         if self.last_invalid_parameters:

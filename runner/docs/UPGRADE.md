@@ -73,8 +73,8 @@ git fetch --tags
 # Update the current branch (recommended in prod: ff-only)
 git pull --ff-only
 
-# Option: switch to a tagged version
-# git checkout vX.Y.Z
+# Option: switch to a tagged Runner version
+# git checkout runner-vX.Y.Z
 ```
 
 ---
@@ -220,7 +220,7 @@ sudo systemctl stop esup-runner-runner
 ```bash
 cd /opt/esup-runner
 git fetch --tags
-git checkout vX.Y.Z
+git checkout runner-vX.Y.Z
 ```
 
 3) Resync dependencies and restart:

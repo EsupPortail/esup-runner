@@ -80,8 +80,9 @@ python3 scripts/manage_version.py show
 4. Tag and push:
 
    ```bash
-   git tag -a vX.Y.Z -m "Release X.Y.Z"
-   git push && git push --tags
+   git tag -a runner-vX.Y.Z -m "Runner release X.Y.Z"
+   git push origin main
+   git push origin runner-vX.Y.Z
    ```
 
 ## Version checks

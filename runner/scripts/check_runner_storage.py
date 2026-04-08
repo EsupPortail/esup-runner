@@ -273,7 +273,16 @@ def _evaluate_rule(rule: DirectoryRule) -> DirectoryStatus:
     else:
         enough_free = free_gb >= rule.min_free_gb
 
-    detail = "OK" if enough_free else "Insufficient free space for recommended threshold."
+    if enough_free:
+        if rule.env_key == "STORAGE_DIR":
+            detail = (
+                "Storage that can be customized to your needs "
+                "(this space stores the generated video files)"
+            )
+        else:
+            detail = "OK"
+    else:
+        detail = "Insufficient free space for recommended threshold."
     return DirectoryStatus(
         rule=rule,
         exists=True,

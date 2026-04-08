@@ -1,0 +1,160 @@
+name: Release
+
+# Release workflow: publish Docker images on component tags.
+# A manual dispatch runs the same logic in dry-run mode.
+on:
+  push:
+    tags:
+      - "manager-v*.*.*"
+      - "runner-v*.*.*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Component tag to validate in dry-run mode (for example: runner-v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+
+jobs:
+  prepare-release:
+    name: prepare release
+    runs-on: ubuntu-latest
+    # Expose parsed tag information so the publish job can stay generic.
+    outputs:
+      project: ${{ steps.parse.outputs.project }}
+      image_name: ${{ steps.parse.outputs.image_name }}
+      version: ${{ steps.parse.outputs.version }}
+      version_tag: ${{ steps.parse.outputs.version_tag }}
+      major_minor: ${{ steps.parse.outputs.major_minor }}
+      major: ${{ steps.parse.outputs.major }}
+      dry_run: ${{ steps.parse.outputs.dry_run }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Parse release tag
+        id: parse
+        env:
+          TAG_NAME: ${{ env.RELEASE_TAG }}
+        run: |
+          # Tags are component-specific so manager and runner can ship patch
+          # releases independently.
+          case "${TAG_NAME}" in
+            manager-v*)
+              project="manager"
+              image_name="esup-runner-manager"
+              version="${TAG_NAME#manager-v}"
+              ;;
+            runner-v*)
+              project="runner"
+              image_name="esup-runner-runner"
+              version="${TAG_NAME#runner-v}"
+              ;;
+            *)
+              echo "::error::Release tags must follow manager-vMAJOR.MINOR.PATCH or runner-vMAJOR.MINOR.PATCH"
+              exit 1
+              ;;
+          esac
+
+          if ! printf '%s\n' "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Release tags must follow manager-vMAJOR.MINOR.PATCH or runner-vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+
+          major="${version%%.*}"
+          rest="${version#*.}"
+          minor="${rest%%.*}"
+
+          {
+            echo "project=${project}"
+            echo "image_name=${image_name}"
+            echo "version=${version}"
+            echo "version_tag=v${version}"
+            echo "major_minor=${major}.${minor}"
+            echo "major=${major}"
+            echo "dry_run=${DRY_RUN}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Ensure tag matches project version
+        env:
+          PROJECT: ${{ steps.parse.outputs.project }}
+          EXPECTED_VERSION: ${{ steps.parse.outputs.version }}
+        run: |
+          # Refuse to publish if the Git tag does not match the component version file.
+          actual_version="$(tr -d '[:space:]' < "${PROJECT}/VERSION")"
+
+          if [ "${actual_version}" != "${EXPECTED_VERSION}" ]; then
+            echo "::error file=${PROJECT}/VERSION::Expected ${EXPECTED_VERSION}, found ${actual_version}"
+            exit 1
+          fi
+
+  docker:
+    name: docker release (${{ needs.prepare-release.outputs.project }})
+    runs-on: ubuntu-latest
+    needs: prepare-release
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # Keep local/manual dry-runs single-arch to make test runs lighter.
+      DOCKER_PLATFORMS: ${{ needs.prepare-release.outputs.dry_run == 'true' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Dry-run mode
+        if: needs.prepare-release.outputs.dry_run == 'true'
+        run: |
+          echo "Dry-run mode enabled: registry login and image push are skipped."
+
+      - name: Log in to GitHub Container Registry
+        if: needs.prepare-release.outputs.dry_run != 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ needs.prepare-release.outputs.image_name }}
+          tags: |
+            # Publish both the full version and the rolling major/minor aliases.
+            type=raw,value=${{ needs.prepare-release.outputs.version }}
+            type=raw,value=${{ needs.prepare-release.outputs.version_tag }}
+            type=raw,value=${{ needs.prepare-release.outputs.major_minor }}
+            type=raw,value=${{ needs.prepare-release.outputs.major }}
+            # "latest" tracks the most recently released tag for this component.
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=${{ needs.prepare-release.outputs.image_name }}
+            org.opencontainers.image.description=ESUP Runner ${{ needs.prepare-release.outputs.project }} Docker image
+
+      - name: Build and publish Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./${{ needs.prepare-release.outputs.project }}
+          file: ./${{ needs.prepare-release.outputs.project }}/Dockerfile
+          platforms: ${{ env.DOCKER_PLATFORMS }}
+          push: ${{ needs.prepare-release.outputs.dry_run != 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-${{ needs.prepare-release.outputs.project }}
+          cache-to: type=gha,mode=max,scope=release-${{ needs.prepare-release.outputs.project }}

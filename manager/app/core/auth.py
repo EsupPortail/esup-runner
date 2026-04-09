@@ -110,16 +110,13 @@ async def verify_openapi_token(
 
     # Check if token is in authorized tokens (constant-time comparison)
     authorized = False
-    for token_name, token_value in config.AUTHORIZED_TOKENS.items():
+    for token_value in config.AUTHORIZED_TOKENS.values():
         if hmac.compare_digest(token, token_value):
             authorized = True
             break
 
     if not authorized:
-        logger.warning(
-            "Unauthorized OpenAPI access attempt with token: %s",
-            _mask_token(token),
-        )
+        logger.warning("Unauthorized OpenAPI access attempt")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token for OpenAPI access",
@@ -184,13 +181,13 @@ async def verify_token(
 
     # Check if token is in authorized tokens (constant-time comparison)
     authorized = False
-    for token_name, token_value in config.AUTHORIZED_TOKENS.items():
+    for token_value in config.AUTHORIZED_TOKENS.values():
         if hmac.compare_digest(token, token_value):
             authorized = True
             break
 
     if not authorized:
-        logger.warning("Unauthorized token attempt: %s", _mask_token(token))
+        logger.warning("Unauthorized token attempt")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

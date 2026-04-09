@@ -108,7 +108,7 @@ class UvicornProcessManager:
     do not affect others. This provides high availability and fault tolerance.
     """
 
-    def __init__(self, base_port: int = 8000, instances: int = 1):
+    def __init__(self, base_port: int = 8082, instances: int = 1):
         """
         Initialize process manager.
 

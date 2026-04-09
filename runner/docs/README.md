@@ -91,7 +91,7 @@ make ci
 - Base ports and URLs are derived from `RUNNER_PROTOCOL`, `RUNNER_HOST`, and `RUNNER_BASE_PORT`; the launcher offsets ports per instance.
 - The `RUNNER_TOKEN` secures calls between the runner and the Manager; set it to a non-default value.
 
-## Authentication and version compatibility (Runner  Manager)
+## Authentication and version compatibility (Runner / Manager)
 
 When the Runner calls the Manager (registration / heartbeat), it authenticates and sends its version:
 
@@ -99,7 +99,7 @@ When the Runner calls the Manager (registration / heartbeat), it authenticates a
 - `X-Runner-Version: <runner_version>`
 
 The Manager enforces **version compatibility at MAJOR + MINOR level**.
-In other words, a runner `0.9.x` can register only to a manager `0.9.y`.
+In other words, a runner `1.0.x` can register only to a manager `1.0.y`.
 
 ## Supported task types
 The runner ships with three handlers (see [app/task_handlers](../app/task_handlers)):

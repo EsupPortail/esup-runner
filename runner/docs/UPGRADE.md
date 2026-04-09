@@ -74,7 +74,7 @@ git fetch --tags
 git pull --ff-only
 
 # Option: switch to a tagged Runner version
-# git checkout runner-vX.Y.Z
+# git checkout esup-runner-runner-vX.Y.Z
 ```
 
 ---
@@ -220,7 +220,7 @@ sudo systemctl stop esup-runner-runner
 ```bash
 cd /opt/esup-runner
 git fetch --tags
-git checkout runner-vX.Y.Z
+git checkout esup-runner-runner-vX.Y.Z
 ```
 
 3) Resync dependencies and restart:

@@ -22,7 +22,7 @@ from pathlib import Path
 
 def get_project_root() -> Path:
     """Get the project root directory."""
-    return Path(__file__).parent.parent
+    return Path(__file__).resolve().parent.parent
 
 
 def get_current_version() -> str:
@@ -102,7 +102,7 @@ def update_pyproject_version(new_version: str) -> None:
     """Update the pyproject.toml [project].version field with the new version."""
     pyproject_file = get_project_root() / "pyproject.toml"
     if not pyproject_file.exists():
-        return
+        raise FileNotFoundError(f"Pyproject file not found: {pyproject_file}")
 
     lines = pyproject_file.read_text().splitlines(keepends=True)
     in_project_section = False
@@ -161,7 +161,7 @@ def set_version(new_version: str) -> None:
 
     print(f"\n✓ Version updated successfully to {new_version}")
     print("\nDon't forget to:")
-    print("  1. Update your release notes/changelog (if you keep one)")
+    print("  1. Update CHANGELOG.md with release notes")
     print("  2. Commit the changes: git add app/__version__.py VERSION pyproject.toml")
     print(
         f"  3. Create a git tag: git tag -a runner-v{new_version} -m 'Runner release {new_version}'"
@@ -190,7 +190,7 @@ def bump_version_command(bump_type: str) -> None:
 
     print(f"\n✓ Version bumped successfully to {new_version}")
     print("\nDon't forget to:")
-    print("  1. Update your release notes/changelog (if you keep one)")
+    print("  1. Update CHANGELOG.md with release notes")
     print("  2. Commit the changes: git add app/__version__.py VERSION pyproject.toml")
     print(
         f"  3. Create a git tag: git tag -a runner-v{new_version} -m 'Runner release {new_version}'"

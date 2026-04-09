@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Removed token content from unauthorized authentication logs in `manager/app/core/auth.py` to avoid clear-text exposure of sensitive API/Bearer token values.
+- Kept existing authentication behavior (constant-time token comparison and HTTP 401 responses) while hardening log hygiene.
+
 ## [1.0.0] - 2026-04-09
 
 ### Added

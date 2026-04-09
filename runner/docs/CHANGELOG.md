@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Regenerated `runner/uv.lock` and updated resolved dependencies, including `transformers` to `5.5.1` and compatible transitive packages.
 - Hardened task result filesystem access in `runner/app/api/routes/task.py` by validating `task_id` and result relative paths before file resolution.
 - Added strict path boundary checks for manifest/result retrieval and deletion flows to prevent traversal/symlink escape patterns from user-controlled inputs.
+- Refactored task result path resolution to traverse filesystem entries from trusted base directories (instead of composing paths from user input), improving robustness against `Uncontrolled data used in path expression` CodeQL alerts.
 - Extended storage route security coverage with targeted regression tests in `runner/tests/test_storage_routes_coverage.py`.
 
 ## [1.0.0] - 2026-04-09

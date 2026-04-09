@@ -25,14 +25,14 @@ WHISPER_LANGUAGE=auto
 
 ## Core runner
 - `DEBUG` (bool, default `False`): Enables verbose logging and debug flags passed to scripts.
-- `RUNNER_PROTOCOL` (default `http`), `RUNNER_HOST` (default `localhost`), `RUNNER_BASE_PORT` (default `8081`), `RUNNER_BASE_NAME` (default `default-runner`): Base URL components. The launcher offsets the port per instance.
+- `RUNNER_PROTOCOL` (default `http`), `RUNNER_HOST` (default `localhost`), `RUNNER_BASE_PORT` (default `8082`), `RUNNER_BASE_NAME` (default `default-runner`): Base URL components. The launcher offsets the port per instance.
 - `RUNNER_INSTANCES` (int, default `1`): Number of instances when using legacy task-type syntax.
 - `RUNNER_TASK_TYPES` (CSV or grouped syntax): Task types handled. Legacy: `encoding,studio,transcription`. Grouped: `[2x(encoding,studio,transcription),1x(encoding,studio)]` (preferred for per-instance mapping).
 - `RUNNER_MONITORING` (bool, default `False`): If true, the launcher monitors and restarts instances.
 
 ## Networking and auth
 - `RUNNER_TOKEN` (required): Token used to authenticate runner <-> manager calls in both directions.
-- `MANAGER_URL` (default `http://localhost:8000`): Manager base URL for registration and callbacks.
+- `MANAGER_URL` (default `http://localhost:8081`): Manager base URL for registration and callbacks.
 
 ## Storage and cleanup
 - `STORAGE_DIR` (default `/tmp/esup-runner/storage`): Root workspace for task data.

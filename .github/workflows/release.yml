@@ -106,6 +106,9 @@ jobs:
     env:
       # Keep local/manual dry-runs single-arch to make test runs lighter.
       DOCKER_PLATFORMS: ${{ needs.prepare-release.outputs.dry_run == 'true' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+      # Map optional secrets into env so they can be used in `if` conditions.
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
 
     steps:
       - name: Checkout
@@ -123,7 +126,7 @@ jobs:
           echo "Dry-run mode enabled: registry login and image push are skipped."
 
       - name: Validate optional GHCR PAT configuration
-        if: needs.prepare-release.outputs.dry_run != 'true' && secrets.GHCR_TOKEN != '' && secrets.GHCR_USERNAME == ''
+        if: needs.prepare-release.outputs.dry_run != 'true' && env.GHCR_TOKEN != '' && env.GHCR_USERNAME == ''
         run: |
           echo "::error::GHCR_TOKEN is set but GHCR_USERNAME is missing."
           echo "::error::Set GHCR_USERNAME to the account that owns GHCR_TOKEN."
@@ -136,8 +139,8 @@ jobs:
           registry: ${{ env.REGISTRY }}
           # Optional fallback for orgs/packages where GITHUB_TOKEN cannot push.
           # If GHCR_TOKEN is configured, GHCR_USERNAME must match the token owner.
-          username: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_USERNAME || github.actor }}
-          password: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+          username: ${{ env.GHCR_TOKEN != '' && env.GHCR_USERNAME || github.actor }}
+          password: ${{ env.GHCR_TOKEN != '' && env.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Extract Docker metadata
         id: meta

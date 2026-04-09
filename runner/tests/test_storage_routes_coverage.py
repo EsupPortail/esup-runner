@@ -267,6 +267,52 @@ def test_storage_manager_cleanup_old_files_misc_paths(monkeypatch, tmp_path):
     assert storage.cleanup_old_files(1) == 0
 
 
+def test_task_result_path_validation_error_branches():
+    with pytest.raises(HTTPException) as empty_path_error:
+        task_module._validate_result_relative_path("   ")
+    assert empty_path_error.value.status_code == 404
+
+    with pytest.raises(HTTPException) as absolute_path_error:
+        task_module._validate_result_relative_path("/etc/passwd")
+    assert absolute_path_error.value.status_code == 404
+
+    with pytest.raises(HTTPException) as invalid_part_error:
+        task_module._validate_result_relative_path("bad|name.txt")
+    assert invalid_part_error.value.status_code == 404
+
+    with pytest.raises(HTTPException) as no_part_error:
+        task_module._validate_result_relative_path(".")
+    assert no_part_error.value.status_code == 404
+
+
+def test_task_root_resolution_rejects_symlink_escape(tmp_path):
+    task_module.storage_manager.base_path = str(tmp_path)
+    outside_dir = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside_dir.mkdir()
+    (tmp_path / "task-link").symlink_to(outside_dir, target_is_directory=True)
+
+    with pytest.raises(HTTPException) as symlink_error:
+        task_module._resolve_task_root("task-link")
+    assert symlink_error.value.status_code == 404
+
+
+def test_task_manifest_resolution_rejects_symlink_manifest(tmp_path):
+    task_module.storage_manager.base_path = str(tmp_path)
+    task_dir = tmp_path / "task-manifest"
+    task_dir.mkdir(parents=True)
+
+    outside_dir = tmp_path / "outside-manifest"
+    outside_dir.mkdir()
+    outside_manifest = outside_dir / "manifest.json"
+    outside_manifest.write_text("{}", encoding="utf-8")
+
+    (task_dir / "manifest.json").symlink_to(outside_manifest)
+
+    with pytest.raises(HTTPException) as manifest_error:
+        task_module._resolve_task_manifest_path("task-manifest")
+    assert manifest_error.value.status_code == 404
+
+
 @pytest.mark.asyncio
 async def test_task_route_additional_branches(monkeypatch, tmp_path):
     task_module.storage_manager.base_path = str(tmp_path)
@@ -343,3 +389,28 @@ async def test_task_route_additional_branches(monkeypatch, tmp_path):
     result = await task_module.delete_task_result("legacy-task", current_manager="manager-token")
     assert result == {"status": "deleted"}
     assert not legacy_manifest.exists()
+
+
+@pytest.mark.asyncio
+async def test_task_result_file_rejects_symlink_escape(tmp_path):
+    task_module.storage_manager.base_path = str(tmp_path)
+
+    task_id = "task-symlink"
+    output_dir = tmp_path / task_id / "output"
+    output_dir.mkdir(parents=True)
+
+    outside_dir = tmp_path / "outside-files"
+    outside_dir.mkdir()
+    secret_file = outside_dir / "secret.txt"
+    secret_file.write_text("secret", encoding="utf-8")
+
+    (output_dir / "safe").symlink_to(outside_dir, target_is_directory=True)
+
+    with pytest.raises(HTTPException) as symlink_file_error:
+        await task_module.get_task_result_file(
+            task_id,
+            "safe/secret.txt",
+            BackgroundTasks(),
+            current_manager="manager-token",
+        )
+    assert symlink_file_error.value.status_code == 404

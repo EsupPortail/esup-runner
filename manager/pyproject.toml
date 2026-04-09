@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "esup-runner-manager"
-version = "0.9.0"
+version = "1.0.0"
 description = "ESUP Runner Manager - Centralized manager for distributed runners in the ESUP system"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,7 +17,7 @@ authors = [
 ]
 keywords = ["task", "manager", "orchestrator", "distributed", "async", "fastapi", "esup"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",

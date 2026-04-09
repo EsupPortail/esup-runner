@@ -250,3 +250,7 @@ def test_mask_token_handles_empty_and_short_values():
 def test_mask_token_obscures_small_tokens():
     assert _mask_token("abcd") == "a***d"
     assert _mask_token("abcdefgh") == "a***h"
+
+
+def test_mask_token_obscures_long_tokens():
+    assert _mask_token("abcdefghijklmnop") == "abcd...mnop"

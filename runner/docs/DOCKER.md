@@ -171,7 +171,7 @@ Custom image/tag example:
 ```bash
 make docker-build \
   DOCKER_IMAGE=ghcr.io/<github-org>/esup-runner-runner \
-  DOCKER_TAG=v0.9.0 \
+  DOCKER_TAG=v1.0.0 \
   ESUP_RUNNER_UID=$(id -u) \
   ESUP_RUNNER_GID=$(id -g)
 ```

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Upgraded `transformers` to a non-vulnerable range for transcription extras: `>=5.0.0rc3,<6.0.0` (for both `transcription-cpu` and `transcription-gpu`).
+- Resolved Dependabot alert related to arbitrary code execution risk in `Trainer._load_rng_state()` when loading malicious checkpoint RNG files (e.g. `rng_state.pth`) in affected versions.
+- Regenerated `runner/uv.lock` and updated resolved dependencies, including `transformers` to `5.5.1` and compatible transitive packages.
+
 ## [1.0.0] - 2026-04-09
 
 ### Added

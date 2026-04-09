@@ -82,7 +82,7 @@ help:
 	@echo "  make create-service  -> install systemd service (sudo)"
 	@echo "  make ci  -> run local pre-PR checks (fmt + lint + test + coverage)"
 	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_RUNNER_EXTRA=transcription-cpu|transcription-gpu DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...'] -> build runner Docker image"
-	@echo "  make release-dry-run TAG=esup-runner-runner-vX.Y.Z  -> run release.yml locally with act (no push)"
+	@echo "  make release-dry-run TAG=runner-vX.Y.Z  -> run release.yml locally with act (no push)"
 	@echo "  make docker-fix-perms  -> fix Docker volume permissions for esup-runner"
 	@echo "  make clean  -> remove .venv and caches"
 	@echo ""
@@ -271,11 +271,11 @@ ci:
 
 release-dry-run:
 	@if [ -z "$(TAG)" ]; then \
-		printf '%s\n' "==> TAG is required." "    Example: make release-dry-run TAG=esup-runner-runner-v1.0.0"; \
+		printf '%s\n' "==> TAG is required." "    Example: make release-dry-run TAG=runner-v1.0.0"; \
 		exit 1; \
 	fi
-	@if ! printf '%s\n' "$(TAG)" | grep -Eq '^esup-runner-runner-v[0-9]+\.[0-9]+\.[0-9]+$$'; then \
-		printf '%s\n' "==> TAG must follow esup-runner-runner-vMAJOR.MINOR.PATCH." "    Example: make release-dry-run TAG=esup-runner-runner-v1.0.0"; \
+	@if ! printf '%s\n' "$(TAG)" | grep -Eq '^runner-v[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		printf '%s\n' "==> TAG must follow runner-vMAJOR.MINOR.PATCH." "    Example: make release-dry-run TAG=runner-v1.0.0"; \
 		exit 1; \
 	fi
 	@if ! command -v act >/dev/null 2>&1; then \

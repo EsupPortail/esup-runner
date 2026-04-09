@@ -19,7 +19,7 @@ from typing import Any, Dict, Optional
 _RUNNER_STATE: Dict[str, Any] = {
     "runner_id": None,  # Will be set per instance
     "runner_instance_id": os.getenv("RUNNER_INSTANCE_ID", 0),
-    "runner_instance_url": os.getenv("RUNNER_INSTANCE_URL", "http://localhost:8000"),
+    "runner_instance_url": os.getenv("RUNNER_INSTANCE_URL", "http://localhost:8082"),
     "is_registered": False,
     "is_available": True,
     "registration_attempts": 0,
@@ -149,7 +149,7 @@ def set_manager_url(url: str) -> None:
     Set the manager URL that this runner is registered with.
 
     Args:
-        url: Manager base URL (e.g., "http://manager.example.com:8000")
+        url: Manager base URL (e.g., "http://manager.example.com:8081")
     """
     _RUNNER_STATE["manager_url"] = url
 

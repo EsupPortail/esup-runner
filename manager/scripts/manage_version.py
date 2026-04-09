@@ -23,7 +23,7 @@ from pathlib import Path
 
 def get_project_root() -> Path:
     """Get the project root directory."""
-    return Path(__file__).parent.parent
+    return Path(__file__).resolve().parent.parent
 
 
 def get_current_version() -> str:
@@ -99,6 +99,38 @@ def update_version_txt(new_version: str) -> None:
     print(f"✓ Updated {version_txt}")
 
 
+def update_pyproject_version(new_version: str) -> None:
+    """Update the pyproject.toml [project].version field with the new version."""
+    pyproject_file = get_project_root() / "pyproject.toml"
+    if not pyproject_file.exists():
+        raise FileNotFoundError(f"Pyproject file not found: {pyproject_file}")
+
+    lines = pyproject_file.read_text().splitlines(keepends=True)
+    in_project_section = False
+    updated = False
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if re.match(r"^\[project\]\s*$", stripped):
+            in_project_section = True
+            continue
+        if in_project_section and re.match(r"^\[.+\]\s*$", stripped):
+            in_project_section = False
+        if in_project_section and re.match(r"^version\s*=", stripped):
+            # Keep indentation and newline style
+            prefix = line.split("version", 1)[0]
+            newline = "\n" if line.endswith("\n") else ""
+            lines[i] = f'{prefix}version = "{new_version}"{newline}'
+            updated = True
+            break
+
+    if not updated:
+        raise ValueError("Unable to find [project].version in pyproject.toml")
+
+    pyproject_file.write_text("".join(lines))
+    print(f"✓ Updated {pyproject_file}")
+
+
 def show_version() -> None:
     """Display the current version."""
     current = get_current_version()
@@ -126,11 +158,12 @@ def set_version(new_version: str) -> None:
 
     update_version_file(new_version)
     update_version_txt(new_version)
+    update_pyproject_version(new_version)
 
     print(f"\n✓ Version updated successfully to {new_version}")
     print("\nDon't forget to:")
     print("  1. Update CHANGELOG.md with release notes")
-    print("  2. Commit the changes: git add app/__version__.py VERSION")
+    print("  2. Commit the changes: git add app/__version__.py VERSION pyproject.toml")
     print(
         f"  3. Create a git tag: git tag -a manager-v{new_version} -m 'Manager release {new_version}'"
     )
@@ -154,11 +187,12 @@ def bump_version_command(bump_type: str) -> None:
 
     update_version_file(new_version)
     update_version_txt(new_version)
+    update_pyproject_version(new_version)
 
     print(f"\n✓ Version bumped successfully to {new_version}")
     print("\nDon't forget to:")
     print("  1. Update CHANGELOG.md with release notes")
-    print("  2. Commit the changes: git add app/__version__.py VERSION")
+    print("  2. Commit the changes: git add app/__version__.py VERSION pyproject.toml")
     print(
         f"  3. Create a git tag: git tag -a manager-v{new_version} -m 'Manager release {new_version}'"
     )

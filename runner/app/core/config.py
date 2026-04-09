@@ -158,7 +158,7 @@ class Config:
         self.RUNNER_PROTOCOL: str = os.getenv("RUNNER_PROTOCOL", "http")
         self.RUNNER_HOST: str = os.getenv("RUNNER_HOST", "localhost")
         self.RUNNER_BASE_NAME: str = os.getenv("RUNNER_BASE_NAME", "default-runner")
-        self.RUNNER_BASE_PORT: int = int(os.getenv("RUNNER_BASE_PORT", 8081))
+        self.RUNNER_BASE_PORT: int = int(os.getenv("RUNNER_BASE_PORT", 8082))
 
         runner_instances_env = os.getenv("RUNNER_INSTANCES")
         runner_task_types_spec = os.getenv("RUNNER_TASK_TYPES", "encoding,studio")
@@ -224,7 +224,7 @@ class Config:
         self.RUNNER_TOKEN: str = os.getenv("RUNNER_TOKEN", "default-runner-token")
 
         # Manager URL configuration
-        self.MANAGER_URL: str = os.getenv("MANAGER_URL", "http://localhost:8000")
+        self.MANAGER_URL: str = os.getenv("MANAGER_URL", "http://localhost:8081")
 
         # SMTP configuration for failure notifications
         self.SMTP_SERVER: str = os.getenv("SMTP_SERVER", "")

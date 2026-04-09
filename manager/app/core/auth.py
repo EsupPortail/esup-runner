@@ -31,7 +31,7 @@ _SEMVER_MAJOR_MINOR_RE = re.compile(r"^v?(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9
 def _parse_major_minor(version: str) -> tuple[int, int]:
     """Extract (major, minor) from a semver-ish string.
 
-    Accepts values like `0.9.0`, `0.9`, `v0.9.1`, `0.9.0-alpha+1`.
+    Accepts values like `1.0.0`, `1.0`, `v1.0.1`, `1.0.0-alpha+1`.
     """
 
     candidate = (version or "").strip()
@@ -234,7 +234,7 @@ async def verify_runner_version(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "Invalid X-Runner-Version format. Expected something like 'MAJOR.MINOR.PATCH' (e.g. 0.9.0)."
+                "Invalid X-Runner-Version format. Expected something like 'MAJOR.MINOR.PATCH' (e.g. 1.0.0)."
             ),
         )
 

@@ -46,7 +46,7 @@ def _validate_task_id(task_id: str) -> str:
     return safe_task_id
 
 
-def _validate_result_relative_path(file_path: str) -> Path:
+def _validate_result_relative_path(file_path: str) -> tuple[str, ...]:
     """Validate a relative file path under a task output directory."""
     raw_path = (file_path or "").strip().replace("\\", "/")
     if not raw_path:
@@ -67,7 +67,49 @@ def _validate_result_relative_path(file_path: str) -> Path:
     if not safe_parts:
         raise HTTPException(status_code=404, detail="File not found")
 
-    return Path(*safe_parts)
+    return tuple(safe_parts)
+
+
+def _resolve_storage_base_path() -> Path:
+    """Resolve storage base path."""
+    return Path(storage_manager.base_path).resolve()
+
+
+def _find_direct_child_entry(directory: Path, entry_name: str) -> Path | None:
+    """Find a direct child entry by name without composing a user-controlled path."""
+    try:
+        for candidate in directory.iterdir():
+            if candidate.name == entry_name:
+                return candidate
+    except OSError:
+        return None
+    return None
+
+
+def _resolve_within_base(candidate: Path, base_path: Path) -> Path:
+    """Resolve a candidate path and enforce that it stays under base_path."""
+    resolved = candidate.resolve(strict=False)
+    if resolved != base_path and base_path not in resolved.parents:
+        raise HTTPException(status_code=404, detail="File not found")
+    return resolved
+
+
+def _resolve_output_file_path(output_dir: Path, relative_parts: tuple[str, ...]) -> Path:
+    """Resolve a relative output path by traversing directory entries safely."""
+    current_path = output_dir
+
+    for index, part in enumerate(relative_parts):
+        next_candidate = _find_direct_child_entry(current_path, part)
+        if next_candidate is None:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        next_path = _resolve_within_base(next_candidate, output_dir)
+        if index < len(relative_parts) - 1 and not next_path.is_dir():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        current_path = next_path
+
+    return current_path
 
 
 def _derive_failure_status(error_message: str) -> str:
@@ -83,7 +125,11 @@ def _derive_failure_status(error_message: str) -> str:
 def _resolve_task_manifest_path(task_id: str) -> Path:
     """Resolve canonical manifest path (<base>/<task_id>/manifest.json)."""
     task_root = _resolve_task_root(task_id)
-    manifest_path = (task_root / "manifest.json").resolve(strict=False)
+    manifest_candidate = _find_direct_child_entry(task_root, "manifest.json")
+    if manifest_candidate is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    manifest_path = _resolve_within_base(manifest_candidate, task_root)
     if manifest_path.parent != task_root:
         raise HTTPException(status_code=404, detail="File not found")
     if not manifest_path.is_file():
@@ -94,13 +140,58 @@ def _resolve_task_manifest_path(task_id: str) -> Path:
 def _resolve_task_root(task_id: str) -> Path:
     """Resolve task root directory and reject path traversal."""
     safe_task_id = _validate_task_id(task_id)
-    base_path = Path(storage_manager.base_path).resolve()
-    task_root = (base_path / safe_task_id).resolve(strict=False)
+    base_path = _resolve_storage_base_path()
+    task_candidate = _find_direct_child_entry(base_path, safe_task_id)
+    if task_candidate is None:
+        raise HTTPException(status_code=404, detail="File not found")
 
-    if task_root != base_path and base_path not in task_root.parents:
+    task_root = _resolve_within_base(task_candidate, base_path)
+    if not task_root.is_dir():
         raise HTTPException(status_code=404, detail="File not found")
 
     return task_root
+
+
+def _resolve_task_root_if_exists(task_id: str) -> Path | None:
+    """Resolve task root for delete flows (None when missing/invalid)."""
+    safe_task_id = _validate_task_id(task_id)
+    base_path = _resolve_storage_base_path()
+    task_candidate = _find_direct_child_entry(base_path, safe_task_id)
+    if task_candidate is None:
+        return None
+
+    try:
+        task_root = _resolve_within_base(task_candidate, base_path)
+    except HTTPException:
+        return None
+
+    if not task_root.is_dir():
+        return None
+
+    return task_root
+
+
+def _resolve_legacy_manifest_if_exists(task_id: str) -> Path | None:
+    """Resolve legacy flat manifest path (<base>/<task_id>.json) when present."""
+    safe_task_id = _validate_task_id(task_id)
+    base_path = _resolve_storage_base_path()
+    legacy_name = f"{safe_task_id}.json"
+
+    candidate = _find_direct_child_entry(base_path, legacy_name)
+    if candidate is None:
+        return None
+
+    try:
+        resolved = _resolve_within_base(candidate, base_path)
+    except HTTPException:
+        return None
+
+    if resolved.parent != base_path:
+        return None
+    if not resolved.is_file():
+        return None
+
+    return resolved
 
 
 async def process_task(task_id: str, task_request: TaskRequest):
@@ -330,18 +421,17 @@ async def get_task_result_file(
     """
     logger.info(f"Retrieving task result file: {task_id}/{filename}")
 
-    output_dir = (_resolve_task_root(task_id) / "output").resolve(strict=False)
-    if not output_dir.exists() or not output_dir.is_dir():
+    task_root = _resolve_task_root(task_id)
+    output_candidate = _find_direct_child_entry(task_root, "output")
+    if output_candidate is None:
         raise HTTPException(status_code=404, detail="File not found")
 
-    safe_relative_path = _validate_result_relative_path(filename)
-    file_path = (output_dir / safe_relative_path).resolve(strict=False)
-    try:
-        if not file_path.is_relative_to(output_dir):
-            raise HTTPException(status_code=404, detail="File not found")
-    except AttributeError:  # pragma: no cover - only for Python<3.9
-        if output_dir not in file_path.parents:
-            raise HTTPException(status_code=404, detail="File not found")
+    output_dir = _resolve_within_base(output_candidate, task_root)
+    if not output_dir.is_dir():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    safe_relative_parts = _validate_result_relative_path(filename)
+    file_path = _resolve_output_file_path(output_dir, safe_relative_parts)
 
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
@@ -371,24 +461,13 @@ async def delete_task_result(task_id: str, current_manager: str = Depends(get_cu
     Returns:
         dict: Deletion status confirmation
     """
-    safe_task_id = _validate_task_id(task_id)
-    task_root = _resolve_task_root(safe_task_id)
-    if task_root.exists():
+    task_root = _resolve_task_root_if_exists(task_id)
+    if task_root is not None:
         shutil.rmtree(task_root)
 
     # Backward compatibility cleanup for legacy flat manifest files.
-    base_path = Path(storage_manager.base_path).resolve()
-    legacy_manifest: Path | None = None
-    try:
-        candidate_legacy_manifest = Path(storage_manager.get_path(safe_task_id)).resolve(
-            strict=False
-        )
-        if candidate_legacy_manifest.parent == base_path:
-            legacy_manifest = candidate_legacy_manifest
-    except ValueError:
-        pass
-
-    if legacy_manifest and legacy_manifest.exists() and legacy_manifest.is_file():
+    legacy_manifest = _resolve_legacy_manifest_if_exists(task_id)
+    if legacy_manifest is not None:
         legacy_manifest.unlink()
 
     # Mark runner as available

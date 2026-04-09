@@ -34,7 +34,7 @@ _read_env_var() {
 }
 
 MANAGER_PORT="${MANAGER_PORT:-$(_read_env_var "${ENV_FILE}" "MANAGER_PORT" || true)}"
-MANAGER_PORT="${MANAGER_PORT:-8000}"
+MANAGER_PORT="${MANAGER_PORT:-8081}"
 
 _log() {
   echo "$@"

@@ -89,7 +89,7 @@ main() {
 
   local manager_port
   manager_port="${MANAGER_PORT:-$(_read_env_var "${ENV_FILE}" "MANAGER_PORT" || true)}"
-  manager_port="${manager_port:-8000}"
+  manager_port="${manager_port:-8081}"
 
   _log "==> config"
   _log "- ENV_FILE: ${ENV_FILE} $( [[ -f "${ENV_FILE}" ]] && echo '(present)' || echo '(missing)' )"

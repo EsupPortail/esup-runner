@@ -2,6 +2,7 @@ import errno
 import os
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
@@ -285,6 +286,96 @@ def test_task_result_path_validation_error_branches():
     assert no_part_error.value.status_code == 404
 
 
+def test_task_path_helpers_additional_branches(monkeypatch, tmp_path):
+    task_module.storage_manager.base_path = str(tmp_path)
+    base_path = Path(task_module.storage_manager.base_path).resolve()
+
+    # _find_direct_child_entry normal and OSError branches
+    existing_dir = tmp_path / "existing"
+    existing_dir.mkdir()
+    assert task_module._find_direct_child_entry(base_path, "existing") == existing_dir
+    assert task_module._find_direct_child_entry(base_path, "missing") is None
+
+    with monkeypatch.context() as context:
+        context.setattr(Path, "iterdir", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError()))
+        assert task_module._find_direct_child_entry(base_path, "anything") is None
+
+    # _resolve_within_base outside-base rejection
+    outside_dir = tmp_path.parent / f"{tmp_path.name}-outside-helper"
+    outside_dir.mkdir()
+    escape_link = tmp_path / "escape-link"
+    escape_link.symlink_to(outside_dir, target_is_directory=True)
+    with pytest.raises(HTTPException) as outside_error:
+        task_module._resolve_within_base(escape_link, base_path)
+    assert outside_error.value.status_code == 404
+
+    # _resolve_output_file_path branches
+    output_dir = tmp_path / "helper-output"
+    output_dir.mkdir()
+    regular_file = output_dir / "file.txt"
+    regular_file.write_text("x", encoding="utf-8")
+
+    with pytest.raises(HTTPException) as missing_part_error:
+        task_module._resolve_output_file_path(output_dir, ("missing.txt",))
+    assert missing_part_error.value.status_code == 404
+
+    with pytest.raises(HTTPException) as non_dir_part_error:
+        task_module._resolve_output_file_path(output_dir, ("file.txt", "nested.txt"))
+    assert non_dir_part_error.value.status_code == 404
+
+    # _resolve_task_root branches: missing candidate and non-directory
+    with pytest.raises(HTTPException) as missing_task_error:
+        task_module._resolve_task_root("task-missing")
+    assert missing_task_error.value.status_code == 404
+
+    (tmp_path / "task-file").write_text("not-a-dir", encoding="utf-8")
+    with pytest.raises(HTTPException) as not_dir_task_error:
+        task_module._resolve_task_root("task-file")
+    assert not_dir_task_error.value.status_code == 404
+
+    # _resolve_task_manifest_path missing-manifest branch
+    (tmp_path / "task-no-manifest").mkdir()
+    with pytest.raises(HTTPException) as missing_manifest_error:
+        task_module._resolve_task_manifest_path("task-no-manifest")
+    assert missing_manifest_error.value.status_code == 404
+
+    # _resolve_task_root_if_exists branches
+    assert task_module._resolve_task_root_if_exists("nope") is None
+    symlink_task = tmp_path / "task-symlink"
+    symlink_task.symlink_to(outside_dir, target_is_directory=True)
+    assert task_module._resolve_task_root_if_exists("task-symlink") is None
+    assert task_module._resolve_task_root_if_exists("task-file") is None
+
+    # _resolve_legacy_manifest_if_exists branches
+    assert task_module._resolve_legacy_manifest_if_exists("legacy-missing") is None
+
+    # Candidate resolves outside base -> caught and returned as None.
+    legacy_outside_target = outside_dir / "outside-legacy.json"
+    legacy_outside_target.write_text("{}", encoding="utf-8")
+    legacy_outside_link = tmp_path / "legacy-outside.json"
+    legacy_outside_link.symlink_to(legacy_outside_target)
+    assert task_module._resolve_legacy_manifest_if_exists("legacy-outside") is None
+
+    # Candidate resolves inside base but not directly under base -> parent check branch.
+    nested_dir = tmp_path / "nested"
+    nested_dir.mkdir()
+    nested_file = nested_dir / "real.json"
+    nested_file.write_text("{}", encoding="utf-8")
+    legacy_nested_link = tmp_path / "legacy-nested.json"
+    legacy_nested_link.symlink_to(nested_file)
+    assert task_module._resolve_legacy_manifest_if_exists("legacy-nested") is None
+
+    # Candidate exists but is not a file.
+    legacy_dir_candidate = tmp_path / "legacy-dir.json"
+    legacy_dir_candidate.mkdir()
+    assert task_module._resolve_legacy_manifest_if_exists("legacy-dir") is None
+
+    # Success branch.
+    legacy_ok = tmp_path / "legacy-ok.json"
+    legacy_ok.write_text("{}", encoding="utf-8")
+    assert task_module._resolve_legacy_manifest_if_exists("legacy-ok") == legacy_ok
+
+
 def test_task_root_resolution_rejects_symlink_escape(tmp_path):
     task_module.storage_manager.base_path = str(tmp_path)
     outside_dir = tmp_path.parent / f"{tmp_path.name}-outside"
@@ -310,6 +401,36 @@ def test_task_manifest_resolution_rejects_symlink_manifest(tmp_path):
 
     with pytest.raises(HTTPException) as manifest_error:
         task_module._resolve_task_manifest_path("task-manifest")
+    assert manifest_error.value.status_code == 404
+
+
+def test_task_manifest_resolution_rejects_nested_manifest_symlink(tmp_path):
+    task_module.storage_manager.base_path = str(tmp_path)
+
+    task_dir = tmp_path / "task-manifest-nested"
+    nested_dir = task_dir / "nested"
+    nested_dir.mkdir(parents=True)
+    nested_manifest = nested_dir / "manifest.json"
+    nested_manifest.write_text("{}", encoding="utf-8")
+
+    # Direct child exists, but resolves to nested/manifest.json: parent != task_root
+    (task_dir / "manifest.json").symlink_to(nested_manifest)
+
+    with pytest.raises(HTTPException) as manifest_error:
+        task_module._resolve_task_manifest_path("task-manifest-nested")
+    assert manifest_error.value.status_code == 404
+
+
+def test_task_manifest_resolution_rejects_manifest_directory(tmp_path):
+    task_module.storage_manager.base_path = str(tmp_path)
+
+    task_dir = tmp_path / "task-manifest-dir"
+    task_dir.mkdir(parents=True)
+    # Candidate exists and parent matches task root, but it is not a file.
+    (task_dir / "manifest.json").mkdir()
+
+    with pytest.raises(HTTPException) as manifest_error:
+        task_module._resolve_task_manifest_path("task-manifest-dir")
     assert manifest_error.value.status_code == 404
 
 
@@ -414,3 +535,59 @@ async def test_task_result_file_rejects_symlink_escape(tmp_path):
             current_manager="manager-token",
         )
     assert symlink_file_error.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_task_result_file_rejects_output_path_when_not_a_directory(tmp_path):
+    task_module.storage_manager.base_path = str(tmp_path)
+
+    task_id = "task-with-output-file"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir(parents=True)
+    (task_dir / "output").write_text("not-dir", encoding="utf-8")
+
+    with pytest.raises(HTTPException) as output_not_dir_error:
+        await task_module.get_task_result_file(
+            task_id,
+            "x.txt",
+            BackgroundTasks(),
+            current_manager="manager-token",
+        )
+    assert output_not_dir_error.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_task_result_file_rejects_missing_output_directory(tmp_path):
+    task_module.storage_manager.base_path = str(tmp_path)
+
+    task_id = "task-no-output"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir(parents=True)
+
+    with pytest.raises(HTTPException) as missing_output_error:
+        await task_module.get_task_result_file(
+            task_id,
+            "x.txt",
+            BackgroundTasks(),
+            current_manager="manager-token",
+        )
+    assert missing_output_error.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_task_result_file_rejects_directory_target(tmp_path):
+    task_module.storage_manager.base_path = str(tmp_path)
+
+    task_id = "task-dir-target"
+    output_dir = tmp_path / task_id / "output"
+    output_dir.mkdir(parents=True)
+    (output_dir / "subdir").mkdir()
+
+    with pytest.raises(HTTPException) as directory_target_error:
+        await task_module.get_task_result_file(
+            task_id,
+            "subdir",
+            BackgroundTasks(),
+            current_manager="manager-token",
+        )
+    assert directory_target_error.value.status_code == 404

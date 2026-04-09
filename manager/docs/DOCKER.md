@@ -60,7 +60,7 @@ Optional verification:
 docker run --rm hello-world
 ```
 
-## 4) Fetch sources
+## 4) Fetch sources (recommended)
 
 Run as `esup-runner`:
 
@@ -76,12 +76,26 @@ git sparse-checkout set manager
 cd manager
 ```
 
+Why this step is still useful with **Option B** (GHCR image pull):
+
+- get `.env.example` to create your `.env`
+- use helper targets like `make docker-fix-perms`
+- keep a standard host path for the bind mount (`/opt/esup-runner/manager/.env`)
+
+If you do not want a local checkout, you can skip this step and:
+
+- create/store `.env` in another local path
+- replace `-v /opt/esup-runner/manager/.env:/app/.env:ro` in `docker run` with your own path
+- run equivalent permission-fix commands manually (instead of `make docker-fix-perms`)
+
 ## 5) Prepare manager configuration
 
 ```bash
 cp .env.example .env
 nano .env
 ```
+
+If you skipped step 4, create an env file in a path of your choice (example: `/opt/esup-runner/manager.env`) and use that same path later in both `--env-file` and the `/app/.env` bind mount.
 
 At minimum, review:
 
@@ -101,12 +115,20 @@ Important:
 - `MANAGER_URL` is injected into runner tasks as `completion_callback` (`/task/completion`).
 - If `MANAGER_HOST=0.0.0.0`, callbacks from runner may fail in Docker (`http://0.0.0.0:...` points to the runner container itself, not the manager).
 
-## 6) Build the manager image
+## 6) Choose how to get the manager image
+
+You can choose between:
+
+- **Option A:** build locally (current/default workflow)
+- **Option B:** pull the image published automatically on GHCR
+
+### Option A) Build locally
 
 From `/opt/esup-runner/manager`:
 
 ```bash
 make docker-build ESUP_RUNNER_UID=$(id -u) ESUP_RUNNER_GID=$(id -g)
+export MANAGER_IMAGE_REF=esup-runner-manager:latest
 ```
 
 Defaults:
@@ -123,6 +145,8 @@ make docker-build \
   DOCKER_TAG=v1.0.0 \
   ESUP_RUNNER_UID=$(id -u) \
   ESUP_RUNNER_GID=$(id -g)
+
+export MANAGER_IMAGE_REF=ghcr.io/<github-org>/esup-runner-manager:v1.0.0
 ```
 
 If your Docker environment has DNS issues during build, try host networking:
@@ -156,6 +180,29 @@ docker build -f Dockerfile \
   -t esup-runner-manager:latest .
 ```
 
+### Option B) Pull the published GHCR image
+
+```bash
+docker pull ghcr.io/esupportail/esup-runner-manager:latest
+export MANAGER_IMAGE_REF=ghcr.io/esupportail/esup-runner-manager:latest
+```
+
+You can also pin to a specific release tag:
+
+```bash
+# Example
+docker pull ghcr.io/esupportail/esup-runner-manager:v1.0.0
+export MANAGER_IMAGE_REF=ghcr.io/esupportail/esup-runner-manager:v1.0.0
+```
+
+Published tags include `latest`, `vX.Y.Z`, `X.Y`, and `X`.
+
+Important:
+
+- Published images use the default container user/group `UID:GID=1000:1000`.
+- For this option, keep `docker-fix-perms` aligned with `1000:1000` unless you rebuild your own image with different UID/GID.
+- For production, prefer a pinned version tag (`vX.Y.Z`) instead of `latest`.
+
 ## 7) Run the manager container
 
 Create volumes:
@@ -175,24 +222,49 @@ docker network inspect esup-runner-net >/dev/null 2>&1 || docker network create 
 Ensure volume ownership matches `esup-runner` (important if volumes already contain root-owned files):
 
 ```bash
+# Option A (local build with host UID/GID)
 make docker-fix-perms ESUP_RUNNER_UID=$(id -u) ESUP_RUNNER_GID=$(id -g)
+
+# Option B (pulled GHCR image defaults to UID/GID 1000)
+# Update DOCKER_TAG if you pinned another tag in step 6.
+# make docker-fix-perms \
+#   DOCKER_IMAGE=ghcr.io/esupportail/esup-runner-manager \
+#   DOCKER_TAG=latest \
+#   ESUP_RUNNER_UID=1000 \
+#   ESUP_RUNNER_GID=1000
+```
+
+Raw Docker equivalent (useful if you skipped source checkout):
+
+```bash
+MANAGER_IMAGE_REF="${MANAGER_IMAGE_REF:-ghcr.io/esupportail/esup-runner-manager:latest}"
+
+docker run --rm --user root \
+  -v esup-runner-manager-logs:/var/log/esup-runner \
+  -v esup-runner-storage:/tmp/esup-runner \
+  -v esup-runner-manager-data:/app/data \
+  "$MANAGER_IMAGE_REF" \
+  sh -c "chown -R 1000:1000 /var/log/esup-runner /tmp/esup-runner /app/data"
 ```
 
 Run in background:
 
 ```bash
+MANAGER_IMAGE_REF="${MANAGER_IMAGE_REF:-esup-runner-manager:latest}"
+MANAGER_ENV_FILE="${MANAGER_ENV_FILE:-/opt/esup-runner/manager/.env}"
+
 docker run -d \
   --name esup-runner-manager \
   --network esup-runner-net \
   --restart unless-stopped \
-  --env-file .env \
+  --env-file "$MANAGER_ENV_FILE" \
   -e MANAGER_HOST=esup-runner-manager \
   -p 8081:8081 \
   -v esup-runner-manager-logs:/var/log/esup-runner \
   -v esup-runner-storage:/tmp/esup-runner \
   -v esup-runner-manager-data:/app/data \
-  -v /opt/esup-runner/manager/.env:/app/.env:ro \
-  esup-runner-manager:latest
+  -v "$MANAGER_ENV_FILE":/app/.env:ro \
+  "$MANAGER_IMAGE_REF"
 ```
 
 This container name (`esup-runner-manager`) is resolvable by other containers on

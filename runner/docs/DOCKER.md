@@ -61,7 +61,7 @@ Optional verification:
 docker run --rm hello-world
 ```
 
-## 4) Fetch sources
+## 4) Fetch sources (recommended)
 
 Run as `esup-runner`:
 
@@ -77,12 +77,26 @@ git sparse-checkout set runner
 cd runner
 ```
 
+Why this step is still useful with **Option B** (GHCR image pull):
+
+- get `.env.example` to create your `.env`
+- use helper targets like `make docker-fix-perms`
+- keep a standard host path for the bind mount (`/opt/esup-runner/runner/.env`)
+
+If you do not want a local checkout, you can skip this step and:
+
+- create/store `.env` in another local path
+- replace `-v /opt/esup-runner/runner/.env:/app/.env:ro` in `docker run` with your own path
+- run equivalent permission-fix commands manually (instead of `make docker-fix-perms`)
+
 ## 5) Prepare runner configuration
 
 ```bash
 cp .env.example .env
 nano .env
 ```
+
+If you skipped step 4, create an env file in a path of your choice (example: `/opt/esup-runner/runner.env`) and use that same path later in both `--env-file` and the `/app/.env` bind mount.
 
 At minimum, review:
 
@@ -123,12 +137,20 @@ Example with defaults:
 
 If you change `STORAGE_DIR`, update both the manager setting and Docker mount target accordingly.
 
-## 6) Build the runner image
+## 6) Choose how to get the runner image
+
+You can choose between:
+
+- **Option A:** build locally (current/default workflow)
+- **Option B:** pull the image published automatically on GHCR
+
+### Option A) Build locally
 
 From `/opt/esup-runner/runner`:
 
 ```bash
 make docker-build ESUP_RUNNER_UID=$(id -u) ESUP_RUNNER_GID=$(id -g)
+export RUNNER_IMAGE_REF=esup-runner-runner:latest
 ```
 
 Defaults:
@@ -174,6 +196,8 @@ make docker-build \
   DOCKER_TAG=v1.0.0 \
   ESUP_RUNNER_UID=$(id -u) \
   ESUP_RUNNER_GID=$(id -g)
+
+export RUNNER_IMAGE_REF=ghcr.io/<github-org>/esup-runner-runner:v1.0.0
 ```
 
 If your Docker environment has DNS issues during build, try host networking:
@@ -208,6 +232,31 @@ docker build -f Dockerfile \
   -t esup-runner-runner:latest .
 ```
 
+### Option B) Pull the published GHCR image
+
+```bash
+docker pull ghcr.io/esupportail/esup-runner-runner:latest
+export RUNNER_IMAGE_REF=ghcr.io/esupportail/esup-runner-runner:latest
+```
+
+You can also pin to a specific release tag:
+
+```bash
+# Example
+docker pull ghcr.io/esupportail/esup-runner-runner:v1.0.0
+export RUNNER_IMAGE_REF=ghcr.io/esupportail/esup-runner-runner:v1.0.0
+```
+
+Published tags include `latest`, `vX.Y.Z`, `X.Y`, and `X`.
+
+Important:
+
+- The published runner image is built with the default profile (encoding/studio).
+- If you need `transcription-cpu` or `transcription-gpu`, use **Option A** with `DOCKER_RUNNER_EXTRA=...`.
+- Published images use the default container user/group `UID:GID=1000:1000`.
+- For this option, keep `docker-fix-perms` aligned with `1000:1000` unless you rebuild your own image with different UID/GID.
+- For production, prefer a pinned version tag (`vX.Y.Z`) instead of `latest`.
+
 ## 7) Run the runner container
 
 Create volumes:
@@ -228,7 +277,30 @@ docker network inspect esup-runner-net >/dev/null 2>&1 || docker network create 
 Ensure volume ownership matches `esup-runner` (important if volumes already contain root-owned files):
 
 ```bash
+# Option A (local build with host UID/GID)
 make docker-fix-perms ESUP_RUNNER_UID=$(id -u) ESUP_RUNNER_GID=$(id -g)
+
+# Option B (pulled GHCR image defaults to UID/GID 1000)
+# Update DOCKER_TAG if you pinned another tag in step 6.
+# make docker-fix-perms \
+#   DOCKER_IMAGE=ghcr.io/esupportail/esup-runner-runner \
+#   DOCKER_TAG=latest \
+#   ESUP_RUNNER_UID=1000 \
+#   ESUP_RUNNER_GID=1000
+```
+
+Raw Docker equivalent (useful if you skipped source checkout):
+
+```bash
+RUNNER_IMAGE_REF="${RUNNER_IMAGE_REF:-ghcr.io/esupportail/esup-runner-runner:latest}"
+
+docker run --rm --user root \
+  -v esup-runner-runner-logs:/var/log/esup-runner \
+  -v esup-runner-storage:/tmp/esup-runner \
+  -v esup-runner-whisper-models:/home/esup-runner/.cache/esup-runner/whisper-models \
+  -v esup-runner-huggingface-models:/home/esup-runner/.cache/esup-runner/huggingface \
+  "$RUNNER_IMAGE_REF" \
+  sh -c "chown -R 1000:1000 /var/log/esup-runner /tmp/esup-runner /home/esup-runner/.cache/esup-runner/whisper-models /home/esup-runner/.cache/esup-runner/huggingface"
 ```
 
 If you changed `STORAGE_DIR`, `WHISPER_MODELS_DIR`, or `HUGGINGFACE_MODELS_DIR`, adjust mount paths in `docker-fix-perms`:
@@ -242,22 +314,28 @@ make docker-fix-perms \
   DOCKER_HUGGINGFACE_MODELS_PATH=/path/from/HUGGINGFACE_MODELS_DIR
 ```
 
+If you use **Option B** (GHCR image), also add:
+`DOCKER_IMAGE=ghcr.io/esupportail/esup-runner-runner DOCKER_TAG=<your-tag>`.
+
 Run in background:
 
 ```bash
+RUNNER_IMAGE_REF="${RUNNER_IMAGE_REF:-esup-runner-runner:latest}"
+RUNNER_ENV_FILE="${RUNNER_ENV_FILE:-/opt/esup-runner/runner/.env}"
+
 docker run -d \
   --name esup-runner-runner \
   --network esup-runner-net \
   --restart unless-stopped \
-  --env-file .env \
+  --env-file "$RUNNER_ENV_FILE" \
   -e RUNNER_HOST=esup-runner-runner \
   -p 8082:8082 \
   -v esup-runner-runner-logs:/var/log/esup-runner \
   -v esup-runner-storage:/tmp/esup-runner \
   -v esup-runner-whisper-models:/home/esup-runner/.cache/esup-runner/whisper-models \
   -v esup-runner-huggingface-models:/home/esup-runner/.cache/esup-runner/huggingface \
-  -v /opt/esup-runner/runner/.env:/app/.env:ro \
-  esup-runner-runner:latest
+  -v "$RUNNER_ENV_FILE":/app/.env:ro \
+  "$RUNNER_IMAGE_REF"
 ```
 
 Notes:
@@ -273,19 +351,23 @@ Notes:
 GPU runtime example (NVIDIA):
 
 ```bash
+RUNNER_IMAGE_REF="${RUNNER_IMAGE_REF:-esup-runner-runner:latest}"
+RUNNER_ENV_FILE="${RUNNER_ENV_FILE:-/opt/esup-runner/runner/.env}"
+
 docker run -d \
   --name esup-runner-runner \
   --network esup-runner-net \
   --restart unless-stopped \
   --gpus all \
-  --env-file .env \
+  --env-file "$RUNNER_ENV_FILE" \
   -e RUNNER_HOST=esup-runner-runner \
   -p 8082:8082 \
   -v esup-runner-runner-logs:/var/log/esup-runner \
   -v esup-runner-storage:/tmp/esup-runner \
   -v esup-runner-whisper-models:/home/esup-runner/.cache/esup-runner/whisper-models \
-  -v /opt/esup-runner/runner/.env:/app/.env:ro \
-  esup-runner-runner:latest
+  -v esup-runner-huggingface-models:/home/esup-runner/.cache/esup-runner/huggingface \
+  -v "$RUNNER_ENV_FILE":/app/.env:ro \
+  "$RUNNER_IMAGE_REF"
 ```
 
 ## 8) Verify runtime

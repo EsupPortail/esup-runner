@@ -41,7 +41,7 @@ def run_dev():
     log_config = get_uvicorn_log_config(json_format=False)
 
     manager_host = os.getenv("MANAGER_HOST", "0.0.0.0")
-    manager_port = int(os.getenv("MANAGER_PORT", "8000"))
+    manager_port = int(os.getenv("MANAGER_PORT", "8081"))
 
     print(f"[DEV] Starting Runner Manager on {manager_host}:{manager_port}")
     print(f"Admin Dashboard: {config.MANAGER_URL}/admin")

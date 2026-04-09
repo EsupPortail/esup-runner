@@ -198,7 +198,7 @@ class Config:
         # Manager configuration
         self.MANAGER_PROTOCOL: str = os.getenv("MANAGER_PROTOCOL", "http")
         self.MANAGER_HOST: str = os.getenv("MANAGER_HOST", "0.0.0.0")
-        self.MANAGER_PORT: int = int(os.getenv("MANAGER_PORT", 8000))
+        self.MANAGER_PORT: int = int(os.getenv("MANAGER_PORT", 8081))
         # Generate Manager URL
         self.MANAGER_URL = f"{self.MANAGER_PROTOCOL}://{self.MANAGER_HOST}:{self.MANAGER_PORT}"
 

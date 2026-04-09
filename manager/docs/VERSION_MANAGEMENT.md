@@ -79,7 +79,7 @@ Add a section for the new version with:
 Example:
 
 ```markdown
-## [1.0.1] - 2025-11-04
+## [1.0.1] - 2026-04-09
 
 ### Fixed
 - Fix XYZ bug
@@ -92,7 +92,7 @@ Example:
 ### 3. Commit changes
 
 ```bash
-git add app/__version__.py VERSION CHANGELOG.md
+git add app/__version__.py VERSION CHANGELOG.md pyproject.toml
 git commit -m "chore: bump version to X.Y.Z"
 ```
 
@@ -120,8 +120,10 @@ print(__version__)  # 1.0.0
 
 ### From the API
 
+Default local port is `8081` (`MANAGER_PORT` in `.env.example`).
+
 ```bash
-curl -H "X-API-Token: YOUR_TOKEN" https://localhost:8000/api/version
+curl -H "X-API-Token: YOUR_TOKEN" http://localhost:8081/api/version
 ```
 
 Response:
@@ -136,7 +138,7 @@ Response:
   },
   "description": "Runner Manager - A distributed task runner management system",
   "author": "Loïc Bonavent",
-  "email": "loic.bonavent@umontpellier.fr",
+  "email": "xx.xx@univ.fr",
   "license": "Licence LGPL 3.0"
 }
 ```
@@ -167,7 +169,7 @@ Returns all version information for the API.
   },
   "description": "Runner Manager - A distributed task runner management system",
   "author": "Loïc Bonavent",
-  "email": "loic.bonavent@umontpellier.fr",
+  "email": "loic.bon...@umontpellier.fr",
   "license": "Licence LGPL 3.0"
 }
 ```
@@ -203,24 +205,10 @@ The root endpoint also includes the version:
 
 ## 📦 Installation and distribution
 
-### Local install
-
-```bash
-uv sync --locked --extra dev
-```
-
-> Note: dependencies include `jinja2` (HTML templates) and `bcrypt` (password hashing).
-
 ### Build the package
 
 ```bash
 uv build
-```
-
-### Publish to PyPI (if applicable)
-
-```bash
-uv publish
 ```
 
 ## ⚠️ Best practices

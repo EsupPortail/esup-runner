@@ -104,14 +104,14 @@ git commit -m "chore: bump version to X.Y.Z"
 ### 4. Create a Git tag
 
 ```bash
-git tag -a runner-vX.Y.Z -m "Runner release X.Y.Z"
+git tag -a esup-runner-runner-vX.Y.Z -m "Esup-Runner Runner release X.Y.Z"
 ```
 
 ### 5. Push changes
 
 ```bash
 git push origin main
-git push origin runner-vX.Y.Z
+git push origin esup-runner-runner-vX.Y.Z
 ```
 
 ## 🔍 Version checks

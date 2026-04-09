@@ -99,14 +99,14 @@ git commit -m "chore: bump version to X.Y.Z"
 ### 4. Create a Git tag
 
 ```bash
-git tag -a manager-vX.Y.Z -m "Manager release X.Y.Z"
+git tag -a esup-runner-manager-vX.Y.Z -m "Esup-Runner Manager release X.Y.Z"
 ```
 
 ### 5. Push changes
 
 ```bash
 git push origin main
-git push origin manager-vX.Y.Z
+git push origin esup-runner-manager-vX.Y.Z
 ```
 
 ## 🔍 Version checks
@@ -244,10 +244,10 @@ uv run scripts/manage_version.py set 1.0.0
 git tag -l
 
 # Delete a local tag
-git tag -d manager-vX.Y.Z
+git tag -d esup-runner-manager-vX.Y.Z
 
 # Delete a remote tag
-git push origin :refs/tags/manager-vX.Y.Z
+git push origin :refs/tags/esup-runner-manager-vX.Y.Z
 ```
 
 ## 📚 References

@@ -20,7 +20,7 @@ from app.services.manager_service import register_with_manager
 
 # Instance-specific configurations
 runner_instance_id: int = int(os.getenv("RUNNER_INSTANCE_ID", "0"))
-runner_instance_port: int = int(os.getenv("RUNNER_PORT", "8081"))
+runner_instance_port: int = int(os.getenv("RUNNER_PORT", "8082"))
 runner_instance_url: str = os.getenv(
     "RUNNER_INSTANCE_URL", f"{config.RUNNER_PROTOCOL}://{config.RUNNER_HOST}:{runner_instance_port}"
 )

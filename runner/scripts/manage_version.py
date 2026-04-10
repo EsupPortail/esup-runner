@@ -164,7 +164,7 @@ def set_version(new_version: str) -> None:
     print("  1. Update CHANGELOG.md with release notes")
     print("  2. Commit the changes: git add app/__version__.py VERSION pyproject.toml")
     print(
-        f"  3. Create a git tag: git tag -a runner-v{new_version} -m 'Esup-Runner Runner release {new_version}'"
+        f"  3. Create a git tag: git tag -a runner-v{new_version} -m 'Runner release {new_version}'"
     )
     print(
         f"  4. Push changes and tag: git push origin main && git push origin runner-v{new_version}"
@@ -193,7 +193,7 @@ def bump_version_command(bump_type: str) -> None:
     print("  1. Update CHANGELOG.md with release notes")
     print("  2. Commit the changes: git add app/__version__.py VERSION pyproject.toml")
     print(
-        f"  3. Create a git tag: git tag -a runner-v{new_version} -m 'Esup-Runner Runner release {new_version}'"
+        f"  3. Create a git tag: git tag -a runner-v{new_version} -m 'Runner release {new_version}'"
     )
     print(
         f"  4. Push changes and tag: git push origin main && git push origin runner-v{new_version}"

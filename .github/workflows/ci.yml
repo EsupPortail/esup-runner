@@ -37,6 +37,9 @@ jobs:
             uv.lock
           cache-suffix: ${{ matrix.project }}-py${{ matrix.python-version }}
 
+      - name: Show uv version
+        run: uv --version
+
       - name: Install dependencies
         working-directory: ${{ matrix.project }}
         run: |

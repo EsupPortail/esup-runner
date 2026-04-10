@@ -35,6 +35,9 @@ jobs:
             runner/uv.lock
           cache-suffix: format-py311
 
+      - name: Show uv version
+        run: uv --version
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:

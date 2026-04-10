@@ -101,6 +101,29 @@ diff -u .env.example .env || true
 
 ## 5) Update Python dependencies
 
+### If needed, update `uv` first
+
+If `uv sync --locked` reports that `uv.lock` needs to be updated even though you already pulled the latest repository changes, first verify the installed `uv` version:
+
+```bash
+uv --version
+```
+
+Update `uv` for the current user with:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+If you maintain the installation as `root`, run the installer with root privileges:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sudo sh
+```
+
+> Note
+> Prefer `curl ... | sudo sh` over `sudo curl ... | sh`: in a pipeline, `sudo curl` only elevates `curl`, not the shell that runs the installer.
+
 ```bash
 cd /opt/esup-runner/manager
 make sync

@@ -1,4 +1,4 @@
-# ESUP Runner
+# ESUP-Runner
 
 <p align="center">
   <img src="manager/app/web/static/logo.png" alt="ESUP Runner logo" width="360" />

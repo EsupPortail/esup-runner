@@ -36,8 +36,8 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     ENVIRONMENT=production \
     MANAGER_HOST=0.0.0.0 \
     MANAGER_PORT=8081 \
-    LOG_DIRECTORY=/var/log/esup-runner \
-    RUNNERS_STORAGE_PATH=/tmp/esup-runner
+    LOG_DIR=/var/log/esup-runner \
+    RUNNERS_STORAGE_DIR=/tmp/esup-runner
 
 # Create dedicated non-root user and writable runtime directories.
 RUN groupadd --gid "${ESUP_RUNNER_GID}" esup-runner && \

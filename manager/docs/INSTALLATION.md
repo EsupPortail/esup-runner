@@ -44,11 +44,10 @@ sudo apt install -y curl ca-certificates git make
 
 ### Install `uv`
 
-Install `uv` **as both `root` and `esup-runner`** (this matches the usual layout where each user gets `~/.local/bin/uv`).
+Install `uv` as `esup-runner`:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-sudo curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Re-open your shell session (recommended) or reload your shell init files, then verify:
@@ -104,8 +103,12 @@ At minimum, review:
 - `MANAGER_HOST`, `MANAGER_PORT`
 - `AUTHORIZED_TOKENS__*` (clients and runners)
 - `ADMIN_USERS__*` (for the `/admin` dashboard)
-- `LOG_DIRECTORY`
+- `LOG_DIR`
+- `RUNNERS_STORAGE_ENABLED` and `RUNNERS_STORAGE_DIR` (if you use shared storage mode)
+- `CACHE_DIR` and `UV_CACHE_DIR`
 - `NOTIFY_URL_ALLOWED_HOSTS`, `NOTIFY_URL_ALLOW_PRIVATE_NETWORKS` (if tasks use `notify_url`)
+
+Compatibility note: legacy names `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` are still accepted.
 
 #### `notify_url` callback restrictions
 
@@ -202,7 +205,7 @@ Helpers:
 
 ### Initialize required directories
 
-This creates directories from `.env` (notably `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` if set) and assigns ownership to the invoking user.
+This creates directories from `.env` (notably `LOG_DIR`, `RUNNERS_STORAGE_DIR`, `CACHE_DIR`, and `UV_CACHE_DIR` when set) and assigns ownership to the invoking user.
 
 ```bash
 sudo make init
@@ -263,30 +266,40 @@ Replace:
 
 The expected result is as follows: `{"status":"healthy","timestamp":"XXXX","runners":0,"tasks":0}`.
 
-## 4) Production: systemd service
+## 4) Production: systemd user service
 
 Warning: the generated service uses `/opt/esup-runner` by default.
-If your installation lives in another directory, edit `production/esup-runner-manager.service` before running `sudo make create-service`.
+If your installation lives in another directory, edit `production/esup-runner-manager.service` before running `make create-service`.
 
-Install and start the systemd service:
+Install and start the systemd user service:
 
 ```bash
-sudo make create-service
+make create-service
+```
+
+Do not run this target with `sudo`: it must install the unit in the service user's home.
+
+If this service must start at boot without an interactive login session, enable lingering once (as `root`):
+
+```bash
+sudo loginctl enable-linger esup-runner
 ```
 
 Useful commands:
 
 ```bash
-sudo systemctl status esup-runner-manager
-sudo systemctl restart esup-runner-manager
-sudo journalctl -u esup-runner-manager -f
+systemctl --user status esup-runner-manager
+systemctl --user restart esup-runner-manager
+journalctl --user -u esup-runner-manager -f
 ```
 
 Quick check:
 
 ```bash
-systemctl is-active --quiet esup-runner-manager && echo "OK: service is running"
+systemctl --user is-active --quiet esup-runner-manager && echo "OK: service is running"
 ```
+
+Installed unit path: `~/.config/systemd/user/esup-runner-manager.service`.
 
 ## 4.1) Production hardening: reverse proxy + HTTPS
 
@@ -327,4 +340,4 @@ With content:
 }
 ```
 
-Make sure `LOG_DIRECTORY` in `.env` matches this path.
+Make sure `LOG_DIR` in `.env` matches this path.

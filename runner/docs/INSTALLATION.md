@@ -50,11 +50,10 @@ sudo apt install -y imagemagick
 
 ### Install `uv`
 
-Install `uv` **as both `root` and `esup-runner`** (this matches the usual layout where each user gets `~/.local/bin/uv`).
+Install `uv` as `esup-runner`:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-sudo curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Re-open your shell session (recommended) or reload your shell init files, then verify:
@@ -152,8 +151,12 @@ make sync-transcription-gpu
 ```
 
 Notes:
-- `sync-transcription-cpu` forces `torch` from the PyTorch CPU index (Linux x86_64), which avoids `nvidia-*` packages.
+- `sync-transcription-cpu` installs a CPU-only torch profile on Linux x86_64, which avoids `nvidia-*` packages.
 - `sync-transcription-gpu` keeps the default `torch` resolution, intended for GPU/CUDA environments.
+- Current transcription dependency support:
+  - `transcription-cpu`: supported on Linux x86_64 and macOS Apple Silicon (`arm64`).
+  - `transcription-gpu`: supported on Linux x86_64 GPU/CUDA hosts.
+  - macOS Intel (`x86_64`) is not supported for transcription with the current `torch` stack because upstream wheels are no longer published for that platform.
 
 ### Optional: GPU lock strategy (when maintaining `uv.lock`)
 
@@ -183,7 +186,8 @@ uv run scripts/check_runner_storage.py
 Notes:
 - These scripts may read your configuration from `.env`, so make sure it is present and correctly configured.
 - A successful check should exit with code `0`; any non-zero exit code indicates something to fix (missing binary, wrong permissions, insufficient disk/RAM, etc.).
-- `check_runner_storage.py` validates free space in `LOG_DIRECTORY`, `STORAGE_DIR`, `HUGGINGFACE_MODELS_DIR`, and `WHISPER_MODELS_DIR`.
+- `check_runner_storage.py` validates free space in `LOG_DIR`, `STORAGE_DIR`, `HUGGINGFACE_MODELS_DIR`, `WHISPER_MODELS_DIR`, and `UV_CACHE_DIR` (which defaults to `CACHE_DIR/uv`).
+- Compatibility note: legacy variable `LOG_DIRECTORY` is still accepted.
 
 ## 4) Run
 
@@ -196,36 +200,44 @@ make run
 
 The runner exposes an OpenAPI UI at `/docs`.
 
-## 5) Production (systemd service)
+## 5) Production (systemd user service)
 
 Warning: the generated service uses `/opt/esup-runner` by default.
-If your installation lives in another directory, edit `production/esup-runner-runner.service` before running `sudo make create-service`.
+If your installation lives in another directory, edit `production/esup-runner-runner.service` before running `make create-service`.
 
 Install and start the service:
 
 ```bash
-sudo make create-service
+make create-service
+```
+
+Do not run this target with `sudo`: it must install the unit in the service user's home.
+
+If this service must start at boot without an interactive login session, enable lingering once (as `root`):
+
+```bash
+sudo loginctl enable-linger esup-runner
 ```
 
 Check status and logs:
 
 ```bash
-sudo systemctl status esup-runner-runner
-sudo systemctl restart esup-runner-runner
-sudo journalctl -u esup-runner-runner -f
+systemctl --user status esup-runner-runner
+systemctl --user restart esup-runner-runner
+journalctl --user -u esup-runner-runner -f
 ```
 
 Quick check:
 
 ```bash
-systemctl is-active --quiet esup-runner-runner && echo "OK: service is running"
+systemctl --user is-active --quiet esup-runner-runner && echo "OK: service is running"
 ```
 
 The provided unit sets a `PATH` that includes `/home/esup-runner/.local/bin` and starts `uv` via `/usr/bin/env`.
 If your `uv` is installed elsewhere, edit the unit accordingly:
 
 - Service template: `production/esup-runner-runner.service`
-- Installed to: `/etc/systemd/system/esup-runner-runner.service`
+- Installed to: `~/.config/systemd/user/esup-runner-runner.service`
 
 ## 6) Bonus (production): log rotation
 
@@ -250,4 +262,4 @@ With content:
 }
 ```
 
-Make sure `LOG_DIRECTORY` in `.env` matches this path.
+Make sure `LOG_DIR` in `.env` matches this path.

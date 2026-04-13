@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import warnings
+from pathlib import Path
 from typing import List, Optional, Set
 
 # Module-level global state - these persist across imports
@@ -67,6 +68,15 @@ def _parse_float(
     if max_value is not None:
         parsed = min(max_value, parsed)
     return parsed
+
+
+def _first_env_value(*keys: str, default: Optional[str] = None) -> str:
+    """Return the first environment value found among keys."""
+    for key in keys:
+        value = os.getenv(key)
+        if value is not None:
+            return value
+    return "" if default is None else default
 
 
 def get_config():
@@ -282,11 +292,14 @@ class Config:
             os.getenv("DOWNLOAD_ALLOW_PRIVATE_NETWORKS"), default=True
         )
 
-        # Log directory
-        self.LOG_DIRECTORY: str = os.getenv("LOG_DIRECTORY", "/var/log/esup-runner")
+        # Log directory.
+        # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.
+        log_dir = _first_env_value("LOG_DIR", "LOG_DIRECTORY", default="/var/log/esup-runner")
         # Add slash at end if missing
-        if not self.LOG_DIRECTORY.endswith("/"):
-            self.LOG_DIRECTORY += "/"
+        if not log_dir.endswith("/"):
+            log_dir += "/"
+        self.LOG_DIR: str = log_dir
+        self.LOG_DIRECTORY: str = log_dir
 
         # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -337,14 +350,21 @@ class Config:
         # # # Transcription (Whisper) settings # # #
         # Logical whisper model (small|medium|large|turbo)
         self.WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "small").lower()
+        # Shared cache root for transcription models and uv cache.
+        cache_dir = Path(
+            os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
+        ).expanduser()
+        self.CACHE_DIR: str = str(cache_dir)
         # Directory where whisper models (.gguf/.bin) are stored
         self.WHISPER_MODELS_DIR: str = os.getenv(
-            "WHISPER_MODELS_DIR", "/home/esup-runner/.cache/esup-runner/whisper-models"
+            "WHISPER_MODELS_DIR", str(cache_dir / "whisper-models")
         )
         # Directory where Hugging Face translation models are cached
         self.HUGGINGFACE_MODELS_DIR: str = os.getenv(
-            "HUGGINGFACE_MODELS_DIR", "/home/esup-runner/.cache/esup-runner/huggingface"
+            "HUGGINGFACE_MODELS_DIR", str(cache_dir / "huggingface")
         )
+        # Directory where uv stores package cache artifacts.
+        self.UV_CACHE_DIR: str = os.getenv("UV_CACHE_DIR", str(cache_dir / "uv"))
         # Default language (e.g., 'auto', 'fr', 'en')
         self.WHISPER_LANGUAGE: str = os.getenv("WHISPER_LANGUAGE", "auto")
 

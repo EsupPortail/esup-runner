@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Check runner storage directories against conservative free-space bounds.
 
-This script validates storage availability for directories configured in .env:
-- LOG_DIRECTORY
-- STORAGE_DIR
-- HUGGINGFACE_MODELS_DIR
-- WHISPER_MODELS_DIR
+This script validates storage availability for directories configured in .env
+and for cache subdirectories derived from CACHE_DIR:
+- LOG_DIR_MIN_FREE_GB
+- STORAGE_DIR_MIN_FREE_GB
+- HUGGINGFACE_MODELS_DIR_MIN_FREE_GB
+- WHISPER_MODELS_DIR_MIN_FREE_GB
+- UV_CACHE_DIR_MIN_FREE_GB
 
 It prints current usage/free space per directory and a recommendation summary.
 
@@ -23,9 +25,11 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 # Conservative free-space bounds (GB)
-LOG_DIRECTORY_MIN_FREE_GB = 0.5
+LOG_DIR_MIN_FREE_GB = 0.5
 STORAGE_DIR_MIN_FREE_GB = 15.0
-HUGGINGFACE_MODELS_MIN_FREE_GB = 2.0
+HUGGINGFACE_MODELS_DIR_MIN_FREE_GB = 2.0
+WHISPER_MODELS_DIR_MIN_FREE_GB = 3.0
+UV_CACHE_DIR_MIN_FREE_GB = 5.0
 
 # Approximate required free space by logical Whisper model (GB).
 # These values are intentionally conservative to leave room for cache/temp files.
@@ -47,6 +51,8 @@ class DirectoryRule:
     min_free_gb: float
     description: str
     note: str = ""
+    must_exist: bool = True
+    aggregate_paths: Tuple[str, ...] = ()
 
 
 @dataclass
@@ -154,11 +160,53 @@ def _resolve_whisper_min_free_gb(model_name: str) -> Tuple[float, str]:
     return 3.0, "unknown"
 
 
+def _resolve_uv_cache_dir(cache_dir: str) -> str:
+    """Return the uv cache directory, defaulting to CACHE_DIR/uv."""
+    uv_cache_dir = os.getenv("UV_CACHE_DIR")
+    if uv_cache_dir:
+        return str(Path(uv_cache_dir).expanduser())
+    return str(Path(cache_dir).expanduser() / "uv")
+
+
+def _is_within_path(path: Path, parent: Path) -> bool:
+    """Return whether path is equal to or inside parent."""
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
 def _build_rules(cfg) -> Dict[str, DirectoryRule]:
     """Build directory rules from config and environment variables."""
     max_file_age_days = int(getattr(cfg, "MAX_FILE_AGE_DAYS", 0))
     whisper_model = str(getattr(cfg, "WHISPER_MODEL", "small"))
+    cache_dir = str(getattr(cfg, "CACHE_DIR", "/home/esup-runner/.cache/esup-runner"))
     whisper_min_free_gb, whisper_ref = _resolve_whisper_min_free_gb(whisper_model)
+    cache_path = Path(cache_dir).expanduser()
+    huggingface_path = Path(
+        str(
+            getattr(
+                cfg,
+                "HUGGINGFACE_MODELS_DIR",
+                str(cache_path / "huggingface"),
+            )
+        )
+    ).expanduser()
+    whisper_path = Path(
+        str(
+            getattr(
+                cfg,
+                "WHISPER_MODELS_DIR",
+                str(cache_path / "whisper-models"),
+            )
+        )
+    ).expanduser()
+    uv_cache_path = Path(str(getattr(cfg, "UV_CACHE_DIR", str(cache_path / "uv")))).expanduser()
+    grouped_cache_dirs = all(
+        _is_within_path(path, cache_path)
+        for path in (huggingface_path, whisper_path, uv_cache_path)
+    )
 
     storage_note = (
         "Contains generated videos and temporary outputs. "
@@ -174,11 +222,11 @@ def _build_rules(cfg) -> Dict[str, DirectoryRule]:
         f"('{whisper_model}', reference='{whisper_ref}')."
     )
 
-    return {
-        "LOG_DIRECTORY": DirectoryRule(
-            env_key="LOG_DIRECTORY",
-            path=str(getattr(cfg, "LOG_DIRECTORY", "/var/log/esup-runner")),
-            min_free_gb=LOG_DIRECTORY_MIN_FREE_GB,
+    rules = {
+        "LOG_DIR": DirectoryRule(
+            env_key="LOG_DIR",
+            path=str(getattr(cfg, "LOG_DIR", "/var/log/esup-runner")),
+            min_free_gb=LOG_DIR_MIN_FREE_GB,
             description="Log output directory",
             note="Low space is usually acceptable for logs, but keep a small safety margin.",
         ),
@@ -189,31 +237,50 @@ def _build_rules(cfg) -> Dict[str, DirectoryRule]:
             description="Generated media workspace",
             note=storage_note,
         ),
-        "HUGGINGFACE_MODELS_DIR": DirectoryRule(
-            env_key="HUGGINGFACE_MODELS_DIR",
-            path=str(
-                getattr(
-                    cfg,
-                    "HUGGINGFACE_MODELS_DIR",
-                    "/home/esup-runner/.cache/esup-runner/huggingface",
-                )
+    }
+
+    if grouped_cache_dirs:
+        rules["CACHE_DIR"] = DirectoryRule(
+            env_key="CACHE_DIR",
+            path=str(cache_path),
+            min_free_gb=whisper_min_free_gb
+            + HUGGINGFACE_MODELS_DIR_MIN_FREE_GB
+            + UV_CACHE_DIR_MIN_FREE_GB,
+            description="Shared cache root for Whisper/Hugging Face/uv",
+            note=(
+                "Aggregated check for WHISPER_MODELS_DIR, HUGGINGFACE_MODELS_DIR, and UV_CACHE_DIR. "
+                f"Whisper reference='{whisper_ref}'."
             ),
-            min_free_gb=HUGGINGFACE_MODELS_MIN_FREE_GB,
+            aggregate_paths=(str(whisper_path), str(huggingface_path), str(uv_cache_path)),
+        )
+    else:
+        rules["HUGGINGFACE_MODELS_DIR"] = DirectoryRule(
+            env_key="HUGGINGFACE_MODELS_DIR",
+            path=str(huggingface_path),
+            min_free_gb=HUGGINGFACE_MODELS_DIR_MIN_FREE_GB,
             description="Hugging Face translation models cache",
             note="Reserve at least ~2 GB for local FR/EN translation models.",
-        ),
-        "WHISPER_MODELS_DIR": DirectoryRule(
+        )
+        rules["WHISPER_MODELS_DIR"] = DirectoryRule(
             env_key="WHISPER_MODELS_DIR",
-            path=str(
-                getattr(
-                    cfg, "WHISPER_MODELS_DIR", "/home/esup-runner/.cache/esup-runner/whisper-models"
-                )
-            ),
+            path=str(whisper_path),
             min_free_gb=whisper_min_free_gb,
             description="Whisper models cache",
             note=whisper_note,
-        ),
-    }
+        )
+        rules["UV_CACHE_DIR"] = DirectoryRule(
+            env_key="UV_CACHE_DIR",
+            path=str(uv_cache_path),
+            min_free_gb=UV_CACHE_DIR_MIN_FREE_GB,
+            description="uv package cache",
+            note=(
+                "Used by uv for wheel downloads and extraction during sync/upgrade operations. "
+                "If UV_CACHE_DIR is not set, this defaults to CACHE_DIR/uv."
+            ),
+            must_exist=False,
+        )
+
+    return rules
 
 
 def _evaluate_rule(rule: DirectoryRule) -> DirectoryStatus:
@@ -227,6 +294,27 @@ def _evaluate_rule(rule: DirectoryRule) -> DirectoryStatus:
     local_used_gb = _directory_size_bytes(path) / (1024.0 * 1024.0 * 1024.0)
 
     if not exists:
+        if not rule.must_exist:
+            parent = _find_existing_parent(path)
+            parent_writable = parent is not None and os.access(parent, os.W_OK | os.X_OK)
+            enough_free = free_gb >= rule.min_free_gb
+            ok = parent_writable and enough_free
+            detail = (
+                "Directory does not exist yet; uv will create it on demand."
+                if ok
+                else "Directory does not exist yet and parent path is not writable or lacks free space."
+            )
+            return DirectoryStatus(
+                rule=rule,
+                exists=False,
+                is_dir=False,
+                writable=parent_writable,
+                total_gb=total_gb,
+                used_gb=0.0,
+                free_gb=free_gb,
+                ok=ok,
+                detail=detail,
+            )
         return DirectoryStatus(
             rule=rule,
             exists=False,
@@ -265,6 +353,26 @@ def _evaluate_rule(rule: DirectoryRule) -> DirectoryStatus:
             detail="Directory is not writable by current user.",
         )
 
+    if rule.env_key == "CACHE_DIR" and rule.aggregate_paths:
+        aggregate_used_gb = sum(
+            _directory_size_bytes(Path(sub_path)) / (1024.0 * 1024.0 * 1024.0)
+            for sub_path in rule.aggregate_paths
+        )
+        required_additional_free_gb = max(rule.min_free_gb - aggregate_used_gb, 0.0)
+        enough_free = free_gb >= required_additional_free_gb
+        detail = "OK" if enough_free else "Insufficient free space for aggregated cache threshold."
+        return DirectoryStatus(
+            rule=rule,
+            exists=True,
+            is_dir=True,
+            writable=True,
+            total_gb=total_gb,
+            used_gb=aggregate_used_gb,
+            free_gb=free_gb,
+            ok=enough_free,
+            detail=detail,
+        )
+
     # For storage and model caches, account for already-used space in the directory.
     # Requested rule: (required free space - directory used) < filesystem free.
     if rule.env_key in {"STORAGE_DIR", "HUGGINGFACE_MODELS_DIR", "WHISPER_MODELS_DIR"}:
@@ -299,11 +407,14 @@ def _evaluate_rule(rule: DirectoryRule) -> DirectoryStatus:
 def _print_report(statuses: Dict[str, DirectoryStatus]) -> None:
     """Print directory checks and recommendations."""
     print("=== Storage check for runner directories ===")
-    print(
-        "Checked directories: LOG_DIRECTORY, STORAGE_DIR, HUGGINGFACE_MODELS_DIR, WHISPER_MODELS_DIR"
-    )
+    checked = ["LOG_DIR", "STORAGE_DIR"]
+    if "CACHE_DIR" in statuses:
+        checked.append("CACHE_DIR")
+    else:
+        checked.extend(["HUGGINGFACE_MODELS_DIR", "WHISPER_MODELS_DIR", "UV_CACHE_DIR"])
+    print(f"Checked directories: {', '.join(checked)}")
 
-    for key in ("LOG_DIRECTORY", "STORAGE_DIR", "HUGGINGFACE_MODELS_DIR", "WHISPER_MODELS_DIR"):
+    for key in checked:
         status = statuses[key]
         rule = status.rule
         status_label = (
@@ -313,7 +424,10 @@ def _print_report(statuses: Dict[str, DirectoryStatus]) -> None:
         print(f"  Path: {rule.path}")
         print(f"  Purpose: {rule.description}")
         print(f"  Required free space: {rule.min_free_gb:.1f} GB")
-        if key in {"STORAGE_DIR", "HUGGINGFACE_MODELS_DIR", "WHISPER_MODELS_DIR"} and not status.ok:
+        if (
+            key in {"STORAGE_DIR", "HUGGINGFACE_MODELS_DIR", "WHISPER_MODELS_DIR", "CACHE_DIR"}
+            and not status.ok
+        ):
             required_additional_free_gb = max(
                 rule.min_free_gb - status.used_gb - status.free_gb,
                 0.0,

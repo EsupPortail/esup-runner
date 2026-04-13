@@ -23,11 +23,15 @@ _CONFIG_ENV_KEYS = [
     "ENVIRONMENT",
     "UVICORN_WORKERS",
     "CLEANUP_TASK_FILES_DAYS",
+    "LOG_DIR",
     "LOG_DIRECTORY",
     "LOG_LEVEL",
     "API_DOCS_VISIBILITY",
     "RUNNERS_STORAGE_ENABLED",
+    "RUNNERS_STORAGE_DIR",
     "RUNNERS_STORAGE_PATH",
+    "CACHE_DIR",
+    "UV_CACHE_DIR",
     "PRIORITIES_ENABLED",
     "PRIORITY_DOMAIN",
     "MAX_OTHER_DOMAIN_TASK_PERCENT",
@@ -98,6 +102,15 @@ def _parse_float(
     if max_value is not None:
         parsed = min(max_value, parsed)
     return parsed
+
+
+def _first_env_value(*keys: str, default: Optional[str] = None) -> str:
+    """Return the first environment value found among keys."""
+    for key in keys:
+        value = os.getenv(key)
+        if value is not None:
+            return value
+    return "" if default is None else default
 
 
 def reload_config_env():
@@ -213,11 +226,14 @@ class Config:
         # Remove task files older than specified number of days
         self.CLEANUP_TASK_FILES_DAYS: int = int(os.getenv("CLEANUP_TASK_FILES_DAYS", 30))
 
-        # Directory to store log files
-        self.LOG_DIRECTORY: str = os.getenv("LOG_DIRECTORY", "/var/log/esup-runner")
+        # Directory to store log files.
+        # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.
+        log_dir = _first_env_value("LOG_DIR", "LOG_DIRECTORY", default="/var/log/esup-runner")
         # Add slash at end if missing
-        if not self.LOG_DIRECTORY.endswith("/"):
-            self.LOG_DIRECTORY += "/"
+        if not log_dir.endswith("/"):
+            log_dir += "/"
+        self.LOG_DIR: str = log_dir
+        self.LOG_DIRECTORY: str = log_dir
 
         # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -226,7 +242,18 @@ class Config:
         self.RUNNERS_STORAGE_ENABLED: bool = _parse_bool(
             os.getenv("RUNNERS_STORAGE_ENABLED"), default=False
         )
-        self.RUNNERS_STORAGE_PATH: str = os.getenv("RUNNERS_STORAGE_PATH", "/tmp/esup-runner")
+        runners_storage_dir = _first_env_value(
+            "RUNNERS_STORAGE_DIR",
+            "RUNNERS_STORAGE_PATH",
+            default="/tmp/esup-runner",
+        )
+        self.RUNNERS_STORAGE_DIR: str = runners_storage_dir
+        # Backward-compatible alias used across existing code/tests.
+        self.RUNNERS_STORAGE_PATH: str = runners_storage_dir
+
+        # Shared cache root used for local cacheable artifacts (including uv cache).
+        self.CACHE_DIR: str = os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
+        self.UV_CACHE_DIR: str = os.getenv("UV_CACHE_DIR", os.path.join(self.CACHE_DIR, "uv"))
 
         # Visibility of the API documentation (options: public, private -> requires token authentication)
         self.API_DOCS_VISIBILITY: str = os.getenv("API_DOCS_VISIBILITY", "public").lower()
@@ -365,8 +392,10 @@ class Config:
                 "Invalid CORS configuration: CORS_ALLOW_CREDENTIALS=true is not compatible with CORS_ALLOW_ORIGINS=*"
             )
 
-        if self.RUNNERS_STORAGE_ENABLED and not self.RUNNERS_STORAGE_PATH:
-            raise ValueError("RUNNERS_STORAGE_PATH must be set when RUNNERS_STORAGE_ENABLED=true")
+        if self.RUNNERS_STORAGE_ENABLED and not self.RUNNERS_STORAGE_DIR:
+            raise ValueError(
+                "RUNNERS_STORAGE_DIR (legacy: RUNNERS_STORAGE_PATH) must be set when RUNNERS_STORAGE_ENABLED=true"
+            )
 
         if self.PRIORITIES_ENABLED and not self.PRIORITY_DOMAIN:
             print(

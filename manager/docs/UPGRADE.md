@@ -65,13 +65,17 @@ Compatibility note: legacy names `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` are 
 
 This deployment uses a **monorepo clone**: the Git working tree is `/opt/esup-runner`, and the projects live in subdirectories (`manager/`, `runner/`).
 
-If you use sparse-checkout, ensure the correct directories are included **depending on what is installed on this machine**:
+If you use sparse-checkout, ensure the correct paths are included **depending on what is installed on this machine**:
 
 - If **Runner + Manager are installed on the same machine**: include both.
 - If **only Manager is installed**: include only `manager`.
 
 ```bash
 cd /opt/esup-runner
+
+# If you use sparse checkout and the automated helper script:
+# - manager only host: git sparse-checkout set manager update-stack.sh
+# - manager + runner host: git sparse-checkout set manager runner update-stack.sh
 
 # Fetch history and tags
 git fetch --tags

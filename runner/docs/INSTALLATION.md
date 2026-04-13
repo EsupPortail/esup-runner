@@ -86,12 +86,12 @@ sudo chown esup-runner:esup-runner /opt/esup-runner
 
 ### Fetch the sources
 
-As `esup-runner`, clone the repository into `/opt/esup-runner`, then use sparse checkout to only materialize `runner/`.
+As `esup-runner`, clone the repository into `/opt/esup-runner`, then use sparse checkout to materialize `runner/` plus the root `update-stack.sh` helper.
 
 ```bash
 cd /opt/esup-runner
 git clone --filter=blob:none --sparse https://github.com/EsupPortail/esup-runner.git .
-git sparse-checkout set runner
+git sparse-checkout set runner update-stack.sh
 cd runner
 ```
 
@@ -99,12 +99,12 @@ Notes:
 
 - The `.` destination means the clone happens *in-place* in `/opt/esup-runner` (so you do **not** end up with `/opt/esup-runner/esup-runner`).
 - If `/opt/esup-runner` is not empty, `git clone … .` will fail. In that case, choose another directory (e.g. `/opt/esup-runner-src`) or clean the existing one.
-- `git sparse-checkout set …` defines which subdirectories are checked out. Running it again will replace the previous selection.
+- `git sparse-checkout set …` defines which paths (directories/files) are checked out. Running it again will replace the previous selection.
 
 If you plan to install **both** the runner and the manager on the same machine (recommended layout: `/opt/esup-runner/runner` and `/opt/esup-runner/manager`), use:
 
 ```bash
-git sparse-checkout set manager runner
+git sparse-checkout set manager runner update-stack.sh
 ```
 
 ### Configure environment (.env)

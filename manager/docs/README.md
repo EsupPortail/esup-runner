@@ -40,9 +40,9 @@ sudo chown esup-runner:esup-runner /opt/esup-runner/
 cd /opt/esup-runner
 git clone --filter=blob:none --sparse https://github.com/EsupPortail/esup-runner.git .
 # Only manager
-git sparse-checkout set manager
+git sparse-checkout set manager update-stack.sh
 # To install **both** the runner and the manager
-# git sparse-checkout set manager runner
+# git sparse-checkout set manager runner update-stack.sh
 cd manager
 
 # 5) Configure

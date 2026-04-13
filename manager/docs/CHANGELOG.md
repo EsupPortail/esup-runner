@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-13
+
 ### Added
 
 - Added support for `CACHE_DIR` and `UV_CACHE_DIR` in configuration/bootstrap flows so cache directories can be managed explicitly.

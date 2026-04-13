@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-13
+
 ### Added
 
 - Added a shared cache-root configuration (`CACHE_DIR`) with explicit `UV_CACHE_DIR` support for uv package cache handling.

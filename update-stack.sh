@@ -776,18 +776,18 @@ send_update_email_if_configured() {
   git_revision="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
   hostname_value="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "unknown-host")"
   date_value="$(date -Is 2>/dev/null || date)"
-  subject="[esup-runner] Mise a jour terminee (${updated_label})"
-  body="Bonjour,
+  subject="[esup-runner] Update completed (${updated_label})"
+  body="Hello,
 
-La mise a jour automatique ESUP Runner est terminee.
+The automatic ESUP Runner update is complete.
 
-Composants mis a jour: ${updated_label}
-Revision git: ${git_revision}
+Updated components: ${updated_label}
+Git revision: ${git_revision}
 Date: ${date_value}
-Machine: ${hostname_value}
-Test post-maj: ${TEST_STATUS}
+Host: ${hostname_value}
+Post-update test: ${TEST_STATUS}
 
-Cordialement,"
+Best regards,"
 
   log "==> Sending update email to ${manager_email}"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
@@ -843,7 +843,7 @@ except ValueError:
     smtp_port = 25
 
 msg = EmailMessage()
-msg["Subject"] = subject or "[esup-runner] Mise a jour terminee"
+msg["Subject"] = subject or "[esup-runner] Update completed"
 msg["From"] = smtp_sender
 msg["To"] = manager_email
 msg.set_content(body)

@@ -1021,7 +1021,7 @@ def test_validate_result_path_rejects_traversal(task_module):
 
 
 def test_resolve_shared_storage_base_errors(monkeypatch, task_module, tmp_path: Path):
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path / "nope"))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path / "nope"))
 
     with pytest.raises(Exception):
         task_module._resolve_shared_storage_base()
@@ -1029,7 +1029,7 @@ def test_resolve_shared_storage_base_errors(monkeypatch, task_module, tmp_path: 
 
 def test_resolve_shared_storage_base_resolve_exception(monkeypatch, task_module, tmp_path: Path):
     (tmp_path / "base").mkdir()
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path / "base"))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path / "base"))
 
     original_resolve = task_module.PathlibPath.resolve
 
@@ -1046,14 +1046,27 @@ def test_resolve_shared_storage_base_resolve_exception(monkeypatch, task_module,
 
 
 def test_resolve_shared_storage_base_happy_path(monkeypatch, task_module, tmp_path: Path):
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
     base = task_module._resolve_shared_storage_base()
     assert base.exists() and base.is_dir()
 
 
+def test_resolve_shared_storage_base_prefers_new_var_name(monkeypatch, task_module, tmp_path: Path):
+    new_base = tmp_path / "new-storage"
+    legacy_base = tmp_path / "legacy-storage"
+    new_base.mkdir()
+    legacy_base.mkdir()
+
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(new_base), raising=False)
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(legacy_base), raising=False)
+
+    base = task_module._resolve_shared_storage_base()
+    assert base == new_base.resolve()
+
+
 def test_get_local_task_dir_rejects_outside_base(monkeypatch, task_module, tmp_path: Path):
     tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
     with pytest.raises(HTTPException) as exc:
         task_module._get_local_task_dir("../evil")
@@ -1061,7 +1074,7 @@ def test_get_local_task_dir_rejects_outside_base(monkeypatch, task_module, tmp_p
 
 
 def test_get_local_task_dir_404_when_missing(monkeypatch, task_module, tmp_path: Path):
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
     with pytest.raises(HTTPException) as exc:
         task_module._get_local_task_dir("t-missing")
     assert exc.value.status_code == 404
@@ -1119,7 +1132,7 @@ def test_get_local_output_dir_rejects_symlink_outside(monkeypatch, task_module, 
 def test_get_local_output_dir_404_when_missing(monkeypatch, task_module, tmp_path: Path):
     task_dir = tmp_path / "t1"
     task_dir.mkdir(parents=True)
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
     with pytest.raises(HTTPException) as exc:
         task_module._get_local_output_dir("t1")
     assert exc.value.status_code == 404
@@ -1150,7 +1163,7 @@ def test_get_local_manifest_and_file_happy_path(
     (base / "t1" / "manifest.json").write_text(json.dumps({"files": ["a.txt"]}), encoding="utf-8")
     (base / "t1" / "output" / "a.txt").write_text("hello", encoding="utf-8")
 
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(base))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(base))
 
     manifest_resp = task_module._get_local_manifest(tasks["t1"])
     assert manifest_resp.status_code == 200
@@ -1166,7 +1179,7 @@ def test_get_local_manifest_missing_file_404(monkeypatch, task_module, clean_sta
     tasks["t1"] = _task("t1", "r1", status="completed")
 
     (tmp_path / "t1").mkdir()
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
     with pytest.raises(HTTPException) as exc:
         task_module._get_local_manifest(tasks["t1"])
@@ -1204,7 +1217,7 @@ def test_get_local_manifest_invalid_json(monkeypatch, task_module, clean_state, 
     (tmp_path / "t1").mkdir()
     (tmp_path / "t1" / "manifest.json").write_text("{not json", encoding="utf-8")
 
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
     with pytest.raises(Exception):
         task_module._get_local_manifest(tasks["t1"])
@@ -1217,7 +1230,7 @@ def test_stream_local_file_missing(monkeypatch, task_module, clean_state, tmp_pa
     (tmp_path / "t1" / "output").mkdir(parents=True)
     (tmp_path / "t1" / "manifest.json").write_text(json.dumps({}), encoding="utf-8")
 
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
     with pytest.raises(Exception):
         task_module._stream_local_file(tasks["t1"], "missing.txt")
@@ -1231,7 +1244,7 @@ def test_stream_local_file_rejects_path_outside_output(
 
     (tmp_path / "t1" / "output").mkdir(parents=True)
     (tmp_path / "t1" / "manifest.json").write_text(json.dumps({}), encoding="utf-8")
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
     with pytest.raises(HTTPException) as exc:
         task_module._stream_local_file(tasks["t1"], "../evil")
@@ -1681,7 +1694,7 @@ def test_get_task_result_local_storage(
     (tmp_path / "t1" / "manifest.json").write_text(json.dumps({"task_id": "t1"}), encoding="utf-8")
 
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_ENABLED", True)
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
     resp = client.get("/task/result/t1")
     assert resp.status_code == 200
@@ -1701,7 +1714,7 @@ def test_get_task_result_file_local_storage(
     (tmp_path / "t1" / "output" / "a.txt").write_text("hello", encoding="utf-8")
 
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_ENABLED", True)
-    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
     resp = client.get("/task/result/t1/file/a.txt")
     assert resp.status_code == 200

@@ -30,6 +30,8 @@ def test_clear_config_env_vars_removes_only_managed(monkeypatch):
     from app.core import config as cfg
 
     monkeypatch.setenv("MANAGER_HOST", "example")
+    monkeypatch.setenv("LOG_DIR", "/tmp/logs")
+    monkeypatch.setenv("RUNNERS_STORAGE_DIR", "/tmp/storage")
     monkeypatch.setenv("AUTHORIZED_TOKENS__A", "token-a")
     monkeypatch.setenv("ADMIN_USERS__bob", "hash")
     monkeypatch.setenv("SOME_OTHER", "keep")
@@ -38,6 +40,8 @@ def test_clear_config_env_vars_removes_only_managed(monkeypatch):
 
     assert "SOME_OTHER" in cfg.os.environ
     assert "MANAGER_HOST" not in cfg.os.environ
+    assert "LOG_DIR" not in cfg.os.environ
+    assert "RUNNERS_STORAGE_DIR" not in cfg.os.environ
     assert "AUTHORIZED_TOKENS__A" not in cfg.os.environ
     assert "ADMIN_USERS__bob" not in cfg.os.environ
 
@@ -206,7 +210,10 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     monkeypatch.setenv("MANAGER_PROTOCOL", "https")
     monkeypatch.setenv("MANAGER_HOST", "example.org")
     monkeypatch.setenv("MANAGER_PORT", "1234")
-    monkeypatch.setenv("LOG_DIRECTORY", "/tmp/esup-logs")
+    monkeypatch.setenv("LOG_DIR", "/tmp/esup-logs")
+    monkeypatch.delenv("LOG_DIRECTORY", raising=False)
+    monkeypatch.setenv("CACHE_DIR", "/tmp/esup-cache")
+    monkeypatch.delenv("UV_CACHE_DIR", raising=False)
 
     # Token/admin discovery via prefixes
     monkeypatch.setenv("AUTHORIZED_TOKENS__client", "tok")
@@ -214,15 +221,19 @@ def test_config_initialization_and_validation_branches(monkeypatch):
 
     cfg = Config()
     assert cfg.MANAGER_URL == "https://example.org:1234"
+    assert cfg.LOG_DIR.endswith("/")
     assert cfg.LOG_DIRECTORY.endswith("/")
+    assert cfg.CACHE_DIR == "/tmp/esup-cache"
+    assert cfg.UV_CACHE_DIR == "/tmp/esup-cache/uv"
     assert cfg.AUTHORIZED_TOKENS == {"client": "tok"}
     assert cfg.ADMIN_USERS == {"admin": "hash"}
 
     # RUNNERS_STORAGE_ENABLED with missing path should raise
     monkeypatch.setenv("RUNNERS_STORAGE_ENABLED", "true")
-    monkeypatch.setenv("RUNNERS_STORAGE_PATH", "")
+    monkeypatch.setenv("RUNNERS_STORAGE_DIR", "")
+    monkeypatch.delenv("RUNNERS_STORAGE_PATH", raising=False)
     cfg2 = Config()
-    with pytest.raises(ValueError, match="RUNNERS_STORAGE_PATH"):
+    with pytest.raises(ValueError, match="RUNNERS_STORAGE_DIR"):
         cfg2.validate_configuration()
 
     # PRIORITIES_ENABLED with empty domain disables itself
@@ -232,6 +243,22 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     cfg3 = Config()
     cfg3.validate_configuration()
     assert cfg3.PRIORITIES_ENABLED is False
+
+    # Explicit UV cache override
+    monkeypatch.setenv("UV_CACHE_DIR", "/tmp/custom-uv-cache")
+    cfg4 = Config()
+    assert cfg4.UV_CACHE_DIR == "/tmp/custom-uv-cache"
+
+    # Legacy aliases still work.
+    monkeypatch.delenv("LOG_DIR", raising=False)
+    monkeypatch.setenv("LOG_DIRECTORY", "/tmp/esup-legacy-logs")
+    monkeypatch.delenv("RUNNERS_STORAGE_DIR", raising=False)
+    monkeypatch.setenv("RUNNERS_STORAGE_PATH", "/tmp/esup-legacy-storage")
+    cfg5 = Config()
+    assert cfg5.LOG_DIR == "/tmp/esup-legacy-logs/"
+    assert cfg5.LOG_DIRECTORY == "/tmp/esup-legacy-logs/"
+    assert cfg5.RUNNERS_STORAGE_DIR == "/tmp/esup-legacy-storage"
+    assert cfg5.RUNNERS_STORAGE_PATH == "/tmp/esup-legacy-storage"
 
 
 def test_validate_configuration_rejects_wildcard_origins_with_credentials(monkeypatch):

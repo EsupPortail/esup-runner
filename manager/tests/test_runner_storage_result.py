@@ -44,7 +44,7 @@ def test_get_task_manifest_from_shared_storage_when_enabled(
         )
 
         monkeypatch.setattr(config, "RUNNERS_STORAGE_ENABLED", True)
-        monkeypatch.setattr(config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+        monkeypatch.setattr(config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
         resp = client.get(f"/task/result/{task_id}", headers=auth_headers)
         assert resp.status_code == 200
@@ -88,7 +88,7 @@ def test_get_task_manifest_from_shared_storage_turns_warning_to_completed(
         )
 
         monkeypatch.setattr(config, "RUNNERS_STORAGE_ENABLED", True)
-        monkeypatch.setattr(config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+        monkeypatch.setattr(config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
         resp = client.get(f"/task/result/{task_id}", headers=auth_headers)
         assert resp.status_code == 200
@@ -131,7 +131,7 @@ def test_get_task_result_file_from_shared_storage_when_enabled(
         )
 
         monkeypatch.setattr(config, "RUNNERS_STORAGE_ENABLED", True)
-        monkeypatch.setattr(config, "RUNNERS_STORAGE_PATH", str(tmp_path))
+        monkeypatch.setattr(config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
         resp = client.get(f"/task/result/{task_id}/file/output.txt", headers=auth_headers)
         assert resp.status_code == 200

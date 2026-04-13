@@ -199,6 +199,7 @@ def test_parse_args_uses_default_huggingface_models_dir(monkeypatch):
     tr = _load_transcription_script_module()
 
     monkeypatch.delenv("HUGGINGFACE_MODELS_DIR", raising=False)
+    monkeypatch.delenv("CACHE_DIR", raising=False)
 
     args = tr.parse_args(
         [
@@ -212,6 +213,26 @@ def test_parse_args_uses_default_huggingface_models_dir(monkeypatch):
     )
 
     assert args.huggingface_models_dir == tr._DEFAULT_HUGGINGFACE_MODELS_DIR
+
+
+def test_parse_args_huggingface_default_follows_cache_dir(monkeypatch):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.delenv("HUGGINGFACE_MODELS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_DIR", "/tmp/esup-cache")
+
+    args = tr.parse_args(
+        [
+            "--base-dir",
+            "/tmp/base",
+            "--input-file",
+            "input.mp4",
+            "--work-dir",
+            "output",
+        ]
+    )
+
+    assert args.huggingface_models_dir == "/tmp/esup-cache/huggingface"
 
 
 def test_load_whisper_model_uses_configured_download_root(monkeypatch, tmp_path):

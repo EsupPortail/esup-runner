@@ -11,7 +11,7 @@ import app.core.config as config_module
 import app.core.state as state_module
 
 
-def test_parse_helpers_cover_defaults_invalid_values_and_bounds():
+def test_parse_helpers_cover_defaults_invalid_values_and_bounds(monkeypatch):
     assert config_module._parse_bool("true") is True
     assert config_module._parse_bool("off") is False
     assert config_module._parse_bool("maybe", default=True) is True
@@ -25,6 +25,12 @@ def test_parse_helpers_cover_defaults_invalid_values_and_bounds():
     assert config_module._parse_float("bad", 2.5) == 2.5
     assert config_module._parse_float("-1.0", 0.0, min_value=0.5) == 0.5
     assert config_module._parse_float("9.0", 0.0, max_value=3.0) == 3.0
+
+    key_a = "__ESUP_RUNNER_TEST_MISSING_A__"
+    key_b = "__ESUP_RUNNER_TEST_MISSING_B__"
+    monkeypatch.delenv(key_a, raising=False)
+    monkeypatch.delenv(key_b, raising=False)
+    assert config_module._first_env_value(key_a, key_b, default="fallback") == "fallback"
 
 
 def test_get_config_loads_environment_only_once(monkeypatch):
@@ -174,6 +180,20 @@ def test_config_validate_configuration_success(monkeypatch):
 
     cfg = config_module.Config()
     cfg.validate_configuration()
+
+
+def test_config_log_dir_prefers_new_name_and_keeps_legacy_alias(monkeypatch):
+    monkeypatch.setenv("LOG_DIR", "/tmp/new-runner-logs")
+    monkeypatch.setenv("LOG_DIRECTORY", "/tmp/legacy-runner-logs")
+
+    cfg = config_module.Config()
+    assert cfg.LOG_DIR == "/tmp/new-runner-logs/"
+    assert cfg.LOG_DIRECTORY == "/tmp/new-runner-logs/"
+
+    monkeypatch.delenv("LOG_DIR", raising=False)
+    cfg_legacy = config_module.Config()
+    assert cfg_legacy.LOG_DIR == "/tmp/legacy-runner-logs/"
+    assert cfg_legacy.LOG_DIRECTORY == "/tmp/legacy-runner-logs/"
 
 
 def test_config_validate_instances_requires_at_least_one():

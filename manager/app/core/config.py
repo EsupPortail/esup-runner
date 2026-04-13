@@ -38,6 +38,13 @@ _CONFIG_ENV_KEYS = [
     "COMPLETION_NOTIFY_MAX_RETRIES",
     "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS",
     "COMPLETION_NOTIFY_BACKOFF_FACTOR",
+    "SMTP_SERVER",
+    "SMTP_PORT",
+    "SMTP_USE_TLS",
+    "SMTP_USERNAME",
+    "SMTP_PASSWORD",
+    "SMTP_SENDER",
+    "MANAGER_EMAIL",
     "CORS_ALLOW_ORIGINS",
     "CORS_ALLOW_CREDENTIALS",
     "CORS_ALLOW_METHODS",
@@ -290,6 +297,15 @@ class Config:
             1.5,
             min_value=1.0,
         )
+
+        # SMTP configuration for warning emails (optional)
+        self.SMTP_SERVER: str = os.getenv("SMTP_SERVER", "")
+        self.SMTP_PORT: int = _parse_int(os.getenv("SMTP_PORT"), 25, min_value=1, max_value=65535)
+        self.SMTP_USE_TLS: bool = _parse_bool(os.getenv("SMTP_USE_TLS"), default=False)
+        self.SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
+        self.SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+        self.SMTP_SENDER: str = os.getenv("SMTP_SENDER", "")
+        self.MANAGER_EMAIL: str = os.getenv("MANAGER_EMAIL", "")
 
         # CORS configuration
         # Comma-separated list of allowed origins; use "*" only when allow_credentials is False.

@@ -11,7 +11,7 @@ This document describes a safe **production** upgrade procedure for the *Runner*
 ## 0) Prerequisites
 
 - Installed under `/opt/esup-runner` (or equivalent).
-- systemd service installed: `esup-runner-runner`.
+- systemd user service installed: `esup-runner-runner`.
 - Configuration file: `/opt/esup-runner/runner/.env`.
 
 Useful docs:
@@ -48,10 +48,11 @@ Before any upgrade:
   - `/opt/esup-runner/runner/.env`
 - Backup “stateful” directories if you want to preserve artifacts:
   - `STORAGE_DIR` (default: `/tmp/esup-runner`)
-  - `LOG_DIRECTORY` (default: `/var/log/esup-runner`)
+  - `LOG_DIR` (default: `/var/log/esup-runner`)
 - For transcription runners:
-  - `WHISPER_MODELS_DIR` (model cache)
-  - `HUGGINGFACE_MODELS_DIR` (translation model cache)
+  - `CACHE_DIR` (contains `whisper-models`, `huggingface`, and `uv` caches)
+
+Compatibility note: legacy variable `LOG_DIRECTORY` is still accepted.
 
 ---
 
@@ -115,15 +116,6 @@ Update `uv` for the current user with:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-If you maintain the installation as `root`, run the installer with root privileges:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sudo sh
-```
-
-> Note
-> Prefer `curl ... | sudo sh` over `sudo curl ... | sh`: in a pipeline, `sudo curl` only elevates `curl`, not the shell that runs the installer.
-
 If this runner handles only **encoding** or **studio** tasks, install the default:
 ```bash
 cd /opt/esup-runner/runner
@@ -143,6 +135,12 @@ If this runner must achieve **transcription** tasks on a **GPU** server, install
 cd /opt/esup-runner/runner
 make sync-transcription-gpu
 ```
+
+Notes:
+- Current transcription dependency support:
+  - `transcription-cpu`: supported on Linux x86_64 and macOS Apple Silicon (`arm64`).
+  - `transcription-gpu`: supported on Linux x86_64 GPU/CUDA hosts.
+  - macOS Intel (`x86_64`) is not supported for transcription with the current `torch` stack because upstream wheels are no longer published for that platform.
 
 ### Optional: refresh `uv.lock` for GPU environments
 
@@ -178,7 +176,7 @@ uv run scripts/check_runner_storage.py
 
 - `check_ffmpeg.py` helps catch codec/build issues early.
 - `check_runner_resources.py` validates CPU/RAM/GPU/config.
-- `check_runner_storage.py` validates free space and permissions for configured storage directories.
+- `check_runner_storage.py` validates free space and permissions for configured storage directories, including the `uv` cache directory.
 
 ---
 
@@ -196,15 +194,17 @@ sudo make init
 ## 8) Update / redeploy the systemd service
 
 > Warning
-> `make create-service` **overwrites** `/etc/systemd/system/esup-runner-runner.service` with `production/esup-runner-runner.service`.
+> `make create-service` **overwrites** `~/.config/systemd/user/esup-runner-runner.service` with `production/esup-runner-runner.service`.
 > If you customized the unit, diff it first.
 
 ```bash
 cd /opt/esup-runner/runner
-sudo make create-service
+make create-service
 ```
 
-This performs: service copy → `daemon-reload` → `enable` → `restart`.
+Run this as the service user (without `sudo`) so the unit is installed under `~/.config/systemd/user/`.
+
+This performs: service copy → `systemctl --user daemon-reload` → `systemctl --user enable --now`.
 
 ---
 
@@ -213,8 +213,8 @@ This performs: service copy → `daemon-reload` → `enable` → `restart`.
 ### Service
 
 ```bash
-sudo systemctl status esup-runner-runner
-sudo journalctl -u esup-runner-runner -n 200 --no-pager
+systemctl --user status esup-runner-runner
+journalctl --user -u esup-runner-runner -n 200 --no-pager
 ```
 
 ### Base endpoint
@@ -235,7 +235,7 @@ curl "http://127.0.0.1:<RUNNER_PORT>/"
 1) Stop the service:
 
 ```bash
-sudo systemctl stop esup-runner-runner
+systemctl --user stop esup-runner-runner
 ```
 
 2) Go back to a known tag/commit:
@@ -251,7 +251,65 @@ git checkout runner-vX.Y.Z
 ```bash
 cd /opt/esup-runner/runner
 make sync
-sudo systemctl start esup-runner-runner
+systemctl --user start esup-runner-runner
 ```
 
 4) Check logs and registration to the Manager.
+
+---
+
+## 11) Automated stack update script
+
+A helper script is available in monorepo deployments:
+
+```bash
+cd /opt/esup-runner
+./update-stack.sh --help
+```
+
+Detection rules used by the script:
+- Manager is considered installed when `/opt/esup-runner/manager/.env` exists.
+- Runner is considered installed when `/opt/esup-runner/runner/.env` exists.
+
+Examples:
+
+```bash
+cd /opt/esup-runner
+
+# Update detected components (manager and/or runner)
+./update-stack.sh
+
+# Update runner only
+./update-stack.sh --runner-only
+
+# Force CPU transcription dependencies
+./update-stack.sh --runner-only --runner-sync-mode transcription-cpu
+
+# Force GPU transcription dependencies
+./update-stack.sh --runner-only --runner-sync-mode transcription-gpu
+
+# GPU update with lock refresh for CUDA 12 hosts
+./update-stack.sh --runner-only --runner-sync-mode transcription-gpu --gpu-lock-profile cuda12
+
+# GPU update with lock refresh for latest GPU stack
+./update-stack.sh --runner-only --runner-sync-mode transcription-gpu --gpu-lock-profile latest
+
+# Display commands without executing them
+./update-stack.sh --runner-only --dry-run --skip-uv-update --skip-git-update
+```
+
+Cron example:
+
+```cron
+0 3 * * 1 cd /opt/esup-runner && ./update-stack.sh >> /var/log/esup-runner/update-stack.log 2>&1
+```
+
+Notes:
+- `--runner-sync-mode auto` (default) uses this heuristic:
+  - if `RUNNER_TASK_TYPES` does not contain `transcription`: `make sync`
+  - if transcription is enabled and GPU is detected/configured: `make sync-transcription-gpu`
+  - otherwise: `make sync-transcription-cpu`
+- By default, `make init` is skipped. Use `--with-init` only when directories/permissions changed.
+- By default, restart policy is `if-changed` (restart only when `runner/` changed after git update, or after a local GPU lock regeneration). You can force a restart with `--always-restart`, or disable it with `--no-restart`.
+- User services require an active user manager (`systemd --user`). For unattended reboots/cron, enable lingering once: `sudo loginctl enable-linger esup-runner`.
+- If `make init` needs elevated privileges (for example when `.env` paths are under `/var`), run the script as `esup-runner` and configure restricted passwordless `sudo` for `make init`.

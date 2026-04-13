@@ -12,7 +12,7 @@ This document describes a safe **production** upgrade procedure for the *Manager
 ## 0) Prerequisites
 
 - Installed under `/opt/esup-runner` (or equivalent).
-- systemd service installed: `esup-runner-manager`.
+- systemd user service installed: `esup-runner-manager`.
 - Configuration file: `/opt/esup-runner/manager/.env`.
 
 Useful docs:
@@ -53,7 +53,11 @@ Before any upgrade:
 - Backup task persistence (if you need to keep history):
   - `/opt/esup-runner/manager/data/` (daily rotation, one JSON per task)
 - Backup logs if needed:
-  - the `LOG_DIRECTORY` directory defined in `.env` (default: `/var/log/esup-runner`)
+  - the `LOG_DIR` directory defined in `.env` (default: `/var/log/esup-runner`)
+- Optional (to keep local uv cache warm):
+  - `CACHE_DIR` from `.env` (default: `/home/esup-runner/.cache/esup-runner`)
+
+Compatibility note: legacy names `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` are still accepted.
 
 ---
 
@@ -115,15 +119,6 @@ Update `uv` for the current user with:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-If you maintain the installation as `root`, run the installer with root privileges:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sudo sh
-```
-
-> Note
-> Prefer `curl ... | sudo sh` over `sudo curl ... | sh`: in a pipeline, `sudo curl` only elevates `curl`, not the shell that runs the installer.
-
 ```bash
 cd /opt/esup-runner/manager
 make sync
@@ -159,15 +154,17 @@ sudo make init
 If the systemd unit file changed, you must re-install it.
 
 > Warning
-> `make create-service` **overwrites** `/etc/systemd/system/esup-runner-manager.service` with `production/esup-runner-manager.service`.
+> `make create-service` **overwrites** `~/.config/systemd/user/esup-runner-manager.service` with `production/esup-runner-manager.service`.
 > If you customized the unit, diff it first.
 
 ```bash
 cd /opt/esup-runner/manager
-sudo make create-service
+make create-service
 ```
 
-This performs: service copy → `daemon-reload` → `enable` → `restart`.
+Run this as the service user (without `sudo`) so the unit is installed under `~/.config/systemd/user/`.
+
+This performs: service copy → `systemctl --user daemon-reload` → `systemctl --user enable --now`.
 
 ---
 
@@ -176,8 +173,8 @@ This performs: service copy → `daemon-reload` → `enable` → `restart`.
 ### Service
 
 ```bash
-systemctl status esup-runner-manager
-journalctl -u esup-runner-manager -n 200 --no-pager
+systemctl --user status esup-runner-manager
+journalctl --user -u esup-runner-manager -n 200 --no-pager
 ```
 
 ### Version endpoint
@@ -199,7 +196,7 @@ curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
 1) Stop the service:
 
 ```bash
-sudo systemctl stop esup-runner-manager
+systemctl --user stop esup-runner-manager
 ```
 
 2) Go back to a known tag/commit:
@@ -215,7 +212,50 @@ git checkout manager-vX.Y.Z
 ```bash
 cd /opt/esup-runner/manager
 make sync
-sudo systemctl start esup-runner-manager
+systemctl --user start esup-runner-manager
 ```
 
 4) Check logs.
+
+---
+
+## 10) Automated stack update script
+
+A helper script is available in monorepo deployments:
+
+```bash
+cd /opt/esup-runner
+./update-stack.sh --help
+```
+
+Detection rules used by the script:
+- Manager is considered installed when `/opt/esup-runner/manager/.env` exists.
+- Runner is considered installed when `/opt/esup-runner/runner/.env` exists.
+
+Examples:
+
+```bash
+cd /opt/esup-runner
+
+# Update detected components (manager and/or runner)
+./update-stack.sh
+
+# Update manager only
+./update-stack.sh --manager-only
+
+# Display commands without executing them
+./update-stack.sh --dry-run --skip-uv-update --skip-git-update
+```
+
+Cron example:
+
+```cron
+0 3 * * 1 cd /opt/esup-runner && ./update-stack.sh >> /var/log/esup-runner/update-stack.log 2>&1
+```
+
+Notes:
+- By default, `make init` is skipped. Use `--with-init` only when directories/permissions changed.
+- By default, restart policy is `if-changed` (restart only when `manager/` changed after git update). You can force a restart with `--always-restart`, or disable it with `--no-restart`.
+- User services require an active user manager (`systemd --user`). For unattended reboots/cron, enable lingering once: `sudo loginctl enable-linger esup-runner`.
+- If `make init` needs elevated privileges (for example when `.env` paths are under `/var`), run the script as `esup-runner` and configure restricted passwordless `sudo` for `make init`.
+- The script can also update `runner` on the same host if both `.env` files are present and no `--manager-only/--runner-only` flag is used.

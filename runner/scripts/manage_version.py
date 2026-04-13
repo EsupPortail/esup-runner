@@ -130,6 +130,26 @@ def update_pyproject_version(new_version: str) -> None:
     print(f"✓ Updated {pyproject_file}")
 
 
+def update_uv_lock_package_version(new_version: str) -> None:
+    """Update only the esup-runner-runner package version line in uv.lock."""
+    uv_lock_file = get_project_root() / "uv.lock"
+    if not uv_lock_file.exists():
+        raise FileNotFoundError(f"uv.lock file not found: {uv_lock_file}")
+
+    content = uv_lock_file.read_text()
+    pattern = (
+        r"(\[\[package\]\]\n" r'name\s*=\s*"esup-runner-runner"\n' r'\s*version\s*=\s*)"[^"]*"'
+    )
+    updated_content, replacements = re.subn(pattern, rf'\1"{new_version}"', content, count=1)
+
+    if replacements == 1:
+        uv_lock_file.write_text(updated_content)
+        print(f"✓ Updated {uv_lock_file}")
+        return
+
+    raise ValueError('Unable to find [[package]] entry for name = "esup-runner-runner" in uv.lock')
+
+
 def show_version() -> None:
     """Display the current version."""
     current = get_current_version()
@@ -158,11 +178,12 @@ def set_version(new_version: str) -> None:
     update_version_file(new_version)
     update_version_txt(new_version)
     update_pyproject_version(new_version)
+    update_uv_lock_package_version(new_version)
 
     print(f"\n✓ Version updated successfully to {new_version}")
     print("\nDon't forget to:")
     print("  1. Update CHANGELOG.md with release notes")
-    print("  2. Commit the changes: git add app/__version__.py VERSION pyproject.toml")
+    print("  2. Commit the changes: git add app/__version__.py VERSION pyproject.toml uv.lock")
     print(
         f"  3. Create a git tag: git tag -a runner-v{new_version} -m 'Runner release {new_version}'"
     )
@@ -187,11 +208,12 @@ def bump_version_command(bump_type: str) -> None:
     update_version_file(new_version)
     update_version_txt(new_version)
     update_pyproject_version(new_version)
+    update_uv_lock_package_version(new_version)
 
     print(f"\n✓ Version bumped successfully to {new_version}")
     print("\nDon't forget to:")
     print("  1. Update CHANGELOG.md with release notes")
-    print("  2. Commit the changes: git add app/__version__.py VERSION pyproject.toml")
+    print("  2. Commit the changes: git add app/__version__.py VERSION pyproject.toml uv.lock")
     print(
         f"  3. Create a git tag: git tag -a runner-v{new_version} -m 'Runner release {new_version}'"
     )

@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "esup-runner"
-version = "1.0.1"
+version = "1.1.0"
 description = "ESUP Runner - Outsourcing system for encoding, transcription, and other processes"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -55,22 +55,33 @@ dev = [
 ]
 transcription-gpu = [
     "openai-whisper==20250625",
+    "torch",
     "transformers>=5.0.0rc3,<6.0.0",
     "sentencepiece>=0.2.0,<1.0.0",
     "coverage>=7.2.0",
 ]
 transcription-cpu = [
     "openai-whisper==20250625",
+    "torch",
     "transformers>=5.0.0rc3,<6.0.0",
     "sentencepiece>=0.2.0,<1.0.0",
     "coverage>=7.2.0",
 ]
 
+[tool.uv]
+conflicts = [
+    [
+        { extra = "transcription-cpu" },
+        { extra = "transcription-gpu" },
+    ],
+]
+
 [tool.uv.sources]
-# transcription-cpu differs from transcription-gpu by torch index selection
-# (CPU wheels from pytorch-cpu on Linux x86_64).
+# transcription-cpu differs from transcription-gpu by torch index selection.
+# Keep CPU/GPU extras mutually exclusive so uv can resolve the proper torch
+# variant for each installation profile.
 torch = [
-    { index = "pytorch-cpu", marker = "extra == 'transcription-cpu' and sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pytorch-cpu", extra = "transcription-cpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
 ]
 
 [[tool.uv.index]]

@@ -1024,14 +1024,21 @@ async def get_task_result_file(
 
 def _resolve_shared_storage_base() -> PathlibPath:
     """Resolve and validate the base shared storage directory."""
-    base_dir = PathlibPath(getattr(config, "RUNNERS_STORAGE_PATH", "/tmp/esup-runner")).expanduser()
+    # Prefer the new name, keep legacy alias for backward compatibility.
+    storage_dir = (
+        getattr(config, "RUNNERS_STORAGE_DIR", None)
+        or getattr(config, "RUNNERS_STORAGE_PATH", None)
+        or "/tmp/esup-runner"
+    )
+
+    base_dir = PathlibPath(storage_dir).expanduser()
     try:
         base_resolved = base_dir.resolve(strict=False)
     except Exception:
-        raise HTTPException(500, "Invalid RUNNERS_STORAGE_PATH")
+        raise HTTPException(500, "Invalid RUNNERS_STORAGE_DIR or RUNNERS_STORAGE_PATH")
 
     if not base_resolved.exists() or not base_resolved.is_dir():
-        raise HTTPException(500, "RUNNERS_STORAGE_PATH does not exist or is not a directory")
+        raise HTTPException(500, "RUNNERS_STORAGE_DIR or RUNNERS_STORAGE_PATH is not a directory")
 
     return base_resolved
 
@@ -1061,7 +1068,7 @@ def _get_local_task_dir(task_id: str) -> PathlibPath:
         raise HTTPException(500, "Invalid task result path")
 
     if task_resolved != base_resolved and base_resolved not in task_resolved.parents:
-        raise HTTPException(500, "Resolved result path is outside RUNNERS_STORAGE_PATH")
+        raise HTTPException(500, "Resolved result path is outside RUNNERS_STORAGE_DIR")
 
     if not task_resolved.exists() or not task_resolved.is_dir():
         raise HTTPException(404, "Result directory not found in shared storage")

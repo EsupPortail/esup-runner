@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Initialize required directories from environment, .env, and defaults.
 
-Creates LOG_DIRECTORY, STORAGE_DIR, WHISPER_MODELS_DIR and
-HUGGINGFACE_MODELS_DIR, then assigns ownership to the invoking user/group.
+Creates LOG_DIR, STORAGE_DIR, CACHE_DIR and derived cache subdirectories
+for Whisper/Hugging Face/uv, then assigns ownership to the invoking user/group.
+Legacy alias is accepted for compatibility (LOG_DIRECTORY).
 
 Must be run with sudo to set ownership correctly, but will fall back to current user if not.
 
@@ -22,18 +23,29 @@ from typing import Dict, Iterable, Mapping
 # Keep translation-model cache handling aligned with Whisper so both caches can
 # be provisioned up front by `make init`.
 ENV_KEYS = (
-    "LOG_DIRECTORY",
+    "LOG_DIR",
     "STORAGE_DIR",
+    "CACHE_DIR",
     "WHISPER_MODELS_DIR",
     "HUGGINGFACE_MODELS_DIR",
+    "UV_CACHE_DIR",
 )
+
+ENV_KEY_ALIASES = {
+    "LOG_DIR": ("LOG_DIR", "LOG_DIRECTORY"),
+}
 
 # Keep these defaults aligned with app/core/config.py.
 DEFAULT_DIRECTORY_VALUES = {
-    "LOG_DIRECTORY": "/var/log/esup-runner",
+    "LOG_DIR": "/var/log/esup-runner",
     "STORAGE_DIR": "/tmp/esup-runner/storage",
-    "WHISPER_MODELS_DIR": "/home/esup-runner/.cache/esup-runner/whisper-models",
-    "HUGGINGFACE_MODELS_DIR": "/home/esup-runner/.cache/esup-runner/huggingface",
+    "CACHE_DIR": "/home/esup-runner/.cache/esup-runner",
+}
+
+DEFAULT_CACHE_SUBDIRS = {
+    "WHISPER_MODELS_DIR": "whisper-models",
+    "HUGGINGFACE_MODELS_DIR": "huggingface",
+    "UV_CACHE_DIR": "uv",
 }
 
 
@@ -85,12 +97,20 @@ def resolve_directory_value(
     if environ is None:
         environ = os.environ
 
-    value = environ.get(key)
-    if value is not None:
-        return value
+    aliases = ENV_KEY_ALIASES.get(key, (key,))
+    for alias in aliases:
+        value = environ.get(alias)
+        if value is not None:
+            return value
 
-    if key in env:
-        return env[key]
+    for alias in aliases:
+        value = env.get(alias)
+        if value is not None:
+            return value
+
+    if key in DEFAULT_CACHE_SUBDIRS:
+        cache_dir = resolve_directory_value("CACHE_DIR", env, environ)
+        return str(Path(cache_dir).expanduser() / DEFAULT_CACHE_SUBDIRS[key])
 
     return DEFAULT_DIRECTORY_VALUES.get(key, "")
 
@@ -101,10 +121,15 @@ def collect_directories(
 ) -> Iterable[Path]:
     # Build the list of directories to create from environment/.env/default values.
     dirs = []
+    seen = set()
     for key in ENV_KEYS:
         value = resolve_directory_value(key, env, environ)
         if value:
-            dirs.append(Path(value).expanduser())
+            directory = Path(value).expanduser()
+            if directory in seen:
+                continue
+            seen.add(directory)
+            dirs.append(directory)
     return dirs
 
 

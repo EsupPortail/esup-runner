@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Initialize required directories from .env.
 
-Creates LOG_DIRECTORY and RUNNERS_STORAGE_PATH (if set)
-then assigns ownership to the invoking user/group.
+Creates LOG_DIR plus optional storage/cache directories
+defined in .env, then assigns ownership to the invoking user/group.
+Legacy aliases are accepted for compatibility (LOG_DIRECTORY, RUNNERS_STORAGE_PATH).
 
 Must be run with sudo to set ownership correctly, but will fall back to current user if not.
 
@@ -16,9 +17,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Mapping
 
-ENV_KEYS = ("LOG_DIRECTORY", "RUNNERS_STORAGE_PATH")
+ENV_KEYS = ("LOG_DIR", "RUNNERS_STORAGE_DIR", "CACHE_DIR", "UV_CACHE_DIR")
+
+ENV_KEY_ALIASES = {
+    "LOG_DIR": ("LOG_DIR", "LOG_DIRECTORY"),
+    "RUNNERS_STORAGE_DIR": ("RUNNERS_STORAGE_DIR", "RUNNERS_STORAGE_PATH"),
+}
 
 
 def _strip_quotes(value: str) -> str:
@@ -60,11 +66,35 @@ def resolve_target_uid_gid() -> tuple[int, int]:
     return os.getuid(), os.getgid()
 
 
-def collect_directories(env: Dict[str, str]) -> Iterable[Path]:
-    # Build the list of directories to create from .env values.
+def _resolve_env_value(
+    key: str,
+    env: Dict[str, str],
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    # Resolve one env key from process environment first, then .env content.
+    if environ is None:
+        environ = os.environ
+
+    aliases = ENV_KEY_ALIASES.get(key, (key,))
+    for alias in aliases:
+        value = environ.get(alias)
+        if value:
+            return value
+    for alias in aliases:
+        value = env.get(alias)
+        if value:
+            return value
+    return ""
+
+
+def collect_directories(
+    env: Dict[str, str],
+    environ: Mapping[str, str] | None = None,
+) -> Iterable[Path]:
+    # Build the list of directories to create from environment/.env values.
     dirs = []
     for key in ENV_KEYS:
-        value = env.get(key)
+        value = _resolve_env_value(key, env, environ)
         if value:
             dirs.append(Path(value).expanduser())
     return dirs

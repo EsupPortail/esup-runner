@@ -63,8 +63,15 @@ _GPU_CHUNK_THRESHOLD_SECONDS = 1800
 # knob, even though the CLI still exposes them for ad hoc maintenance runs.
 _DEFAULT_CHUNK_DURATION_SECONDS = 300
 _DEFAULT_CHUNK_OVERLAP_SECONDS = 3
-_DEFAULT_WHISPER_MODELS_DIR = "/home/esup-runner/.cache/esup-runner/whisper-models"
-_DEFAULT_HUGGINGFACE_MODELS_DIR = "/home/esup-runner/.cache/esup-runner/huggingface"
+_DEFAULT_CACHE_DIR = "/home/esup-runner/.cache/esup-runner"
+_DEFAULT_WHISPER_MODELS_DIR = f"{_DEFAULT_CACHE_DIR}/whisper-models"
+_DEFAULT_HUGGINGFACE_MODELS_DIR = f"{_DEFAULT_CACHE_DIR}/huggingface"
+
+
+def _resolve_default_cache_subdir(subdir: str) -> str:
+    cache_dir = os.getenv("CACHE_DIR", _DEFAULT_CACHE_DIR)
+    return str((Path(cache_dir).expanduser() / subdir))
+
 
 # Translation remains intentionally internal for now: the public API keeps a
 # single `language` parameter, which expresses the final subtitle language. When
@@ -133,7 +140,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--whisper-models-dir",
-        default=os.getenv("WHISPER_MODELS_DIR", _DEFAULT_WHISPER_MODELS_DIR),
+        default=os.getenv("WHISPER_MODELS_DIR", _resolve_default_cache_subdir("whisper-models")),
         help="Directory used to cache Whisper models",
     )
     parser.add_argument(
@@ -207,7 +214,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--huggingface-models-dir",
-        default=os.getenv("HUGGINGFACE_MODELS_DIR", _DEFAULT_HUGGINGFACE_MODELS_DIR),
+        default=os.getenv("HUGGINGFACE_MODELS_DIR", _resolve_default_cache_subdir("huggingface")),
         help="Directory used to cache Hugging Face translation models",
     )
     # Normalization options

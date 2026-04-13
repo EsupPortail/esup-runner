@@ -42,10 +42,12 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     RUNNER_HOST=0.0.0.0 \
     RUNNER_BASE_PORT=8082 \
-    LOG_DIRECTORY=/var/log/esup-runner \
+    LOG_DIR=/var/log/esup-runner \
     STORAGE_DIR=/tmp/esup-runner \
-    WHISPER_MODELS_DIR=/home/esup-runner/.cache/esup-runner/whisper-models \
-    HUGGINGFACE_MODELS_DIR=/home/esup-runner/.cache/esup-runner/huggingface \
+    CACHE_DIR=/home/esup-runner/.cache/esup-runner \
+    WHISPER_MODELS_DIR=${CACHE_DIR}/whisper-models \
+    HUGGINGFACE_MODELS_DIR=${CACHE_DIR}/huggingface \
+    UV_CACHE_DIR=${CACHE_DIR}/uv \
     ENCODING_TYPE=CPU
 
 # Runtime dependencies (CPU FFmpeg tools).
@@ -56,7 +58,7 @@ RUN apt-get update && \
 # Create dedicated non-root user and writable runtime directories.
 RUN groupadd --gid "${ESUP_RUNNER_GID}" esup-runner && \
     useradd --uid "${ESUP_RUNNER_UID}" --gid "${ESUP_RUNNER_GID}" --home-dir /home/esup-runner --create-home --shell /usr/sbin/nologin esup-runner && \
-    mkdir -p /var/log/esup-runner /tmp/esup-runner /home/esup-runner/.cache/esup-runner/whisper-models /home/esup-runner/.cache/esup-runner/huggingface && \
+    mkdir -p /var/log/esup-runner /tmp/esup-runner /home/esup-runner/.cache/esup-runner/whisper-models /home/esup-runner/.cache/esup-runner/huggingface /home/esup-runner/.cache/esup-runner/uv && \
     chown -R esup-runner:esup-runner /var/log/esup-runner /tmp/esup-runner /home/esup-runner /app
 
 # Copy the built app and virtual environment with correct ownership.

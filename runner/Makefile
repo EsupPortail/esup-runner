@@ -41,6 +41,15 @@
 
 UV      ?= uv
 PYTHON  ?= $(UV) run python
+UV_LINK_MODE ?= copy
+CACHE_DIR ?= /home/esup-runner/.cache/esup-runner
+UV_CACHE_DIR ?= $(CACHE_DIR)/uv
+XDG_CONFIG_HOME ?= $(HOME)/.config
+SYSTEMD_USER_DIR ?= $(XDG_CONFIG_HOME)/systemd/user
+SYSTEMD_USER_UNIT ?= $(SYSTEMD_USER_DIR)/esup-runner-runner.service
+
+# Ensure every uv invocation (sync/lock/run/tests/linters) uses the runner cache root.
+export UV_CACHE_DIR
 
 EXTRAS  ?=
 
@@ -56,12 +65,10 @@ DOCKER_BUILD_OPTS ?=
 DOCKER_RUNNER_EXTRA ?=
 DOCKER_LOGS_VOLUME ?= esup-runner-runner-logs
 DOCKER_STORAGE_VOLUME ?= esup-runner-storage
-DOCKER_WHISPER_VOLUME ?= esup-runner-whisper-models
-DOCKER_HUGGINGFACE_VOLUME ?= esup-runner-huggingface-models
+DOCKER_CACHE_VOLUME ?= esup-runner-cache
 DOCKER_LOGS_PATH ?= /var/log/esup-runner
 DOCKER_STORAGE_PATH ?= /tmp/esup-runner
-DOCKER_WHISPER_MODELS_PATH ?= /home/esup-runner/.cache/esup-runner/whisper-models
-DOCKER_HUGGINGFACE_MODELS_PATH ?= /home/esup-runner/.cache/esup-runner/huggingface
+DOCKER_CACHE_PATH ?= /home/esup-runner/.cache/esup-runner
 
 # Builds the --extra ... arguments from EXTRAS=dev,transcription-gpu,transcription-cpu
 comma := ,
@@ -79,7 +86,7 @@ help:
 	@echo "  make run  -> run the app launcher"
 	@echo "  make check-gpu  -> verify torch CUDA runtime availability"
 	@echo "  make init  -> init directories from .env (sudo)"
-	@echo "  make create-service  -> install systemd service (sudo)"
+	@echo "  make create-service  -> install systemd user service (~/.config/systemd/user)"
 	@echo "  make ci  -> run local pre-PR checks (fmt + lint + test + coverage)"
 	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_RUNNER_EXTRA=transcription-cpu|transcription-gpu DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...'] -> build runner Docker image"
 	@echo "  make release-dry-run TAG=runner-vX.Y.Z  -> run release.yml locally with act (no push)"
@@ -107,8 +114,8 @@ help:
 # ---------- Dependencies ----------
 
 sync:
-	@echo "==> uv sync $(EXTRA_ARGS)"
-	$(UV) sync $(EXTRA_ARGS)
+	@echo "==> uv sync $(EXTRA_ARGS) [UV_LINK_MODE=$(UV_LINK_MODE)]"
+	UV_LINK_MODE=$(UV_LINK_MODE) $(UV) sync $(EXTRA_ARGS)
 
 sync-dev:
 	@$(MAKE) sync EXTRAS=dev
@@ -227,11 +234,15 @@ init:
 	fi
 
 create-service:
-	@echo "==> install systemd service (sudo)"
-	cp -f production/esup-runner-runner.service /etc/systemd/system/esup-runner-runner.service
-	systemctl daemon-reload
-	systemctl enable esup-runner-runner
-	systemctl restart esup-runner-runner
+	@if [ -n "$$SUDO_USER" ] || [ "$$(id -u)" -eq 0 ]; then \
+		echo "==> run 'make create-service' as the service user (without sudo/root)."; \
+		exit 1; \
+	fi
+	@echo "==> install systemd user service ($(SYSTEMD_USER_UNIT))"
+	mkdir -p "$(SYSTEMD_USER_DIR)"
+	cp -f production/esup-runner-runner.service "$(SYSTEMD_USER_UNIT)"
+	systemctl --user daemon-reload
+	systemctl --user enable --now esup-runner-runner.service
 
 clean:
 	@echo "==> remove venv + caches"
@@ -312,10 +323,9 @@ docker-fix-perms:
 	$(DOCKER) run --rm --user root \
 		-v $(DOCKER_LOGS_VOLUME):$(DOCKER_LOGS_PATH) \
 		-v $(DOCKER_STORAGE_VOLUME):$(DOCKER_STORAGE_PATH) \
-		-v $(DOCKER_WHISPER_VOLUME):$(DOCKER_WHISPER_MODELS_PATH) \
-		-v $(DOCKER_HUGGINGFACE_VOLUME):$(DOCKER_HUGGINGFACE_MODELS_PATH) \
+		-v $(DOCKER_CACHE_VOLUME):$(DOCKER_CACHE_PATH) \
 		$(DOCKER_IMAGE):$(DOCKER_TAG) \
-		sh -c "chown -R $(ESUP_RUNNER_UID):$(ESUP_RUNNER_GID) $(DOCKER_LOGS_PATH) $(DOCKER_STORAGE_PATH) $(DOCKER_WHISPER_MODELS_PATH) $(DOCKER_HUGGINGFACE_MODELS_PATH)"
+		sh -c "chown -R $(ESUP_RUNNER_UID):$(ESUP_RUNNER_GID) $(DOCKER_LOGS_PATH) $(DOCKER_STORAGE_PATH) $(DOCKER_CACHE_PATH)"
 
 .PHONY: help sync lock lock-upgrade run init clean \
 		sync-dev sync-all sync-transcription-gpu sync-transcription-cpu \

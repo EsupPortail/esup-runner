@@ -370,12 +370,82 @@ async def test_retry_notify_callback_exhausts_and_handles_exceptions(
     async def fake_send(*_a, **_k):
         raise RuntimeError("boom")
 
+    emailed: dict[str, Any] = {"called": False}
+
+    async def fake_email(**_kwargs):
+        emailed["called"] = True
+        return True
+
     monkeypatch.setattr(task_module, "_send_notify_callback", fake_send)
+    monkeypatch.setattr(task_module, "send_notify_retry_exhausted_email", fake_email)
 
     # Should swallow exceptions and just exhaust retries.
     await task_module._retry_notify_callback(
         "t1", TaskCompletionNotification(task_id="t1", status="completed")
     )
+    assert emailed["called"] is True
+
+
+@pytest.mark.asyncio
+async def test_retry_notify_callback_does_not_email_when_status_not_warning(
+    monkeypatch, task_module, clean_state
+):
+    runners["r1"] = _runner("r1")
+    tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
+
+    monkeypatch.setattr(task_module, "save_tasks", lambda: None)
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_MAX_RETRIES", 1)
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_BACKOFF_FACTOR", 1)
+
+    async def fake_send(*_a, **_k):
+        tasks["t1"].status = "completed"
+        return False, "nope"
+
+    emailed: dict[str, Any] = {"called": False}
+
+    async def fake_email(**_kwargs):
+        emailed["called"] = True
+        return True
+
+    monkeypatch.setattr(task_module, "_send_notify_callback", fake_send)
+    monkeypatch.setattr(task_module, "send_notify_retry_exhausted_email", fake_email)
+
+    await task_module._retry_notify_callback(
+        "t1", TaskCompletionNotification(task_id="t1", status="completed")
+    )
+    assert emailed["called"] is False
+
+
+@pytest.mark.asyncio
+async def test_retry_notify_callback_ignores_email_errors_after_exhaustion(
+    monkeypatch, task_module, clean_state
+):
+    runners["r1"] = _runner("r1")
+    tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
+
+    monkeypatch.setattr(task_module, "save_tasks", lambda: None)
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_MAX_RETRIES", 1)
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_BACKOFF_FACTOR", 1)
+
+    async def fake_send(*_a, **_k):
+        return False, "nope"
+
+    called: dict[str, Any] = {"email": 0}
+
+    async def fake_email(**_kwargs):
+        called["email"] += 1
+        raise RuntimeError("smtp down")
+
+    monkeypatch.setattr(task_module, "_send_notify_callback", fake_send)
+    monkeypatch.setattr(task_module, "send_notify_retry_exhausted_email", fake_email)
+
+    # Email errors must be swallowed after retries are exhausted.
+    await task_module._retry_notify_callback(
+        "t1", TaskCompletionNotification(task_id="t1", status="completed")
+    )
+    assert called["email"] == 1
 
 
 @pytest.mark.asyncio

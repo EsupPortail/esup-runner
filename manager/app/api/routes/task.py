@@ -38,6 +38,7 @@ from app.models.models import (
     TaskRequest,
     TaskResultManifest,
 )
+from app.services.email_service import send_notify_retry_exhausted_email
 
 # Configure logging
 logger = setup_default_logging()
@@ -342,6 +343,70 @@ def _get_retry_notify_task(task_id: str, expected_run_id: str | None) -> Task | 
     return task
 
 
+async def _run_single_notify_retry_attempt(
+    task_id: str,
+    notification: TaskCompletionNotification,
+    expected_run_id: str | None,
+    attempt: int,
+    max_retries: int,
+) -> bool:
+    """Execute one retry attempt.
+
+    Returns True when retry loop should stop.
+    """
+    current_task = _get_retry_notify_task(task_id, expected_run_id)
+    if current_task is None:
+        return True
+
+    try:
+        notify_ok, _ = await _send_notify_callback(current_task, notification)
+        if not notify_ok:
+            return False
+
+        if _get_retry_notify_task(task_id, expected_run_id) is None:
+            return True
+
+        _restore_status_after_notify(task_id, notification)
+        logger.info(
+            "Notify URL callback succeeded after retry "
+            f"{attempt}/{max_retries} for task {task_id}"
+        )
+        return True
+    except Exception as exc:
+        logger.error(f"Error during notify URL retry to {current_task.notify_url}: {str(exc)}")
+        return False
+
+
+async def _handle_notify_retry_exhausted(
+    task_id: str,
+    expected_run_id: str | None,
+    max_retries: int,
+) -> None:
+    """Log and optionally email when retries are exhausted."""
+    logger.warning(
+        f"Notify URL callback retries exhausted for task {task_id} after {max_retries} attempts"
+    )
+
+    current_task = _get_retry_notify_task(task_id, expected_run_id)
+    if current_task is None or current_task.status != "warning":
+        return
+
+    try:
+        await send_notify_retry_exhausted_email(
+            task_id=task_id,
+            status=current_task.status,
+            notify_url=current_task.notify_url or "",
+            attempts=max_retries,
+            error_message=current_task.error,
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to trigger notify retry exhausted email for task %s: %s",
+            task_id,
+            exc,
+        )
+
+
 async def _retry_notify_callback(
     task_id: str,
     notification: TaskCompletionNotification,
@@ -363,29 +428,19 @@ async def _retry_notify_callback(
         if delay_seconds > 0:
             await asyncio.sleep(delay_seconds)
 
-        current_task = _get_retry_notify_task(task_id, expected_run_id)
-        if current_task is None:
+        should_stop = await _run_single_notify_retry_attempt(
+            task_id=task_id,
+            notification=notification,
+            expected_run_id=expected_run_id,
+            attempt=attempt,
+            max_retries=max_retries,
+        )
+        if should_stop:
             return
-
-        try:
-            notify_ok, _ = await _send_notify_callback(current_task, notification)
-            if notify_ok:
-                if _get_retry_notify_task(task_id, expected_run_id) is None:
-                    return
-                _restore_status_after_notify(task_id, notification)
-                logger.info(
-                    "Notify URL callback succeeded after retry "
-                    f"{attempt}/{max_retries} for task {task_id}"
-                )
-                return
-        except Exception as e:
-            logger.error(f"Error during notify URL retry to {current_task.notify_url}: {str(e)}")
 
         delay_seconds = int(delay_seconds * backoff_factor)
 
-    logger.warning(
-        f"Notify URL callback retries exhausted for task {task_id} after {max_retries} attempts"
-    )
+    await _handle_notify_retry_exhausted(task_id, expected_run_id, max_retries)
 
 
 async def execute_task_async_background(

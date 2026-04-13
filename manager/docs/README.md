@@ -52,9 +52,11 @@ nano .env
 # 6) Install Python dependencies
 make sync
 
-# 7) Initialize directories and install the systemd service (as root)
+# 7) Initialize directories and install the systemd user service
 sudo make init
-sudo make create-service
+make create-service
+# Optional (boot without interactive login)
+# sudo loginctl enable-linger esup-runner
 ```
 
 ## Local pre-PR checks
@@ -140,7 +142,8 @@ Current note:
 Notes:
 
 - If `RUNNERS_STORAGE_ENABLED` is set, the manager reads manifests/files from shared storage.
-- In shared storage mode, manifests are expected at `<RUNNERS_STORAGE_PATH>/<task_id>/manifest.json`.
+- In shared storage mode, manifests are expected at `<RUNNERS_STORAGE_DIR>/<task_id>/manifest.json`.
+- Legacy alias: `RUNNERS_STORAGE_PATH`.
 - Otherwise, the manager proxy-streams results from the runner.
 - If a `notify_url` is configured for the task, the manager performs a callback when it receives completion.
 

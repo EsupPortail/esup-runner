@@ -57,9 +57,11 @@ make sync
 # With transcription tasks on GPU server, use:
 # make sync-transcription-gpu
 
-# 7) Initialize directories and install the systemd service
+# 7) Initialize directories and install the systemd user service
 sudo make init
-sudo make create-service
+make create-service
+# Optional (boot without interactive login)
+# sudo loginctl enable-linger esup-runner
 ```
 
 ## Local pre-PR checks
@@ -139,9 +141,11 @@ RUNNER_TOKEN=change-me-runner-token
 STORAGE_DIR=/tmp/esup-runner
 EXTERNAL_SCRIPT_TIMEOUT_SECONDS=18000
 ENCODING_TYPE=CPU
-LOG_DIRECTORY=/var/log/esup-runner
+LOG_DIR=/var/log/esup-runner
 LOG_LEVEL=INFO
 ```
+
+Legacy alias for logs is still supported: `LOG_DIRECTORY`.
 
 ## Additional references
 - Installation: [docs/INSTALLATION.md](INSTALLATION.md)

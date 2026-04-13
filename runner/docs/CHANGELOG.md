@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a shared cache-root configuration (`CACHE_DIR`) with explicit `UV_CACHE_DIR` support for uv package cache handling.
+- Added aggregated cache checks in `scripts/check_runner_storage.py` when Whisper/Hugging Face/uv caches are grouped under `CACHE_DIR`.
+- Added `UV_CACHE_DIR` storage validation behavior for missing-on-disk uv cache directories (validated against writable parent + free space).
+- Added explicit `uv` extra conflicts between `transcription-cpu` and `transcription-gpu` in `pyproject.toml`.
+- Documented the monorepo `update-stack.sh` automation workflow in the upgrade guide.
+
+### Changed
+
+- Introduced `LOG_DIR` as the preferred logging variable while keeping `LOG_DIRECTORY` as a backward-compatible alias.
+- Updated runner configuration defaults so Whisper and Hugging Face model cache directories derive from `CACHE_DIR` unless explicitly overridden.
+- Updated transcription CLI defaults to follow `CACHE_DIR` for cache subdirectories when specific cache env vars are not set.
+- Updated `scripts/init.py` to provision `CACHE_DIR` and derived subdirectories (`whisper-models`, `huggingface`, `uv`) with de-duplicated directory creation.
+- Consolidated Docker cache mounts from separate Whisper/Hugging Face volumes to a single cache volume/path model.
+- Updated `Makefile` to export `UV_CACHE_DIR`, support `UV_LINK_MODE` during `uv sync`, and align Docker permission helpers with `CACHE_DIR`.
+- Switched `create-service` and the shipped unit to `systemd --user` scope (`~/.config/systemd/user/esup-runner-runner.service`).
+- Updated documentation for new env naming and current transcription platform support notes.
+- Refreshed dependency locks in `runner/uv.lock`.
+
 ## [1.0.1] - 2026-04-10
 
 ### Security

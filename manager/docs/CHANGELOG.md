@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added support for `CACHE_DIR` and `UV_CACHE_DIR` in configuration/bootstrap flows so cache directories can be managed explicitly.
+- Documented the monorepo `update-stack.sh` automation workflow in the upgrade guide.
+
+### Changed
+
+- Introduced `LOG_DIR` and `RUNNERS_STORAGE_DIR` as the preferred environment variable names while keeping `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` as backward-compatible aliases.
+- Updated shared storage path resolution in task result routes to accept both legacy/new names and emit clearer configuration errors.
+- Updated `scripts/init.py` to create directories from the new env naming (`LOG_DIR`, `RUNNERS_STORAGE_DIR`, `CACHE_DIR`, `UV_CACHE_DIR`) with legacy alias support.
+- Updated Docker/installation documentation and examples to use the new env variable names and compatibility notes.
+- Updated `Makefile` to export `UV_CACHE_DIR` and support `UV_LINK_MODE` during `uv sync`.
+- Switched `create-service` and the shipped unit to `systemd --user` scope (`~/.config/systemd/user/esup-runner-manager.service`), including manager service helper scripts.
+- Refreshed dependency locks in `manager/uv.lock`.
+
 ## [1.0.1] - 2026-04-10
 
 ### Security

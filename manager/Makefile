@@ -45,6 +45,15 @@
 
 UV      ?= uv
 PYTHON  ?= $(UV) run python
+UV_LINK_MODE ?= copy
+CACHE_DIR ?= /home/esup-runner/.cache/esup-runner
+UV_CACHE_DIR ?= $(CACHE_DIR)/uv
+XDG_CONFIG_HOME ?= $(HOME)/.config
+SYSTEMD_USER_DIR ?= $(XDG_CONFIG_HOME)/systemd/user
+SYSTEMD_USER_UNIT ?= $(SYSTEMD_USER_DIR)/esup-runner-manager.service
+
+# Ensure every uv invocation (sync/lock/run/tests/linters) uses the manager cache root.
+export UV_CACHE_DIR
 
 EXTRAS  ?=
 
@@ -95,7 +104,7 @@ help:
 	@echo "  make release-dry-run TAG=manager-vX.Y.Z  -> run release.yml locally with act (no push)"
 	@echo "  make docker-fix-perms  -> fix Docker volume permissions for esup-runner"
 	@echo "  make init  -> init directories from .env (sudo)"
-	@echo "  make create-service  -> install systemd service (sudo)"
+	@echo "  make create-service  -> install systemd user service (~/.config/systemd/user)"
 	@echo "  make clean  -> remove .venv and caches"
 	@echo ""
 	@echo "Shortcuts:"
@@ -116,8 +125,8 @@ help:
 # ---------- Dependencies ----------
 
 sync:
-	@echo "==> uv sync $(EXTRA_ARGS)"
-	$(UV) sync $(EXTRA_ARGS)
+	@echo "==> uv sync $(EXTRA_ARGS) [UV_LINK_MODE=$(UV_LINK_MODE)]"
+	UV_LINK_MODE=$(UV_LINK_MODE) $(UV) sync $(EXTRA_ARGS)
 
 lock:
 	# lock
@@ -223,11 +232,15 @@ clean:
 	rm -rf .venv .pytest_cache .mypy_cache .ruff_cache dist build
 
 create-service:
-	@echo "==> install systemd service (sudo)"
-	cp -f production/esup-runner-manager.service /etc/systemd/system/esup-runner-manager.service
-	systemctl daemon-reload
-	systemctl enable esup-runner-manager
-	systemctl restart esup-runner-manager
+	@if [ -n "$$SUDO_USER" ] || [ "$$(id -u)" -eq 0 ]; then \
+		echo "==> run 'make create-service' as the service user (without sudo/root)."; \
+		exit 1; \
+	fi
+	@echo "==> install systemd user service ($(SYSTEMD_USER_UNIT))"
+	mkdir -p "$(SYSTEMD_USER_DIR)"
+	cp -f production/esup-runner-manager.service "$(SYSTEMD_USER_UNIT)"
+	systemctl --user daemon-reload
+	systemctl --user enable --now esup-runner-manager.service
 
 # ---------- Quality ----------
 

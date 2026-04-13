@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # Best-effort stop for Esup-Runner Manager.
-# - Prefer systemd unit stop (if installed)
+# - Prefer systemd --user unit stop (if installed)
+# - Fallback to legacy system unit stop when needed
 # - Otherwise, stop by listening port and/or known command patterns
 
 set -u
@@ -40,16 +41,35 @@ _log() {
   echo "$@"
 }
 
-_stop_via_systemd() {
+_stop_via_systemd_user() {
   command -v systemctl >/dev/null 2>&1 || return 1
 
-  # If unit file does not exist, bail out quickly.
-  systemctl list-unit-files "${SERVICE_NAME}.service" >/dev/null 2>&1 || return 1
+  # If user unit does not exist, bail out quickly.
+  systemctl --user cat "${SERVICE_NAME}.service" >/dev/null 2>&1 || return 1
+
+  # If it's not active, nothing to do.
+  systemctl --user is-active --quiet "${SERVICE_NAME}.service" || return 1
+
+  _log "==> systemd --user: stop ${SERVICE_NAME}.service"
+
+  if systemctl --user stop "${SERVICE_NAME}.service" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  _log "==> systemd --user stop failed"
+  return 1
+}
+
+_stop_via_systemd_system() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+
+  # If system unit file does not exist, bail out quickly.
+  systemctl cat "${SERVICE_NAME}.service" >/dev/null 2>&1 || return 1
 
   # If it's not active, nothing to do.
   systemctl is-active --quiet "${SERVICE_NAME}.service" || return 1
 
-  _log "==> systemd: stop ${SERVICE_NAME}.service"
+  _log "==> systemd (system): stop ${SERVICE_NAME}.service"
 
   if systemctl stop "${SERVICE_NAME}.service" >/dev/null 2>&1; then
     return 0
@@ -62,6 +82,11 @@ _stop_via_systemd() {
 
   _log "==> systemd stop failed (no permission?)"
   return 1
+}
+
+_stop_via_systemd() {
+  _stop_via_systemd_user && return 0
+  _stop_via_systemd_system
 }
 
 _pids_listening_on_port() {

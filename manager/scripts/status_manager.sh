@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Status helper for Esup-Runner Manager.
-# Shows systemd unit status (if present) + process discovery by port/patterns.
+# Shows systemd user/system unit status (if present) + process discovery by port/patterns.
 
 set -u
 
@@ -84,6 +84,36 @@ _show_process_details() {
   fi
 }
 
+_show_systemd_status_user() {
+  if ! systemctl --user cat "${SERVICE_NAME}.service" >/dev/null 2>&1; then
+    _log "- user unit (${SERVICE_NAME}.service): not installed"
+    return 0
+  fi
+
+  systemctl --user is-active --quiet "${SERVICE_NAME}.service" \
+    && _log "- user unit (${SERVICE_NAME}.service): active" \
+    || _log "- user unit (${SERVICE_NAME}.service): inactive"
+  systemctl --user is-enabled --quiet "${SERVICE_NAME}.service" \
+    && _log "- user enabled: yes" \
+    || _log "- user enabled: no"
+  _log "- user main pid: $(systemctl --user show -p MainPID --value "${SERVICE_NAME}.service" 2>/dev/null || true)"
+}
+
+_show_systemd_status_system() {
+  if ! systemctl cat "${SERVICE_NAME}.service" >/dev/null 2>&1; then
+    _log "- system unit (${SERVICE_NAME}.service): not installed"
+    return 0
+  fi
+
+  systemctl is-active --quiet "${SERVICE_NAME}.service" \
+    && _log "- system unit (${SERVICE_NAME}.service): active" \
+    || _log "- system unit (${SERVICE_NAME}.service): inactive"
+  systemctl is-enabled --quiet "${SERVICE_NAME}.service" \
+    && _log "- system enabled: yes" \
+    || _log "- system enabled: no"
+  _log "- system main pid: $(systemctl show -p MainPID --value "${SERVICE_NAME}.service" 2>/dev/null || true)"
+}
+
 main() {
   _log "==> manager status"
 
@@ -97,13 +127,8 @@ main() {
 
   _log "==> systemd"
   if command -v systemctl >/dev/null 2>&1; then
-    if systemctl list-unit-files "${SERVICE_NAME}.service" >/dev/null 2>&1; then
-      systemctl is-active --quiet "${SERVICE_NAME}.service" && _log "- ${SERVICE_NAME}.service: active" || _log "- ${SERVICE_NAME}.service: inactive"
-      systemctl is-enabled --quiet "${SERVICE_NAME}.service" && _log "- enabled: yes" || _log "- enabled: no"
-      _log "- main pid: $(systemctl show -p MainPID --value "${SERVICE_NAME}.service" 2>/dev/null || true)"
-    else
-      _log "- ${SERVICE_NAME}.service: not installed"
-    fi
+    _show_systemd_status_user
+    _show_systemd_status_system
   else
     _log "- systemctl: not available"
   fi

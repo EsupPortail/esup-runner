@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # Restart helper for Esup-Runner Manager.
-# - Prefer systemd restart when the unit exists
+# - Prefer systemd --user restart when the user unit exists
+# - Fallback to legacy system unit restart when needed
 # - Otherwise: stop best-effort then start in foreground
 
 set -u
@@ -12,13 +13,24 @@ _log() {
   echo "$@"
 }
 
-_has_systemd_unit() {
+_has_user_systemd_unit() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  systemctl --user cat "${SERVICE_NAME}.service" >/dev/null 2>&1
+}
+
+_has_system_systemd_unit() {
   command -v systemctl >/dev/null 2>&1 || return 1
   systemctl cat "${SERVICE_NAME}.service" >/dev/null 2>&1
 }
 
-_restart_via_systemd() {
-  _log "==> systemd: restart ${SERVICE_NAME}.service"
+_restart_via_systemd_user() {
+  _log "==> systemd --user: restart ${SERVICE_NAME}.service"
+
+  systemctl --user restart "${SERVICE_NAME}.service" >/dev/null 2>&1
+}
+
+_restart_via_systemd_system() {
+  _log "==> systemd (system): restart ${SERVICE_NAME}.service"
 
   if systemctl restart "${SERVICE_NAME}.service" >/dev/null 2>&1; then
     return 0
@@ -35,13 +47,23 @@ _restart_via_systemd() {
 main() {
   _log "==> restart manager"
 
-  if _has_systemd_unit; then
-    if _restart_via_systemd; then
-      _log "==> restarted via systemd"
+  if _has_user_systemd_unit; then
+    if _restart_via_systemd_user; then
+      _log "==> restarted via systemd --user"
       return 0
     fi
 
-    _log "==> systemd restart failed (permission?)"
+    _log "==> systemd --user restart failed"
+    return 1
+  fi
+
+  if _has_system_systemd_unit; then
+    if _restart_via_systemd_system; then
+      _log "==> restarted via systemd (system scope)"
+      return 0
+    fi
+
+    _log "==> systemd (system scope) restart failed (permission?)"
     return 1
   fi
 

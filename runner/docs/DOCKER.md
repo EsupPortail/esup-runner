@@ -104,8 +104,10 @@ At minimum, review:
 - `RUNNER_TOKEN`
 - `RUNNER_HOST`, `RUNNER_BASE_PORT`, `RUNNER_TASK_TYPES`
 - `STORAGE_DIR`
-- `LOG_DIRECTORY`
+- `LOG_DIR`
 - `ENCODING_TYPE`
+
+Compatibility note: legacy variable `LOG_DIRECTORY` is still accepted.
 
 For Docker deployment with a shared Docker network, set:
 
@@ -126,13 +128,15 @@ Important:
 When using manager shared-storage mode:
 
 - Manager: `RUNNERS_STORAGE_ENABLED=true`
-- Manager: `RUNNERS_STORAGE_PATH` must be exactly equal to runner `STORAGE_DIR`
+- Manager: `RUNNERS_STORAGE_DIR` must be exactly equal to runner `STORAGE_DIR`
 - Both containers must mount the same Docker volume name (recommended: `esup-runner-storage`) at that path
+
+Compatibility note: manager legacy variable `RUNNERS_STORAGE_PATH` is still accepted.
 
 Example with defaults:
 
 - Runner `.env`: `STORAGE_DIR=/tmp/esup-runner`
-- Manager `.env`: `RUNNERS_STORAGE_PATH=/tmp/esup-runner`
+- Manager `.env`: `RUNNERS_STORAGE_DIR=/tmp/esup-runner`
 - Docker mount on both containers: `-v esup-runner-storage:/tmp/esup-runner`
 
 If you change `STORAGE_DIR`, update both the manager setting and Docker mount target accordingly.
@@ -264,8 +268,7 @@ Create volumes:
 ```bash
 docker volume create esup-runner-runner-logs
 docker volume create esup-runner-storage
-docker volume create esup-runner-whisper-models
-docker volume create esup-runner-huggingface-models
+docker volume create esup-runner-cache
 ```
 
 Create (or reuse) the Docker network shared with the manager:
@@ -297,21 +300,19 @@ RUNNER_IMAGE_REF="${RUNNER_IMAGE_REF:-ghcr.io/esupportail/esup-runner-runner:lat
 docker run --rm --user root \
   -v esup-runner-runner-logs:/var/log/esup-runner \
   -v esup-runner-storage:/tmp/esup-runner \
-  -v esup-runner-whisper-models:/home/esup-runner/.cache/esup-runner/whisper-models \
-  -v esup-runner-huggingface-models:/home/esup-runner/.cache/esup-runner/huggingface \
+  -v esup-runner-cache:/home/esup-runner/.cache/esup-runner \
   "$RUNNER_IMAGE_REF" \
-  sh -c "chown -R 1000:1000 /var/log/esup-runner /tmp/esup-runner /home/esup-runner/.cache/esup-runner/whisper-models /home/esup-runner/.cache/esup-runner/huggingface"
+  sh -c "chown -R 1000:1000 /var/log/esup-runner /tmp/esup-runner /home/esup-runner/.cache/esup-runner"
 ```
 
-If you changed `STORAGE_DIR`, `WHISPER_MODELS_DIR`, or `HUGGINGFACE_MODELS_DIR`, adjust mount paths in `docker-fix-perms`:
+If you changed `STORAGE_DIR` or `CACHE_DIR`, adjust mount paths in `docker-fix-perms`:
 
 ```bash
 make docker-fix-perms \
   ESUP_RUNNER_UID=$(id -u) \
   ESUP_RUNNER_GID=$(id -g) \
   DOCKER_STORAGE_PATH=/path/from/STORAGE_DIR \
-  DOCKER_WHISPER_MODELS_PATH=/path/from/WHISPER_MODELS_DIR \
-  DOCKER_HUGGINGFACE_MODELS_PATH=/path/from/HUGGINGFACE_MODELS_DIR
+  DOCKER_CACHE_PATH=/path/from/CACHE_DIR
 ```
 
 If you use **Option B** (GHCR image), also add:
@@ -332,14 +333,13 @@ docker run -d \
   -p 8082:8082 \
   -v esup-runner-runner-logs:/var/log/esup-runner \
   -v esup-runner-storage:/tmp/esup-runner \
-  -v esup-runner-whisper-models:/home/esup-runner/.cache/esup-runner/whisper-models \
-  -v esup-runner-huggingface-models:/home/esup-runner/.cache/esup-runner/huggingface \
+  -v esup-runner-cache:/home/esup-runner/.cache/esup-runner \
   -v "$RUNNER_ENV_FILE":/app/.env:ro \
   "$RUNNER_IMAGE_REF"
 ```
 
 Notes:
-- Mounting `HUGGINGFACE_MODELS_DIR` keeps local subtitle translation models across container recreations, just like `WHISPER_MODELS_DIR` does for Whisper models.
+- Mounting `CACHE_DIR` keeps Whisper, translation, and uv caches across container recreations.
 
 - If `RUNNER_BASE_PORT` in `.env` is not `8082`, update `-p`.
 - If `RUNNER_INSTANCES>1`, publish the full port range (`RUNNER_BASE_PORT ... RUNNER_BASE_PORT + RUNNER_INSTANCES - 1`).
@@ -364,8 +364,7 @@ docker run -d \
   -p 8082:8082 \
   -v esup-runner-runner-logs:/var/log/esup-runner \
   -v esup-runner-storage:/tmp/esup-runner \
-  -v esup-runner-whisper-models:/home/esup-runner/.cache/esup-runner/whisper-models \
-  -v esup-runner-huggingface-models:/home/esup-runner/.cache/esup-runner/huggingface \
+  -v esup-runner-cache:/home/esup-runner/.cache/esup-runner \
   -v "$RUNNER_ENV_FILE":/app/.env:ro \
   "$RUNNER_IMAGE_REF"
 ```
@@ -396,7 +395,7 @@ Inspect mounted data paths (container must be running):
 docker exec -it esup-runner-runner sh
 ls -lah /var/log/esup-runner
 ls -lah /tmp/esup-runner
-ls -lah /home/esup-runner/.cache/esup-runner/whisper-models
+ls -lah /home/esup-runner/.cache/esup-runner
 ```
 
 ## 9) Common operations

@@ -102,8 +102,10 @@ At minimum, review:
 - `MANAGER_HOST`, `MANAGER_PORT`
 - `AUTHORIZED_TOKENS__*`
 - `ADMIN_USERS__*`
-- `LOG_DIRECTORY`
-- `RUNNERS_STORAGE_ENABLED` and `RUNNERS_STORAGE_PATH`
+- `LOG_DIR`
+- `RUNNERS_STORAGE_ENABLED` and `RUNNERS_STORAGE_DIR`
+
+Compatibility note: legacy names `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` are still accepted.
 
 For Docker deployment with a shared Docker network, set:
 

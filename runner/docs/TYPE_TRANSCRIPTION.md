@@ -15,8 +15,12 @@ Implementation:
 - Script: [app/task_handlers/transcription/scripts/transcription.py](../app/task_handlers/transcription/scripts/transcription.py)
 
 ## Installation profile (CPU vs GPU)
-- CPU-only server: `make sync-transcription-cpu` (uses the CPU-focused torch source on Linux x86_64 to avoid CUDA runtime packages).
+- CPU-only server: `make sync-transcription-cpu` (installs a CPU-only torch profile on Linux x86_64 to avoid CUDA runtime packages).
 - GPU server: `make sync-transcription-gpu`.
+- Current transcription dependency support:
+  - `transcription-cpu`: supported on Linux x86_64 and macOS Apple Silicon (`arm64`).
+  - `transcription-gpu`: supported on Linux x86_64 GPU/CUDA hosts.
+  - macOS Intel (`x86_64`) is not supported for transcription with the current `torch` stack because upstream wheels are no longer published for that platform.
 
 Outputs typically include:
 - `subtitles.vtt` (WebVTT)
@@ -44,7 +48,8 @@ Current translation support:
 When translation happens, the translated subtitles remain the main `<stem>.vtt` output and the source-language subtitles are also kept as a sidecar `<stem>.source-<lang>.webvtt.txt`.
 The sidecar intentionally does not use the `.vtt` extension, so client applications that pick the first VTT file only see the final deliverable subtitles.
 The runner also records runtime metadata in `info_video.json`, including the detected source language, final subtitle language, and the translation model that was actually used.
-The local translation models used by this task are cached under `HUGGINGFACE_MODELS_DIR`.
+The local translation models used by this task are cached under `CACHE_DIR/huggingface`
+(or under `HUGGINGFACE_MODELS_DIR` when explicitly overridden).
 
 ### `model`
 - Type: string

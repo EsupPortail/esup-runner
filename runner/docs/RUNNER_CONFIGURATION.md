@@ -92,7 +92,7 @@ MANAGER_URL=http://127.0.0.1:8081
 RUNNER_TOKEN=change-me-runner-token
 
 # Logs
-LOG_DIRECTORY=/var/log/esup-runner
+LOG_DIR=/var/log/esup-runner
 LOG_LEVEL=INFO
 
 # Workspace and storage configuration
@@ -107,8 +107,7 @@ ENCODING_TYPE=CPU
 
 # Transcription (Whisper) settings
 WHISPER_MODEL=turbo
-WHISPER_MODELS_DIR=/home/user/.cache/esup-runner/whisper-models
-HUGGINGFACE_MODELS_DIR=/home/esup-runner/.cache/esup-runner/huggingface
+CACHE_DIR=/home/esup-runner/.cache/esup-runner
 WHISPER_LANGUAGE=auto
 ```
 
@@ -120,7 +119,10 @@ The built-in subtitle translation currently supports:
 - `fr -> en`
 - `en -> fr`
 
-`HUGGINGFACE_MODELS_DIR` controls where the local translation models are cached on disk.
+`CACHE_DIR` controls the shared cache root used by Whisper models (`CACHE_DIR/whisper-models`),
+local translation models (`CACHE_DIR/huggingface`), and uv (`CACHE_DIR/uv`).
+
+Legacy alias for logs is still supported: `LOG_DIRECTORY`.
 
 The translation backend is selected automatically from the available hardware:
 - CPU mode: lighter Marian translation models

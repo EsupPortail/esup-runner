@@ -14,12 +14,12 @@ RUNNER_TOKEN=change-me-runner-token
 MANAGER_URL=http://127.0.0.1:8081
 STORAGE_DIR=/tmp/esup-runner/storage
 EXTERNAL_SCRIPT_TIMEOUT_SECONDS=18000
-LOG_DIRECTORY=/var/log/esup-runner
+LOG_DIR=/var/log/esup-runner
 LOG_LEVEL=INFO
 ENCODING_TYPE=CPU
 GPU_CUDA_PATH=/usr/local/cuda-13.2
 WHISPER_MODEL=turbo
-HUGGINGFACE_MODELS_DIR=/home/esup-runner/.cache/esup-runner/huggingface
+CACHE_DIR=/home/esup-runner/.cache/esup-runner
 WHISPER_LANGUAGE=auto
 ```
 
@@ -55,8 +55,10 @@ WHISPER_LANGUAGE=auto
 
 ## Transcription / Whisper
 - `WHISPER_MODEL` (default `small`): Logical whisper model (`small|medium|large|turbo`). Turbo recommended.
-- `WHISPER_MODELS_DIR` (default `/home/esup-runner/.cache/esup-runner/whisper-models`): Cache directory.
-- `HUGGINGFACE_MODELS_DIR` (default `/home/esup-runner/.cache/esup-runner/huggingface`): Cache directory used for Hugging Face translation models loaded by the transcription pipeline.
+- `CACHE_DIR` (default `/home/esup-runner/.cache/esup-runner`): Shared cache root.
+- `WHISPER_MODELS_DIR` (default `CACHE_DIR/whisper-models`): Optional override for Whisper model cache directory.
+- `HUGGINGFACE_MODELS_DIR` (default `CACHE_DIR/huggingface`): Optional override for Hugging Face translation model cache.
+- `UV_CACHE_DIR` (default `CACHE_DIR/uv`): Optional override for uv package cache directory.
 - `WHISPER_LANGUAGE` (default `auto`): Default final subtitle language; `auto` keeps the detected spoken language, while an explicit `fr`/`en` target can trigger subtitle translation after transcription.
 - `WHISPER_CHUNK_THRESHOLD_SECONDS` (optional override): If unset, the runner chooses a hardware-aware default: `800` on CPU and `1800` on GPU.
 
@@ -79,7 +81,8 @@ Compatibility note:
 - `SMTP_SERVER`, `SMTP_PORT` (default `25`), `SMTP_SENDER`, `MANAGER_EMAIL`: Optional email settings for failure notifications.
 
 ## Logging
-- `LOG_DIRECTORY` (default `/var/log/esup-runner/`): Log base path; trailing slash is added if missing.
+- `LOG_DIR` (default `/var/log/esup-runner/`): Log base path; trailing slash is added if missing.
+- Legacy alias: `LOG_DIRECTORY`.
 - `LOG_LEVEL` (default `INFO`): `DEBUG|INFO|WARNING|ERROR|CRITICAL`.
 
 ## Completion callbacks

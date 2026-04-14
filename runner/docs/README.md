@@ -153,7 +153,7 @@ Legacy alias for logs is still supported: `LOG_DIRECTORY`.
 - FFmpeg GPU setup: [docs/FFMPEG_SETUP.md](FFMPEG_SETUP.md)
 - Upgrading: [UPGRADE.md](UPGRADE.md)
 - Task type docs: [docs/TYPE_ENCODING.md](TYPE_ENCODING.md), [docs/TYPE_STUDIO.md](TYPE_STUDIO.md), [docs/TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md)
-- Full parameter reference: [docs/RUNNER_PARAMETERS.md](RUNNER_PARAMETERS.md)
-- Runner configuration details: [docs/RUNNER_CONFIGURATION.md](RUNNER_CONFIGURATION.md)
+- Full parameter reference: [docs/PARAMETERS.md](PARAMETERS.md)
+- Runner configuration details: [docs/CONFIGURATION.md](CONFIGURATION.md)
 - Version management: [docs/VERSION_MANAGEMENT.md](VERSION_MANAGEMENT.md)
 - OpenAPI docs are exposed at `/docs` when a runner instance is running.

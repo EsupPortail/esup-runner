@@ -16,7 +16,11 @@ For Docker-based installation, see [DOCKER.md](DOCKER.md).
 
 ## Configuration
 
-See [MANAGER_CONFIGURATION.md](MANAGER_CONFIGURATION.md).
+See [CONFIGURATION.md](CONFIGURATION.md).
+
+## Parameters
+
+See [PARAMETERS.md](PARAMETERS.md).
 
 ## Upgrading
 

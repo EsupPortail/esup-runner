@@ -16,8 +16,8 @@ This document describes a safe **production** upgrade procedure for the *Runner*
 
 Useful docs:
 - Installation: `INSTALLATION.md`
-- Configuration: `RUNNER_CONFIGURATION.md`
-- Parameters: `RUNNER_PARAMETERS.md`
+- Configuration: `CONFIGURATION.md`
+- Parameters: `PARAMETERS.md`
 - Version management: `VERSION_MANAGEMENT.md`
 
 ---

@@ -137,3 +137,6 @@ For `WHISPER_CHUNK_THRESHOLD_SECONDS`, the runner uses a hardware-aware default 
 - `1800` on GPU
 
 Set `WHISPER_CHUNK_THRESHOLD_SECONDS` only if you explicitly need to override that behavior.
+
+## Related docs
+- Full environment variable reference: [docs/PARAMETERS.md](PARAMETERS.md)

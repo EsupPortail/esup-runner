@@ -110,6 +110,8 @@ At minimum, review:
 
 Compatibility note: legacy names `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` are still accepted.
 
+Full configuration reference: see [CONFIGURATION.md](CONFIGURATION.md) and [PARAMETERS.md](PARAMETERS.md).
+
 #### `notify_url` callback restrictions
 
 If task requests use `notify_url`, the manager validates the callback target before sending any outbound request.

@@ -19,6 +19,8 @@ Useful docs:
 
 - Installation: `INSTALLATION.md`
 - Docker installation: `DOCKER.md` (if your manager is deployed in a container)
+- Configuration: `CONFIGURATION.md`
+- Parameters: `PARAMETERS.md`
 - Changelog: `CHANGELOG.md`
 - Version management: `VERSION_MANAGEMENT.md`
 

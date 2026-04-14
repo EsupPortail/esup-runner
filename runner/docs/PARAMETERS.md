@@ -95,6 +95,6 @@ Compatibility note:
 - When `RUNNER_TASK_TYPES` uses grouped syntax, the computed instance count overrides `RUNNER_INSTANCES` (a warning is logged if they differ).
 
 ## Related docs
-- Task type grouping and multi-instance details: [docs/RUNNER_CONFIGURATION.md](RUNNER_CONFIGURATION.md)
+- Task type grouping and multi-instance details: [docs/CONFIGURATION.md](CONFIGURATION.md)
 - Transcription-specific behavior and exit codes: [docs/TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md)
 - Cut parameter specifics for encoding tasks: [docs/TYPE_ENCODING.md](TYPE_ENCODING.md)

@@ -118,7 +118,7 @@ nano .env
 
 Notes:
 - `.env` contains secrets (tokens, URLs): keep it readable only by administrators and do not share it.
-- Full configuration reference: see [RUNNER_CONFIGURATION.md](RUNNER_CONFIGURATION.md) and [RUNNER_PARAMETERS.md](RUNNER_PARAMETERS.md).
+- Full configuration reference: see [CONFIGURATION.md](CONFIGURATION.md) and [PARAMETERS.md](PARAMETERS.md).
 
 ### Initialize required directories
 

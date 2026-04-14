@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed documentation pages `docs/RUNNER_CONFIGURATION.md` -> `docs/CONFIGURATION.md` and `docs/RUNNER_PARAMETERS.md` -> `docs/PARAMETERS.md`.
+- Updated runner documentation links (`README.md`, `INSTALLATION.md`, `UPGRADE.md`, `PARAMETERS.md`) to follow the new naming.
+
 ## [1.1.0] - 2026-04-13
 
 ### Added

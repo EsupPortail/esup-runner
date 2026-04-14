@@ -9,11 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added a dedicated manager runtime configuration guide in `docs/MANAGER_CONFIGURATION.md`, including `.env` variable behavior, security hardening options, and a full copy/paste configuration example.
+- Added a dedicated manager runtime configuration guide in `docs/CONFIGURATION.md`, including `.env` variable behavior, security hardening options, and a full copy/paste configuration example.
+- Added a dedicated manager parameter reference in `docs/PARAMETERS.md`, aligned with the runner documentation style.
 
 ### Changed
 
-- Updated documentation navigation to reference the new manager configuration guide from `manager/docs/README.md` and the repository root `README.md`.
+- Updated documentation navigation to reference `docs/CONFIGURATION.md` and `docs/PARAMETERS.md` from manager README/installation/upgrade docs and the repository root `README.md`.
 
 ## [1.1.0] - 2026-04-13
 

@@ -241,8 +241,17 @@ create-service:
 	@echo "==> install systemd user service ($(SYSTEMD_USER_UNIT))"
 	mkdir -p "$(SYSTEMD_USER_DIR)"
 	cp -f production/esup-runner-runner.service "$(SYSTEMD_USER_UNIT)"
-	systemctl --user daemon-reload
-	systemctl --user enable --now esup-runner-runner.service
+	@if systemctl --user show-environment >/dev/null 2>&1; then \
+		systemctl --user daemon-reload; \
+		systemctl --user enable --now esup-runner-runner.service; \
+		echo "==> service installed and started"; \
+	else \
+		echo "==> service file installed, but systemd --user bus is unavailable in this session."; \
+		echo "    This can happen in shells started with su - or sudo -u <user> -i."; \
+		echo "    Start a user session with systemd (or enable linger), then run:"; \
+		echo "    systemctl --user daemon-reload"; \
+		echo "    systemctl --user enable --now esup-runner-runner.service"; \
+	fi
 
 clean:
 	@echo "==> remove venv + caches"

@@ -22,6 +22,7 @@ Each project has its own `pyproject.toml`, documentation, release process, etc.
 - Installation: [manager/docs/INSTALLATION.md](manager/docs/INSTALLATION.md)
 - Docker installation: [manager/docs/DOCKER.md](manager/docs/DOCKER.md)
 - Upgrade: [manager/docs/UPGRADE.md](manager/docs/UPGRADE.md)
+- Configuration: [manager/docs/MANAGER_CONFIGURATION.md](manager/docs/MANAGER_CONFIGURATION.md)
 - Changelog: [manager/docs/CHANGELOG.md](manager/docs/CHANGELOG.md)
 - Versioning: [manager/docs/VERSION_MANAGEMENT.md](manager/docs/VERSION_MANAGEMENT.md)
 
@@ -32,6 +33,7 @@ Each project has its own `pyproject.toml`, documentation, release process, etc.
 - Docker installation: [runner/docs/DOCKER.md](runner/docs/DOCKER.md)
 - Upgrade: [runner/docs/UPGRADE.md](runner/docs/UPGRADE.md)
 - Configuration: [runner/docs/RUNNER_CONFIGURATION.md](runner/docs/RUNNER_CONFIGURATION.md)
+- Changelog: [runner/docs/CHANGELOG.md](runner/docs/CHANGELOG.md)
 - Versioning: [runner/docs/VERSION_MANAGEMENT.md](runner/docs/VERSION_MANAGEMENT.md)
 
 ## License

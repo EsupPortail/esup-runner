@@ -198,11 +198,11 @@ Helpers:
   ```bash
   uv run scripts/generate_password.py
   # Example:
-  # Admin username (letters, numbers, underscores): admin
+  # Admin label (letters, numbers, underscores, ., -, @): admin@example.org
   # Password:
   # Confirm password:
   # Add this line to your .env file:
-  # ADMIN_USERS__admin="s3cr3t_bcrypt_value"
+  # ADMIN_USERS__admin@example.org="s3cr3t_bcrypt_value"
   ```
 
 ### Initialize required directories

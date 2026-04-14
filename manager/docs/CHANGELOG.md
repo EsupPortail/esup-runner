@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Updated documentation navigation to reference `docs/CONFIGURATION.md` and `docs/PARAMETERS.md` from manager README/installation/upgrade docs and the repository root `README.md`.
+- Updated `scripts/generate_password.py` to accept admin labels containing `.`, `-`, and `@` (email-compatible), and aligned the installation guide example accordingly.
 
 ## [1.1.0] - 2026-04-13
 

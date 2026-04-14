@@ -9,20 +9,20 @@ import re
 
 from app.core.passwords import BcryptPasswordContext
 
-USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
+LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_.@-]+$")
 
 
-def ask_username() -> str:
-    """Prompt for a username compatible with .env variable names."""
+def ask_label() -> str:
+    """Prompt for an admin label compatible with ADMIN_USERS__* keys."""
     while True:
-        username = input("Admin username (letters, numbers, underscores): ").strip()
-        if not username:
-            print("Username cannot be empty.")
+        label = input("Admin label (letters, numbers, underscores, ., -, @): ").strip()
+        if not label:
+            print("Label cannot be empty.")
             continue
-        if not USERNAME_PATTERN.fullmatch(username):
-            print("Invalid username. Use only letters, numbers, and underscores.")
+        if not LABEL_PATTERN.fullmatch(label):
+            print("Invalid label. Use only letters, numbers, underscores, ., -, and @.")
             continue
-        return username
+        return label
 
 
 def ask_password() -> str:
@@ -42,11 +42,11 @@ def ask_password() -> str:
 
 
 if __name__ == "__main__":
-    username = ask_username()
+    label = ask_label()
     password = ask_password()
 
     pwd_context = BcryptPasswordContext()
     hashed_password = pwd_context.hash(password)
 
     print("\nAdd this line to your .env file:")
-    print(f'ADMIN_USERS__{username}="{hashed_password}"')
+    print(f'ADMIN_USERS__{label}="{hashed_password}"')

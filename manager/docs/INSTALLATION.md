@@ -75,7 +75,7 @@ Example:
 ```bash
 cd /opt/esup-runner
 git clone --filter=blob:none --sparse https://github.com/EsupPortail/esup-runner.git .
-git sparse-checkout set manager update-stack.sh
+git sparse-checkout set manager
 ```
 
 Notes:
@@ -87,7 +87,7 @@ Notes:
 If you plan to install **both** the manager and the runner on the same machine (recommended layout: `/opt/esup-runner/manager` and `/opt/esup-runner/runner`), use:
 
 ```bash
-git sparse-checkout set manager runner update-stack.sh
+git sparse-checkout set manager runner
 ```
 
 ### Configure `.env`

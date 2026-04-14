@@ -69,8 +69,8 @@ If you use sparse-checkout, ensure the correct paths are included **depending on
 cd /opt/esup-runner
 
 # If you use sparse checkout and the automated helper script:
-# - runner only host: git sparse-checkout set runner update-stack.sh
-# - manager + runner host: git sparse-checkout set manager runner update-stack.sh
+# - runner only host: git sparse-checkout set runner
+# - manager + runner host: git sparse-checkout set manager runner
 
 # Fetch history and tags
 git fetch --tags

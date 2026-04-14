@@ -91,7 +91,7 @@ As `esup-runner`, clone the repository into `/opt/esup-runner`, then use sparse 
 ```bash
 cd /opt/esup-runner
 git clone --filter=blob:none --sparse https://github.com/EsupPortail/esup-runner.git .
-git sparse-checkout set runner update-stack.sh
+git sparse-checkout set runner
 cd runner
 ```
 
@@ -104,7 +104,7 @@ Notes:
 If you plan to install **both** the runner and the manager on the same machine (recommended layout: `/opt/esup-runner/runner` and `/opt/esup-runner/manager`), use:
 
 ```bash
-git sparse-checkout set manager runner update-stack.sh
+git sparse-checkout set manager runner
 ```
 
 ### Configure environment (.env)

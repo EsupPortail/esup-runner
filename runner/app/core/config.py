@@ -70,6 +70,15 @@ def _parse_float(
     return parsed
 
 
+def _normalize_base_url(value: Optional[str], default: str) -> str:
+    """Normalize a base URL from env by trimming spaces and trailing slashes."""
+    raw = (value or "").strip()
+    if not raw:
+        raw = default
+    normalized = raw.rstrip("/")
+    return normalized or raw
+
+
 def _first_env_value(*keys: str, default: Optional[str] = None) -> str:
     """Return the first environment value found among keys."""
     for key in keys:
@@ -234,7 +243,9 @@ class Config:
         self.RUNNER_TOKEN: str = os.getenv("RUNNER_TOKEN", "default-runner-token")
 
         # Manager URL configuration
-        self.MANAGER_URL: str = os.getenv("MANAGER_URL", "http://localhost:8081")
+        self.MANAGER_URL: str = _normalize_base_url(
+            os.getenv("MANAGER_URL"), "http://localhost:8081"
+        )
 
         # SMTP configuration for failure notifications
         self.SMTP_SERVER: str = os.getenv("SMTP_SERVER", "")

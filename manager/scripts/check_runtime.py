@@ -197,14 +197,22 @@ def run_checks() -> tuple[list[CheckResult], dict[str, Any]]:
     """Run all runtime checks and return both results and display context."""
     config = _load_config()
     manager_url = str(getattr(config, "MANAGER_URL", "") or "").strip().rstrip("/")
+    manager_host = str(getattr(config, "MANAGER_HOST", "") or "").strip()
+    manager_bind_host = str(getattr(config, "MANAGER_BIND_HOST", "") or "").strip()
+    manager_port = str(getattr(config, "MANAGER_PORT", "") or "").strip()
     token = _first_token(config)
 
     context: dict[str, Any] = {
         "manager_url": manager_url,
-        "manager_host": getattr(config, "MANAGER_HOST", ""),
-        "manager_bind_host": getattr(config, "MANAGER_BIND_HOST", ""),
-        "manager_port": getattr(config, "MANAGER_PORT", ""),
+        "manager_host": manager_host,
+        "manager_bind_host": manager_bind_host,
+        "manager_port": manager_port,
         "token_masked": _mask_secret(token) if token else "(missing)",
+        "manager_url_status": "configured" if manager_url else "missing",
+        "manager_host_status": "configured" if manager_host else "missing",
+        "manager_bind_host_status": "configured" if manager_bind_host else "missing",
+        "manager_port_status": "configured" if manager_port else "missing",
+        "api_token_status": "configured" if token else "missing",
     }
 
     results: list[CheckResult] = []
@@ -318,11 +326,11 @@ def print_report(results: list[CheckResult], context: dict[str, Any]) -> None:
 
     print("Running: Configuration")
     print("-" * width)
-    print(f"MANAGER_URL       : {context.get('manager_url')}")
-    print(f"MANAGER_HOST      : {context.get('manager_host')}")
-    print(f"MANAGER_BIND_HOST : {context.get('manager_bind_host')}")
-    print(f"MANAGER_PORT      : {context.get('manager_port')}")
-    print(f"API token         : {context.get('token_masked')}")
+    print(f"MANAGER_URL       : {context.get('manager_url_status')} (value hidden)")
+    print(f"MANAGER_HOST      : {context.get('manager_host_status')} (value hidden)")
+    print(f"MANAGER_BIND_HOST : {context.get('manager_bind_host_status')} (value hidden)")
+    print(f"MANAGER_PORT      : {context.get('manager_port_status')} (value hidden)")
+    print(f"API token         : {context.get('api_token_status')} (value hidden)")
 
     for result in results:
         print()

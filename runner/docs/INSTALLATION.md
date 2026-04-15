@@ -74,6 +74,7 @@ sudo apt install -y ffmpeg
 - **GPU mode:** requires a GPU-capable FFmpeg build (specific prebuilt package or a custom compilation).
   See [FFMPEG_SETUP.md](FFMPEG_SETUP.md) for setup options:
   source compilation, prebuilt package, or Docker container.
+  For OS/CUDA-specific guides, see [gpu/README.md](gpu/README.md).
 
 ## 3) Install the runner
 

@@ -150,7 +150,8 @@ Legacy alias for logs is still supported: `LOG_DIRECTORY`.
 ## Additional references
 - Installation: [docs/INSTALLATION.md](INSTALLATION.md)
 - Docker installation: [docs/DOCKER.md](DOCKER.md)
-- FFmpeg GPU setup: [docs/FFMPEG_SETUP.md](FFMPEG_SETUP.md)
+- FFmpeg GPU setup (entry point): [docs/FFMPEG_SETUP.md](FFMPEG_SETUP.md)
+- FFmpeg/CUDA GPU matrix: [docs/gpu/README.md](gpu/README.md)
 - Upgrading: [UPGRADE.md](UPGRADE.md)
 - Task type docs: [docs/TYPE_ENCODING.md](TYPE_ENCODING.md), [docs/TYPE_STUDIO.md](TYPE_STUDIO.md), [docs/TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md)
 - Full parameter reference: [docs/PARAMETERS.md](PARAMETERS.md)

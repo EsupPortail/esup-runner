@@ -319,6 +319,12 @@ def print_report(results: list[CheckResult], context: dict[str, Any]) -> None:
     """Print a human-readable report in a style similar to check_version.py."""
     width = 60
 
+    manager_url_set = bool(str(context.get("manager_url", "") or "").strip())
+    manager_host_set = bool(str(context.get("manager_host", "") or "").strip())
+    manager_bind_host_set = bool(str(context.get("manager_bind_host", "") or "").strip())
+    manager_port_set = bool(str(context.get("manager_port", "") or "").strip())
+    token_set = str(context.get("token_masked", "") or "").strip() not in {"", "(missing)"}
+
     print("=" * width)
     print("Runtime Check - ESUP Runner Manager")
     print("=" * width)
@@ -326,11 +332,15 @@ def print_report(results: list[CheckResult], context: dict[str, Any]) -> None:
 
     print("Running: Configuration")
     print("-" * width)
-    print(f"MANAGER_URL       : {context.get('manager_url_status')} (value hidden)")
-    print(f"MANAGER_HOST      : {context.get('manager_host_status')} (value hidden)")
-    print(f"MANAGER_BIND_HOST : {context.get('manager_bind_host_status')} (value hidden)")
-    print(f"MANAGER_PORT      : {context.get('manager_port_status')} (value hidden)")
-    print(f"API token         : {context.get('api_token_status')} (value hidden)")
+    print("MANAGER_URL       : configured (value hidden)" if manager_url_set else "MANAGER_URL       : missing")
+    print("MANAGER_HOST      : configured (value hidden)" if manager_host_set else "MANAGER_HOST      : missing")
+    print(
+        "MANAGER_BIND_HOST : configured (value hidden)"
+        if manager_bind_host_set
+        else "MANAGER_BIND_HOST : missing"
+    )
+    print("MANAGER_PORT      : configured (value hidden)" if manager_port_set else "MANAGER_PORT      : missing")
+    print("API token         : configured (value hidden)" if token_set else "API token         : missing")
 
     for result in results:
         print()

@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-04-15
+
 ### Changed
 
 - Renamed documentation pages `docs/RUNNER_CONFIGURATION.md` -> `docs/CONFIGURATION.md` and `docs/RUNNER_PARAMETERS.md` -> `docs/PARAMETERS.md`.
 - Updated runner documentation links (`README.md`, `INSTALLATION.md`, `UPGRADE.md`, `PARAMETERS.md`) to follow the new naming.
+- Created `scripts/check_gpu.py` to replace the former `make check-gpu` command.
+- Added focused transcription-script regression tests for HF Hub warning filtering and CUDA runtime environment alignment (`_apply_runtime_cuda_environment`).
+
+### Fixed
+
+- Closed remaining coverage gaps in `app/task_handlers/transcription/scripts/transcription.py` for warning-filter fallback and CUDA env-application branches.
 
 ## [1.1.0] - 2026-04-13
 

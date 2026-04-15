@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-04-15
+
+### Security
+
+- Hardened `scripts/check_runtime.py` report output to avoid clear-text logging findings from CodeQL (`Clear-text logging of sensitive information`) by hiding runtime configuration values and token content.
+
 ### Added
 
 - Added a dedicated manager runtime configuration guide in `docs/CONFIGURATION.md`, including `.env` variable behavior, security hardening options, and a full copy/paste configuration example.
@@ -16,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated documentation navigation to reference `docs/CONFIGURATION.md` and `docs/PARAMETERS.md` from manager README/installation/upgrade docs and the repository root `README.md`.
 - Updated `scripts/generate_password.py` to accept admin labels containing `.`, `-`, and `@` (email-compatible), and aligned the installation guide example accordingly.
+- Kept runtime report diagnostics useful by showing minimal non-sensitive status (`configured`/`missing`) while preserving hidden values.
+- Preserved compatibility for existing runtime-check tests and helper contracts (`_mask_secret`, context keys) while applying the logging hardening.
 
 ## [1.1.0] - 2026-04-13
 

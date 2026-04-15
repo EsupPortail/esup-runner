@@ -98,7 +98,7 @@ GPU = (
 )
 
 # Common encoding parameters
-# NOTE: For GPU pipelines (CUDA frames + scale_npp + NVENC), forcing a *software* pix_fmt
+# NOTE: For GPU pipelines (CUDA frames + scale_cuda + NVENC), forcing a *software* pix_fmt
 # (like yuv420p) can make FFmpeg try to insert swscale (auto_scale), which cannot consume
 # CUDA hardware frames. Keep pix_fmt enforcement only for CPU pipelines.
 COMMON_CPU = (
@@ -116,7 +116,7 @@ COMMON_GPU = (
 # GPU scaling filter
 scale_gpu = (
     COMMON_GPU
-    + '-vf "scale_npp=-2:{height}" -c:v h264_nvenc -sc_threshold 0 -bf 0 -rc-lookahead 0 '
+    + '-vf "scale_cuda=-2:{height}" -c:v h264_nvenc -sc_threshold 0 -bf 0 -rc-lookahead 0 '
 )
 
 # CPU scaling filter (libx264 preferred; fallback decided at runtime)

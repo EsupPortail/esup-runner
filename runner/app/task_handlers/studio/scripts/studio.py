@@ -522,10 +522,10 @@ def _prepare_full_gpu_inputs(
 
     pres_dec = _choose_cuda_decoder_for(pres_url)
     pers_dec = _choose_cuda_decoder_for(pers_url)
-    have_scale_npp = filter_available("scale_npp")
+    have_scale_cuda = filter_available("scale_cuda")
     need_overlay = presenter_layout != "mid"
     have_overlay_cuda = (not need_overlay) or filter_available("overlay_cuda")
-    if not (pres_dec and pers_dec and have_scale_npp and have_overlay_cuda):
+    if not (pres_dec and pers_dec and have_scale_cuda and have_overlay_cuda):
         return None
 
     hwdev = int(args.hwaccel_device or 0)
@@ -552,13 +552,13 @@ def _build_full_gpu_filtergraph(
     # - For piph/pipb: uses overlay_cuda then hwdownload.
     if presenter_layout == "mid":
         return (
-            f' -filter_complex "[0:v]settb=AVTB,setpts=PTS-STARTPTS,scale_npp=-2:{height}:format=nv12,hwdownload,format=yuv420p,fps=30[l];'
-            f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,scale_npp=-2:{height}:format=nv12,hwdownload,format=yuv420p,fps=30[r];"
+            f' -filter_complex "[0:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{height}:format=nv12,hwdownload,format=yuv420p,fps=30[l];'
+            f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{height}:format=nv12,hwdownload,format=yuv420p,fps=30[r];"
             f'[l][r]hstack=inputs=2,format=yuv420p,setsar=1[vout]" '
         )
     return (
-        f' -filter_complex "[0:v]settb=AVTB,setpts=PTS-STARTPTS,scale_npp=-2:{height}:format=nv12[pres];'
-        f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,scale_npp=-2:{pip_h}:format=nv12[pip];"
+        f' -filter_complex "[0:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{height}:format=nv12[pres];'
+        f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{pip_h}:format=nv12[pip];"
         f'[pres][pip]overlay_cuda={overlay_pos}:shortest=1,hwdownload,format=yuv420p,fps=30,setsar=1[vout]" '
     )
 

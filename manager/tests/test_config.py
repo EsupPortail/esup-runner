@@ -25,11 +25,24 @@ def test_parse_helpers_cover_edge_cases():
     assert cfg._parse_float("0.5", 0.0, min_value=1.0) == 1.0
     assert cfg._parse_float("5.0", 0.0, max_value=2.0) == 2.0
 
+    assert cfg._is_ip_literal("127.0.0.1") is True
+    assert cfg._is_ip_literal("::1") is True
+    assert cfg._is_ip_literal("[::1]") is True
+    assert cfg._is_ip_literal("  ") is False
+    assert cfg._is_ip_literal("example.org") is False
+    assert cfg._default_manager_bind_host("") == "0.0.0.0"
+    assert cfg._default_manager_bind_host("localhost") == "localhost"
+    assert cfg._default_manager_bind_host("127.0.0.1") == "127.0.0.1"
+    assert cfg._default_manager_bind_host("::1") == "::1"
+    assert cfg._default_manager_bind_host("example.org") == "0.0.0.0"
+    assert cfg._default_manager_bind_host("ns31777550.ip-1-2-3.eu") == "0.0.0.0"
+
 
 def test_clear_config_env_vars_removes_only_managed(monkeypatch):
     from app.core import config as cfg
 
     monkeypatch.setenv("MANAGER_HOST", "example")
+    monkeypatch.setenv("MANAGER_BIND_HOST", "127.0.0.1")
     monkeypatch.setenv("LOG_DIR", "/tmp/logs")
     monkeypatch.setenv("RUNNERS_STORAGE_DIR", "/tmp/storage")
     monkeypatch.setenv("AUTHORIZED_TOKENS__A", "token-a")
@@ -40,6 +53,7 @@ def test_clear_config_env_vars_removes_only_managed(monkeypatch):
 
     assert "SOME_OTHER" in cfg.os.environ
     assert "MANAGER_HOST" not in cfg.os.environ
+    assert "MANAGER_BIND_HOST" not in cfg.os.environ
     assert "LOG_DIR" not in cfg.os.environ
     assert "RUNNERS_STORAGE_DIR" not in cfg.os.environ
     assert "AUTHORIZED_TOKENS__A" not in cfg.os.environ
@@ -209,6 +223,7 @@ def test_config_initialization_and_validation_branches(monkeypatch):
 
     monkeypatch.setenv("MANAGER_PROTOCOL", "https")
     monkeypatch.setenv("MANAGER_HOST", "example.org")
+    monkeypatch.delenv("MANAGER_BIND_HOST", raising=False)
     monkeypatch.setenv("MANAGER_PORT", "1234")
     monkeypatch.setenv("LOG_DIR", "/tmp/esup-logs")
     monkeypatch.delenv("LOG_DIRECTORY", raising=False)
@@ -221,6 +236,7 @@ def test_config_initialization_and_validation_branches(monkeypatch):
 
     cfg = Config()
     assert cfg.MANAGER_URL == "https://example.org:1234"
+    assert cfg.MANAGER_BIND_HOST == "0.0.0.0"
     assert cfg.LOG_DIR.endswith("/")
     assert cfg.LOG_DIRECTORY.endswith("/")
     assert cfg.CACHE_DIR == "/tmp/esup-cache"
@@ -259,6 +275,16 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     assert cfg5.LOG_DIRECTORY == "/tmp/esup-legacy-logs/"
     assert cfg5.RUNNERS_STORAGE_DIR == "/tmp/esup-legacy-storage"
     assert cfg5.RUNNERS_STORAGE_PATH == "/tmp/esup-legacy-storage"
+
+    # Explicit bind host override for DNS MANAGER_HOST.
+    monkeypatch.setenv("MANAGER_BIND_HOST", "127.0.0.1")
+    cfg6 = Config()
+    assert cfg6.MANAGER_BIND_HOST == "127.0.0.1"
+
+    # Blank/whitespace override falls back to computed default.
+    monkeypatch.setenv("MANAGER_BIND_HOST", "   ")
+    cfg7 = Config()
+    assert cfg7.MANAGER_BIND_HOST == "0.0.0.0"
 
 
 def test_validate_configuration_rejects_wildcard_origins_with_credentials(monkeypatch):

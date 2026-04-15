@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 RE_NVENC_API_MISMATCH = re.compile(r"required\s*:\s*([0-9.]+).*found\s*:\s*([0-9.]+)", re.I | re.S)
 RE_MIN_DRIVER = re.compile(r"minimum\s*required\s*driver\s*version\s*:\s*([0-9.]+)", re.I)
+RE_ANSI = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
 
 @dataclass
@@ -100,12 +101,20 @@ def _load_config() -> Any:
         return exc
 
 
+def _strip_ansi(value: str) -> str:
+    return RE_ANSI.sub("", value or "")
+
+
 def _parse_encoders(encoders_text: str) -> set[str]:
     encoders: set[str] = set()
     for line in encoders_text.splitlines():
-        parts = line.split()
+        parts = _strip_ansi(line).split()
         # Typical line: " V....D h264_nvenc           NVIDIA NVENC H.264 encoder"
-        if len(parts) >= 2 and re.match(r"^[A-Z.]{6}$", parts[0]):
+        if (
+            len(parts) >= 2
+            and re.match(r"^[A-Za-z.]{6,8}$", parts[0])
+            and re.match(r"^[A-Za-z0-9_]+$", parts[1])
+        ):
             encoders.add(parts[1])
     return encoders
 
@@ -113,8 +122,12 @@ def _parse_encoders(encoders_text: str) -> set[str]:
 def _parse_decoders(decoders_text: str) -> set[str]:
     decoders: set[str] = set()
     for line in decoders_text.splitlines():
-        parts = line.split()
-        if len(parts) >= 2 and re.match(r"^[A-Z.]{6}$", parts[0]):
+        parts = _strip_ansi(line).split()
+        if (
+            len(parts) >= 2
+            and re.match(r"^[A-Za-z.]{6,8}$", parts[0])
+            and re.match(r"^[A-Za-z0-9_]+$", parts[1])
+        ):
             decoders.add(parts[1])
     return decoders
 
@@ -122,9 +135,14 @@ def _parse_decoders(decoders_text: str) -> set[str]:
 def _parse_filters(filters_text: str) -> set[str]:
     filters: set[str] = set()
     for line in filters_text.splitlines():
-        parts = line.split()
-        # Typical line: " ... scale_npp          V->V       NVIDIA Performance Primitives scaler"
-        if len(parts) >= 2 and re.match(r"^[A-Z.]{3}$", parts[0]):
+        parts = _strip_ansi(line).split()
+        # Typical line: " ... scale_cuda        V->V       GPU accelerated video resizer"
+        # Newer FFmpeg versions may expose 4+ capability flags in this column.
+        if (
+            len(parts) >= 2
+            and re.match(r"^[A-Za-z.|]{3,8}$", parts[0])
+            and re.match(r"^[A-Za-z0-9_]+$", parts[1])
+        ):
             filters.add(parts[1])
     return filters
 
@@ -357,8 +375,8 @@ def preflight_nvenc_basic(env: Dict[str, str]) -> CheckResult:
     return CheckResult(name="preflight:gpu:nvenc", ok=ok, required=True, details=details)
 
 
-def preflight_scale_npp_to_nvenc(env: Dict[str, str], hwdev: int) -> CheckResult:
-    # Test a minimal CUDA filterchain: hwupload_cuda -> scale_npp -> NVENC.
+def preflight_scale_cuda_to_nvenc(env: Dict[str, str], hwdev: int) -> CheckResult:
+    # Test a minimal CUDA filterchain: hwupload_cuda -> scale_cuda -> NVENC.
     cmd = [
         "ffmpeg",
         "-hide_banner",
@@ -376,7 +394,7 @@ def preflight_scale_npp_to_nvenc(env: Dict[str, str], hwdev: int) -> CheckResult
         "0.1",
         "-an",
         "-vf",
-        "format=yuv420p,hwupload_cuda,scale_npp=-2:360:interp_algo=super",
+        "format=yuv420p,hwupload_cuda,scale_cuda=-2:360:format=nv12",
         "-c:v",
         "h264_nvenc",
         "-f",
@@ -390,7 +408,7 @@ def preflight_scale_npp_to_nvenc(env: Dict[str, str], hwdev: int) -> CheckResult
     if not ok:
         details = out
         details += _diagnose_nvenc_failure(out)
-    return CheckResult(name="preflight:gpu:scale_npp+nvenc", ok=ok, required=True, details=details)
+    return CheckResult(name="preflight:gpu:scale_cuda+nvenc", ok=ok, required=True, details=details)
 
 
 def check_expected_caps_for_mode(
@@ -423,16 +441,16 @@ def check_expected_caps_for_mode(
     # GPU expected capabilities.
     ok_nvenc = "h264_nvenc" in encoders
     ok_cuvid = "h264_cuvid" in decoders
-    ok_scale_npp = "scale_npp" in filters
+    ok_scale_cuda = "scale_cuda" in filters
     ok_hwupload = "hwupload_cuda" in filters
 
     results.append(CheckResult(name="cap:gpu:h264_nvenc", ok=ok_nvenc, required=True, details=""))
     # cuvid is used by studio/encoding GPU input pipeline; if missing, GPU mode will be unreliable.
     results.append(CheckResult(name="cap:gpu:h264_cuvid", ok=ok_cuvid, required=True, details=""))
 
-    # scale_npp is required for the HLS ladder in encoding and for studio GPU scaling.
+    # scale_cuda is required for the HLS ladder in encoding and for studio GPU scaling.
     results.append(
-        CheckResult(name="cap:gpu:scale_npp", ok=ok_scale_npp, required=True, details="")
+        CheckResult(name="cap:gpu:scale_cuda", ok=ok_scale_cuda, required=True, details="")
     )
     results.append(
         CheckResult(name="cap:gpu:hwupload_cuda", ok=ok_hwupload, required=False, details="")
@@ -550,13 +568,22 @@ def _collect_results(
             continue
 
         gpu_env = _build_gpu_env(cuda_visible)
-        results.extend(
-            check_expected_caps_for_mode(
-                "gpu", env=gpu_env, for_encoding=for_encoding, for_studio=for_studio
-            )
+        gpu_caps = check_expected_caps_for_mode(
+            "gpu", env=gpu_env, for_encoding=for_encoding, for_studio=for_studio
         )
-        results.append(preflight_nvenc_basic(gpu_env))
-        results.append(preflight_scale_npp_to_nvenc(gpu_env, hwdev=hwdev))
+        results.extend(gpu_caps)
+        nvenc_preflight = preflight_nvenc_basic(gpu_env)
+        scale_preflight = preflight_scale_cuda_to_nvenc(gpu_env, hwdev=hwdev)
+        results.append(nvenc_preflight)
+        results.append(scale_preflight)
+
+        # If the real CUDA filterchain works, avoid false negatives from parser drift.
+        if scale_preflight.ok:
+            for cap_name in ("cap:gpu:scale_cuda", "cap:gpu:hwupload_cuda"):
+                for cap in gpu_caps:
+                    if cap.name == cap_name and not cap.ok:
+                        cap.ok = True
+                        cap.details = "Validated by preflight:gpu:scale_cuda+nvenc"
     return results
 
 

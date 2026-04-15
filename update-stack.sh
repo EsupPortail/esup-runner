@@ -18,7 +18,7 @@
 #    - manager: make init, make sync, then restart service if available.
 #    - runner:  make init, make sync variant based on runner mode, then restart service if available.
 # 4) Optionally run a post-update smoke test with
-#    manager/scripts/example_async_client.py.
+#    manager/scripts/check_pipeline_tasks.py.
 # 5) Optionally send an update summary email to MANAGER_EMAIL
 #    (using SMTP settings from runner/.env).
 #
@@ -69,14 +69,14 @@ Options:
   --runner-only                     Update only runner
   --runner-sync-mode <mode>         auto|base|transcription-cpu|transcription-gpu
   --gpu-lock-profile <profile>      none|cuda12|latest (only for transcription-gpu)
-  --sleep-before-test <seconds>     Delay before example_async_client test (default: 20)
+  --sleep-before-test <seconds>     Delay before check_pipeline_tasks test (default: 20)
   --skip-uv-update                  Skip uv installer update
   --skip-git-update                 Skip git fetch/pull
   --with-init                       Run make init for updated components
   --restart-policy <policy>         if-changed|always|never (default: if-changed)
   --always-restart                  Shortcut for --restart-policy always
   --no-restart                      Shortcut for --restart-policy never
-  --skip-test                       Skip post-update example_async_client test
+  --skip-test                       Skip post-update check_pipeline_tasks test
   --skip-email                      Skip email notification
   --no-sudo                         Do not use sudo even when needed
   --dry-run                         Print commands without executing them
@@ -662,7 +662,7 @@ build_manager_url_from_manager_env() {
 }
 
 run_post_update_test() {
-  # Optional smoke test through manager/scripts/example_async_client.py.
+  # Optional smoke test through manager/scripts/check_pipeline_tasks.py.
   if [[ "${RUN_TEST}" -ne 1 ]]; then
     TEST_STATUS="disabled"
     return 0
@@ -670,7 +670,7 @@ run_post_update_test() {
 
   if [[ ! -f "${MANAGER_ENV_FILE}" ]]; then
     TEST_STATUS="skipped"
-    warn "Manager .env not found: example_async_client test skipped."
+    warn "Manager .env not found: check_pipeline_tasks test skipped."
     return 0
   fi
 
@@ -688,7 +688,7 @@ run_post_update_test() {
 
   if [[ -z "${token}" || -z "${manager_url}" ]]; then
     TEST_STATUS="skipped"
-    warn "Missing token or manager URL: example_async_client test skipped."
+    warn "Missing token or manager URL: check_pipeline_tasks test skipped."
     return 0
   fi
 
@@ -699,11 +699,11 @@ run_post_update_test() {
     fi
   fi
 
-  log "==> Post-update encoding test via manager/scripts/example_async_client.py"
+  log "==> Post-update encoding test via manager/scripts/check_pipeline_tasks.py"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     local masked_token
     masked_token="$(mask_secret "${token}")"
-    printf 'DRY-RUN: (cd %q && RUNNER_API_TOKEN=%s RUNNER_MANAGER_URL=%q uv run scripts/example_async_client.py)\n' \
+    printf 'DRY-RUN: (cd %q && RUNNER_API_TOKEN=%s RUNNER_MANAGER_URL=%q uv run scripts/check_pipeline_tasks.py)\n' \
       "${MANAGER_DIR}" "${masked_token}" "${manager_url}"
     TEST_STATUS="dry-run"
     return 0
@@ -711,7 +711,7 @@ run_post_update_test() {
 
   if (
     cd "${MANAGER_DIR}" || exit 1
-    env RUNNER_API_TOKEN="${token}" RUNNER_MANAGER_URL="${manager_url}" uv run scripts/example_async_client.py
+    env RUNNER_API_TOKEN="${token}" RUNNER_MANAGER_URL="${manager_url}" uv run scripts/check_pipeline_tasks.py
   ); then
     TEST_STATUS="ok"
   else

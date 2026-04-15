@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import sys
 import types
 from pathlib import Path
@@ -348,6 +349,100 @@ def test_load_translation_runtime_passes_cache_dir(monkeypatch, tmp_path):
     assert captured["model_cache_dir"] == str(cache_dir)
 
 
+def test_load_translation_model_objects_passes_hf_token(monkeypatch):
+    tr = _load_transcription_script_module()
+
+    captured = {}
+
+    class FakeTokenizerCls:
+        @staticmethod
+        def from_pretrained(model_name, **kwargs):
+            captured["tokenizer_model_name"] = model_name
+            captured["tokenizer_kwargs"] = kwargs
+            return object()
+
+    class FakeModelCls:
+        @staticmethod
+        def from_pretrained(model_name, **kwargs):
+            captured["model_model_name"] = model_name
+            captured["model_kwargs"] = kwargs
+            return object()
+
+    monkeypatch.setenv("HF_TOKEN", "hf_test_token")
+
+    _tokenizer, _model = tr._load_translation_model_objects(
+        FakeTokenizerCls,
+        FakeModelCls,
+        "Helsinki-NLP/opus-mt-fr-en",
+        "/tmp/hf-cache",
+    )
+
+    assert captured["tokenizer_model_name"] == "Helsinki-NLP/opus-mt-fr-en"
+    assert captured["model_model_name"] == "Helsinki-NLP/opus-mt-fr-en"
+    assert captured["tokenizer_kwargs"]["cache_dir"] == "/tmp/hf-cache"
+    assert captured["model_kwargs"]["cache_dir"] == "/tmp/hf-cache"
+    assert captured["tokenizer_kwargs"]["token"] == "hf_test_token"
+    assert captured["model_kwargs"]["token"] == "hf_test_token"
+
+
+def test_run_translation_batch_sets_max_length_none_to_avoid_generation_warning():
+    tr = _load_transcription_script_module()
+
+    class FakeTensor:
+        def to(self, _device):
+            return self
+
+    class FakeTokenizer:
+        def __call__(self, texts, return_tensors, padding, truncation, max_length):
+            assert texts == ["Bonjour."]
+            assert return_tensors == "pt"
+            assert padding is True
+            assert truncation is True
+            assert max_length == 512
+            return {"input_ids": FakeTensor(), "attention_mask": FakeTensor()}
+
+        def batch_decode(self, generated, skip_special_tokens):
+            assert generated == ["GEN"]
+            assert skip_special_tokens is True
+            return ["Hello."]
+
+    class FakeModel:
+        device = "cpu"
+
+        def __init__(self):
+            self.kwargs = None
+
+        def generate(self, **kwargs):
+            self.kwargs = kwargs
+            return ["GEN"]
+
+    class FakeTorch:
+        @staticmethod
+        def inference_mode():
+            class _Ctx:
+                def __enter__(self):
+                    return None
+
+                def __exit__(self, exc_type, exc, tb):
+                    return False
+
+            return _Ctx()
+
+    fake_model = FakeModel()
+    translated = tr._run_translation_batch(
+        ["Bonjour."],
+        torch=FakeTorch(),
+        tokenizer=FakeTokenizer(),
+        model=fake_model,
+    )
+
+    assert translated == ["Hello."]
+    assert fake_model.kwargs is not None
+    assert fake_model.kwargs["max_length"] is None
+    assert fake_model.kwargs["max_new_tokens"] == 256
+    assert fake_model.kwargs["num_beams"] == 4
+
+
 def test_combine_chunk_results_offsets_segments_and_words():
     tr = _load_transcription_script_module()
 
@@ -493,6 +588,57 @@ def test_parse_vtt_timestamp_accepts_comma_decimal_marker():
     parsed = tr._parse_vtt_timestamp("01:02:03,456")
 
     assert parsed == 3723.456
+
+
+def test_hf_hub_warning_filter_drops_unauthenticated_hub_warning():
+    tr = _load_transcription_script_module()
+
+    matching = types.SimpleNamespace(
+        getMessage=lambda: "You are sending unauthenticated requests to the HF Hub."
+    )
+    other = types.SimpleNamespace(getMessage=lambda: "another warning")
+
+    assert tr._HF_HUB_WARNING_FILTER.filter(matching) is False
+    assert tr._HF_HUB_WARNING_FILTER.filter(other) is True
+
+
+def test_hf_hub_warning_filter_returns_true_when_record_message_fails():
+    tr = _load_transcription_script_module()
+
+    class _BrokenRecord:
+        @staticmethod
+        def getMessage():
+            raise RuntimeError("boom")
+
+    assert tr._HF_HUB_WARNING_FILTER.filter(_BrokenRecord()) is True
+
+
+def test_apply_runtime_cuda_environment_prefers_explicit_cuda_visible_devices_env(monkeypatch):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setenv("GPU_CUDA_VISIBLE_DEVICES", "2,3")
+    monkeypatch.setenv("GPU_CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "9")
+    monkeypatch.delenv("CUDA_DEVICE_ORDER", raising=False)
+
+    tr._apply_runtime_cuda_environment(gpu_device=0)
+
+    assert os.getenv("CUDA_VISIBLE_DEVICES") == "2,3"
+    assert os.getenv("CUDA_DEVICE_ORDER") == "PCI_BUS_ID"
+
+
+def test_apply_runtime_cuda_environment_falls_back_to_gpu_device_when_env_missing(monkeypatch):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.delenv("GPU_CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.delenv("GPU_CUDA_DEVICE_ORDER", raising=False)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.delenv("CUDA_DEVICE_ORDER", raising=False)
+
+    tr._apply_runtime_cuda_environment(gpu_device=7)
+
+    assert os.getenv("CUDA_VISIBLE_DEVICES") == "7"
+    assert os.getenv("CUDA_DEVICE_ORDER") is None
 
 
 def test_build_transcribe_kwargs_disables_previous_text_conditioning_for_chunked_runs():

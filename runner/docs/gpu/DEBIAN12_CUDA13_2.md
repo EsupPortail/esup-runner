@@ -24,7 +24,7 @@ Install NVIDIA drivers and CUDA on Debian 12 for runner GPU mode.
 
 ```bash
 sudo apt update
-sudo apt install -y wget ca-certificates gnupg software-properties-common linux-headers-$(uname -r)
+sudo apt install -y wget ca-certificates gnupg software-properties-common linux-headers-$(uname -r) build-essential python3-dev
 
 # Enable the contrib component if needed
 sudo add-apt-repository contrib
@@ -107,9 +107,21 @@ ffmpeg -hwaccels
 ffmpeg -encoders | egrep 'nvenc'
 ffmpeg -decoders | egrep 'cuvid|nvdec'
 ffmpeg -filters  | egrep 'cuda|npp'
+
+cd /opt/esup-runner/runner
+uv run scripts/check_gpu.py
 ```
 
 FFmpeg note: `-init_hw_device cuda:1` can be used to target the second CUDA GPU.
+Transcription note: if `uv run scripts/check_gpu.py` fails or reports `cuda_available=False`, run
+`make sync-transcription-gpu` in `/opt/esup-runner/runner`, then restart the runner service.
+If transcription logs contain `fatal error: Python.h: No such file or directory` (often followed by Triton fallback warnings), install missing build headers then resync:
+
+```bash
+sudo apt install -y build-essential python3-dev
+cd /opt/esup-runner/runner
+make sync-transcription-gpu
+```
 
 ## 7) Runner `.env` alignment
 

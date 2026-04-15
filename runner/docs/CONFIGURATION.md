@@ -109,6 +109,7 @@ ENCODING_TYPE=CPU
 WHISPER_MODEL=turbo
 CACHE_DIR=/home/esup-runner/.cache/esup-runner
 WHISPER_LANGUAGE=auto
+# HF_TOKEN=hf_xxx
 ```
 
 `WHISPER_LANGUAGE` now expresses the final subtitle language:
@@ -121,6 +122,7 @@ The built-in subtitle translation currently supports:
 
 `CACHE_DIR` controls the shared cache root used by Whisper models (`CACHE_DIR/whisper-models`),
 local translation models (`CACHE_DIR/huggingface`), and uv (`CACHE_DIR/uv`).
+`HF_TOKEN` is optional but recommended on production runners: it enables authenticated Hugging Face downloads, which reduces rate-limit warnings and can speed up model retrieval.
 
 Legacy alias for logs is still supported: `LOG_DIRECTORY`.
 

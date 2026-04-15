@@ -145,6 +145,8 @@ Notes:
   - `transcription-cpu`: supported on Linux x86_64 and macOS Apple Silicon (`arm64`).
   - `transcription-gpu`: supported on Linux x86_64 GPU/CUDA hosts.
   - macOS Intel (`x86_64`) is not supported for transcription with the current `torch` stack because upstream wheels are no longer published for that platform.
+- On Debian/Ubuntu GPU transcription hosts, ensure OS build headers are present:
+  `sudo apt install -y build-essential python3-dev` (avoids `fatal error: Python.h: No such file or directory` when Triton JIT compiles helper modules).
 
 ### Optional: refresh `uv.lock` for GPU environments
 
@@ -174,11 +176,13 @@ From `/opt/esup-runner/runner`:
 ```bash
 uv run scripts/check_version.py
 uv run scripts/check_ffmpeg.py
+uv run scripts/check_gpu.py
 uv run scripts/check_runner_resources.py
 uv run scripts/check_runner_storage.py
 ```
 
 - `check_ffmpeg.py` helps catch codec/build issues early.
+- `check_gpu.py` validates that the current Python/Torch runtime can actually use CUDA for transcription.
 - `check_runner_resources.py` validates CPU/RAM/GPU/config.
 - `check_runner_storage.py` validates free space and permissions for configured storage directories, including the `uv` cache directory.
 

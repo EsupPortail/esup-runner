@@ -24,7 +24,7 @@ Install NVIDIA drivers and CUDA on Debian 11 for runner GPU mode.
 
 ```bash
 sudo apt update
-sudo apt install -y locales software-properties-common wget
+sudo apt install -y locales software-properties-common wget build-essential python3-dev
 
 # Enable the contrib component if needed
 sudo add-apt-repository contrib
@@ -96,6 +96,17 @@ sudo apt autoremove -y
 sudo systemctl status nvidia-persistenced
 nvidia-smi
 nvcc --version
+
+cd /opt/esup-runner/runner
+uv run scripts/check_gpu.py
+```
+
+If transcription logs contain `fatal error: Python.h: No such file or directory` (often followed by Triton fallback warnings), install missing build headers then resync:
+
+```bash
+sudo apt install -y build-essential python3-dev
+cd /opt/esup-runner/runner
+make sync-transcription-gpu
 ```
 
 Optional reboot:

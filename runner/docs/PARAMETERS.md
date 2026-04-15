@@ -58,6 +58,7 @@ WHISPER_LANGUAGE=auto
 - `CACHE_DIR` (default `/home/esup-runner/.cache/esup-runner`): Shared cache root.
 - `WHISPER_MODELS_DIR` (default `CACHE_DIR/whisper-models`): Optional override for Whisper model cache directory.
 - `HUGGINGFACE_MODELS_DIR` (default `CACHE_DIR/huggingface`): Optional override for Hugging Face translation model cache.
+- `HF_TOKEN` (optional): Hugging Face access token used for authenticated model downloads (recommended to reduce rate-limit warnings and improve download reliability/speed).
 - `UV_CACHE_DIR` (default `CACHE_DIR/uv`): Optional override for uv package cache directory.
 - `WHISPER_LANGUAGE` (default `auto`): Default final subtitle language; `auto` keeps the detected spoken language, while an explicit `fr`/`en` target can trigger subtitle translation after transcription.
 - `WHISPER_CHUNK_THRESHOLD_SECONDS` (optional override): If unset, the runner chooses a hardware-aware default: `800` on CPU and `1800` on GPU.

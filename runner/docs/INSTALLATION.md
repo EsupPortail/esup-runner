@@ -154,6 +154,8 @@ make sync-transcription-gpu
 Notes:
 - `sync-transcription-cpu` installs a CPU-only torch profile on Linux x86_64, which avoids `nvidia-*` packages.
 - `sync-transcription-gpu` keeps the default `torch` resolution, intended for GPU/CUDA environments.
+- On Debian/Ubuntu GPU transcription hosts, install OS build headers before first runs:
+  `sudo apt install -y build-essential python3-dev` (prevents `fatal error: Python.h: No such file or directory` from Triton runtime JIT).
 - Current transcription dependency support:
   - `transcription-cpu`: supported on Linux x86_64 and macOS Apple Silicon (`arm64`).
   - `transcription-gpu`: supported on Linux x86_64 GPU/CUDA hosts.
@@ -180,6 +182,7 @@ Before starting the service, you can run a few built-in checks from `/opt/esup-r
 ```bash
 uv run scripts/check_version.py
 uv run scripts/check_ffmpeg.py
+uv run scripts/check_gpu.py
 uv run scripts/check_runner_resources.py
 uv run scripts/check_runner_storage.py
 ```
@@ -187,6 +190,7 @@ uv run scripts/check_runner_storage.py
 Notes:
 - These scripts may read your configuration from `.env`, so make sure it is present and correctly configured.
 - A successful check should exit with code `0`; any non-zero exit code indicates something to fix (missing binary, wrong permissions, insufficient disk/RAM, etc.).
+- `check_gpu.py` validates that the current Python/Torch runtime can actually use CUDA for transcription.
 - `check_runner_storage.py` validates free space in `LOG_DIR`, `STORAGE_DIR`, `HUGGINGFACE_MODELS_DIR`, `WHISPER_MODELS_DIR`, and `UV_CACHE_DIR` (which defaults to `CACHE_DIR/uv`).
 - Compatibility note: legacy variable `LOG_DIRECTORY` is still accepted.
 

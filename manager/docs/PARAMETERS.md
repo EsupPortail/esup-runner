@@ -6,6 +6,7 @@ This page summarizes the environment variables consumed by the manager. Values a
 ```properties
 MANAGER_PROTOCOL=http
 MANAGER_HOST=0.0.0.0
+MANAGER_BIND_HOST=
 MANAGER_PORT=8081
 ENVIRONMENT=production
 UVICORN_WORKERS=2
@@ -28,6 +29,9 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 
 ## Core manager
 - `MANAGER_PROTOCOL` (default `http`), `MANAGER_HOST` (default `0.0.0.0`), `MANAGER_PORT` (default `8081`): Base URL components.
+- `MANAGER_BIND_HOST` (default computed): Socket bind host used by Uvicorn/Gunicorn.
+  - If unset and `MANAGER_HOST` is an IP literal, bind uses `MANAGER_HOST`.
+  - If unset and `MANAGER_HOST` is a DNS hostname, bind uses `0.0.0.0`.
 - `MANAGER_URL` is computed automatically as `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT`.
 - `ENVIRONMENT` (default `development`): Environment name used by runtime/deployment wrappers.
 - `UVICORN_WORKERS` (int, default `4`): Worker count for production process managers.

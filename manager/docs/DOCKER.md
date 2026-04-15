@@ -113,7 +113,8 @@ For Docker deployment with a shared Docker network, set:
 
 Important:
 
-- `MANAGER_HOST` is used both for server bind and for `MANAGER_URL`.
+- `MANAGER_HOST` is used to build `MANAGER_URL`.
+- `MANAGER_BIND_HOST` controls the server bind interface (leave empty for default auto behavior).
 - `MANAGER_URL` is injected into runner tasks as `completion_callback` (`/task/completion`).
 - If `MANAGER_HOST=0.0.0.0`, callbacks from runner may fail in Docker (`http://0.0.0.0:...` points to the runner container itself, not the manager).
 
@@ -302,7 +303,7 @@ Manual end-to-end task test (from manager sources):
 cd /opt/esup-runner/manager
 RUNNER_API_TOKEN="<AUTHORIZED_TOKEN>" \
 RUNNER_MANAGER_URL="http://127.0.0.1:8081" \
-uv run scripts/example_async_client.py
+uv run scripts/check_pipeline_tasks.py
 ```
 
 Before running this script:

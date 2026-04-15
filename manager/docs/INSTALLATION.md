@@ -238,27 +238,34 @@ make run
 # or: uv run esup-runner-manager
 ```
 
-2) From another terminal, call the health endpoint (token required):
+2) Run the runtime check helper (auto-reads `.env`):
+
+```bash
+cd /opt/esup-runner/manager
+uv run scripts/check_runtime.py
+```
+
+3) From another terminal, call the health endpoint (token required):
 
 ```bash
 curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
   "http://127.0.0.1:<MANAGER_PORT>/manager/health"
 ```
 
-3) Check the API version endpoint:
+4) Check the API version endpoint:
 
 ```bash
 curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
   "http://127.0.0.1:<MANAGER_PORT>/api/version"
 ```
 
-4) Optional end-to-end task test with the example async client:
+5) Optional end-to-end task test with the async task execution check script:
 
 ```bash
 cd /opt/esup-runner/manager
 RUNNER_API_TOKEN="<AUTHORIZED_TOKEN>" \
 RUNNER_MANAGER_URL="http://127.0.0.1:<MANAGER_PORT>" \
-uv run scripts/example_async_client.py
+uv run scripts/check_pipeline_tasks.py
 ```
 
 Replace:

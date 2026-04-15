@@ -16,6 +16,7 @@ This document describes the Manager runtime configuration (`manager/.env`) with 
 ```properties
 MANAGER_PROTOCOL=http
 MANAGER_HOST=0.0.0.0
+MANAGER_BIND_HOST=
 MANAGER_PORT=8081
 ENVIRONMENT=production
 UVICORN_WORKERS=2
@@ -24,6 +25,9 @@ CLEANUP_TASK_FILES_DAYS=7
 
 Behavior:
 - `MANAGER_URL` is computed automatically as `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT`.
+- `MANAGER_BIND_HOST` controls the socket bind interface.
+  - If unset and `MANAGER_HOST` is an IP (`127.0.0.1`, `10.x.x.x`, `::1`, etc.), manager binds on that IP.
+  - If unset and `MANAGER_HOST` is a DNS hostname, manager binds on `0.0.0.0` for reliability.
 - `CLEANUP_TASK_FILES_DAYS` controls cleanup retention for completed/failed task files.
 - `UVICORN_WORKERS` is used in production process setups (Gunicorn/Uvicorn workers).
 
@@ -186,6 +190,7 @@ Email notifications are active only when required SMTP fields are configured.
 # Manager URL configuration
 MANAGER_PROTOCOL=http
 MANAGER_HOST=0.0.0.0
+MANAGER_BIND_HOST=
 MANAGER_PORT=8081
 
 # Production/development settings

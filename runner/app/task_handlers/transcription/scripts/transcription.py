@@ -38,10 +38,12 @@ Usage example:
 
 import argparse
 import json
+import logging
 import os
 import re
 import shlex
 import subprocess
+import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -66,6 +68,23 @@ _DEFAULT_CHUNK_OVERLAP_SECONDS = 3
 _DEFAULT_CACHE_DIR = "/home/esup-runner/.cache/esup-runner"
 _DEFAULT_WHISPER_MODELS_DIR = f"{_DEFAULT_CACHE_DIR}/whisper-models"
 _DEFAULT_HUGGINGFACE_MODELS_DIR = f"{_DEFAULT_CACHE_DIR}/huggingface"
+_SACREMOSES_RECOMMENDED_WARNING = "Recommended: pip install sacremoses."
+
+
+class _HfHubUnauthenticatedWarningFilter(logging.Filter):
+    """Drop the noisy informational warning emitted by HF Hub for anonymous access."""
+
+    _needle = "You are sending unauthenticated requests to the HF Hub."
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            return self._needle not in record.getMessage()
+        except Exception:
+            return True
+
+
+_HF_HUB_WARNING_FILTER_INSTALLED = False
+_HF_HUB_WARNING_FILTER = _HfHubUnauthenticatedWarningFilter()
 
 
 def _resolve_default_cache_subdir(subdir: str) -> str:
@@ -551,6 +570,19 @@ def _prepare_whisper_env(use_gpu: bool, gpu_device: int) -> tuple[list[str], Dic
     return device_args, env
 
 
+def _apply_runtime_cuda_environment(gpu_device: int) -> None:
+    """Align in-process CUDA env with runner GPU settings before importing torch."""
+    env_cuda = os.getenv("GPU_CUDA_VISIBLE_DEVICES", "").strip()
+    if env_cuda:
+        os.environ["CUDA_VISIBLE_DEVICES"] = env_cuda
+    elif gpu_device is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(int(gpu_device))
+
+    cuda_order = os.getenv("GPU_CUDA_DEVICE_ORDER", "").strip()
+    if cuda_order:
+        os.environ["CUDA_DEVICE_ORDER"] = cuda_order
+
+
 def _detect_language_from_stdout(stdout: str, language: str) -> Optional[str]:
     """Extract the detected language code from Whisper CLI stdout when auto mode is used."""
     if language and language.lower() != "auto":
@@ -565,7 +597,7 @@ def _detect_language_from_stdout(stdout: str, language: str) -> Optional[str]:
     return None
 
 
-def _resolve_effective_use_gpu(requested_use_gpu: bool, debug: bool) -> bool:
+def _resolve_effective_use_gpu(requested_use_gpu: bool, gpu_device: int, debug: bool) -> bool:
     """Return whether CUDA can actually be used for this run.
 
     When GPU is requested but CUDA is unavailable (driver/runtime mismatch,
@@ -575,12 +607,33 @@ def _resolve_effective_use_gpu(requested_use_gpu: bool, debug: bool) -> bool:
         return False
 
     try:
+        _apply_runtime_cuda_environment(gpu_device)
         import torch  # type: ignore
 
         if torch.cuda.is_available():
             return True
 
-        print("CUDA requested but unavailable; falling back to CPU for transcription")
+        torch_version = str(getattr(torch, "__version__", "unknown"))
+        torch_cuda_build = getattr(getattr(torch, "version", None), "cuda", None)
+        cuda_visible = os.getenv("CUDA_VISIBLE_DEVICES", "").strip() or "<unset>"
+        if torch_cuda_build is None:
+            print(
+                "CUDA requested but unavailable; falling back to CPU for transcription "
+                f"(torch build is CPU-only: torch={torch_version}, "
+                f"CUDA_VISIBLE_DEVICES={cuda_visible})"
+            )
+            return False
+
+        device_count = "unknown"
+        try:
+            device_count = str(int(torch.cuda.device_count()))
+        except Exception:
+            pass
+        print(
+            "CUDA requested but unavailable; falling back to CPU for transcription "
+            f"(torch={torch_version}, torch.version.cuda={torch_cuda_build}, "
+            f"CUDA_VISIBLE_DEVICES={cuda_visible}, torch.cuda.device_count={device_count})"
+        )
         return False
     except Exception as e:
         if debug:
@@ -1647,6 +1700,24 @@ def _build_translation_metadata(
 def _import_translation_modules() -> tuple[Optional[Any], Optional[Any], Optional[Any]]:
     """Import the local subtitle translation backend on demand."""
     try:
+        global _HF_HUB_WARNING_FILTER_INSTALLED
+
+        # Marian tokenizer emits this recommendation when sacremoses is absent.
+        # We keep translation functional without forcing that optional package.
+        warnings.filterwarnings(
+            "ignore",
+            message=re.escape(_SACREMOSES_RECOMMENDED_WARNING),
+            category=UserWarning,
+        )
+
+        # HF Hub now emits an informational warning on anonymous requests.
+        # Authentication remains documented via HF_TOKEN; we simply avoid
+        # polluting task stderr with this non-blocking message.
+        if not _HF_HUB_WARNING_FILTER_INSTALLED:
+            logging.getLogger("huggingface_hub").addFilter(_HF_HUB_WARNING_FILTER)
+            logging.getLogger("huggingface_hub.utils._http").addFilter(_HF_HUB_WARNING_FILTER)
+            _HF_HUB_WARNING_FILTER_INSTALLED = True
+
         import torch  # type: ignore
         from transformers import AutoModelForSeq2SeqLM, AutoTokenizer  # type: ignore
 
@@ -1669,6 +1740,9 @@ def _load_translation_model_objects(
     from_pretrained_kwargs: Dict[str, object] = {}
     if cache_dir:
         from_pretrained_kwargs["cache_dir"] = cache_dir
+    hf_token = (os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN") or "").strip()
+    if hf_token:
+        from_pretrained_kwargs["token"] = hf_token
     tokenizer = auto_tokenizer_cls.from_pretrained(model_name, **from_pretrained_kwargs)
     model = auto_model_cls.from_pretrained(model_name, **from_pretrained_kwargs)
     return tokenizer, model
@@ -1764,6 +1838,7 @@ def _run_translation_batch(
     with torch.inference_mode():
         generated = model.generate(
             **tokenized,
+            max_length=None,
             max_new_tokens=256,
             num_beams=4,
         )
@@ -2905,7 +2980,11 @@ def main() -> int:
     if rc != 0 or audio_src is None:
         return rc
 
-    effective_use_gpu = _resolve_effective_use_gpu(args.use_gpu == "true", debug)
+    effective_use_gpu = _resolve_effective_use_gpu(
+        args.use_gpu == "true",
+        int(args.gpu_device),
+        debug,
+    )
     rc, detected_language = _run_transcription(
         args,
         audio_src,

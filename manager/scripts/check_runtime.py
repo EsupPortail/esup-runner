@@ -332,15 +332,31 @@ def print_report(results: list[CheckResult], context: dict[str, Any]) -> None:
 
     print("Running: Configuration")
     print("-" * width)
-    print("MANAGER_URL       : configured (value hidden)" if manager_url_set else "MANAGER_URL       : missing")
-    print("MANAGER_HOST      : configured (value hidden)" if manager_host_set else "MANAGER_HOST      : missing")
+    print(
+        "MANAGER_URL       : configured (value hidden)"
+        if manager_url_set
+        else "MANAGER_URL       : missing"
+    )
+    print(
+        "MANAGER_HOST      : configured (value hidden)"
+        if manager_host_set
+        else "MANAGER_HOST      : missing"
+    )
     print(
         "MANAGER_BIND_HOST : configured (value hidden)"
         if manager_bind_host_set
         else "MANAGER_BIND_HOST : missing"
     )
-    print("MANAGER_PORT      : configured (value hidden)" if manager_port_set else "MANAGER_PORT      : missing")
-    print("API token         : configured (value hidden)" if token_set else "API token         : missing")
+    print(
+        "MANAGER_PORT      : configured (value hidden)"
+        if manager_port_set
+        else "MANAGER_PORT      : missing"
+    )
+    print(
+        "API token         : configured (value hidden)"
+        if token_set
+        else "API token         : missing"
+    )
 
     for result in results:
         print()

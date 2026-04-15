@@ -36,7 +36,7 @@
 #
 # Troubleshooting:
 # - Missing dev tools (pytest/ruff/mypy): run `make sync-dev` or `make sync-all`.
-# - GPU transcription not available at runtime: run `make check-gpu`.
+# - GPU transcription not available at runtime: run `uv run scripts/check_gpu.py`.
 # - Need a CUDA 12-compatible lock: run `make lock-upgrade-gpu-12`.
 
 UV      ?= uv
@@ -84,7 +84,6 @@ help:
 	@echo "  make lock [EXTRAS=dev,transcription-gpu,transcription-cpu]  -> uv lock (+ extras)"
 	@echo "  make lock-upgrade [EXTRAS=dev,transcription-gpu,transcription-cpu]  -> uv lock --upgrade (+ extras)"
 	@echo "  make run  -> run the app launcher"
-	@echo "  make check-gpu  -> verify torch CUDA runtime availability"
 	@echo "  make init  -> init directories from .env (sudo)"
 	@echo "  make create-service  -> install systemd user service (~/.config/systemd/user)"
 	@echo "  make ci  -> run local pre-PR checks (fmt + lint + test + coverage)"
@@ -203,10 +202,6 @@ lock-transcription-cpu:
 run:
 	@echo "==> run the app launcher"
 	$(UV) run esup-runner-runner
-
-check-gpu:
-	@echo "==> checking torch CUDA availability"
-	@$(UV) run python -c "import sys; import torch; print(f'torch={torch.__version__}'); print(f'cuda_build={torch.version.cuda}'); ok=torch.cuda.is_available(); print(f'cuda_available={ok}'); print(f'gpu_count={torch.cuda.device_count() if ok else 0}'); sys.exit(0 if ok else 1)"
 
 # ---------- Utilities ----------
 
@@ -341,4 +336,4 @@ docker-fix-perms:
 		lock-dev lock-transcription-gpu lock-transcription-cpu lock-all lock-upgrade-gpu-12 lock-upgrade-gpu-latest \
 		release-dry-run docker-build docker-fix-perms \
 		check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
-		test coverage fmt fmt-check lint ci check-gpu
+		test coverage fmt fmt-check lint ci

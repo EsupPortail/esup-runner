@@ -22,7 +22,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Sequence, Set, Tuple
+from typing import List, Optional, Sequence, Set, Tuple
 
 # Conservative CPU/RAM requirements (upper bounds)
 CPU_ENCODING_VCPU_MAX = 8
@@ -177,6 +177,22 @@ def _detect_gpus() -> List[GPUInfo]:
             continue
         gpus.append(GPUInfo(name=name, vram_gb=vram_gb))
     return gpus
+
+
+def _match_gpu_recommendation(gpu_name: str) -> Optional[Tuple[int, int]]:
+    """Return per-GPU recommendation tuple when model is known."""
+    normalized = re.sub(r"\s+", " ", gpu_name.strip().lower())
+    for model, counts in GPU_MAX_RECOMMENDATIONS.items():
+        if model in normalized:
+            return counts
+    return None
+
+
+def _all_gpus_have_known_recommendations(gpus: List[GPUInfo]) -> bool:
+    """Return True when every detected GPU model is present in recommendations."""
+    if not gpus:
+        return False
+    return all(_match_gpu_recommendation(gpu.name) is not None for gpu in gpus)
 
 
 def _get_resources() -> ResourceInfo:
@@ -437,13 +453,7 @@ def _recommend_for_gpus(gpus: List[GPUInfo]) -> Recommendation:
     known = True
     details = []
     for gpu in gpus:
-        key = gpu.name.strip().lower()
-        normalized = re.sub(r"\s+", " ", key)
-        rec = None
-        for model, counts in GPU_MAX_RECOMMENDATIONS.items():
-            if model in normalized:
-                rec = counts
-                break
+        rec = _match_gpu_recommendation(gpu.name)
         if rec is None:
             known = False
             rec = (0, 0)
@@ -512,8 +522,16 @@ def _evaluate_configuration(
     cpu_ok = required_vcpu <= resources.vcpu and required_ram <= resources.ram_gb
     gpu_ok = True
     if gpu_mode:
-        total_vram = sum(g.vram_gb for g in resources.gpus)
-        gpu_ok = required_vram <= total_vram if total_vram > 0 else False
+        # Known GPU models rely on explicit per-model maxima.
+        # Unknown models keep conservative VRAM-based validation.
+        if _all_gpus_have_known_recommendations(resources.gpus):
+            gpu_ok = (
+                counts.encoding_or_studio_instances <= recommended.encoding_instances
+                and counts.transcription_instances <= recommended.transcription_instances
+            )
+        else:
+            total_vram = sum(g.vram_gb for g in resources.gpus)
+            gpu_ok = required_vram <= total_vram if total_vram > 0 else False
         cpu_ok = True
 
     ratio_ok = True

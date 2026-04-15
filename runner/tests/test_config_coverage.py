@@ -25,6 +25,13 @@ def test_parse_helpers_cover_defaults_invalid_values_and_bounds(monkeypatch):
     assert config_module._parse_float("bad", 2.5) == 2.5
     assert config_module._parse_float("-1.0", 0.0, min_value=0.5) == 0.5
     assert config_module._parse_float("9.0", 0.0, max_value=3.0) == 3.0
+    assert (
+        config_module._normalize_base_url("http://1.2.3.4:8000/", "http://localhost:8081")
+        == "http://1.2.3.4:8000"
+    )
+    assert (
+        config_module._normalize_base_url("   ", "http://localhost:8081") == "http://localhost:8081"
+    )
 
     key_a = "__ESUP_RUNNER_TEST_MISSING_A__"
     key_b = "__ESUP_RUNNER_TEST_MISSING_B__"
@@ -194,6 +201,14 @@ def test_config_log_dir_prefers_new_name_and_keeps_legacy_alias(monkeypatch):
     cfg_legacy = config_module.Config()
     assert cfg_legacy.LOG_DIR == "/tmp/legacy-runner-logs/"
     assert cfg_legacy.LOG_DIRECTORY == "/tmp/legacy-runner-logs/"
+
+
+def test_config_manager_url_strips_trailing_slash(monkeypatch):
+    monkeypatch.setenv("MANAGER_URL", "http://1.2.3.4:8000/")
+
+    cfg = config_module.Config()
+
+    assert cfg.MANAGER_URL == "http://1.2.3.4:8000"
 
 
 def test_config_validate_instances_requires_at_least_one():

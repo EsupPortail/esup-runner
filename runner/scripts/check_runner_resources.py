@@ -33,20 +33,23 @@ CPU_COMBINED_VCPU = max(CPU_ENCODING_VCPU_MAX, CPU_TRANSCRIPTION_VCPU)
 CPU_COMBINED_RAM_GB = max(CPU_ENCODING_RAM_GB, CPU_TRANSCRIPTION_RAM_GB_MAX)
 
 # Conservative GPU VRAM requirements (upper bounds)
-GPU_ENCODING_VRAM_GB = 1
+GPU_ENCODING_VRAM_GB = 2
 GPU_TRANSCRIPTION_VRAM_GB_MAX = 7
 GPU_COMBINED_VRAM_GB = max(GPU_ENCODING_VRAM_GB, GPU_TRANSCRIPTION_VRAM_GB_MAX)
 
 # Per-GPU max recommendations
-#  - Tesla T4 (1× NVENC): Recommended 1–2 encodes per GPU (max speed at 1; ~half speed at 2).
-#    Up to ~5–10 is possible, but queueing causes much longer runtimes.
-#  - L40S (3× NVENC): Recommended 3–6 encodes per GPU (one per NVENC at 3; light time-slicing at 6).
-#    Up to ~15–30 per GPU is possible, mainly limited by storage (HLS writes) and CPU (AAC/mux), not NVENC itself.
+#  - Tesla T4 (1× NVENC): Recommended 3–4 encodes per GPU (max speed at 1; ~half speed at 2).
+#    Up to ~5–7 is possible, but queueing causes much longer runtimes.
+#  - NVIDIA L4 (2× NVENC): Recommended 6-8 encodes per GPU (max speed at 1; ~half speed at 2).
+#    Up to ~8–10 is possible, but queueing causes much longer runtimes.
+#  - Nvidia L40S (3× NVENC): Recommended 10-15 encodes per GPU (one per NVENC at 3; light time-slicing at 8).
+#    Up to ~15–20 per GPU is possible, mainly limited by storage (HLS writes) and CPU (AAC/mux), not NVENC itself.
 # Solution to explore: Runtime control.
 # -> if nvidia-smi dmon shows enc > 90–95% continuously, do not add new jobs to this GPU.
 GPU_MAX_RECOMMENDATIONS = {
-    "tesla t4": (5, 1),
-    "l40s": (15, 4),
+    "tesla t4": (4, 1),
+    "nvidia l4": (7, 2),
+    "nvidia l40s": (14, 4),
 }
 
 

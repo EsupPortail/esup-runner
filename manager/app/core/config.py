@@ -4,6 +4,7 @@ Configuration module for runner management system.
 Handles environment variables, security settings, and application configuration.
 """
 
+import ipaddress
 import os
 from typing import Dict, Optional
 
@@ -19,6 +20,7 @@ _CONFIG_ENV_PREFIXES = ["AUTHORIZED_TOKENS__", "ADMIN_USERS__"]
 _CONFIG_ENV_KEYS = [
     "MANAGER_PROTOCOL",
     "MANAGER_HOST",
+    "MANAGER_BIND_HOST",
     "MANAGER_PORT",
     "ENVIRONMENT",
     "UVICORN_WORKERS",
@@ -120,6 +122,37 @@ def _first_env_value(*keys: str, default: Optional[str] = None) -> str:
     return "" if default is None else default
 
 
+def _is_ip_literal(value: str) -> bool:
+    """Return True when value is a valid IPv4/IPv6 literal."""
+    candidate = (value or "").strip()
+    if not candidate:
+        return False
+    if candidate.startswith("[") and candidate.endswith("]"):
+        candidate = candidate[1:-1]
+    try:
+        ipaddress.ip_address(candidate)
+        return True
+    except ValueError:
+        return False
+
+
+def _default_manager_bind_host(manager_host: str) -> str:
+    """Compute default socket bind host from MANAGER_HOST.
+
+    MANAGER_HOST is also used to build MANAGER_URL, so a DNS name is valid there.
+    But binding directly on a DNS hostname may fail or bind unexpectedly depending
+    on DNS resolution order. In that case, default to 0.0.0.0 for reliability.
+    """
+    host = (manager_host or "").strip()
+    if not host:
+        return "0.0.0.0"
+    if host in {"0.0.0.0", "::", "*", "localhost"}:
+        return host
+    if _is_ip_literal(host):
+        return host
+    return "0.0.0.0"
+
+
 def reload_config_env():
     """Reload configuration from .env, updating the shared config object in place."""
     global _CONFIG_ENV_LOADED, _CONFIG_INSTANCE, config
@@ -217,7 +250,13 @@ class Config:
 
         # Manager configuration
         self.MANAGER_PROTOCOL: str = os.getenv("MANAGER_PROTOCOL", "http")
-        self.MANAGER_HOST: str = os.getenv("MANAGER_HOST", "0.0.0.0")
+        self.MANAGER_HOST: str = (os.getenv("MANAGER_HOST", "0.0.0.0") or "").strip() or "0.0.0.0"
+        manager_bind_host = _first_env_value(
+            "MANAGER_BIND_HOST", default=_default_manager_bind_host(self.MANAGER_HOST)
+        ).strip()
+        self.MANAGER_BIND_HOST: str = manager_bind_host or _default_manager_bind_host(
+            self.MANAGER_HOST
+        )
         self.MANAGER_PORT: int = int(os.getenv("MANAGER_PORT", 8081))
         # Generate Manager URL
         self.MANAGER_URL = f"{self.MANAGER_PROTOCOL}://{self.MANAGER_HOST}:{self.MANAGER_PORT}"

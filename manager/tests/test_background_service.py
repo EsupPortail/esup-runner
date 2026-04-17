@@ -23,13 +23,18 @@ async def test_start_and_stop_all_services(monkeypatch):
     )
     monkeypatch.setattr(background_service, "cleanup_old_tasks", lambda: fake_service("cleanup"))
     monkeypatch.setattr(background_service, "check_task_timeouts", lambda: fake_service("timeouts"))
+    monkeypatch.setattr(
+        background_service,
+        "reconcile_running_tasks_with_runners",
+        lambda: fake_service("reconcile"),
+    )
 
     mgr = background_service.BackgroundServiceManager()
     await mgr.start_all_services()
     await asyncio.sleep(0.01)
     assert mgr.is_running is True
-    assert len(mgr.tasks) == 3
-    assert set(started) == {"runners", "cleanup", "timeouts"}
+    assert len(mgr.tasks) == 4
+    assert set(started) == {"runners", "cleanup", "timeouts", "reconcile"}
 
     await mgr.stop_all_services()
     assert mgr.is_running is False
@@ -44,6 +49,7 @@ async def test_start_when_already_running(monkeypatch):
     monkeypatch.setattr(background_service, "check_runners_activity", lambda: noop())
     monkeypatch.setattr(background_service, "cleanup_old_tasks", lambda: noop())
     monkeypatch.setattr(background_service, "check_task_timeouts", lambda: noop())
+    monkeypatch.setattr(background_service, "reconcile_running_tasks_with_runners", lambda: noop())
 
     mgr = background_service.BackgroundServiceManager()
     await mgr.start_all_services()

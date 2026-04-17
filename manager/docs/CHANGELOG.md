@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added an hourly running-task reconciliation background service that polls each assigned runner via `GET /task/status/{task_id}`.
+- Added an internal shared check-output helper in `app/core/_check_output.py` for consistent manager script status rendering.
+
+### Changed
+
+- Re-enabled the admin config reload control in `app/web/templates/admin.html` and updated its status text to report the number of authorized tokens after reload.
+- Updated task lifecycle handling so manager-side `running` tasks are reconciled from runner-reported statuses (`running`, `completed`, `failed`, `timeout`) and persisted automatically.
+- Unified manager check-script text output (`check_runtime.py`, `check_version.py`, `check_pipeline_tasks.py`) to the shared `✓ INFO` / `⚠ WARNING` / `✗ ERROR` format and aligned final conclusions where applicable.
+- Updated manager metadata/documentation license references from `LGPL 3.0` to `GPL 3.0` (`app/__version__.py`, `docs/README.md`, `docs/VERSION_MANAGEMENT.md`).
+
+### Fixed
+
+- Prevented stale `running` tasks after manager downtime by adding periodic reconciliation against runner task status.
+- Improved `scripts/check_version.py` portability by gracefully skipping the OpenAPI assertion with a warning when `fastapi` is unavailable in minimal environments.
+
 ## [1.1.1] - 2026-04-15
 
 ### Security

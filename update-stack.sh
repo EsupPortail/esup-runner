@@ -14,13 +14,30 @@
 # High-level workflow:
 # 1) Optionally update uv (service/current user only, never root).
 # 2) Optionally update sources (git fetch --tags + git pull --ff-only).
-# 3) Update installed components:
+# 3) If GPU lock refresh is requested (make lock-upgrade-gpu-**), manage runner/uv.lock:
+#    - restore tracked runner/uv.lock before git pull (avoid local lock conflicts),
+#    - then regenerate it during runner update.
+# 4) Update installed components:
 #    - manager: make init, make sync, then restart service if available.
 #    - runner:  make init, make sync variant based on runner mode, then restart service if available.
-# 4) Optionally run a post-update smoke test with
+# 5) Optionally run a post-update smoke test with
 #    manager/scripts/check_pipeline_tasks.py.
-# 5) Optionally send an update summary email to MANAGER_EMAIL
+#    In transcription-cpu/transcription-gpu modes, the test adds
+#    --with-transcription-translation.
+# 6) Optionally send an update summary email to MANAGER_EMAIL
 #    (using SMTP settings from runner/.env).
+#
+# Concrete usage examples:
+# - Unless --manager-only/--runner-only is provided, commands below update
+#   both manager and runner when they are detected as installed.
+# 1) Dry-run (preview only, no command execution):
+#    cd /opt/esup-runner && ./update-stack.sh --dry-run --skip-uv-update --skip-git-update
+# 2) Runner transcription on CPU (includes --with-transcription-translation in smoke test):
+#    cd /opt/esup-runner && ./update-stack.sh --runner-sync-mode transcription-cpu
+# 3) Runner transcription on GPU, standard profile (current lock stack):
+#    cd /opt/esup-runner && ./update-stack.sh --runner-sync-mode transcription-gpu
+# 4) Runner transcription on GPU, CUDA12 legacy profile (lock refresh with make lock-upgrade-gpu-12):
+#    cd /opt/esup-runner && ./update-stack.sh --runner-sync-mode transcription-gpu --gpu-lock-profile cuda12
 #
 # Typical weekly CRON example (Monday at 03:00):
 #   0 3 * * 1 cd /opt/esup-runner && ./update-stack.sh >> /var/log/esup-runner/update-stack.log 2>&1
@@ -39,10 +56,13 @@ USE_SUDO=1
 DRY_RUN=0
 RUN_INIT=0
 RESTART_POLICY="if-changed"
-SLEEP_BEFORE_TEST=20
+# Internal delay before smoke test (kept fixed on purpose, no CLI flag).
+POST_UPDATE_TEST_DELAY_SECONDS=20
 RUNNER_SYNC_MODE="auto"
 GPU_LOCK_PROFILE="none"
 TARGET_SCOPE="auto"
+# Add full transcription+translation checks in smoke test when transcription mode is targeted.
+RUN_TEST_WITH_TRANSCRIPTION_TRANSLATION=0
 
 UPDATED_MANAGER=0
 UPDATED_RUNNER=0
@@ -57,6 +77,16 @@ RUNNER_DIR=""
 MANAGER_ENV_FILE=""
 RUNNER_ENV_FILE=""
 SERVICE_USER_HINT="${ESUP_RUNNER_USER:-esup-runner}"
+STEP_COUNTER=0
+
+COLOR_RESET=""
+COLOR_BOLD=""
+COLOR_DIM=""
+COLOR_INFO=""
+COLOR_ACCENT=""
+COLOR_WARN=""
+COLOR_ERROR=""
+COLOR_SUCCESS=""
 
 usage() {
   cat <<'USAGE'
@@ -69,7 +99,6 @@ Options:
   --runner-only                     Update only runner
   --runner-sync-mode <mode>         auto|base|transcription-cpu|transcription-gpu
   --gpu-lock-profile <profile>      none|cuda12|latest (only for transcription-gpu)
-  --sleep-before-test <seconds>     Delay before check_pipeline_tasks test (default: 20)
   --skip-uv-update                  Skip uv installer update
   --skip-git-update                 Skip git fetch/pull
   --with-init                       Run make init for updated components
@@ -90,24 +119,136 @@ Runner sync mode:
   - auto: if RUNNER_TASK_TYPES does not contain "transcription" -> base
           otherwise transcription-cpu or transcription-gpu is inferred
           (GPU inferred from ENCODING_TYPE=GPU or nvidia-smi presence)
+  - transcription-cpu/transcription-gpu enable full smoke test mode:
+    check_pipeline_tasks.py --with-transcription-translation
 USAGE
 }
 
+init_output_theme() {
+  # Enable ANSI colors only for interactive terminals (or when explicitly forced).
+  local enable_color=0
+
+  if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
+    enable_color=1
+  fi
+
+  if [[ "${FORCE_COLOR:-0}" == "1" || "${CLICOLOR_FORCE:-0}" == "1" ]]; then
+    enable_color=1
+  fi
+
+  if [[ "${enable_color}" -eq 1 ]]; then
+    COLOR_RESET=$'\033[0m'
+    COLOR_BOLD=$'\033[1m'
+    COLOR_DIM=$'\033[2m'
+    COLOR_INFO=$'\033[36m'
+    COLOR_ACCENT=$'\033[34m'
+    COLOR_WARN=$'\033[33m'
+    COLOR_ERROR=$'\033[31m'
+    COLOR_SUCCESS=$'\033[32m'
+  fi
+}
+
 timestamp() {
+  # Build a consistent timestamp prefix for all log lines.
   date "+%Y-%m-%d %H:%M:%S"
 }
 
 log() {
-  printf '[%s] %s\n' "$(timestamp)" "$*"
+  # Print an informational log entry.
+  printf '%s[%s]%s %s%s%s %s\n' \
+    "${COLOR_DIM}" "$(timestamp)" "${COLOR_RESET}" \
+    "${COLOR_INFO}" "[INFO]" "${COLOR_RESET}" "$*"
+}
+
+log_action() {
+  # Print action-oriented logs (individual command steps).
+  printf '%s[%s]%s %s%s%s %s\n' \
+    "${COLOR_DIM}" "$(timestamp)" "${COLOR_RESET}" \
+    "${COLOR_ACCENT}" "[STEP]" "${COLOR_RESET}" "$*"
 }
 
 warn() {
-  printf '[%s] WARNING: %s\n' "$(timestamp)" "$*" >&2
+  # Print a warning log entry on stderr.
+  printf '%s[%s]%s %s%s%s %s\n' \
+    "${COLOR_DIM}" "$(timestamp)" "${COLOR_RESET}" \
+    "${COLOR_WARN}" "[WARN]" "${COLOR_RESET}" "$*" >&2
 }
 
 die() {
-  printf '[%s] ERROR: %s\n' "$(timestamp)" "$*" >&2
+  # Print an error log entry and exit immediately.
+  printf '%s[%s]%s %s%s%s %s\n' \
+    "${COLOR_DIM}" "$(timestamp)" "${COLOR_RESET}" \
+    "${COLOR_ERROR}" "[ERROR]" "${COLOR_RESET}" "$*" >&2
   exit 1
+}
+
+print_separator() {
+  # Draw a visual separator between major workflow sections.
+  printf '%s%s%s\n' "${COLOR_DIM}" "-------------------------------------------------------------------------------" "${COLOR_RESET}"
+}
+
+print_step_banner() {
+  # Render a numbered banner for each high-level workflow phase.
+  local title="$1"
+
+  STEP_COUNTER=$((STEP_COUNTER + 1))
+  printf '\n'
+  print_separator
+  printf '%s%s%s %s\n' "${COLOR_BOLD}${COLOR_ACCENT}" "[Step ${STEP_COUNTER}]" "${COLOR_RESET}" "${title}"
+  print_separator
+}
+
+render_boolean_status() {
+  # Convert internal 0/1 flags to human-readable yes/no values.
+  local value="${1:-0}"
+  if [[ "${value}" -eq 1 ]]; then
+    printf 'yes\n'
+  else
+    printf 'no\n'
+  fi
+}
+
+print_summary_line() {
+  # Print one summary row with contextual color based on status value.
+  local label="$1"
+  local value="$2"
+  local value_color="${COLOR_INFO}"
+
+  case "${value}" in
+    yes|ok|sent|dry-run|0)
+      value_color="${COLOR_SUCCESS}"
+      ;;
+    no|skipped|disabled)
+      value_color="${COLOR_WARN}"
+      ;;
+    failed)
+      value_color="${COLOR_ERROR}"
+      ;;
+  esac
+
+  printf '  %-20s %s%s%s\n' "${label}:" "${value_color}" "${value}" "${COLOR_RESET}"
+}
+
+print_update_summary() {
+  # Print a compact end-of-run summary for the most important outcomes.
+  local manager_status runner_status
+
+  manager_status="$(render_boolean_status "${UPDATED_MANAGER}")"
+  runner_status="$(render_boolean_status "${UPDATED_RUNNER}")"
+
+  printf '\n'
+  print_separator
+  printf '%s%s%s\n' "${COLOR_BOLD}${COLOR_ACCENT}" "Update summary" "${COLOR_RESET}"
+  print_separator
+  print_summary_line "Manager updated" "${manager_status}"
+  print_summary_line "Runner updated" "${runner_status}"
+  print_summary_line "Post-update test" "${TEST_STATUS}"
+  print_summary_line "Email notification" "${EMAIL_STATUS}"
+  if [[ "${EXIT_CODE}" -eq 0 ]]; then
+    print_summary_line "Exit code" "0"
+  else
+    print_summary_line "Exit code" "${EXIT_CODE}"
+  fi
 }
 
 mark_non_fatal_failure() {
@@ -128,7 +269,7 @@ run_checked() {
   # Run a command and fail fast on error.
   local description="$1"
   shift
-  log "==> ${description}"
+  log_action "${description}"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     print_dry_run_command "DRY-RUN:" "$@"
     return 0
@@ -142,7 +283,7 @@ run_checked_in_dir() {
   shift
   local description="$1"
   shift
-  log "==> ${description}"
+  log_action "${description}"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     printf 'DRY-RUN: (cd %q &&' "${directory}"
     printf ' %q' "$@"
@@ -159,7 +300,7 @@ run_shell_checked() {
   # Run a shell pipeline/compound command and fail fast on error.
   local description="$1"
   local shell_cmd="$2"
-  log "==> ${description}"
+  log_action "${description}"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     printf 'DRY-RUN: %s\n' "${shell_cmd}"
     return 0
@@ -172,7 +313,7 @@ run_shell_checked_in_dir() {
   local directory="$1"
   local description="$2"
   local shell_cmd="$3"
-  log "==> ${description}"
+  log_action "${description}"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     printf 'DRY-RUN: (cd %q && %s)\n' "${directory}" "${shell_cmd}"
     return 0
@@ -197,7 +338,7 @@ run_checked_as_root() {
   # Run a privileged command (root or sudo) and fail fast on error.
   local description="$1"
   shift
-  log "==> ${description}"
+  log_action "${description}"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     print_dry_run_command "DRY-RUN (root):" "$@"
     return 0
@@ -219,7 +360,7 @@ run_checked_as_root_in_dir() {
   shift
   local description="$1"
   shift
-  log "==> ${description}"
+  log_action "${description}"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     printf 'DRY-RUN (root): (cd %q &&' "${directory}"
     printf ' %q' "$@"
@@ -302,11 +443,6 @@ read_first_authorized_token() {
   ' "${env_file}"
 }
 
-validate_integer() {
-  local value="$1"
-  [[ "${value}" =~ ^[0-9]+$ ]]
-}
-
 mask_secret() {
   # Keep only the first/last 4 chars when logging secrets in dry-run mode.
   local value="${1:-}"
@@ -334,6 +470,7 @@ acquire_lock() {
 }
 
 resolve_service_user() {
+  # Resolve the non-root account used for user-level operations (uv/systemd --user).
   local configured_user repo_owner current_user
 
   configured_user="$(read_env_var "${MANAGER_ENV_FILE}" "SERVICE_USER" || true)"
@@ -363,6 +500,7 @@ resolve_service_user() {
 }
 
 run_systemctl_user() {
+  # Run systemctl --user for a target account with the correct runtime directory.
   local target_user="$1"
   shift
   local target_uid runtime_dir current_user
@@ -404,7 +542,7 @@ restart_service_if_present() {
 
   service_user="$(resolve_service_user || true)"
   if [[ -n "${service_user}" ]] && run_systemctl_user "${service_user}" cat "${service_name}.service" >/dev/null 2>&1; then
-    log "==> Restart ${service_name}.service via systemd --user (${service_user})"
+    log_action "Restart ${service_name}.service via systemd --user (${service_user})"
     if [[ "${DRY_RUN}" -eq 1 ]]; then
       service_uid="$(id -u "${service_user}" 2>/dev/null || true)"
       print_dry_run_command "DRY-RUN:" env "XDG_RUNTIME_DIR=/run/user/${service_uid}" systemctl --user restart "${service_name}.service"
@@ -434,6 +572,7 @@ restart_service_if_present() {
 }
 
 update_uv() {
+  # Update uv for the current/service user while avoiding root-owned installs.
   local current_user target_user installer_cmd
 
   installer_cmd="curl -LsSf https://astral.sh/uv/install.sh | sh"
@@ -457,7 +596,7 @@ update_uv() {
   fi
 
   if command -v runuser >/dev/null 2>&1; then
-    log "==> Update uv for service user (${target_user})"
+    log_action "Update uv for service user (${target_user})"
     if [[ "${DRY_RUN}" -eq 1 ]]; then
       print_dry_run_command "DRY-RUN:" runuser -u "${target_user}" -- bash -lc "${installer_cmd}"
       return 0
@@ -468,7 +607,7 @@ update_uv() {
   fi
 
   if [[ "${USE_SUDO}" -eq 1 ]] && command -v sudo >/dev/null 2>&1; then
-    log "==> Update uv for service user (${target_user})"
+    log_action "Update uv for service user (${target_user})"
     if [[ "${DRY_RUN}" -eq 1 ]]; then
       print_dry_run_command "DRY-RUN:" sudo -u "${target_user}" bash -lc "${installer_cmd}"
       return 0
@@ -482,7 +621,19 @@ update_uv() {
 }
 
 update_git_sources() {
+  # Refresh git sources and detect which components changed (for restart decisions).
   local before_rev after_rev
+  local restore_runner_uv_lock="${1:-0}"
+
+  # When a GPU lock refresh is planned later, ensure we start git pull from a clean
+  # tracked lock file to avoid pull failures caused by local runner/uv.lock edits.
+  if [[ "${restore_runner_uv_lock}" -eq 1 ]]; then
+    if git -C "${REPO_ROOT}" ls-files --error-unmatch runner/uv.lock >/dev/null 2>&1; then
+      run_checked_in_dir "${REPO_ROOT}" "Reset runner/uv.lock before git pull" git restore -- runner/uv.lock
+    else
+      log "runner/uv.lock is not tracked in git: restore step skipped."
+    fi
+  fi
 
   before_rev="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)"
   run_checked_in_dir "${REPO_ROOT}" "git fetch --tags" git fetch --tags
@@ -604,11 +755,13 @@ update_runner() {
     transcription-gpu)
       case "${GPU_LOCK_PROFILE}" in
         cuda12)
+          # Explicit GPU lock refresh: this updates runner/uv.lock for CUDA12.
           log "GPU lock profile: cuda12 (make lock-upgrade-gpu-12)"
           run_checked_in_dir "${RUNNER_DIR}" "Runner lock refresh for CUDA12" make lock-upgrade-gpu-12
           RUNNER_RESTART_REQUIRED=1
           ;;
         latest)
+          # Explicit GPU lock refresh: this updates runner/uv.lock to latest GPU stack.
           log "GPU lock profile: latest (make lock-upgrade-gpu-latest)"
           run_checked_in_dir "${RUNNER_DIR}" "Runner lock refresh for latest GPU stack" make lock-upgrade-gpu-latest
           RUNNER_RESTART_REQUIRED=1
@@ -662,9 +815,11 @@ build_manager_url_from_manager_env() {
 }
 
 run_post_update_test() {
-  # Optional smoke test through manager/scripts/check_pipeline_tasks.py.
+  # Optional smoke test through manager/scripts/check_pipeline_tasks.py
+  # with optional full transcription+translation chain.
   if [[ "${RUN_TEST}" -ne 1 ]]; then
     TEST_STATUS="disabled"
+    log "Post-update test skipped (--skip-test)."
     return 0
   fi
 
@@ -675,6 +830,7 @@ run_post_update_test() {
   fi
 
   local token manager_url
+  local test_args=()
 
   token="$(read_env_var "${RUNNER_ENV_FILE}" "RUNNER_TOKEN" || true)"
   if [[ -z "${token}" ]]; then
@@ -692,26 +848,36 @@ run_post_update_test() {
     return 0
   fi
 
-  if [[ "${SLEEP_BEFORE_TEST}" -gt 0 ]]; then
-    log "Waiting ${SLEEP_BEFORE_TEST}s before post-update test."
+  if [[ "${RUN_TEST_WITH_TRANSCRIPTION_TRANSLATION}" -eq 1 ]]; then
+    test_args+=("--with-transcription-translation")
+    log "Post-update test includes transcription+translation chain."
+  fi
+
+  if [[ "${POST_UPDATE_TEST_DELAY_SECONDS}" -gt 0 ]]; then
+    log "Waiting ${POST_UPDATE_TEST_DELAY_SECONDS}s before post-update test."
     if [[ "${DRY_RUN}" -eq 0 ]]; then
-      sleep "${SLEEP_BEFORE_TEST}"
+      sleep "${POST_UPDATE_TEST_DELAY_SECONDS}"
     fi
   fi
 
-  log "==> Post-update encoding test via manager/scripts/check_pipeline_tasks.py"
+  log_action "Post-update encoding test via manager/scripts/check_pipeline_tasks.py"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     local masked_token
     masked_token="$(mask_secret "${token}")"
-    printf 'DRY-RUN: (cd %q && RUNNER_API_TOKEN=%s RUNNER_MANAGER_URL=%q uv run scripts/check_pipeline_tasks.py)\n' \
-      "${MANAGER_DIR}" "${masked_token}" "${manager_url}"
+    printf 'DRY-RUN: (cd %q &&' "${MANAGER_DIR}"
+    printf ' %q' env \
+      "RUNNER_API_TOKEN=${masked_token}" \
+      "RUNNER_MANAGER_URL=${manager_url}" \
+      uv run scripts/check_pipeline_tasks.py "${test_args[@]}"
+    printf ')\n'
     TEST_STATUS="dry-run"
     return 0
   fi
 
   if (
     cd "${MANAGER_DIR}" || exit 1
-    env RUNNER_API_TOKEN="${token}" RUNNER_MANAGER_URL="${manager_url}" uv run scripts/check_pipeline_tasks.py
+    env RUNNER_API_TOKEN="${token}" RUNNER_MANAGER_URL="${manager_url}" \
+      uv run scripts/check_pipeline_tasks.py "${test_args[@]}"
   ); then
     TEST_STATUS="ok"
   else
@@ -725,6 +891,7 @@ send_update_email_if_configured() {
   # Optional summary email sent to MANAGER_EMAIL using runner SMTP settings.
   if [[ "${RUN_EMAIL}" -ne 1 ]]; then
     EMAIL_STATUS="disabled"
+    log "Email notification skipped (--skip-email)."
     return 0
   fi
 
@@ -789,7 +956,7 @@ Post-update test: ${TEST_STATUS}
 
 Best regards,"
 
-  log "==> Sending update email to ${manager_email}"
+  log_action "Sending update email to ${manager_email}"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     printf 'DRY-RUN: send email to %s via %s:%s\n' "${manager_email}" "${smtp_server}" "${smtp_port}"
     EMAIL_STATUS="dry-run"
@@ -891,11 +1058,6 @@ parse_args() {
         GPU_LOCK_PROFILE="$2"
         shift 2
         ;;
-      --sleep-before-test)
-        [[ $# -ge 2 ]] || die "Missing value for --sleep-before-test"
-        SLEEP_BEFORE_TEST="$2"
-        shift 2
-        ;;
       --skip-uv-update)
         RUN_UV_UPDATE=0
         shift
@@ -978,13 +1140,15 @@ validate_inputs() {
       ;;
   esac
 
-  validate_integer "${SLEEP_BEFORE_TEST}" || die "--sleep-before-test must be an integer >= 0"
 }
 
 main() {
   # Orchestrate full update lifecycle for detected/selected components.
+  init_output_theme
   parse_args "$@"
   validate_inputs
+
+  print_step_banner "Preparation and installation detection"
 
   REPO_ROOT="$(cd "${REPO_ROOT}" 2>/dev/null && pwd)" || die "Invalid --root-dir: ${REPO_ROOT}"
   MANAGER_DIR="${REPO_ROOT}/manager"
@@ -1001,6 +1165,8 @@ main() {
   local runner_installed=0
   local do_manager=0
   local do_runner=0
+  local effective_runner_mode=""
+  local restore_runner_uv_lock_before_git_update=0
 
   [[ -f "${MANAGER_ENV_FILE}" ]] && manager_installed=1
   [[ -f "${RUNNER_ENV_FILE}" ]] && runner_installed=1
@@ -1036,33 +1202,67 @@ main() {
   log "Detected installation: manager=${manager_installed}, runner=${runner_installed}"
   log "Update selection: manager=${do_manager}, runner=${do_runner}"
 
+  if [[ "${do_runner}" -eq 1 ]]; then
+    effective_runner_mode="$(infer_runner_sync_mode)"
+    log "Runner sync mode: ${effective_runner_mode}"
+
+    case "${effective_runner_mode}" in
+      transcription-cpu|transcription-gpu)
+        RUN_TEST_WITH_TRANSCRIPTION_TRANSLATION=1
+        ;;
+    esac
+
+    # If we are going to run make lock-upgrade-gpu-**, pre-clean tracked runner/uv.lock
+    # before git pull to reduce chances of lock-related merge conflicts.
+    if [[ "${effective_runner_mode}" == "transcription-gpu" ]]; then
+      case "${GPU_LOCK_PROFILE}" in
+        cuda12|latest)
+          restore_runner_uv_lock_before_git_update=1
+          ;;
+      esac
+    fi
+  fi
+
+  if [[ "${RUNNER_SYNC_MODE}" == "transcription-cpu" || "${RUNNER_SYNC_MODE}" == "transcription-gpu" ]]; then
+    RUN_TEST_WITH_TRANSCRIPTION_TRANSLATION=1
+  fi
+
+  if [[ "${RUN_TEST_WITH_TRANSCRIPTION_TRANSLATION}" -eq 1 ]]; then
+    log "Post-update smoke test mode: with --with-transcription-translation."
+  fi
+
   if [[ "${RUN_UV_UPDATE}" -eq 1 ]]; then
+    print_step_banner "Update uv installer"
     update_uv
   else
+    print_step_banner "Update uv installer"
     log "uv update skipped (--skip-uv-update)"
   fi
 
   if [[ "${RUN_GIT_UPDATE}" -eq 1 ]]; then
-    update_git_sources
+    print_step_banner "Update git sources"
+    update_git_sources "${restore_runner_uv_lock_before_git_update}"
   else
+    print_step_banner "Update git sources"
     log "git update skipped (--skip-git-update)"
   fi
 
   if [[ "${do_manager}" -eq 1 ]]; then
+    print_step_banner "Update manager component"
     update_manager
   fi
 
   if [[ "${do_runner}" -eq 1 ]]; then
-    local effective_runner_mode
-    effective_runner_mode="$(infer_runner_sync_mode)"
-    log "Runner sync mode: ${effective_runner_mode}"
+    print_step_banner "Update runner component (${effective_runner_mode})"
     update_runner "${effective_runner_mode}"
   fi
 
+  print_step_banner "Run post-update smoke test"
   run_post_update_test
+  print_step_banner "Send update notification email"
   send_update_email_if_configured
 
-  log "Update summary: manager=${UPDATED_MANAGER}, runner=${UPDATED_RUNNER}, test=${TEST_STATUS}, email=${EMAIL_STATUS}"
+  print_update_summary
   exit "${EXIT_CODE}"
 }
 

@@ -26,7 +26,11 @@ _RUNNER_STATE: Dict[str, Any] = {
     "last_heartbeat": None,
     "manager_url": None,
     "startup_time": None,
+    "task_statuses": {},
 }
+
+_TERMINAL_TASK_STATUSES = {"completed", "failed", "timeout"}
+_ALLOWED_TASK_STATUSES = {"running", *_TERMINAL_TASK_STATUSES}
 
 
 def set_runner_instance_id(
@@ -218,6 +222,67 @@ def get_uptime() -> Optional[float]:
     import time
 
     return time.time() - startup_time
+
+
+def set_task_status(
+    task_id: str,
+    status: str,
+    *,
+    error_message: Optional[str] = None,
+    script_output: Optional[str] = None,
+) -> None:
+    """
+    Record the latest status of a task handled by this runner.
+
+    The runner keeps this in-memory map so the manager can query task status
+    even when completion callbacks were temporarily unavailable.
+    """
+    normalized_task_id = (task_id or "").strip()
+    normalized_status = (status or "").strip().lower()
+
+    if not normalized_task_id:
+        return
+    if normalized_status not in _ALLOWED_TASK_STATUSES:
+        return
+
+    payload: Dict[str, Any] = {
+        "task_id": normalized_task_id,
+        "status": normalized_status,
+    }
+    if error_message:
+        payload["error_message"] = str(error_message)
+    if script_output:
+        payload["script_output"] = str(script_output)
+
+    task_statuses = _RUNNER_STATE.setdefault("task_statuses", {})
+    task_statuses[normalized_task_id] = payload
+
+
+def get_task_status(task_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Return the tracked status payload for a task if available.
+    """
+    normalized_task_id = (task_id or "").strip()
+    if not normalized_task_id:
+        return None
+
+    task_statuses = _RUNNER_STATE.get("task_statuses", {})
+    payload = task_statuses.get(normalized_task_id)
+    if not isinstance(payload, dict):
+        return None
+    return dict(payload)
+
+
+def clear_task_status(task_id: str) -> None:
+    """
+    Remove tracked status for a task.
+    """
+    normalized_task_id = (task_id or "").strip()
+    if not normalized_task_id:
+        return
+    task_statuses = _RUNNER_STATE.get("task_statuses", {})
+    if isinstance(task_statuses, dict):
+        task_statuses.pop(normalized_task_id, None)
 
 
 def get_runner_state() -> Dict[str, Any]:

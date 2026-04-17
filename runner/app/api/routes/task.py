@@ -18,7 +18,13 @@ from fastapi.responses import FileResponse
 from app.core.auth import get_current_manager
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
-from app.core.state import is_available, is_registered, set_available
+from app.core.state import (
+    get_task_status,
+    is_available,
+    is_registered,
+    set_available,
+    set_task_status,
+)
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest, TaskResultResponse
 from app.services.email_service import send_task_failure_email
@@ -122,6 +128,18 @@ def _derive_failure_status(error_message: str) -> str:
     return "failed"
 
 
+def _normalize_script_output(script_output: object) -> Optional[str]:
+    """Normalize script output into a serializable string for status payloads."""
+    if script_output is None:
+        return None
+    if isinstance(script_output, str):
+        return script_output
+    try:
+        return json.dumps(script_output, indent=2, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(script_output)
+
+
 def _resolve_task_manifest_path(task_id: str) -> Path:
     """Resolve canonical manifest path (<base>/<task_id>/manifest.json)."""
     task_root = _resolve_task_root(task_id)
@@ -202,6 +220,7 @@ async def process_task(task_id: str, task_request: TaskRequest):
     try:
         # Mark runner as busy
         set_available(False)
+        set_task_status(task_id, "running")
 
         logger.info(
             f"Starting task {task_id} of type {task_request.task_type} with parameters: {task_request.parameters}"
@@ -212,7 +231,8 @@ async def process_task(task_id: str, task_request: TaskRequest):
 
         # Notify manager of task completion if callback provided
         if results.get("success"):
-            script_output = results.get("script_output", "")
+            script_output_text = _normalize_script_output(results.get("script_output"))
+            set_task_status(task_id, "completed", script_output=script_output_text)
             logger.info(f"Task {task_id} completed successfully")
             if completion_callback:
                 await notify_completion(
@@ -220,13 +240,19 @@ async def process_task(task_id: str, task_request: TaskRequest):
                     task_id,
                     "completed",
                     None,
-                    json.dumps(script_output, indent=2, ensure_ascii=False),
+                    script_output_text,
                 )
         else:
             error_msg = results.get("error", "Unknown error")
             failure_status = _derive_failure_status(error_msg)
             # Detailed error from script output if available
-            script_output = results.get("script_output", "")
+            script_output_text = _normalize_script_output(results.get("script_output"))
+            set_task_status(
+                task_id,
+                failure_status,
+                error_message=error_msg,
+                script_output=script_output_text,
+            )
             logger.error(f"Task {task_id} failed: {error_msg}")
             logger.info(f"Sending failure email for task {task_id}")
             await send_task_failure_email(
@@ -234,7 +260,7 @@ async def process_task(task_id: str, task_request: TaskRequest):
                 task_type=task_request.task_type,
                 status=failure_status,
                 error_message=error_msg,
-                script_output=json.dumps(script_output, indent=2, ensure_ascii=False),
+                script_output=script_output_text,
             )
             if completion_callback:
                 await notify_completion(
@@ -242,12 +268,13 @@ async def process_task(task_id: str, task_request: TaskRequest):
                     task_id,
                     failure_status,
                     error_msg,
-                    json.dumps(script_output, indent=2, ensure_ascii=False),
+                    script_output_text,
                 )
 
     except Exception as e:
         error_msg = str(e)
         failure_status = _derive_failure_status(error_msg)
+        set_task_status(task_id, failure_status, error_message=error_msg)
         logger.error(f"Error processing task {task_id}: {error_msg}")
         logger.info(f"Sending failure email for task {task_id}")
         await send_task_failure_email(
@@ -261,6 +288,41 @@ async def process_task(task_id: str, task_request: TaskRequest):
     finally:
         # Mark runner as available again
         set_available(True)
+
+
+@router.get(
+    "/status/{task_id}",
+    response_model=dict,
+    summary="Get task execution status",
+    description="Return the runner-side status for a specific task",
+    tags=["Task"],
+)
+async def get_task_status_endpoint(
+    task_id: str,
+    current_manager: str = Depends(get_current_manager),
+) -> dict:
+    """
+    Return the current task status known by the runner.
+
+    Status source priority:
+    1) In-memory task status tracked during execution.
+    2) Result manifest presence on disk (completed).
+    3) Unknown task (not_found).
+    """
+    safe_task_id = _validate_task_id(task_id)
+
+    tracked_status = get_task_status(safe_task_id)
+    if tracked_status is not None:
+        return tracked_status
+
+    try:
+        _resolve_task_manifest_path(safe_task_id)
+        return {"task_id": safe_task_id, "status": "completed"}
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+
+    return {"task_id": safe_task_id, "status": "not_found"}
 
 
 async def notify_completion(
@@ -509,6 +571,7 @@ async def run_task(
 
     # Mark runner as busy
     set_available(False)
+    set_task_status(task_request.task_id, "running")
 
     # Start task processing in background
     background_tasks.add_task(

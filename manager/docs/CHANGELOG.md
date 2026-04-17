@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated task lifecycle handling so manager-side `running` tasks are reconciled from runner-reported statuses (`running`, `completed`, `failed`, `timeout`) and persisted automatically.
 - Unified manager check-script text output (`check_runtime.py`, `check_version.py`, `check_pipeline_tasks.py`) to the shared `✓ INFO` / `⚠ WARNING` / `✗ ERROR` format and aligned final conclusions where applicable.
 - Updated manager metadata/documentation license references from `LGPL 3.0` to `GPL 3.0` (`app/__version__.py`, `docs/README.md`, `docs/VERSION_MANAGEMENT.md`).
+- Updated monorepo `update-stack.sh` with clearer step-based CLI output, concrete usage examples, and automatic `check_pipeline_tasks.py --with-transcription-translation` execution when runner sync mode targets transcription (`transcription-cpu`/`transcription-gpu`).
 
 ### Fixed
 

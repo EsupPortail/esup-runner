@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unified runner check-script text output (`check_ffmpeg.py`, `check_gpu.py`, `check_runner_resources.py`, `check_runner_storage.py`, `check_version.py`) to the shared `✓ INFO` / `⚠ WARNING` / `✗ ERROR` format and aligned final conclusions.
 - Moved check output formatting logic out of `scripts/` into the internal application module (`app/core/_check_output.py`).
 - Updated runner metadata license reference from `LGPL 3.0` to `GPL 3.0` in `app/__version__.py`.
+- Updated monorepo `update-stack.sh` with clearer step-based CLI output, concrete usage examples, and automatic `check_pipeline_tasks.py --with-transcription-translation` execution when runner sync mode targets transcription (`transcription-cpu`/`transcription-gpu`).
 
 ### Fixed
 

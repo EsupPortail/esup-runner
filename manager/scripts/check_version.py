@@ -12,15 +12,17 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
+
+from app.core._check_output import format_status
 
 
 def test_version_import():
     """Test that version can be imported correctly."""
     from app import __author__, __email__, __version__, __version_info__
 
-    print("✓ Version import successful")
+    print(format_status("Version import successful", level="info"))
     print(f"  Version: {__version__}")
     print(f"  Version info: {__version_info__}")
     print(f"  Author: {__author__}")
@@ -43,7 +45,7 @@ def test_version_format():
     expected_info = tuple(int(x) for x in parts)
     assert __version_info__ == expected_info, "Version info doesn't match version string"
 
-    print("✓ Version format is valid")
+    print(format_status("Version format is valid", level="info"))
     print("  Format: MAJOR.MINOR.PATCH")
     print(f"  Values: {__version_info__[0]}.{__version_info__[1]}.{__version_info__[2]}")
 
@@ -60,7 +62,7 @@ def test_version_file():
         file_version == __version__
     ), f"VERSION file ({file_version}) doesn't match __version__.py ({__version__})"
 
-    print("✓ VERSION file is consistent")
+    print(format_status("VERSION file is consistent", level="info"))
     print(f"  File version: {file_version}")
     print(f"  Module version: {__version__}")
 
@@ -68,14 +70,21 @@ def test_version_file():
 def test_openapi_config():
     """Test that OpenAPI config uses version correctly."""
     from app import __version__
-    from app.api.openapi import OpenAPIConfig
+
+    try:
+        from app.api.openapi import OpenAPIConfig
+    except ModuleNotFoundError as e:
+        if getattr(e, "name", None) == "fastapi":
+            print(format_status("OpenAPI check skipped: fastapi not installed", level="warning"))
+            return
+        raise
 
     assert OpenAPIConfig.VERSION == __version__, "OpenAPIConfig.VERSION should match __version__"
 
     config = OpenAPIConfig.get_fastapi_config()
     assert config["version"] == __version__, "FastAPI config version should match __version__"
 
-    print("✓ OpenAPI configuration is correct")
+    print(format_status("OpenAPI configuration is correct", level="info"))
     print(f"  OpenAPI version: {OpenAPIConfig.VERSION}")
 
 
@@ -108,7 +117,7 @@ def test_pyproject_version():
         pyproject_version == __version__
     ), f"pyproject.toml version ({pyproject_version}) doesn't match __version__.py ({__version__})"
 
-    print("✓ pyproject.toml version is consistent")
+    print(format_status("pyproject.toml version is consistent", level="info"))
     print(f"  pyproject version: {pyproject_version}")
 
 
@@ -137,16 +146,20 @@ def test_all():
             test_func()
             passed += 1
         except AssertionError as e:
-            print(f"✗ FAILED: {e}")
+            print(format_status(f"{test_name} failed: {e}", level="error"))
             failed += 1
         except Exception as e:
-            print(f"✗ ERROR: {e}")
+            print(format_status(f"{test_name} error: {e}", level="error"))
             failed += 1
 
     print()
     print("=" * 60)
     print(f"Results: {passed} passed, {failed} failed")
     print("=" * 60)
+    if failed == 0:
+        print(format_status("Version checks passed.", level="info"))
+    else:
+        print(format_status("Version checks failed.", level="error"))
 
     assert failed == 0
 

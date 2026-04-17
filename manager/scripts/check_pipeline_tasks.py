@@ -60,6 +60,12 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
+MANAGER_ROOT = Path(__file__).resolve().parents[1]
+if str(MANAGER_ROOT) not in sys.path:
+    sys.path.insert(0, str(MANAGER_ROOT))
+
+from app.core._check_output import format_status
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -114,7 +120,7 @@ class SourceDownloadError(RuntimeError):
 
 def _repo_root() -> Path:
     """Return the manager project root directory."""
-    return Path(__file__).resolve().parents[1]
+    return MANAGER_ROOT
 
 
 def _ensure_import_path() -> None:
@@ -406,7 +412,11 @@ async def submit_task_or_exit(
         message = str(e)
 
         if _is_no_runners_available_error(message):
-            print(f"Task submission failed ({task_type}): No runners available")
+            print(
+                format_status(
+                    f"Task submission failed ({task_type}): No runners available", level="error"
+                )
+            )
             print(
                 "What it usually means: no runner is online/registered/available, "
                 "or no runner supports this task type."
@@ -421,7 +431,11 @@ async def submit_task_or_exit(
                 runners_payload = await get_runners_overview(client, base_url, token)
                 _print_runners_overview(runners_payload)
             except Exception as overview_error:
-                print(f"Could not fetch /api/runners: {overview_error}")
+                print(
+                    format_status(
+                        f"Could not fetch /api/runners: {overview_error}", level="warning"
+                    )
+                )
 
             raise SystemExit(2)
 
@@ -488,9 +502,11 @@ async def wait_for_terminal_state(
         # "warning" is not necessarily terminal: it usually means the job is done
         # but the notify_url callback did not return HTTP 200.
         if status == "warning" and error:
-            print(f"Status=warning (notify callback issue): {error}")
+            print(
+                format_status(f"Status=warning (notify callback issue): {error}", level="warning")
+            )
         else:
-            print(f"Status={status!r} (waiting…) ")
+            print(format_status(f"Status={status!r} (waiting…)", level="info"))
 
         if asyncio.get_event_loop().time() >= deadline:
             raise TimeoutError(
@@ -558,23 +574,27 @@ async def maybe_download_first_file(
     This is a convenience feature for manual tests.
     """
     if not DOWNLOAD_FIRST_FILE:
-        print("Auto-download disabled")
+        print(format_status("Auto-download disabled", level="warning"))
         return
 
     if not isinstance(files, list) or not files:
-        print("No files produced")
+        print(format_status("No files produced", level="warning"))
         return
 
     first = files[0]
     if not isinstance(first, str) or not first:
-        print("Manifest contains a non-string file entry; skipping download")
+        print(
+            format_status(
+                "Manifest contains a non-string file entry; skipping download", level="warning"
+            )
+        )
         return
 
     local_name = _safe_filename(first)
     output_path = OUTPUT_DIR / local_name
-    print(f"Downloading first file: {first!r} -> {str(output_path)!r}")
+    print(format_status(f"Downloading first file: {first!r} -> {str(output_path)!r}", level="info"))
     await download_result_file(client, base_url, token, task_id, first, output_path)
-    print("Download OK")
+    print(format_status("Download OK", level="info"))
 
 
 async def run_one_task_check(
@@ -600,15 +620,15 @@ async def run_one_task_check(
     print(f"parameters={parameters!r}")
 
     task_id = await submit_task_or_exit(client, base_url, token, task_request)
-    print(f"Task submitted. task_id={task_id}")
+    print(format_status(f"Task submitted. task_id={task_id}", level="info"))
 
     final_status = await wait_for_terminal_state(
         client, base_url, token, task_id, max_wait_seconds=max_wait_seconds
     )
     status = final_status.get("status")
-    print(f"Final status: {status}")
+    print(format_status(f"Final status: {status}", level="info"))
     if final_status.get("error"):
-        print(f"Error: {final_status.get('error')}")
+        print(format_status(f"Error: {final_status.get('error')}", level="warning"))
 
     if status != "completed":
         error_text = str(final_status.get("error") or "").strip()
@@ -631,12 +651,12 @@ async def run_one_task_check(
 
     manifest = await get_result_manifest(client, base_url, token, task_id)
     files = manifest.get("files")
-    print(f"Result manifest received. files={files!r}")
+    print(format_status(f"Result manifest received. files={files!r}", level="info"))
 
     if download_first_file:
         await maybe_download_first_file(client, base_url, token, task_id, files)
     else:
-        print("Auto-download disabled for this check")
+        print(format_status("Auto-download disabled for this check", level="warning"))
 
 
 async def main(args: argparse.Namespace):
@@ -652,7 +672,7 @@ async def main(args: argparse.Namespace):
     async with httpx.AsyncClient(timeout=timeout) as client:
         # 1) Sanity check: auth + manager reachability.
         version_payload = await check_auth(client, base_url, token)
-        print(f"Manager OK. Version: {version_payload.get('version')}")
+        print(format_status(f"Manager OK. Version: {version_payload.get('version')}", level="info"))
         mode = (
             "encoding + transcription/translation"
             if args.with_transcription_translation
@@ -672,11 +692,21 @@ async def main(args: argparse.Namespace):
         print(f"Check mode: {mode}")
         print(f"Per-task timeout: {max_wait_seconds}s")
         if len(source_candidates) > 1:
-            print(f"Source candidates: {len(source_candidates)} (automatic fallback enabled)")
+            print(
+                format_status(
+                    f"Source candidates: {len(source_candidates)} (automatic fallback enabled)",
+                    level="info",
+                )
+            )
 
         for index, source_url in enumerate(source_candidates, start=1):
             print()
-            print(f"Using source candidate {index}/{len(source_candidates)}: {source_url}")
+            print(
+                format_status(
+                    f"Using source candidate {index}/{len(source_candidates)}: {source_url}",
+                    level="info",
+                )
+            )
             plan = _build_task_plan(args.with_transcription_translation, source_url=source_url)
             try:
                 for step in plan:
@@ -689,11 +719,12 @@ async def main(args: argparse.Namespace):
                         download_first_file=bool(step["download_first_file"]),
                         max_wait_seconds=max_wait_seconds,
                     )
+                print(format_status("Pipeline checks passed.", level="info"))
                 return
             except SourceDownloadError as exc:
                 if index < len(source_candidates):
-                    print(f"{exc}")
-                    print("Trying next source candidate…")
+                    print(format_status(str(exc), level="warning"))
+                    print(format_status("Trying next source candidate…", level="warning"))
                     continue
                 raise SystemExit(
                     f"{exc}\nAll source candidates failed. "

@@ -28,6 +28,12 @@ from urllib.parse import urlsplit
 
 import httpx
 
+MANAGER_ROOT = Path(__file__).resolve().parents[1]
+if str(MANAGER_ROOT) not in sys.path:
+    sys.path.insert(0, str(MANAGER_ROOT))
+
+from app.core._check_output import format_check, format_status
+
 
 @dataclass
 class CheckResult:
@@ -41,7 +47,7 @@ class CheckResult:
 
 def _repo_root() -> Path:
     """Return the manager project root directory."""
-    return Path(__file__).resolve().parents[1]
+    return MANAGER_ROOT
 
 
 def _ensure_import_path() -> None:
@@ -360,15 +366,9 @@ def print_report(results: list[CheckResult], context: dict[str, Any]) -> None:
 
     for result in results:
         print()
-        print(f"Running: {result.name}")
         print("-" * width)
+        print(format_check(result.name, ok=result.ok, required=result.required))
         requirement = "Required" if result.required else "Optional"
-        if result.ok:
-            print("✓ Check passed")
-        elif result.required:
-            print("✗ FAILED")
-        else:
-            print("✗ WARNING")
         print(f"  Type: {requirement}")
         if result.details:
             print(f"  Details: {result.details}")
@@ -380,6 +380,12 @@ def print_report(results: list[CheckResult], context: dict[str, Any]) -> None:
     print("=" * width)
     print(f"Results: {passed} passed, {len(required_failures)} failed, {len(warnings)} warning")
     print("=" * width)
+    if required_failures:
+        print(format_status("Runtime checks failed.", level="error"))
+    elif warnings:
+        print(format_status("Runtime checks passed with warnings.", level="warning"))
+    else:
+        print(format_status("Runtime checks passed.", level="info"))
 
 
 def main() -> int:
@@ -387,7 +393,7 @@ def main() -> int:
     try:
         results, context = run_checks()
     except Exception as exc:
-        print(f"[FAIL] Runtime check failed to start: {exc}")
+        print(format_status(f"Runtime check failed to start: {exc}", level="error"))
         return 1
 
     print_report(results, context)

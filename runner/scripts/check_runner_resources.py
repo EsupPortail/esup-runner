@@ -24,6 +24,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Sequence, Set, Tuple
 
+RUNNER_ROOT = Path(__file__).resolve().parents[1]
+if str(RUNNER_ROOT) not in sys.path:
+    sys.path.insert(0, str(RUNNER_ROOT))
+
+from app.core._check_output import format_status
+
 # Conservative CPU/RAM requirements (upper bounds)
 CPU_ENCODING_VCPU_MAX = 8
 CPU_ENCODING_RAM_GB = 2
@@ -225,20 +231,6 @@ def _get_task_sets(cfg, parse_grouped, parse_csv) -> List[Set[str]]:
     if not task_sets:
         task_sets = [set(getattr(cfg, "RUNNER_TASK_TYPES", set()))]
     return task_sets
-
-
-def _colorize(text: str, *, level: str) -> str:
-    """Colorize output based on severity level."""
-    colors = {
-        "info": "\033[32m",
-        "warning": "\033[33m",
-        "error": "\033[31m",
-    }
-    reset = "\033[0m"
-    color = colors.get(level, "")
-    if not color:
-        return text
-    return f"{color}{text}{reset}"
 
 
 def _get_task_counts(task_sets: List[Set[str]]) -> TaskCounts:
@@ -634,14 +626,12 @@ def _print_conclusion(*, config_ok: bool, below_recommendation: bool) -> None:
     if config_ok:
         if below_recommendation:
             print(
-                _colorize(
-                    "⚠ WARNING: Configuration is adequate (below max recommended)", level="warning"
-                )
+                format_status("Configuration is adequate (below max recommended)", level="warning")
             )
         else:
-            print(_colorize("✓ INFO: Configuration is adequate", level="info"))
+            print(format_status("Configuration is adequate", level="info"))
     else:
-        print(_colorize("✗ ERROR: Configuration is NOT adequate", level="error"))
+        print(format_status("Configuration is NOT adequate", level="error"))
 
 
 def main() -> int:

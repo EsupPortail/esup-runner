@@ -34,6 +34,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+RUNNER_ROOT = Path(__file__).resolve().parents[1]
+if str(RUNNER_ROOT) not in sys.path:
+    sys.path.insert(0, str(RUNNER_ROOT))
+
+from app.core._check_output import format_check, format_status
+
 RE_NVENC_API_MISMATCH = re.compile(r"required\s*:\s*([0-9.]+).*found\s*:\s*([0-9.]+)", re.I | re.S)
 RE_MIN_DRIVER = re.compile(r"minimum\s*required\s*driver\s*version\s*:\s*([0-9.]+)", re.I)
 RE_ANSI = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
@@ -610,8 +616,7 @@ def _render_json(
 
 
 def _fmt_result(r: CheckResult) -> str:
-    tag = "OK" if r.ok else ("FAIL" if r.required else "WARN")
-    return f"[{tag}] {r.name}"
+    return format_check(r.name, ok=r.ok, required=r.required)
 
 
 def _print_env_info(*, modes: List[str], hwdev: int, cuda_visible: str) -> None:
@@ -638,16 +643,26 @@ def _print_summary(
     if required_failed:
         print("\nRequired failures:")
         for r in required_failed:
-            print(f"- {r.name}")
+            print(format_status(r.name, level="error"))
             if r.details:
                 print(r.details.strip())
 
     if warnings:
         print("\nWarnings (non-blocking):")
         for r in warnings:
-            print(f"- {r.name}")
+            print(format_status(r.name, level="warning"))
             if verbose and r.details:
                 print(r.details.strip())
+
+
+def _print_conclusion(*, required_failed: List[CheckResult], warnings: List[CheckResult]) -> None:
+    print("\nConclusion:")
+    if required_failed:
+        print(format_status("FFmpeg checks failed (blocking).", level="error"))
+    elif warnings:
+        print(format_status("FFmpeg checks passed with warnings.", level="warning"))
+    else:
+        print(format_status("FFmpeg checks passed.", level="info"))
 
 
 def _render_text(
@@ -671,6 +686,7 @@ def _render_text(
     _print_env_info(modes=modes, hwdev=hwdev, cuda_visible=cuda_visible)
     _print_results(all_results=all_results, verbose=verbose)
     _print_summary(required_failed=required_failed, warnings=warnings, verbose=verbose)
+    _print_conclusion(required_failed=required_failed, warnings=warnings)
 
 
 def main() -> int:

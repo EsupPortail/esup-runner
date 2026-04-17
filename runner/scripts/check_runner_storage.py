@@ -24,6 +24,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+RUNNER_ROOT = Path(__file__).resolve().parents[1]
+if str(RUNNER_ROOT) not in sys.path:
+    sys.path.insert(0, str(RUNNER_ROOT))
+
+from app.core._check_output import colorize, format_prefix, format_status
+
 # Conservative free-space bounds (GB)
 LOG_DIR_MIN_FREE_GB = 0.5
 STORAGE_DIR_MIN_FREE_GB = 15.0
@@ -86,20 +92,6 @@ def _load_config():
     from app.core.config import get_config  # type: ignore
 
     return get_config()
-
-
-def _colorize(text: str, *, level: str) -> str:
-    """Colorize output based on severity level."""
-    colors = {
-        "info": "\033[32m",
-        "warning": "\033[33m",
-        "error": "\033[31m",
-    }
-    reset = "\033[0m"
-    color = colors.get(level, "")
-    if not color:
-        return text
-    return f"{color}{text}{reset}"
 
 
 def _directory_size_bytes(path: Path) -> int:
@@ -417,9 +409,7 @@ def _print_report(statuses: Dict[str, DirectoryStatus]) -> None:
     for key in checked:
         status = statuses[key]
         rule = status.rule
-        status_label = (
-            _colorize("OK", level="info") if status.ok else _colorize("NOT OK", level="error")
-        )
+        status_label = format_prefix(level="info" if status.ok else "error")
         print(f"\n[{key}]")
         print(f"  Path: {rule.path}")
         print(f"  Purpose: {rule.description}")
@@ -433,7 +423,7 @@ def _print_report(statuses: Dict[str, DirectoryStatus]) -> None:
                 0.0,
             )
             print(
-                _colorize(
+                colorize(
                     f"  Required additional free: {required_additional_free_gb:.1f} GB",
                     level="error",
                 )
@@ -449,11 +439,11 @@ def _print_report(statuses: Dict[str, DirectoryStatus]) -> None:
     all_ok = all(s.ok for s in statuses.values())
     print("\nConclusion:")
     if all_ok:
-        print(_colorize("INFO: Storage configuration is adequate.", level="info"))
+        print(format_status("Storage configuration is adequate.", level="info"))
     else:
         print(
-            _colorize(
-                "ERROR: Storage configuration is NOT adequate. Adjust disk space, permissions, or cleanup policy.",
+            format_status(
+                "Storage configuration is NOT adequate. Adjust disk space, permissions, or cleanup policy.",
                 level="error",
             )
         )

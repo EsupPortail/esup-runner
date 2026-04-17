@@ -15,8 +15,8 @@ Usage examples:
       uv run scripts/check_gpu.py --json
 
 Exit codes:
-  0: torch CUDA runtime is available
-  1: torch CUDA runtime is unavailable (or torch import failed)
+  0: checks passed (or GPU runtime unavailable but optional in ENCODING_TYPE=CPU)
+  1: ENCODING_TYPE=GPU and torch CUDA runtime is unavailable
 """
 
 from __future__ import annotations
@@ -29,6 +29,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Sequence, Tuple
+
+RUNNER_ROOT = Path(__file__).resolve().parents[1]
+if str(RUNNER_ROOT) not in sys.path:
+    sys.path.insert(0, str(RUNNER_ROOT))
+
+from app.core._check_output import format_check, format_status
 
 
 @dataclass
@@ -262,8 +268,53 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _fmt_result(result: CheckResult) -> str:
-    tag = "OK" if result.ok else ("FAIL" if result.required else "WARN")
-    return f"[{tag}] {result.name}"
+    return format_check(result.name, ok=result.ok, required=result.required)
+
+
+def _is_gpu_required(encoding_type: str) -> bool:
+    return str(encoding_type or "").strip().upper() == "GPU"
+
+
+def _print_conclusion(
+    *,
+    encoding_type: str,
+    nvidia_result: CheckResult,
+    torch_result: CheckResult,
+) -> None:
+    gpu_required = _is_gpu_required(encoding_type)
+    print("\nConclusion:")
+    if not gpu_required:
+        if not torch_result.ok:
+            print(
+                format_status(
+                    "Torch CUDA runtime is unavailable (optional in ENCODING_TYPE=CPU).",
+                    level="warning",
+                )
+            )
+            return
+        if not nvidia_result.ok:
+            print(
+                format_status(
+                    "Torch CUDA runtime is available, but nvidia-smi probe failed.",
+                    level="warning",
+                )
+            )
+            return
+        print(format_status("Torch CUDA runtime is available.", level="info"))
+        return
+
+    if not torch_result.ok:
+        print(format_status("Torch CUDA runtime is unavailable.", level="error"))
+        return
+    if not nvidia_result.ok:
+        print(
+            format_status(
+                "Torch CUDA runtime is available, but nvidia-smi probe failed.",
+                level="warning",
+            )
+        )
+        return
+    print(format_status("Torch CUDA runtime is available.", level="info"))
 
 
 def _render_text(
@@ -302,6 +353,11 @@ def _render_text(
     print(f"gpu_count={torch_info['gpu_count']}")
     if torch_info["gpu_names"]:
         print("gpu_names=" + ",".join(torch_info["gpu_names"]))
+    _print_conclusion(
+        encoding_type=encoding_type,
+        nvidia_result=nvidia_result,
+        torch_result=torch_result,
+    )
 
 
 def _render_json(
@@ -340,6 +396,10 @@ def main() -> int:
     _apply_cuda_env(cuda_visible, cuda_order)
     nvidia_result = _probe_nvidia_smi()
     torch_result, torch_info = _probe_torch_runtime()
+    gpu_required = _is_gpu_required(encoding_type)
+    if not gpu_required and not torch_result.ok:
+        # On CPU deployments, CUDA runtime is informational and should not fail the check.
+        torch_result.required = False
 
     if args.json_out:
         _render_json(
@@ -365,7 +425,9 @@ def main() -> int:
             verbose=bool(args.verbose),
         )
 
-    return 0 if torch_result.ok else 1
+    if gpu_required and not torch_result.ok:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

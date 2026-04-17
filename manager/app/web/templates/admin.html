@@ -43,8 +43,7 @@
         <img src="/static/logo.png?version={{ version }}" alt="ESUP-Runner" class="admin-brand-logo">
         <h1 class="mb-0">Runners Monitoring</h1>
       </div>
-      <!-- Reload config button (deactivated for the moment) -->
-      <!--
+      <!-- Reload config button -->
       <div class="d-flex align-items-center gap-2">
         <button id="reload-config-btn" type="button" class="btn btn-outline-primary btn-sm">
           <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
@@ -52,7 +51,6 @@
         </button>
         <span id="reload-config-status" class="small text-subtle"></span>
       </div>
-      -->
     </div>
   </header>
   <!-- STATISTICS -->
@@ -307,7 +305,10 @@
           }
 
           const data = await response.json();
-          reloadStatus.textContent = `Reload OK (docs: ${data.api_docs_visibility})`;
+          const authorizedTokensCount = Number.isInteger(data.authorized_tokens_count)
+            ? data.authorized_tokens_count
+            : (Array.isArray(data.authorized_tokens) ? data.authorized_tokens.length : 0);
+          reloadStatus.textContent = `Reload OK (authorized tokens: ${authorizedTokensCount})`;
         } catch (error) {
           reloadStatus.textContent = 'Reload failed';
         } finally {

@@ -8,7 +8,11 @@ from typing import Dict, List
 
 from app.core.setup_logging import setup_default_logging
 from app.services.runner_service import check_runners_activity
-from app.services.task_service import check_task_timeouts, cleanup_old_tasks
+from app.services.task_service import (
+    check_task_timeouts,
+    cleanup_old_tasks,
+    reconcile_running_tasks_with_runners,
+)
 
 logger = setup_default_logging()
 
@@ -37,6 +41,7 @@ class BackgroundServiceManager:
             check_runners_activity(),
             cleanup_old_tasks(),
             check_task_timeouts(),
+            reconcile_running_tasks_with_runners(),
         ]
 
         for service in services:

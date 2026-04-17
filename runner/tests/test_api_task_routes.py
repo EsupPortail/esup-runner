@@ -33,6 +33,14 @@ def auth_override():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def clean_runner_task_statuses():
+    snapshot = dict(state._RUNNER_STATE.get("task_statuses", {}))
+    state._RUNNER_STATE["task_statuses"] = {}
+    yield
+    state._RUNNER_STATE["task_statuses"] = snapshot
+
+
 def test_get_task_result(tmp_path):
     from app.api.routes import task as task_module
 
@@ -70,6 +78,71 @@ def test_get_task_result_not_found(tmp_path):
     with TestClient(app) as client:
         resp = client.get("/task/result/missing")
         assert resp.status_code == 404
+
+
+def test_get_task_status_returns_tracked_status():
+    state.set_task_status("task-running", "running")
+
+    with TestClient(app) as client:
+        resp = client.get("/task/status/task-running")
+        assert resp.status_code == 200
+        assert resp.json() == {"task_id": "task-running", "status": "running"}
+
+
+def test_get_task_status_returns_completed_when_manifest_exists(tmp_path):
+    from app.api.routes import task as task_module
+
+    task_id = "task-done"
+    manifest_path = tmp_path / task_id / "manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("{}", encoding="utf-8")
+    task_module.storage_manager.base_path = str(tmp_path)
+
+    with TestClient(app) as client:
+        resp = client.get(f"/task/status/{task_id}")
+        assert resp.status_code == 200
+        assert resp.json() == {"task_id": task_id, "status": "completed"}
+
+
+def test_get_task_status_returns_not_found(tmp_path):
+    from app.api.routes import task as task_module
+
+    task_module.storage_manager.base_path = str(tmp_path)
+
+    with TestClient(app) as client:
+        resp = client.get("/task/status/unknown-task")
+        assert resp.status_code == 200
+        assert resp.json() == {"task_id": "unknown-task", "status": "not_found"}
+
+
+def test_get_task_status_reraises_non_404_manifest_errors(monkeypatch):
+    from app.api.routes import task as task_module
+
+    def _raise_non_404(_task_id):
+        raise task_module.HTTPException(status_code=500, detail="boom")
+
+    monkeypatch.setattr(task_module, "_resolve_task_manifest_path", _raise_non_404)
+
+    with TestClient(app) as client:
+        resp = client.get("/task/status/task-500")
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "boom"
+
+
+def test_normalize_script_output_returns_input_string():
+    from app.api.routes import task as task_module
+
+    assert task_module._normalize_script_output("plain-text") == "plain-text"
+
+
+def test_normalize_script_output_falls_back_to_str_on_type_error():
+    from app.api.routes import task as task_module
+
+    class Unserializable:
+        def __str__(self):
+            return "custom-object"
+
+    assert task_module._normalize_script_output(Unserializable()) == "custom-object"
 
 
 def test_get_task_result_file(tmp_path):

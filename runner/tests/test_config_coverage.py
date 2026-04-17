@@ -328,3 +328,38 @@ def test_state_helpers_cover_attempts_urls_heartbeat_and_uptime():
     finally:
         state_module._RUNNER_STATE.clear()
         state_module._RUNNER_STATE.update(snapshot)
+
+
+def test_state_task_status_helpers_cover_early_returns_and_clear():
+    snapshot = state_module._RUNNER_STATE.copy()
+    snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
+    try:
+        state_module._RUNNER_STATE["task_statuses"] = {}
+
+        # set_task_status: empty task id (line 244)
+        state_module.set_task_status("", "running")
+        assert state_module._RUNNER_STATE["task_statuses"] == {}
+
+        # set_task_status: invalid status (line 246)
+        state_module.set_task_status("task-1", "invalid")
+        assert state_module._RUNNER_STATE["task_statuses"] == {}
+
+        # get_task_status: empty task id (line 267)
+        assert state_module.get_task_status("") is None
+
+        # clear_task_status: empty task id branch (lines 280-282)
+        state_module.clear_task_status("")
+        assert state_module._RUNNER_STATE["task_statuses"] == {}
+
+        # clear_task_status: dict branch including pop (lines 283-285)
+        state_module.set_task_status("task-2", "running")
+        assert state_module.get_task_status("task-2")["status"] == "running"
+        state_module.clear_task_status("task-2")
+        assert state_module.get_task_status("task-2") is None
+
+        # clear_task_status: non-dict branch (line 284 false path)
+        state_module._RUNNER_STATE["task_statuses"] = []
+        state_module.clear_task_status("task-3")
+    finally:
+        state_module._RUNNER_STATE.clear()
+        state_module._RUNNER_STATE.update(snapshot)

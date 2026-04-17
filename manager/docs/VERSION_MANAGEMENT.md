@@ -139,7 +139,7 @@ Response:
   "description": "Runner Manager - A distributed task runner management system",
   "author": "Loïc Bonavent",
   "email": "xx.xx@univ.fr",
-  "license": "Licence LGPL 3.0"
+  "license": "Licence GPL 3.0"
 }
 ```
 
@@ -169,8 +169,8 @@ Returns all version information for the API.
   },
   "description": "Runner Manager - A distributed task runner management system",
   "author": "Loïc Bonavent",
-  "email": "loic.bon...@umontpellier.fr",
-  "license": "Licence LGPL 3.0"
+  "email": "loic.bon...@univ.fr",
+  "license": "Licence GPL 3.0"
 }
 ```
 

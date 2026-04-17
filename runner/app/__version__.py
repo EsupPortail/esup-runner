@@ -16,5 +16,5 @@ __version_info__ = tuple(int(x) for x in __version__.split("."))
 # Additional version metadata
 __author__ = "Loïc Bonavent"
 __email__ = "loic.bonavent@umontpellier.fr"
-__license__ = "Licence LGPL 3.0"
+__license__ = "Licence GPL 3.0"
 __description__ = "Runner - A distributed task runner system"

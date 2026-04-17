@@ -495,4 +495,4 @@ If the original task request has a non-empty `notify_url`, the manager POSTs:
 
 ## License
 
-Licence LGPL 3.0
+Licence GPL 3.0

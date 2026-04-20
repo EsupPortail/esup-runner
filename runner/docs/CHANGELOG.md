@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added dynamic rendition heights (e.g. `2160`) for CPU/GPU FFmpeg commands and `info_video.json`.
 - Added bitrate auto-inference when `video_bitrate`/`audio_bitrate` are omitted, including custom renditions.
 - Added targeted encoding tests for validation/inference, dynamic selection, and thumbnail size limits.
+- Added a download link for manager statistics CSV (`task_stats.csv`) with a date-stamped filename (`task_stats_YYYYMMDD.csv`) to avoid ambiguity.
 
 ### Changed
 

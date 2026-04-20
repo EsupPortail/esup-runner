@@ -10,7 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 
 from app.__version__ import __version__
@@ -22,6 +23,10 @@ logger = setup_default_logging()
 router = APIRouter(prefix="/statistics", tags=["Statistics"], dependencies=[Depends(verify_admin)])
 
 templates = Jinja2Templates(directory="app/web/templates")
+
+
+def _task_stats_csv_path() -> Path:
+    return Path("data") / "task_stats.csv"
 
 
 def _load_task_stats_csv(csv_path: Path) -> List[Dict[str, str]]:
@@ -45,7 +50,7 @@ def _sorted_counter(counter: Counter) -> List[Dict[str, int]]:
 
 @router.get("", include_in_schema=False)
 async def statistics_dashboard(request: Request):
-    csv_path = Path("data") / "task_stats.csv"
+    csv_path = _task_stats_csv_path()
     rows = _load_task_stats_csv(csv_path)
 
     total_tasks = len(rows)
@@ -84,5 +89,20 @@ async def statistics_dashboard(request: Request):
             "version": __version__,
             "dark_mode_enabled": dark_mode,
             "csv_path": str(csv_path),
+            "download_csv_url": request.url_for("download_task_stats_csv"),
         },
+    )
+
+
+@router.get("/task-stats.csv", include_in_schema=False)
+async def download_task_stats_csv():
+    csv_path = _task_stats_csv_path()
+    if not csv_path.exists() or not csv_path.is_file():
+        raise HTTPException(status_code=404, detail="Task stats CSV not found")
+
+    download_date = datetime.now().strftime("%Y%m%d")
+    return FileResponse(
+        path=str(csv_path),
+        media_type="text/csv",
+        filename=f"task_stats_{download_date}.csv",
     )

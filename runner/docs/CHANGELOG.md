@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `GET /task/status/{task_id}` in `app/api/routes/task.py` so the manager can reconcile task state after outages.
 - Added runner-side in-memory task-status tracking in `app/core/state.py` (`running`, `completed`, `failed`, `timeout`) keyed by `task_id`.
 - Added an internal shared check-output helper in `app/core/_check_output.py` for consistent runner script status rendering.
+- Added rendition bitrate fields (`video_bitrate`, `audio_bitrate`) with input validation in `encoding.py`.
+- Added dynamic rendition heights (e.g. `2160`) for CPU/GPU FFmpeg commands and `info_video.json`.
+- Added bitrate auto-inference when `video_bitrate`/`audio_bitrate` are omitted, including custom renditions.
+- Added targeted encoding tests for validation/inference, dynamic selection, and thumbnail size limits.
 
 ### Changed
 
@@ -20,11 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved check output formatting logic out of `scripts/` into the internal application module (`app/core/_check_output.py`).
 - Updated runner metadata license reference from `LGPL 3.0` to `GPL 3.0` in `app/__version__.py`.
 - Updated monorepo `update-stack.sh` with clearer step-based CLI output, concrete usage examples, and automatic `check_pipeline_tasks.py --with-transcription-translation` execution when runner sync mode targets transcription (`transcription-cpu`/`transcription-gpu`).
+- Capped thumbnail extraction at `1280x720` (no upscale), including 1080p/4K sources.
+- Updated `docs/TYPE_ENCODING.md` and `docs/TYPE_STUDIO.md` with bitrate fields and optional auto-inference.
 
 ### Fixed
 
 - Improved recovery after manager unavailability by enabling post-restart status reconciliation from runner state.
 - Adjusted `scripts/check_gpu.py` severity/exit behavior for CPU deployments: CUDA runtime unavailability is now non-blocking (`warning`, exit code `0`) when `ENCODING_TYPE=CPU`, while remaining blocking for `ENCODING_TYPE=GPU` (exit code `1`).
+- Fixed 1080p HLS profile to use 1080 bitrate values (not 720).
 
 ## [1.1.1] - 2026-04-15
 

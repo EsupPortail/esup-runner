@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -313,3 +314,32 @@ def test_statistics_dashboard_renders_with_data(admin_client, monkeypatch, tmp_p
     assert "2026-02-02" in resp.text
     assert "2026-02-01 \u2192 2026-02-02" in resp.text
     assert "encode" in resp.text
+    assert "/statistics/task-stats.csv" in resp.text
+
+
+def test_statistics_csv_download_returns_attachment(admin_client, monkeypatch, tmp_path):
+    csv_dir = tmp_path / "data"
+    csv_dir.mkdir()
+    csv_content = "task_id,date,task_type,etab_name\n1,2026-02-01,encode,UM\n"
+    (csv_dir / "task_stats.csv").write_text(csv_content)
+
+    monkeypatch.setattr(statistics_routes, "Path", lambda *_a, **_k: csv_dir)
+
+    resp = admin_client.get("/statistics/task-stats.csv")
+    assert resp.status_code == 200
+    assert resp.text == csv_content
+
+    content_disposition = resp.headers.get("content-disposition", "")
+    assert "attachment" in content_disposition
+    assert re.search(r"task_stats_\d{8}\.csv", content_disposition)
+
+
+def test_statistics_csv_download_returns_404_when_missing(admin_client, monkeypatch, tmp_path):
+    csv_dir = tmp_path / "data"
+    csv_dir.mkdir()
+
+    monkeypatch.setattr(statistics_routes, "Path", lambda *_a, **_k: csv_dir)
+
+    resp = admin_client.get("/statistics/task-stats.csv")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Task stats CSV not found"

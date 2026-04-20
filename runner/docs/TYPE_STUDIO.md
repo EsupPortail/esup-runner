@@ -70,7 +70,7 @@ Recommended: for `studio` tasks, only send the parameters documented on this pag
     "studio_preset": "medium",
     "studio_audio_bitrate": "128k",
     "cut": "{\"start\":\"00:00:10\",\"end\":\"00:01:00\"}",
-    "rendition": "{\"360\":{\"encode_mp4\":true},\"720\":{\"encode_mp4\":true},\"1080\":{\"encode_mp4\":false}}",
+    "rendition": "{\"360\":{\"resolution\":\"640x360\",\"video_bitrate\":\"750k\",\"audio_bitrate\":\"96k\",\"encode_mp4\":true},\"720\":{\"resolution\":\"1280x720\",\"video_bitrate\":\"2000k\",\"audio_bitrate\":\"128k\",\"encode_mp4\":true},\"1080\":{\"resolution\":\"1920x1080\",\"video_bitrate\":\"3000k\",\"audio_bitrate\":\"192k\",\"encode_mp4\":false}}",
     "dressing": "{\"watermark\":\"https://example.org/wm.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}",
     "video_id": "12345",
     "video_slug": "intro-to-python-2026",
@@ -100,7 +100,7 @@ This example includes optional fields (`app_version`, `affiliation`, `completion
     "studio_allow_nvenc": false,
 
     "cut": "{\"start\":\"00:00:10\",\"end\":\"00:01:00\"}",
-    "rendition": "{\"360\":{\"encode_mp4\":true},\"720\":{\"encode_mp4\":true},\"1080\":{\"encode_mp4\":false}}",
+    "rendition": "{\"360\":{\"resolution\":\"640x360\",\"video_bitrate\":\"750k\",\"audio_bitrate\":\"96k\",\"encode_mp4\":true},\"720\":{\"resolution\":\"1280x720\",\"video_bitrate\":\"2000k\",\"audio_bitrate\":\"128k\",\"encode_mp4\":true},\"1080\":{\"resolution\":\"1920x1080\",\"video_bitrate\":\"3000k\",\"audio_bitrate\":\"192k\",\"encode_mp4\":false}}",
     "dressing": "{\"watermark\":\"https://example.org/assets/watermark.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}",
     "video_id": "12345",
     "video_slug": "intro-to-python-2026",

@@ -41,21 +41,28 @@ All parameters are optional.
 `video_id`, `video_slug`, and `video_title` are plain scalar values (typically strings).
 
 ### `rendition`
-Rendition configuration used to enable/disable MP4 outputs per resolution.
+Rendition configuration used to define the output ladder (resolution + bitrates) and whether MP4 is produced for each rendition.
 
 **Format** (JSON string):
 ```json
 {
-  "360": {"resolution": "640x360", "encode_mp4": true},
-  "720": {"resolution": "1280x720", "encode_mp4": true},
-  "1080": {"resolution": "1920x1080", "encode_mp4": false}
+  "360": {"resolution": "640x360", "video_bitrate": "750k", "audio_bitrate": "96k", "encode_mp4": true},
+  "720": {"resolution": "1280x720", "video_bitrate": "2000k", "audio_bitrate": "128k", "encode_mp4": true},
+  "1080": {"resolution": "1920x1080", "video_bitrate": "3000k", "audio_bitrate": "192k", "encode_mp4": false}
 }
 ```
 
 **Fields**
-- Keys: typically `"360"`, `"720"`, `"1080"`.
+- Keys: numeric heights like `"360"`, `"720"`, `"1080"`, `"2160"`.
+- `resolution` (string): required format `WIDTHxHEIGHT`; height must match the key (`"2160"` => `"3840x2160"`).
+- `video_bitrate` (string): optional, validated format like `"750k"`, `"3M"`, `"1.5M"`. Auto-inferred if omitted.
+- `audio_bitrate` (string): optional, validated format like `"96k"`, `"192k"`. Auto-inferred if omitted.
 - `encode_mp4` (bool): whether MP4 is produced for that rendition.
-- `resolution` (string): informational/compatibility field (the pipeline currently scales based on fixed heights).
+
+Notes:
+- 2160p (4K) is **not** in the default ladder. It is encoded only if explicitly provided in `rendition`.
+- The script deep-merges existing defaults for known renditions, so partial updates remain possible (for example updating only `encode_mp4` on `720`).
+- New renditions (for example `2160`) can omit bitrates; the script infers values from the default ladder.
 
 ### `cut`
 Trim a segment of the input before encoding.
@@ -138,7 +145,7 @@ Example of a task request (showing the important parts):
   "notify_url": "https://manager.example.org/callback",
   "parameters": {
     "cut": "{\"start\":\"00:00:10\",\"end\":\"00:00:40\",\"initial_duration\":\"00:17:00\"}",
-    "rendition": "{\"360\":{\"encode_mp4\":true},\"720\":{\"encode_mp4\":true},\"1080\":{\"encode_mp4\":false}}",
+    "rendition": "{\"360\":{\"resolution\":\"640x360\",\"video_bitrate\":\"750k\",\"audio_bitrate\":\"96k\",\"encode_mp4\":true},\"720\":{\"resolution\":\"1280x720\",\"video_bitrate\":\"2000k\",\"audio_bitrate\":\"128k\",\"encode_mp4\":true},\"1080\":{\"resolution\":\"1920x1080\",\"video_bitrate\":\"3000k\",\"audio_bitrate\":\"192k\",\"encode_mp4\":false},\"2160\":{\"resolution\":\"3840x2160\",\"video_bitrate\":\"12000k\",\"audio_bitrate\":\"192k\",\"encode_mp4\":false}}",
     "dressing": "{\"watermark\":\"https://example.org/wm.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}",
     "video_id": "12345",
     "video_slug": "intro-to-python-2026",
@@ -161,7 +168,7 @@ This example includes optional fields (`app_version`, `affiliation`, `completion
   "affiliation": "employee",
   "parameters": {
     "cut": "{\"start\":\"00:00:10\",\"end\":\"00:00:40\",\"initial_duration\":\"00:10:00\"}",
-    "rendition": "{\"360\":{\"resolution\":\"640x360\",\"encode_mp4\":true},\"720\":{\"resolution\":\"1280x720\",\"encode_mp4\":true},\"1080\":{\"resolution\":\"1920x1080\",\"encode_mp4\":false}}",
+    "rendition": "{\"360\":{\"resolution\":\"640x360\",\"video_bitrate\":\"750k\",\"audio_bitrate\":\"96k\",\"encode_mp4\":true},\"720\":{\"resolution\":\"1280x720\",\"video_bitrate\":\"2000k\",\"audio_bitrate\":\"128k\",\"encode_mp4\":true},\"1080\":{\"resolution\":\"1920x1080\",\"video_bitrate\":\"3000k\",\"audio_bitrate\":\"192k\",\"encode_mp4\":false}}",
     "dressing": "{\"watermark\":\"https://example.org/assets/watermark.png\",\"watermark_position_orig\":\"top_right\",\"watermark_opacity\":\"80\"}",
     "video_id": "12345",
     "video_slug": "intro-to-python-2026",
@@ -174,6 +181,7 @@ This example includes optional fields (`app_version`, `affiliation`, `completion
 
 ## Error handling
 - Invalid JSON in `rendition`, `cut`, or `dressing` logs a warning and the feature is ignored.
+- Invalid rendition fields (bad key format, invalid `resolution`, invalid bitrate format, non-boolean `encode_mp4`) log a warning and fallback to default rendition configuration.
 - Missing `start`/`end` logs a warning and cut is not applied.
 - Missing external tools (FFmpeg, ImageMagick `convert` for some fallbacks) may degrade outputs and is logged.
 

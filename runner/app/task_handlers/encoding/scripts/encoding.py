@@ -8,10 +8,12 @@ Supports both CPU and GPU encoding.
 from __future__ import absolute_import, division, print_function
 
 import argparse
+import copy
 import glob
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -33,14 +35,41 @@ _VIDEOS_OUTPUT_DIR = "/tmp/esup-runner/task01/output"
 _ENCODING_TYPE = "CPU"
 _HWACCEL_DEVICE = 0
 
-# Video renditions configuration
-_RENDITION = {"360": "640x360", "720": "1280x720", "1080": "1920x1080"}
-
 # Video renditions encoding configuration (which formats to encode)
-_RENDITION_CONFIG = {
-    "360": {"resolution": "640x360", "encode_mp4": True},
-    "720": {"resolution": "1280x720", "encode_mp4": True},
-    "1080": {"resolution": "1920x1080", "encode_mp4": False},
+# 2160p is intentionally not part of the default ladder and is encoded only
+# when explicitly provided in the rendition parameter.
+_DEFAULT_RENDITION_CONFIG = {
+    "360": {
+        "resolution": "640x360",
+        "video_bitrate": "750k",
+        "audio_bitrate": "96k",
+        "encode_mp4": True,
+    },
+    "720": {
+        "resolution": "1280x720",
+        "video_bitrate": "2000k",
+        "audio_bitrate": "128k",
+        "encode_mp4": True,
+    },
+    "1080": {
+        "resolution": "1920x1080",
+        "video_bitrate": "3000k",
+        "audio_bitrate": "192k",
+        "encode_mp4": False,
+    },
+}
+_RENDITION_CONFIG = copy.deepcopy(_DEFAULT_RENDITION_CONFIG)
+
+# Input validation patterns for rendition settings.
+_RENDITION_KEY_RE = re.compile(r"^\d+$")
+_RESOLUTION_RE = re.compile(r"^(?P<width>\d+)x(?P<height>\d+)$")
+_BITRATE_RE = re.compile(r"^\d+(?:\.\d+)?[kKmMgG]$")
+
+# Preserve historical rate-control ladder defaults for legacy renditions.
+_LEGACY_RATE_LADDER = {
+    "360": {"minrate": "500k", "maxrate": "1000k", "bufsize": "1500k"},
+    "720": {"minrate": "1000k", "maxrate": "3000k", "bufsize": "4000k"},
+    "1080": {"minrate": "2M", "maxrate": "4500k", "bufsize": "6M"},
 }
 
 # Supported image codecs for thumbnail detection
@@ -83,9 +112,24 @@ M4A = (
 )
 
 # Thumbnail extraction templates (3 thumbnails at 25%, 50%, 75% of video duration)
-EXTRACT_THUMBNAIL_0 = "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y -vframes 1 {output_dir}/{filename}_0.{ext}"
-EXTRACT_THUMBNAIL_1 = "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y -vframes 1 {output_dir}/{filename}_1.{ext}"
-EXTRACT_THUMBNAIL_2 = "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y -vframes 1 {output_dir}/{filename}_2.{ext}"
+_THUMBNAIL_MAX_SCALE_FILTER = (
+    "-vf \"scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease\" "
+)
+EXTRACT_THUMBNAIL_0 = (
+    "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y "
+    + _THUMBNAIL_MAX_SCALE_FILTER
+    + "-vframes 1 {output_dir}/{filename}_0.{ext}"
+)
+EXTRACT_THUMBNAIL_1 = (
+    "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y "
+    + _THUMBNAIL_MAX_SCALE_FILTER
+    + "-vframes 1 {output_dir}/{filename}_1.{ext}"
+)
+EXTRACT_THUMBNAIL_2 = (
+    "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y "
+    + _THUMBNAIL_MAX_SCALE_FILTER
+    + "-vframes 1 {output_dir}/{filename}_2.{ext}"
+)
 
 # CPU encoding base command
 CPU = f"time ffmpeg -hide_banner -y {_INPUT_PROBE} -i {{input}} "
@@ -122,47 +166,13 @@ scale_gpu = (
 # CPU scaling filter (libx264 preferred; fallback decided at runtime)
 scale_cpu = COMMON_CPU + '-vf "scale=-2:{height}" -c:v {encoder} -sc_threshold 0 '
 
-# Bitrate configurations for different resolutions
-rate_360 = "-b:a 96k -minrate 500k -b:v 750k -maxrate 1000k -bufsize 1500k "
-rate_720 = "-b:a 128k -minrate 1000k -b:v 2000k -maxrate 3000k -bufsize 4000k "
-rate_1080 = "-b:a 192k -minrate 2M -b:v 3M -maxrate 4500k -bufsize 6M "
-
-# Output format templates
-end_360_m3u8 = (
-    rate_360
-    + "-max_muxing_queue_size 9999 -hls_playlist_type vod -hls_list_size 0 "
-    + "-hls_time 2 -hls_flags single_file+independent_segments "
-    + "{output_dir}/360p_{output}.m3u8 "
+# Output format options
+HLS_OUTPUT_OPTIONS = (
+    "-max_muxing_queue_size 9999 -hls_playlist_type vod -hls_list_size 0 "
+    "-hls_time 2 -hls_flags single_file+independent_segments "
 )
 
-end_360_mp4 = (
-    rate_360 + "-max_muxing_queue_size 9999 -movflags faststart "
-    '-write_tmcd 0 "{output_dir}/360p_{output}.mp4" '
-)
-
-end_720_m3u8 = (
-    rate_720
-    + "-max_muxing_queue_size 9999 -hls_playlist_type vod -hls_list_size 0 "
-    + "-hls_time 2 -hls_flags single_file+independent_segments "
-    + "{output_dir}/720p_{output}.m3u8 "
-)
-
-end_720_mp4 = (
-    rate_720 + "-max_muxing_queue_size 9999 -movflags faststart "
-    '-write_tmcd 0 "{output_dir}/720p_{output}.mp4" '
-)
-
-end_1080_m3u8 = (
-    rate_720
-    + "-max_muxing_queue_size 9999 -hls_playlist_type vod -hls_list_size 0 "
-    + "-hls_time 2 -hls_flags single_file+independent_segments "
-    + "{output_dir}/1080p_{output}.m3u8 "
-)
-
-end_1080_mp4 = (
-    rate_1080 + "-max_muxing_queue_size 9999 -movflags faststart "
-    '-write_tmcd 0 "{output_dir}/1080p_{output}.mp4" '
-)
+MP4_OUTPUT_OPTIONS = "-max_muxing_queue_size 9999 -movflags faststart -write_tmcd 0 "
 
 # Global variable for subtime (seek position)
 SUBTIME = " "
@@ -213,6 +223,315 @@ def timestamp_to_seconds(timestamp: str) -> int:
             return int(parts[0])
     except (ValueError, AttributeError):
         return 0
+
+
+def _parse_bitrate_to_bps(bitrate: str) -> int:
+    """
+    Parse a bitrate like 750k/3M/1.5M into bits per second.
+
+    Raises:
+        ValueError: if bitrate format is invalid.
+    """
+    if not isinstance(bitrate, str):
+        raise ValueError("Bitrate must be a string")
+
+    text = bitrate.strip()
+    if not _BITRATE_RE.fullmatch(text):
+        raise ValueError(
+            f"Invalid bitrate '{bitrate}'. Expected format like '750k', '3M' or '1.5M'."
+        )
+
+    unit = text[-1].lower()
+    value = float(text[:-1])
+    multiplier = {"k": 1000, "m": 1_000_000, "g": 1_000_000_000}[unit]
+    return max(1, int(value * multiplier))
+
+
+def _format_bitrate_from_bps(bits_per_second: int) -> str:
+    """Format a bitrate in bps into a compact FFmpeg-compatible string."""
+    if bits_per_second >= 1_000_000 and bits_per_second % 1_000_000 == 0:
+        return f"{bits_per_second // 1_000_000}M"
+    return f"{max(1, int(round(bits_per_second / 1000)))}k"
+
+
+def _infer_video_bitrate(width: int, height: int) -> str:
+    """
+    Infer a video bitrate for renditions that omit video_bitrate.
+
+    Baseline uses the 1080p default rendition and scales by pixel count.
+    """
+    default_1080 = _DEFAULT_RENDITION_CONFIG.get("1080", {})
+    ref_resolution = str(default_1080.get("resolution", "1920x1080"))
+    ref_match = _RESOLUTION_RE.fullmatch(ref_resolution)
+    if ref_match is None:
+        ref_width = 1920
+        ref_height = 1080
+    else:
+        ref_width = int(ref_match.group("width"))
+        ref_height = int(ref_match.group("height"))
+
+    ref_video_bitrate = str(default_1080.get("video_bitrate", "3000k"))
+    ref_bps = _parse_bitrate_to_bps(ref_video_bitrate)
+
+    ref_pixels = max(1, ref_width * ref_height)
+    target_pixels = max(1, width * height)
+    inferred_bps = max(150_000, int(ref_bps * target_pixels / ref_pixels))
+    return _format_bitrate_from_bps(inferred_bps)
+
+
+def _infer_audio_bitrate(height: int) -> str:
+    """
+    Infer an audio bitrate for renditions that omit audio_bitrate.
+
+    Uses the first default ladder tier whose height is >= target height,
+    otherwise keeps the highest tier bitrate.
+    """
+    ladders: list[tuple[int, str]] = []
+    for rendition_key, rendition_cfg in _DEFAULT_RENDITION_CONFIG.items():
+        try:
+            key_height = int(rendition_key)
+        except ValueError:
+            continue
+        audio_bitrate = str(rendition_cfg.get("audio_bitrate", "128k"))
+        ladders.append((key_height, audio_bitrate))
+
+    if not ladders:
+        return "128k"
+
+    ladders.sort(key=lambda item: item[0])
+    for key_height, audio_bitrate in ladders:
+        if height <= key_height:
+            return audio_bitrate
+    return ladders[-1][1]
+
+
+def _build_rate_control(rendition_key: str, video_bitrate: str) -> Dict[str, str]:
+    """
+    Build FFmpeg rate-control settings for a rendition.
+
+    Keeps historical min/max/buf values for unchanged legacy renditions (360/720/1080),
+    and derives consistent values from video_bitrate otherwise.
+    """
+    legacy = _LEGACY_RATE_LADDER.get(rendition_key)
+    default_video_bitrate = _DEFAULT_RENDITION_CONFIG.get(rendition_key, {}).get("video_bitrate")
+    if legacy and video_bitrate == default_video_bitrate:
+        return legacy
+
+    video_bps = _parse_bitrate_to_bps(video_bitrate)
+    minrate = _format_bitrate_from_bps(int(video_bps * 2 / 3))
+    maxrate = _format_bitrate_from_bps(int(video_bps * 3 / 2))
+    bufsize = _format_bitrate_from_bps(int(video_bps * 2))
+    return {"minrate": minrate, "maxrate": maxrate, "bufsize": bufsize}
+
+
+def _build_rendition_rate_options(rendition_key: str, rendition_cfg: Dict[str, Any]) -> str:
+    """Build bitrate-related FFmpeg options for one rendition."""
+    video_bitrate = rendition_cfg["video_bitrate"]
+    audio_bitrate = rendition_cfg["audio_bitrate"]
+    rate_control = _build_rate_control(rendition_key, video_bitrate)
+    return (
+        f"-b:a {audio_bitrate} -minrate {rate_control['minrate']} "
+        f"-b:v {video_bitrate} -maxrate {rate_control['maxrate']} "
+        f"-bufsize {rate_control['bufsize']} "
+    )
+
+
+def _merge_rendition_config(overrides: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Merge CLI rendition overrides into the current rendition configuration.
+
+    - Existing rendition entries are deep-merged so partial payloads remain compatible.
+    - A rendition can be removed by setting it to null in JSON.
+    """
+    if not isinstance(overrides, dict):
+        raise ValueError("Rendition configuration must be a JSON object")
+
+    merged = copy.deepcopy(_RENDITION_CONFIG)
+    for raw_key, raw_value in overrides.items():
+        key = str(raw_key).strip()
+        if not key:
+            raise ValueError("Rendition key cannot be empty")
+
+        if raw_value is None:
+            merged.pop(key, None)
+            continue
+
+        if not isinstance(raw_value, dict):
+            raise ValueError(f"Rendition '{key}' must be an object")
+
+        current = merged.get(key, {})
+        if not isinstance(current, dict):
+            current = {}
+        merged[key] = {**current, **raw_value}
+
+    return merged
+
+
+def _validate_rendition_key_and_cfg(raw_key: Any, raw_cfg: Any) -> tuple[str, Dict[str, Any]]:
+    """Validate a rendition key and its payload shape."""
+    key = str(raw_key).strip()
+    if not _RENDITION_KEY_RE.fullmatch(key):
+        raise ValueError(
+            f"Invalid rendition key '{raw_key}'. Use a numeric height key (e.g. '360', '720', '2160')."
+        )
+    if not isinstance(raw_cfg, dict):
+        raise ValueError(f"Rendition '{key}' must be an object")
+    return key, raw_cfg
+
+
+def _parse_rendition_resolution(key: str, raw_cfg: Dict[str, Any]) -> tuple[int, int]:
+    """Validate and parse the rendition resolution field."""
+    resolution = raw_cfg.get("resolution")
+    if not isinstance(resolution, str):
+        raise ValueError(f"Rendition '{key}' missing required string field 'resolution'")
+
+    resolution_text = resolution.strip()
+    match = _RESOLUTION_RE.fullmatch(resolution_text)
+    if match is None:
+        raise ValueError(
+            f"Rendition '{key}' has invalid resolution '{resolution}'. Expected 'WIDTHxHEIGHT'."
+        )
+
+    width = int(match.group("width"))
+    height = int(match.group("height"))
+    if width <= 0 or height <= 0:
+        raise ValueError(f"Rendition '{key}' resolution must contain positive integers")
+
+    key_height = int(key)
+    if key_height != height:
+        raise ValueError(f"Rendition '{key}' must match resolution height ({height}).")
+
+    return width, height
+
+
+def _normalize_video_bitrate(key: str, raw_cfg: Dict[str, Any], width: int, height: int) -> str:
+    """Return a validated (or inferred) video bitrate for one rendition."""
+    video_bitrate = raw_cfg.get("video_bitrate")
+    if video_bitrate is None:
+        video_bitrate = _infer_video_bitrate(width, height)
+    elif not isinstance(video_bitrate, str):
+        raise ValueError(f"Rendition '{key}' field 'video_bitrate' must be a string")
+
+    _parse_bitrate_to_bps(video_bitrate)
+    return video_bitrate.strip()
+
+
+def _normalize_audio_bitrate(key: str, raw_cfg: Dict[str, Any], height: int) -> str:
+    """Return a validated (or inferred) audio bitrate for one rendition."""
+    audio_bitrate = raw_cfg.get("audio_bitrate")
+    if audio_bitrate is None:
+        audio_bitrate = _infer_audio_bitrate(height)
+    elif not isinstance(audio_bitrate, str):
+        raise ValueError(f"Rendition '{key}' field 'audio_bitrate' must be a string")
+
+    _parse_bitrate_to_bps(audio_bitrate)
+    return audio_bitrate.strip()
+
+
+def _normalize_encode_mp4(key: str, raw_cfg: Dict[str, Any]) -> bool:
+    """Validate and return the encode_mp4 flag for one rendition."""
+    encode_mp4 = raw_cfg.get("encode_mp4")
+    if not isinstance(encode_mp4, bool):
+        raise ValueError(f"Rendition '{key}' field 'encode_mp4' must be a boolean")
+    return encode_mp4
+
+
+def _normalize_rendition_entry(raw_key: Any, raw_cfg: Any) -> tuple[str, Dict[str, Any]]:
+    """Validate and normalize a single rendition entry."""
+    key, cfg = _validate_rendition_key_and_cfg(raw_key, raw_cfg)
+    width, height = _parse_rendition_resolution(key, cfg)
+    video_bitrate = _normalize_video_bitrate(key, cfg, width, height)
+    audio_bitrate = _normalize_audio_bitrate(key, cfg, height)
+    encode_mp4 = _normalize_encode_mp4(key, cfg)
+    return (
+        key,
+        {
+            "resolution": f"{width}x{height}",
+            "video_bitrate": video_bitrate,
+            "audio_bitrate": audio_bitrate,
+            "encode_mp4": encode_mp4,
+        },
+    )
+
+
+def _validate_and_normalize_rendition_config(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """
+    Validate rendition config and return a normalized, numerically sorted mapping.
+
+    Required per rendition:
+    - resolution: '<width>x<height>' and height must match rendition key
+    - video_bitrate: optional string like '750k' or '3M' (auto-inferred if missing)
+    - audio_bitrate: optional string like '96k' or '192k' (auto-inferred if missing)
+    - encode_mp4: boolean
+    """
+    if not isinstance(config, dict):
+        raise ValueError("Rendition configuration must be an object")
+    if not config:
+        raise ValueError("Rendition configuration cannot be empty")
+
+    normalized: Dict[str, Dict[str, Any]] = {}
+    for raw_key, raw_cfg in config.items():
+        key, entry = _normalize_rendition_entry(raw_key, raw_cfg)
+        normalized[key] = entry
+
+    return {k: normalized[k] for k in sorted(normalized, key=lambda key: int(key))}
+
+
+def _select_renditions_for_encode(
+    *, source_height: int, output_format: str
+) -> list[tuple[str, Dict[str, Any], int]]:
+    """
+    Select renditions to encode for the given source height and output format.
+
+    Behavior is kept compatible with legacy pipeline:
+    - lowest configured rendition is always produced,
+    - higher renditions are produced only if source height supports them.
+    """
+    renditions = sorted(_RENDITION_CONFIG.items(), key=lambda item: int(item[0]))
+    selected: list[tuple[str, Dict[str, Any], int]] = []
+
+    for idx, (rendition_key, rendition_cfg) in enumerate(renditions):
+        rendition_height = int(rendition_key)
+
+        # Keep legacy behavior: first (lowest) rendition is always encoded.
+        if idx > 0 and source_height < rendition_height:
+            continue
+
+        if output_format == "mp4" and not rendition_cfg.get("encode_mp4", True):
+            continue
+
+        selected.append((rendition_key, rendition_cfg, rendition_height))
+
+    return selected
+
+
+def _build_video_output_segment(
+    *, output_format: str, rendition_key: str, rendition_cfg: Dict[str, Any], output_basename: str
+) -> str:
+    """Build one output segment (rates + muxing + output path) for FFmpeg."""
+    rate_options = _build_rendition_rate_options(rendition_key, rendition_cfg)
+    output_path = f"{_VIDEOS_OUTPUT_DIR}/{rendition_key}p_{output_basename}.{output_format}"
+    if output_format == "m3u8":
+        return f'{rate_options}{HLS_OUTPUT_OPTIONS}"{output_path}" '
+    return f'{rate_options}{MP4_OUTPUT_OPTIONS}"{output_path}" '
+
+
+def _build_video_metadata_entries(
+    *, output_format: str, source_height: int, output_basename: str
+) -> list[Dict[str, object]]:
+    """Return metadata entries for all renditions encoded in this video job."""
+    entries: list[Dict[str, object]] = []
+    for rendition_key, rendition_cfg, _ in _select_renditions_for_encode(
+        source_height=source_height, output_format=output_format
+    ):
+        entries.append(
+            {
+                "encoding_format": "video/mp2t" if output_format == "m3u8" else "video/mp4",
+                "rendition": rendition_cfg["resolution"],
+                "filename": f"{rendition_key}p_{output_basename}.{output_format}",
+            }
+        )
+    return entries
 
 
 # =============================================================================
@@ -302,43 +621,15 @@ def get_cmd_gpu(format: str, codec: str, height: int, file: str) -> str:
     filename = os.path.splitext(os.path.basename(file))[0]
     filename = sanitize_filename(filename)
 
-    # Add 360p rendition
-    ffmpeg_cmd += scale_gpu.format(height=360)
-    if format == "m3u8":
-        ffmpeg_cmd += SUBTIME + end_360_m3u8.format(output_dir=_VIDEOS_OUTPUT_DIR, output=filename)
-    else:
-        # Only encode MP4 for 360p if configured to do so
-        if _RENDITION_CONFIG.get("360", {}).get("encode_mp4", True):
-            ffmpeg_cmd += SUBTIME + end_360_mp4.format(
-                output_dir=_VIDEOS_OUTPUT_DIR, output=filename
-            )
-
-    # Add 720p rendition if source height supports it
-    if height >= 720:
-        ffmpeg_cmd += scale_gpu.format(height=720)
-        if format == "m3u8":
-            ffmpeg_cmd += SUBTIME + end_720_m3u8.format(
-                output_dir=_VIDEOS_OUTPUT_DIR, output=filename
-            )
-        else:
-            # Only encode MP4 for 720p if configured to do so
-            if _RENDITION_CONFIG.get("720", {}).get("encode_mp4", True):
-                ffmpeg_cmd += SUBTIME + end_720_mp4.format(
-                    output_dir=_VIDEOS_OUTPUT_DIR, output=filename
-                )
-
-    # Add 1080p rendition if source height supports it
-    if height >= 1080:
-        ffmpeg_cmd += scale_gpu.format(height=1080)
-        if format == "m3u8":
-            ffmpeg_cmd += SUBTIME + end_1080_m3u8.format(
-                output_dir=_VIDEOS_OUTPUT_DIR, output=filename
-            )
-        elif format == "mp4" and _RENDITION_CONFIG.get("1080", {}).get("encode_mp4", False):
-            # Only encode MP4 for 1080p if configured to do so
-            ffmpeg_cmd += SUBTIME + end_1080_mp4.format(
-                output_dir=_VIDEOS_OUTPUT_DIR, output=filename
-            )
+    selected_renditions = _select_renditions_for_encode(source_height=height, output_format=format)
+    for rendition_key, rendition_cfg, rendition_height in selected_renditions:
+        ffmpeg_cmd += scale_gpu.format(height=rendition_height)
+        ffmpeg_cmd += SUBTIME + _build_video_output_segment(
+            output_format=format,
+            rendition_key=rendition_key,
+            rendition_cfg=rendition_cfg,
+            output_basename=filename,
+        )
 
     return ffmpeg_cmd
 
@@ -364,43 +655,15 @@ def get_cmd_cpu(format: str, codec: str, height: int, file: str) -> str:
     filename = os.path.splitext(os.path.basename(file))[0]
     filename = sanitize_filename(filename)
 
-    # Add 360p rendition
-    ffmpeg_cmd += scale_cpu.format(height=360, encoder=encoder)
-    if format == "m3u8":
-        ffmpeg_cmd += SUBTIME + end_360_m3u8.format(output_dir=_VIDEOS_OUTPUT_DIR, output=filename)
-    else:
-        # Only encode MP4 for 360p if configured to do so
-        if _RENDITION_CONFIG.get("360", {}).get("encode_mp4", True):
-            ffmpeg_cmd += SUBTIME + end_360_mp4.format(
-                output_dir=_VIDEOS_OUTPUT_DIR, output=filename
-            )
-
-    # Add 720p rendition if source height supports it
-    if height >= 720:
-        ffmpeg_cmd += scale_cpu.format(height=720, encoder=encoder)
-        if format == "m3u8":
-            ffmpeg_cmd += SUBTIME + end_720_m3u8.format(
-                output_dir=_VIDEOS_OUTPUT_DIR, output=filename
-            )
-        else:
-            # Only encode MP4 for 720p if configured to do so
-            if _RENDITION_CONFIG.get("720", {}).get("encode_mp4", True):
-                ffmpeg_cmd += SUBTIME + end_720_mp4.format(
-                    output_dir=_VIDEOS_OUTPUT_DIR, output=filename
-                )
-
-    # Add 1080p rendition if source height supports it
-    if height >= 1080:
-        ffmpeg_cmd += scale_cpu.format(height=1080, encoder=encoder)
-        if format == "m3u8":
-            ffmpeg_cmd += SUBTIME + end_1080_m3u8.format(
-                output_dir=_VIDEOS_OUTPUT_DIR, output=filename
-            )
-        elif format == "mp4" and _RENDITION_CONFIG.get("1080", {}).get("encode_mp4", False):
-            # Only encode MP4 for 1080p if configured to do so
-            ffmpeg_cmd += SUBTIME + end_1080_mp4.format(
-                output_dir=_VIDEOS_OUTPUT_DIR, output=filename
-            )
+    selected_renditions = _select_renditions_for_encode(source_height=height, output_format=format)
+    for rendition_key, rendition_cfg, rendition_height in selected_renditions:
+        ffmpeg_cmd += scale_cpu.format(height=rendition_height, encoder=encoder)
+        ffmpeg_cmd += SUBTIME + _build_video_output_segment(
+            output_format=format,
+            rendition_key=rendition_key,
+            rendition_cfg=rendition_cfg,
+            output_basename=filename,
+        )
 
     return ffmpeg_cmd
 
@@ -1073,13 +1336,30 @@ def _build_encode_video_job(
     else:
         ffmpeg_cmd = get_cmd_cpu(format, codec, height, file)
 
-    add_info_video_title = "encode_video"
-    add_info_video_content: Dict[str, object] = {
-        "encoding_format": "video/mp2t" if format == "m3u8" else "video/mp4",
-        "rendition": _RENDITION["360"],
-        "filename": "360p_{output}.{ext}".format(output=filename, ext=format),
-    }
-    return ffmpeg_cmd, add_info_video_title, add_info_video_content, True, {}
+    metadata_entries = _build_video_metadata_entries(
+        output_format=format,
+        source_height=height,
+        output_basename=filename,
+    )
+    if not metadata_entries:
+        return (
+            "",
+            "encode_video",
+            {},
+            True,
+            {
+                "skip_execution": True,
+                "skip_reason": f"No rendition to encode for format '{format}'",
+            },
+        )
+
+    return (
+        ffmpeg_cmd,
+        "encode_video",
+        metadata_entries[0],
+        True,
+        {"additional_renditions": metadata_entries[1:]},
+    )
 
 
 def _build_encode_audio_job(
@@ -1346,6 +1626,11 @@ def encode(
         builder()
     )
 
+    if extra.get("skip_execution", False):
+        reason = str(extra.get("skip_reason", "Skipping encode execution"))
+        encode_log(msg + reason + "\n")
+        return True
+
     # Execute the command (thumbnail uses PNG directly; no JPG fallback).
     if type == "thumbnail":
         return_value, return_msg = launch_cmd(ffmpeg_cmd, "thumbnail", format)
@@ -1353,43 +1638,14 @@ def encode(
         return_value, return_msg = launch_cmd(ffmpeg_cmd, type, format)
 
     # Update metadata if encoding succeeded
-    if return_value:
+    if return_value and add_info_video_title and add_info_video_content:
         add_info_video(add_info_video_title, add_info_video_content, add_info_video_append)
-        add_more_info_video(add_info_video_title, height, filename, format)
+        if add_info_video_title == "encode_video":
+            for rendition_entry in extra.get("additional_renditions", []):
+                add_info_video(add_info_video_title, rendition_entry, True)
 
     encode_log(msg + return_msg)
     return return_value
-
-
-def add_more_info_video(add_info_video_title: str, height: int, filename: str, format: str):
-    """
-    Add additional rendition information to metadata.
-
-    Args:
-        add_info_video_title: Metadata key
-        height: Video height in pixels
-        filename: Sanitized filename
-        format: Output format
-    """
-    if add_info_video_title == "encode_video" and height >= 720:
-        # Add 720p info only if encoding MP4 is enabled for 720p or if format is m3u8
-        if format == "m3u8" or _RENDITION_CONFIG.get("720", {}).get("encode_mp4", True):
-            add_info_video_content = {
-                "encoding_format": "video/mp2t" if format == "m3u8" else "video/mp4",
-                "rendition": _RENDITION["720"],
-                "filename": "720p_{output}.{ext}".format(output=filename, ext=format),
-            }
-            add_info_video(add_info_video_title, add_info_video_content, True)
-
-        # Add 1080p info only if encoding MP4 is enabled for 1080p or if format is m3u8
-        if height >= 1080:
-            if format == "m3u8" or _RENDITION_CONFIG.get("1080", {}).get("encode_mp4", False):
-                add_info_video_content = {
-                    "encoding_format": "video/mp2t" if format == "m3u8" else "video/mp4",
-                    "rendition": _RENDITION["1080"],
-                    "filename": "1080p_{output}.{ext}".format(output=filename, ext=format),
-                }
-                add_info_video(add_info_video_title, add_info_video_content, True)
 
 
 def generate_overview_thumbnails(
@@ -1885,6 +2141,8 @@ def launch_encode_video(info_video: dict, file: str) -> tuple[bool, bool]:
     """
     codec = info_video.get("codec", "")
     height = info_video.get("height", 0)
+    mp4_renditions = _select_renditions_for_encode(source_height=height, output_format="mp4")
+    should_encode_mp4 = bool(mp4_renditions)
 
     if _ENCODING_TYPE.upper() == "GPU" and codec in _LIST_CODEC:
         # Preflight NVENC to avoid producing broken/unreadable outputs when the driver is too old.
@@ -1896,15 +2154,30 @@ def launch_encode_video(info_video: dict, file: str) -> tuple[bool, bool]:
                 + nvenc_details
             )
             encode_m3u8 = encode_without_gpu("m3u8", codec, height, file)
-            encode_mp4 = encode_without_gpu("mp4", codec, height, file)
+            if should_encode_mp4:
+                encode_mp4 = encode_without_gpu("mp4", codec, height, file)
+            else:
+                encode_mp4 = True
         else:
             # Use GPU encoding for supported codecs, fallback to CPU per-format
             encode_m3u8 = encode_with_gpu("m3u8", codec, height, file)
-            encode_mp4 = encode_with_gpu("mp4", codec, height, file)
+            if should_encode_mp4:
+                encode_mp4 = encode_with_gpu("mp4", codec, height, file)
+            else:
+                encode_mp4 = True
     else:
         # Use CPU encoding for unsupported codecs
         encode_m3u8 = encode_without_gpu("m3u8", codec, height, file)
-        encode_mp4 = encode_without_gpu("mp4", codec, height, file)
+        if should_encode_mp4:
+            encode_mp4 = encode_without_gpu("mp4", codec, height, file)
+        else:
+            encode_mp4 = True
+
+    if not should_encode_mp4:
+        encode_log(
+            f"Skipping mp4 encode: no enabled rendition for source height {height}. "
+            "Set encode_mp4=true on at least one selected rendition to enable mp4 output.\n"
+        )
 
     return encode_m3u8, encode_mp4
 
@@ -2090,7 +2363,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--rendition",
         required=False,
-        help='Rendition configuration JSON string (Ex: \'{"360": {"resolution": "640x360", "encode_mp4": true}}\')',
+        help=(
+            "Rendition configuration JSON string "
+            "(Ex: "
+            '\'{"360":{"resolution":"640x360","video_bitrate":"750k","audio_bitrate":"96k","encode_mp4":true}}\''
+            ")"
+        ),
     )
     parser.add_argument(
         "--cut",
@@ -2122,14 +2400,17 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def _parse_rendition_config(args, msg: str) -> str:
     """Parse and apply rendition configuration from CLI arguments."""
+    global _RENDITION_CONFIG
     if args.rendition:
         try:
-            rendition_config = json.loads(args.rendition)
-            _RENDITION_CONFIG.update(rendition_config)
+            rendition_override = json.loads(args.rendition)
+            merged_rendition_config = _merge_rendition_config(rendition_override)
+            _RENDITION_CONFIG = _validate_and_normalize_rendition_config(merged_rendition_config)
             msg += f"Rendition configuration updated: {json.dumps(_RENDITION_CONFIG, indent=2)}\n"
-        except (json.JSONDecodeError, ValueError) as e:
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
             msg += f"Warning: Failed to parse rendition parameter: {e}\n"
             msg += "Using default rendition configuration\n"
+            _RENDITION_CONFIG = copy.deepcopy(_DEFAULT_RENDITION_CONFIG)
     return msg
 
 

@@ -408,6 +408,235 @@ def test_get_cmd_gpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
     assert " -c:v h264_cuvid " not in cmd
 
 
+def test_bitrate_helpers_cover_error_and_kilobit_formatting():
+    enc = _load_encoding_script_module()
+
+    with pytest.raises(ValueError, match="Bitrate must be a string"):
+        enc._parse_bitrate_to_bps(123)
+
+    assert enc._format_bitrate_from_bps(875000) == "875k"
+
+
+def test_infer_video_bitrate_falls_back_on_invalid_default_resolution():
+    enc = _load_encoding_script_module()
+
+    enc._DEFAULT_RENDITION_CONFIG = {
+        "1080": {
+            "resolution": "not-a-resolution",
+            "video_bitrate": "3000k",
+            "audio_bitrate": "192k",
+            "encode_mp4": False,
+        }
+    }
+
+    assert enc._infer_video_bitrate(1920, 1080) == "3M"
+
+
+def test_infer_audio_bitrate_covers_invalid_and_matching_tiers():
+    enc = _load_encoding_script_module()
+
+    enc._DEFAULT_RENDITION_CONFIG = {
+        "bad-key": {"audio_bitrate": "96k"},
+    }
+    assert enc._infer_audio_bitrate(720) == "128k"
+
+    enc._DEFAULT_RENDITION_CONFIG = {
+        "360": {"audio_bitrate": "96k"},
+        "720": {"audio_bitrate": "128k"},
+        "1080": {"audio_bitrate": "192k"},
+    }
+    assert enc._infer_audio_bitrate(500) == "128k"
+
+
+def test_merge_rendition_config_covers_validation_and_null_removal():
+    enc = _load_encoding_script_module()
+
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        enc._merge_rendition_config([])
+
+    with pytest.raises(ValueError, match="key cannot be empty"):
+        enc._merge_rendition_config({" ": {"encode_mp4": True}})
+
+    enc._RENDITION_CONFIG = {"720": {"resolution": "1280x720", "encode_mp4": True}}
+    merged = enc._merge_rendition_config({"720": None})
+    assert "720" not in merged
+
+    with pytest.raises(ValueError, match="must be an object"):
+        enc._merge_rendition_config({"720": "invalid"})
+
+    enc._RENDITION_CONFIG = {"720": "legacy-non-dict"}
+    merged_non_dict = enc._merge_rendition_config({"720": {"encode_mp4": False}})
+    assert merged_non_dict["720"] == {"encode_mp4": False}
+
+
+def test_rendition_validation_helpers_cover_error_branches():
+    enc = _load_encoding_script_module()
+
+    with pytest.raises(ValueError, match="Invalid rendition key"):
+        enc._validate_rendition_key_and_cfg("hd", {})
+
+    with pytest.raises(ValueError, match="must be an object"):
+        enc._validate_rendition_key_and_cfg("720", "invalid")
+
+    with pytest.raises(ValueError, match="missing required string field 'resolution'"):
+        enc._parse_rendition_resolution("720", {})
+
+    with pytest.raises(ValueError, match="Expected 'WIDTHxHEIGHT'"):
+        enc._parse_rendition_resolution("720", {"resolution": "1280-720"})
+
+    with pytest.raises(ValueError, match="must contain positive integers"):
+        enc._parse_rendition_resolution("720", {"resolution": "0x720"})
+
+    with pytest.raises(ValueError, match="must match resolution height"):
+        enc._parse_rendition_resolution("720", {"resolution": "1280x721"})
+
+    with pytest.raises(ValueError, match="video_bitrate' must be a string"):
+        enc._normalize_video_bitrate("720", {"video_bitrate": 42}, 1280, 720)
+
+    with pytest.raises(ValueError, match="audio_bitrate' must be a string"):
+        enc._normalize_audio_bitrate("720", {"audio_bitrate": 42}, 720)
+
+    with pytest.raises(ValueError, match="encode_mp4' must be a boolean"):
+        enc._normalize_encode_mp4("720", {"encode_mp4": "true"})
+
+
+def test_validate_and_normalize_config_rejects_invalid_containers():
+    enc = _load_encoding_script_module()
+
+    with pytest.raises(ValueError, match="must be an object"):
+        enc._validate_and_normalize_rendition_config(["not", "a", "dict"])
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        enc._validate_and_normalize_rendition_config({})
+
+
+def test_rendition_selection_and_output_helpers_cover_mp4_and_metadata_paths():
+    enc = _load_encoding_script_module()
+
+    enc._RENDITION_CONFIG = enc._validate_and_normalize_rendition_config(
+        {
+            "360": {
+                "resolution": "640x360",
+                "video_bitrate": "750k",
+                "audio_bitrate": "96k",
+                "encode_mp4": True,
+            },
+            "720": {
+                "resolution": "1280x720",
+                "video_bitrate": "2000k",
+                "audio_bitrate": "128k",
+                "encode_mp4": True,
+            },
+            "1080": {
+                "resolution": "1920x1080",
+                "video_bitrate": "3000k",
+                "audio_bitrate": "192k",
+                "encode_mp4": False,
+            },
+        }
+    )
+
+    selected_mp4 = enc._select_renditions_for_encode(source_height=1080, output_format="mp4")
+    selected_keys = [key for key, _, _ in selected_mp4]
+    assert selected_keys == ["360", "720"]
+
+    segment_mp4 = enc._build_video_output_segment(
+        output_format="mp4",
+        rendition_key="360",
+        rendition_cfg=enc._RENDITION_CONFIG["360"],
+        output_basename="sample",
+    )
+    assert '"/tmp/esup-runner/task01/output/360p_sample.mp4"' in segment_mp4
+    assert "-movflags faststart" in segment_mp4
+
+    metadata_entries = enc._build_video_metadata_entries(
+        output_format="mp4", source_height=1080, output_basename="sample"
+    )
+    assert metadata_entries == [
+        {
+            "encoding_format": "video/mp4",
+            "rendition": "640x360",
+            "filename": "360p_sample.mp4",
+        },
+        {
+            "encoding_format": "video/mp4",
+            "rendition": "1280x720",
+            "filename": "720p_sample.mp4",
+        },
+    ]
+
+
+def test_build_encode_thumbnail_job_limits_size_to_1280x720(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+
+    ffmpeg_cmd, title, content, append, _ = enc._build_encode_thumbnail_job(
+        file="input.mp4",
+        filename="input",
+        duration=120,
+        thumbnail_index=0,
+    )
+
+    assert title == "encode_thumbnail"
+    assert append is True
+    assert content["filename"] == "input_0.png"
+    assert "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease" in ffmpeg_cmd
+    assert "-vframes 1" in ffmpeg_cmd
+
+
+def test_parse_rendition_config_deep_merges_existing_entries_and_adds_2160():
+    enc = _load_encoding_script_module()
+
+    args = Mock(
+        rendition=(
+            '{"720":{"encode_mp4":false,"video_bitrate":"2500k"},'
+            '"2160":{"resolution":"3840x2160","video_bitrate":"12000k","audio_bitrate":"192k","encode_mp4":true}}'
+        )
+    )
+    msg = enc._parse_rendition_config(args, "")
+
+    assert "Rendition configuration updated" in msg
+    assert enc._RENDITION_CONFIG["720"]["resolution"] == "1280x720"
+    assert enc._RENDITION_CONFIG["720"]["video_bitrate"] == "2500k"
+    assert enc._RENDITION_CONFIG["720"]["audio_bitrate"] == "128k"
+    assert enc._RENDITION_CONFIG["720"]["encode_mp4"] is False
+    assert enc._RENDITION_CONFIG["2160"]["resolution"] == "3840x2160"
+    assert enc._RENDITION_CONFIG["2160"]["video_bitrate"] == "12000k"
+    assert enc._RENDITION_CONFIG["2160"]["audio_bitrate"] == "192k"
+    assert enc._RENDITION_CONFIG["2160"]["encode_mp4"] is True
+
+
+def test_parse_rendition_config_allows_missing_bitrates_for_new_rendition():
+    enc = _load_encoding_script_module()
+
+    args = Mock(rendition=('{"2160":{"resolution":"3840x2160","encode_mp4":false}}'))
+    msg = enc._parse_rendition_config(args, "")
+
+    assert "Rendition configuration updated" in msg
+    assert enc._RENDITION_CONFIG["2160"]["resolution"] == "3840x2160"
+    # Auto-inferred defaults for missing bitrates on new renditions.
+    assert enc._RENDITION_CONFIG["2160"]["video_bitrate"] == "12M"
+    assert enc._RENDITION_CONFIG["2160"]["audio_bitrate"] == "192k"
+    assert enc._RENDITION_CONFIG["2160"]["encode_mp4"] is False
+
+
+def test_parse_rendition_config_rejects_invalid_bitrate_and_restores_defaults():
+    enc = _load_encoding_script_module()
+
+    args = Mock(
+        rendition=(
+            '{"2160":{"resolution":"3840x2160","video_bitrate":"12000","audio_bitrate":"192k","encode_mp4":true}}'
+        )
+    )
+    msg = enc._parse_rendition_config(args, "")
+
+    assert "Warning: Failed to parse rendition parameter" in msg
+    assert "Using default rendition configuration" in msg
+    assert enc._RENDITION_CONFIG == enc._DEFAULT_RENDITION_CONFIG
+
+
 def test_get_cmd_cpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
     enc = _load_encoding_script_module()
 
@@ -419,6 +648,47 @@ def test_get_cmd_cpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
 
     assert " -probesize 100M -analyzeduration 100M -i " in cmd
     assert "-map 0:v:0? -map 0:a?" in cmd
+
+
+def test_get_cmd_cpu_uses_1080_rate_ladder_for_hls(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+    enc._choose_h264_encoder = Mock(return_value=("libx264", ""))
+
+    cmd = enc.get_cmd_cpu("m3u8", "h264", 1080, "input.mp4")
+
+    assert "1080p_input.m3u8" in cmd
+    assert "-b:v 3000k -maxrate 4500k -bufsize 6M" in cmd
+
+
+def test_get_cmd_cpu_includes_2160_only_when_explicitly_configured(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+    enc._choose_h264_encoder = Mock(return_value=("libx264", ""))
+
+    default_cmd = enc.get_cmd_cpu("m3u8", "h264", 2160, "input.mp4")
+    assert "2160p_input.m3u8" not in default_cmd
+
+    enc._RENDITION_CONFIG = enc._validate_and_normalize_rendition_config(
+        {
+            **enc._RENDITION_CONFIG,
+            "2160": {
+                "resolution": "3840x2160",
+                "video_bitrate": "12000k",
+                "audio_bitrate": "192k",
+                "encode_mp4": True,
+            },
+        }
+    )
+    cmd_4k = enc.get_cmd_cpu("m3u8", "h264", 2160, "input.mp4")
+
+    assert "2160p_input.m3u8" in cmd_4k
+    assert "-b:v 12000k" in cmd_4k
+    assert "-b:a 192k" in cmd_4k
 
 
 def test_get_info_video_keeps_first_non_image_video_stream_as_primary(tmp_path):

@@ -1,6 +1,6 @@
 # Operations Guide (Manager)
 
-This document centralizes day-to-day production operations for the ESUP Runner Manager.
+This document centralizes day-to-day production operations for the manager.
 
 ## Scope and assumptions
 

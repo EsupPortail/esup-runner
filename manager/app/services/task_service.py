@@ -4,13 +4,14 @@ Service for managing tasks and their lifecycle.
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 import httpx
 
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
+from app.core.state import delete_task_for_retention_cleanup
 from app.core.state import get_task as get_task_from_state
 from app.core.state import get_tasks_snapshot, runners, save_tasks, tasks
 from app.models.models import Runner, Task
@@ -26,7 +27,7 @@ async def cleanup_old_tasks(
     """
     Periodically clean up old tasks to prevent memory accumulation.
 
-    Removes completed/failed tasks older than CLEANUP_TASK_FILES_DAYS.
+    Removes tasks older than CLEANUP_TASK_FILES_DAYS, regardless of status.
     Runs every hour.
     """
     logger.info("Starting task cleanup service")
@@ -38,25 +39,37 @@ async def cleanup_old_tasks(
             logger.info("Stopping task cleanup service")
             break
 
-        await asyncio.sleep(poll_interval)
-
         now = datetime.now()
         tasks_to_remove = []
 
-        for task_id, task in tasks.items():
-            created_at = datetime.fromisoformat(task.created_at.replace("Z", "+00:00"))
+        for task_id, task in list(tasks.items()):
+            try:
+                raw_created_at = datetime.fromisoformat(task.created_at.replace("Z", "+00:00"))
+            except Exception:
+                logger.warning(f"Skipping cleanup age check for task {task_id}: invalid created_at")
+                continue
+
+            if raw_created_at.tzinfo is not None:
+                created_at = raw_created_at.astimezone(timezone.utc).replace(tzinfo=None)
+            else:
+                created_at = raw_created_at
             task_age = now - created_at
 
-            # Remove tasks completed/failed more than CLEANUP_TASK_FILES_DAYS ago
-            if (
-                task.status in ["completed", "failed"]
-                and task_age.total_seconds() > cleanup_seconds
-            ):
+            # Remove tasks older than CLEANUP_TASK_FILES_DAYS ago, regardless of status.
+            if task_age.total_seconds() > cleanup_seconds:
                 tasks_to_remove.append(task_id)
 
         for task_id in tasks_to_remove:
-            del tasks[task_id]
-            logger.info(f"Task {task_id} cleaned up (age: {cleanup_days}+ days)")
+            if delete_task_for_retention_cleanup(task_id):
+                logger.info(
+                    f"Task {task_id} cleaned up from memory and persistence (age: {cleanup_days}+ days)"
+                )
+            else:
+                logger.warning(
+                    f"Task {task_id} matched cleanup but could not be deleted from persistence"
+                )
+
+        await asyncio.sleep(poll_interval)
 
 
 async def check_task_timeouts(

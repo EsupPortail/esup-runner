@@ -26,6 +26,18 @@ persistence = SafeDailyJSONPersistence(
     max_retries=3,  # Retry failed operations up to 3 times
 )
 
+
+def _resolve_persistence_directory(persistence_backend: SafeDailyJSONPersistence):
+    """Resolve persistence directory to an absolute path with a safe fallback."""
+    try:
+        return persistence_backend.data_directory.resolve()
+    except Exception:
+        return persistence_backend.data_directory
+
+
+_persistence_directory = _resolve_persistence_directory(persistence)
+logger.info(f"Task persistence directory resolved to: {_persistence_directory}")
+
 # Stores runners and tasks to avoid circular imports
 runners: MutableMapping[str, Runner] = RunnerStore(
     shared_enabled=config.ENVIRONMENT.lower() == "production",
@@ -54,6 +66,26 @@ def _pick_newest_task(local_task: Task, persisted_task: Task) -> Task:
     local_ts = _parse_updated_at(getattr(local_task, "updated_at", None))
     persisted_ts = _parse_updated_at(getattr(persisted_task, "updated_at", None))
     return local_task if local_ts >= persisted_ts else persisted_task
+
+
+def _should_keep_local_only_task_in_production(
+    task: Task, *, now: Optional[datetime] = None
+) -> bool:
+    """Return True when a local-only task should remain visible in production snapshots."""
+    cleanup_days = max(0, int(getattr(config, "CLEANUP_TASK_FILES_DAYS", 60) or 0))
+    if cleanup_days == 0:
+        return False
+
+    # Retention is based on task creation age across all statuses.
+    reference_ts = _parse_updated_at(getattr(task, "created_at", None))
+    if reference_ts == datetime.min:
+        reference_ts = _parse_updated_at(getattr(task, "updated_at", None))
+    if reference_ts == datetime.min:
+        return False
+
+    now_ts = now or datetime.now()
+    max_age_seconds = cleanup_days * 86400
+    return (now_ts - reference_ts).total_seconds() <= max_age_seconds
 
 
 def _get_deleted_task_ids() -> set[str]:
@@ -92,12 +124,13 @@ def _merge_tasks_with_persistence() -> Dict[str, Task]:
         except Exception as exc:
             logger.warning(f"Skipping invalid persisted task {task_id}: {exc}")
 
+    current_time = datetime.now()
     for task_id, local_task in tasks.items():
         if task_id in deleted_task_ids:
             continue
         if task_id in merged_tasks:
             merged_tasks[task_id] = _pick_newest_task(local_task, merged_tasks[task_id])
-        else:
+        elif _should_keep_local_only_task_in_production(local_task, now=current_time):
             merged_tasks[task_id] = local_task
 
     return merged_tasks
@@ -206,6 +239,18 @@ def delete_task(task_id: str) -> bool:
     tasks.pop(task_id, None)
     _purge_deleted_tasks_from_memory({task_id})
     logger.info(f"Deleted task {task_id} from manager state")
+    return True
+
+
+def delete_task_for_retention_cleanup(task_id: str) -> bool:
+    """Delete a task for retention cleanup, regardless of current status."""
+    deleted = persistence.delete_task(task_id)
+    if not deleted:
+        return False
+
+    tasks.pop(task_id, None)
+    _purge_deleted_tasks_from_memory({task_id})
+    logger.info(f"Deleted task {task_id} from manager state (retention cleanup)")
     return True
 
 

@@ -37,6 +37,52 @@
       </div>
     </Header>
 
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body">
+        <form method="get" action="{{ statistics_url }}" class="row g-3 align-items-end">
+          <div class="col-12 col-md-4">
+            <label for="startDate" class="form-label mb-1">From</label>
+            <input
+              type="date"
+              id="startDate"
+              name="start_date"
+              class="form-control"
+              value="{{ selected_start_date }}"
+              min="{{ available_start_date }}"
+              max="{{ selected_end_date or available_end_date }}"
+            >
+          </div>
+          <div class="col-12 col-md-4">
+            <label for="endDate" class="form-label mb-1">To</label>
+            <input
+              type="date"
+              id="endDate"
+              name="end_date"
+              class="form-control"
+              value="{{ selected_end_date }}"
+              min="{{ selected_start_date or available_start_date }}"
+              max="{{ available_end_date }}"
+            >
+          </div>
+          <div class="col-12 col-md-4">
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-funnel me-1" aria-hidden="true"></i>
+                Apply
+              </button>
+              <a href="{{ statistics_url }}" class="btn btn-outline-secondary">
+                <i class="bi bi-x-circle me-1" aria-hidden="true"></i>
+                Reset
+              </a>
+            </div>
+            <p class="text-subtle small mb-0 mt-2">
+              Available data: {{ (available_start_date ~ " → " ~ available_end_date) if available_start_date else "N/A" }}
+            </p>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Summary cards -->
     <div class="row g-3 mb-4">
       <div class="col-12 col-md-6 col-lg-3">
@@ -60,7 +106,10 @@
       <div class="col-12 col-md-6 col-lg-3">
         <div class="stat-item card border-0 rounded p-3 h-100">
           <h2 class="h5 text-uppercase text-subtle mb-1">Date range</h2>
-          <div class="fs-6 fw-bold">{{ date_range or 'N/A' }}</div>
+          <div class="fs-6 fw-bold">{{ selected_date_range or date_range or 'N/A' }}</div>
+          {% if is_date_filter_active %}
+            <div class="small text-subtle mt-1">Filtered period</div>
+          {% endif %}
         </div>
       </div>
     </div>

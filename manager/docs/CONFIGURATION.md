@@ -20,7 +20,7 @@ MANAGER_BIND_HOST=
 MANAGER_PORT=8081
 ENVIRONMENT=production
 UVICORN_WORKERS=2
-CLEANUP_TASK_FILES_DAYS=7
+CLEANUP_TASK_FILES_DAYS=60
 ```
 
 Behavior:
@@ -28,7 +28,7 @@ Behavior:
 - `MANAGER_BIND_HOST` controls the socket bind interface.
   - If unset and `MANAGER_HOST` is an IP (`127.0.0.1`, `10.x.x.x`, `::1`, etc.), manager binds on that IP.
   - If unset and `MANAGER_HOST` is a DNS hostname, manager binds on `0.0.0.0` for reliability.
-- `CLEANUP_TASK_FILES_DAYS` controls cleanup retention for completed/failed task files.
+- `CLEANUP_TASK_FILES_DAYS` controls cleanup retention for all task files (all statuses).
 - `UVICORN_WORKERS` is used in production process setups (Gunicorn/Uvicorn workers).
 
 ## Authentication
@@ -198,7 +198,7 @@ ENVIRONMENT=production
 UVICORN_WORKERS=2
 
 # Remove task files older than specified number of days
-CLEANUP_TASK_FILES_DAYS=7
+CLEANUP_TASK_FILES_DAYS=60
 
 # Logs
 # Legacy alias still supported: LOG_DIRECTORY
@@ -263,3 +263,4 @@ Boolean values accept common forms: `true/false`, `1/0`, `yes/no`, `on/off`.
 
 ## Related docs
 - Full environment variable reference: [docs/PARAMETERS.md](PARAMETERS.md)
+- Operations runbook: [docs/OPERATIONS.md](OPERATIONS.md)

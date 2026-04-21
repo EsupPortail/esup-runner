@@ -26,6 +26,10 @@ See [PARAMETERS.md](PARAMETERS.md).
 
 See [UPGRADE.md](UPGRADE.md).
 
+## Operations
+
+See [OPERATIONS.md](OPERATIONS.md).
+
 ### Quick install (Ubuntu/Debian)
 
 ```bash
@@ -194,11 +198,7 @@ Examples by task type:
   "source_url": "https://video.example.org/media/video.mp4",
   "notify_url": "https://pod.example.org/api/runner_manager_webhook/",
   "parameters": {
-    "rendition": {
-      "360": "640x360",
-      "720": "1280x720",
-      "1080": "1920x1080"
-    },
+    "rendition": "{\"360\":{\"resolution\":\"640x360\",\"video_bitrate\":\"750k\",\"audio_bitrate\":\"96k\",\"encode_mp4\":true},\"720\":{\"resolution\":\"1280x720\",\"video_bitrate\":\"2000k\",\"audio_bitrate\":\"128k\",\"encode_mp4\":true},\"1080\":{\"resolution\":\"1920x1080\",\"video_bitrate\":\"3000k\",\"audio_bitrate\":\"192k\",\"encode_mp4\":false}}",
     "video_id": "12345",
     "video_slug": "intro-to-python-2026",
     "video_title": "Intro to Python (2026)"
@@ -232,8 +232,9 @@ Examples by task type:
   "notify_url": "https://pod.example.org/api/runner_manager_webhook/",
   "parameters": {
     "language": "fr",
-    "output_formats": ["vtt", "srt", "txt"],
-    "diarization": false
+    "format": "vtt",
+    "model": "turbo",
+    "normalize": false
   }
 }
 ```
@@ -284,6 +285,11 @@ Common JSON envelope (forwarded from the client `TaskRequest`, with extra fields
 
 The `parameters` object is **task-type specific** and is interpreted by the runner implementation (the manager does not validate it).
 
+Current runner compatibility notes:
+
+- For `encoding` and `studio` tasks, nested `rendition`, `cut`, and `dressing` values should be sent as JSON strings.
+- For `transcription` tasks, supported parameters include `language`, `format` (currently `vtt`), `model`, and `normalize`.
+
 #### Example: `task_type = "encoding"`
 
 ```json
@@ -298,11 +304,7 @@ The `parameters` object is **task-type specific** and is interpreted by the runn
   "notify_url": "https://pod.example.org/api/runner_manager_webhook/",
   "completion_callback": "https://manager.example.org/task/completion",
   "parameters": {
-    "rendition": {
-      "360": "640x360",
-      "720": "1280x720",
-      "1080": "1920x1080"
-    },
+    "rendition": "{\"360\":{\"resolution\":\"640x360\",\"video_bitrate\":\"750k\",\"audio_bitrate\":\"96k\",\"encode_mp4\":true},\"720\":{\"resolution\":\"1280x720\",\"video_bitrate\":\"2000k\",\"audio_bitrate\":\"128k\",\"encode_mp4\":true},\"1080\":{\"resolution\":\"1920x1080\",\"video_bitrate\":\"3000k\",\"audio_bitrate\":\"192k\",\"encode_mp4\":false}}",
     "video_id": "12345",
     "video_slug": "intro-to-python-2026",
     "video_title": "Intro to Python (2026)"
@@ -342,8 +344,9 @@ The `parameters` object is **task-type specific** and is interpreted by the runn
   "completion_callback": "https://manager.example.org/task/completion",
   "parameters": {
     "language": "fr",
-    "output_formats": ["vtt", "srt", "txt"],
-    "diarization": false
+    "format": "vtt",
+    "model": "turbo",
+    "normalize": false
   }
 }
 ```
@@ -485,8 +488,10 @@ If the original task request has a non-empty `notify_url`, the manager POSTs:
 
 - `/admin` provides a web UI (HTTP Basic auth).
 - `/tasks` provides task browsing/search.
+- `/statistics` provides usage analytics built from `data/task_stats.csv`.
 - Video tracking metadata (`video_id`, `video_slug`, `video_title`) is visible in task details and searchable from `/tasks`.
 - `/tasks` also provides a bulk action **Restart selected tasks** for failed/timeout/warning/completed tasks.
+- Day-to-day operations runbook (service management, health checks, task/statistics maintenance, backups): [OPERATIONS.md](OPERATIONS.md).
 
 ## Diagrams
 

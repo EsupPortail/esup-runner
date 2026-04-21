@@ -224,7 +224,7 @@ def _build_rules(cfg) -> Dict[str, DirectoryRule]:
         ),
         "STORAGE_DIR": DirectoryRule(
             env_key="STORAGE_DIR",
-            path=str(getattr(cfg, "STORAGE_DIR", "/tmp/esup-runner/storage")),
+            path=str(getattr(cfg, "STORAGE_DIR", "/tmp/esup-runner")),
             min_free_gb=STORAGE_DIR_MIN_FREE_GB,
             description="Generated media workspace",
             note=storage_note,
@@ -243,7 +243,11 @@ def _build_rules(cfg) -> Dict[str, DirectoryRule]:
                 "Aggregated check for WHISPER_MODELS_DIR, HUGGINGFACE_MODELS_DIR, and UV_CACHE_DIR. "
                 f"Whisper reference='{whisper_ref}'."
             ),
-            aggregate_paths=(str(whisper_path), str(huggingface_path), str(uv_cache_path)),
+            aggregate_paths=(
+                str(whisper_path),
+                str(huggingface_path),
+                str(uv_cache_path),
+            ),
         )
     else:
         rules["HUGGINGFACE_MODELS_DIR"] = DirectoryRule(
@@ -415,7 +419,13 @@ def _print_report(statuses: Dict[str, DirectoryStatus]) -> None:
         print(f"  Purpose: {rule.description}")
         print(f"  Required free space: {rule.min_free_gb:.1f} GB")
         if (
-            key in {"STORAGE_DIR", "HUGGINGFACE_MODELS_DIR", "WHISPER_MODELS_DIR", "CACHE_DIR"}
+            key
+            in {
+                "STORAGE_DIR",
+                "HUGGINGFACE_MODELS_DIR",
+                "WHISPER_MODELS_DIR",
+                "CACHE_DIR",
+            }
             and not status.ok
         ):
             required_additional_free_gb = max(

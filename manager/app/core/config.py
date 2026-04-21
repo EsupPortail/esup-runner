@@ -270,7 +270,7 @@ class Config:
         self.UVICORN_WORKERS: int = int(os.getenv("UVICORN_WORKERS", 4))
 
         # Remove task files older than specified number of days
-        self.CLEANUP_TASK_FILES_DAYS: int = int(os.getenv("CLEANUP_TASK_FILES_DAYS", 30))
+        self.CLEANUP_TASK_FILES_DAYS: int = int(os.getenv("CLEANUP_TASK_FILES_DAYS", 60))
 
         # Directory to store log files.
         # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.

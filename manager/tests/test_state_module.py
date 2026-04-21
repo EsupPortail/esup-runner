@@ -145,6 +145,35 @@ def test_get_deleted_task_ids_handles_exception(monkeypatch):
     assert state._get_deleted_task_ids() == set()
 
 
+def test_should_keep_local_only_task_returns_false_when_cleanup_days_zero(monkeypatch):
+    task = _task("retention-zero")
+    monkeypatch.setattr(state.config, "CLEANUP_TASK_FILES_DAYS", 0)
+
+    assert state._should_keep_local_only_task_in_production(task) is False
+
+
+def test_should_keep_local_only_task_falls_back_to_updated_at(monkeypatch):
+    task = _task("fallback-updated", updated_at="2026-02-16T10:00:00")
+    task.created_at = "invalid-date"
+    monkeypatch.setattr(state.config, "CLEANUP_TASK_FILES_DAYS", 365)
+
+    assert (
+        state._should_keep_local_only_task_in_production(
+            task, now=datetime.fromisoformat("2026-02-16T10:01:00")
+        )
+        is True
+    )
+
+
+def test_should_keep_local_only_task_returns_false_when_dates_invalid(monkeypatch):
+    task = _task("invalid-dates")
+    task.created_at = "invalid-created"
+    task.updated_at = "invalid-updated"
+    monkeypatch.setattr(state.config, "CLEANUP_TASK_FILES_DAYS", 365)
+
+    assert state._should_keep_local_only_task_in_production(task) is False
+
+
 def test_merge_tasks_with_persistence_skips_local_deleted(monkeypatch):
     original_tasks = dict(state.tasks)
     state.tasks.clear()
@@ -299,6 +328,7 @@ def test_get_tasks_snapshot_production_merges_and_refreshes_cache(monkeypatch):
     persisted_only = _task("persisted-only", updated_at="2026-02-16T10:03:00")
 
     monkeypatch.setattr(state, "IS_PRODUCTION", True)
+    monkeypatch.setattr(state.config, "CLEANUP_TASK_FILES_DAYS", 365)
     monkeypatch.setattr(
         state.persistence,
         "load_tasks",
@@ -351,6 +381,33 @@ def test_get_tasks_snapshot_filters_deleted_tasks(monkeypatch):
     state.tasks.update(original_tasks)
 
 
+def test_get_tasks_snapshot_production_drops_stale_local_only_tasks(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+
+    stale_terminal = _task("stale-terminal", updated_at="2026-01-30T10:00:00")
+    stale_terminal.status = "completed"
+    stale_running = _task("stale-running", updated_at="2026-01-30T10:00:00")
+    stale_running.status = "running"
+    state.tasks["stale-terminal"] = stale_terminal
+    state.tasks["stale-running"] = stale_running
+
+    monkeypatch.setattr(state, "IS_PRODUCTION", True)
+    monkeypatch.setattr(state.config, "CLEANUP_TASK_FILES_DAYS", 7)
+    monkeypatch.setattr(state.persistence, "get_deleted_task_ids", lambda: set())
+    monkeypatch.setattr(state.persistence, "load_tasks", lambda *_, **__: {})
+
+    snapshot = state.get_tasks_snapshot()
+
+    assert "stale-terminal" not in snapshot
+    assert "stale-running" not in snapshot
+    assert "stale-terminal" not in state.tasks
+    assert "stale-running" not in state.tasks
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
 def test_save_tasks_production_merges_and_upserts(monkeypatch):
     original_tasks = dict(state.tasks)
     state.tasks.clear()
@@ -362,6 +419,7 @@ def test_save_tasks_production_merges_and_upserts(monkeypatch):
     captured = {"payload": None}
 
     monkeypatch.setattr(state, "IS_PRODUCTION", True)
+    monkeypatch.setattr(state.config, "CLEANUP_TASK_FILES_DAYS", 365)
     monkeypatch.setattr(
         state.persistence,
         "load_tasks",
@@ -395,6 +453,36 @@ def test_delete_task_removes_from_memory_when_persistence_succeeds(monkeypatch):
 
     assert state.delete_task("t1") is True
     assert "t1" not in state.tasks
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
+def test_delete_task_for_retention_cleanup_deletes_running_task(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+    state.tasks["t-running"] = _task("t-running")
+    state.tasks["t-running"].status = "running"
+
+    monkeypatch.setattr(state.persistence, "delete_task", lambda task_id: task_id == "t-running")
+
+    assert state.delete_task_for_retention_cleanup("t-running") is True
+    assert "t-running" not in state.tasks
+
+    state.tasks.clear()
+    state.tasks.update(original_tasks)
+
+
+def test_delete_task_for_retention_cleanup_returns_false_when_persistence_fails(monkeypatch):
+    original_tasks = dict(state.tasks)
+    state.tasks.clear()
+    state.tasks["t-running"] = _task("t-running")
+    state.tasks["t-running"].status = "running"
+
+    monkeypatch.setattr(state.persistence, "delete_task", lambda _task_id: False)
+
+    assert state.delete_task_for_retention_cleanup("t-running") is False
+    assert "t-running" in state.tasks
 
     state.tasks.clear()
     state.tasks.update(original_tasks)
@@ -438,3 +526,24 @@ def test_delete_task_refuses_pending_or_running(monkeypatch):
 
     state.tasks.clear()
     state.tasks.update(original_tasks)
+
+
+def test_resolve_persistence_directory_returns_absolute_path():
+    class Backend:
+        data_directory = state.persistence.data_directory
+
+    assert (
+        state._resolve_persistence_directory(Backend())
+        == state.persistence.data_directory.resolve()
+    )
+
+
+def test_resolve_persistence_directory_fallback_on_exception():
+    class FailingDirectory:
+        def resolve(self):
+            raise RuntimeError("boom")
+
+    class Backend:
+        data_directory = FailingDirectory()
+
+    assert state._resolve_persistence_directory(Backend()) is Backend.data_directory

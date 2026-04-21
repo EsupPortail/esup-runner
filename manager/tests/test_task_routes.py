@@ -105,6 +105,7 @@ def _task(task_id: str, runner_id: str, *, status: str, notify_url: str | None =
 
 
 def test_append_task_stats_csv_handles_invalid_date(task_module, tmp_path, monkeypatch):
+    monkeypatch.setattr(task_module, "_is_pytest_run", lambda: False)
     monkeypatch.setattr(task_module, "PathlibPath", lambda path="": tmp_path / path)
 
     task = Task(
@@ -138,6 +139,64 @@ def test_append_task_stats_csv_handles_invalid_date(task_module, tmp_path, monke
     assert row[1] == ""
 
 
+def test_append_task_stats_csv_skips_during_pytest(task_module, tmp_path, monkeypatch):
+    monkeypatch.setattr(task_module, "_is_pytest_run", lambda: True)
+    monkeypatch.setattr(task_module, "PathlibPath", lambda path="": tmp_path / path)
+
+    task = Task(
+        task_id="test-task-1",
+        runner_id="r1",
+        status="completed",
+        etab_name="UM",
+        app_name="pod",
+        app_version="1.0",
+        task_type="encoding",
+        source_url="https://example.com/video.mp4",
+        affiliation=None,
+        parameters={},
+        notify_url="https://example.com/notify",
+        completion_callback=None,
+        created_at="2026-02-02T00:00:00",
+        updated_at="2026-02-02T00:00:00",
+        error=None,
+        script_output=None,
+    )
+
+    task_module._append_task_stats_csv(task)
+
+    csv_path = tmp_path / "data" / "task_stats.csv"
+    assert not csv_path.exists()
+
+
+def test_append_task_stats_csv_skips_quick_manual_test_etab(task_module, tmp_path, monkeypatch):
+    monkeypatch.setattr(task_module, "_is_pytest_run", lambda: False)
+    monkeypatch.setattr(task_module, "PathlibPath", lambda path="": tmp_path / path)
+
+    task = Task(
+        task_id="manual-check-task-1",
+        runner_id="r1",
+        status="completed",
+        etab_name=" Quick manual test ",
+        app_name="check_pipeline_tasks.py",
+        app_version="0",
+        task_type="encoding",
+        source_url="https://example.com/video.mp4",
+        affiliation="manual-test",
+        parameters={},
+        notify_url="https://example.com/notify",
+        completion_callback=None,
+        created_at="2026-02-02T00:00:00",
+        updated_at="2026-02-02T00:00:00",
+        error=None,
+        script_output=None,
+    )
+
+    task_module._append_task_stats_csv(task)
+
+    csv_path = tmp_path / "data" / "task_stats.csv"
+    assert not csv_path.exists()
+
+
 def test_task_completion_appends_stats_errors_are_logged(
     client, clean_state, monkeypatch, task_module
 ):
@@ -156,11 +215,12 @@ def test_task_completion_appends_stats_errors_are_logged(
 
     # Runner/token setup
     runner_token = "runner-token"
+    test_task_id = "test-task-1"
     runners["r1"] = _runner("r1", token=runner_token)
 
     now = datetime.now().isoformat()
-    tasks["t1"] = Task(
-        task_id="t1",
+    tasks[test_task_id] = Task(
+        task_id=test_task_id,
         runner_id="r1",
         status="running",
         etab_name="UM",
@@ -186,7 +246,7 @@ def test_task_completion_appends_stats_errors_are_logged(
         resp = client.post(
             "/task/completion",
             json={
-                "task_id": "t1",
+                "task_id": test_task_id,
                 "status": "completed",
                 "error_message": None,
                 "script_output": "ok",

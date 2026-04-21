@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -75,8 +75,14 @@ def _runner(runner_id: str = "r1", token: str | None = "runner-token") -> Runner
 async def test_cleanup_old_tasks_removes_expired(monkeypatch, clean_tasks):
     old = datetime.now() - timedelta(days=3)
     tasks["old"] = _task("old", "completed", created_at=old)
+    tasks["old-running"] = _task("old-running", "running", created_at=old)
     tasks["new"] = _task("new", "completed")
     monkeypatch.setattr(config, "CLEANUP_TASK_FILES_DAYS", 1)
+    monkeypatch.setattr(
+        task_service,
+        "delete_task_for_retention_cleanup",
+        lambda task_id: tasks.pop(task_id, None) is not None,
+    )
 
     stop = asyncio.Event()
     coroutine = task_service.cleanup_old_tasks(poll_interval=0, stop_event=stop)
@@ -86,7 +92,64 @@ async def test_cleanup_old_tasks_removes_expired(monkeypatch, clean_tasks):
     await asyncio.wait_for(task, timeout=0.1)
 
     assert "old" not in tasks
+    assert "old-running" not in tasks
     assert "new" in tasks
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_tasks_handles_invalid_created_at(monkeypatch, clean_tasks):
+    tasks["bad"] = _task("bad", "completed")
+    tasks["bad"].created_at = "not-a-date"
+    monkeypatch.setattr(config, "CLEANUP_TASK_FILES_DAYS", 1)
+    monkeypatch.setattr(task_service, "delete_task_for_retention_cleanup", lambda _task_id: True)
+
+    stop = asyncio.Event()
+    coroutine = task_service.cleanup_old_tasks(poll_interval=0, stop_event=stop)
+    bg_task = asyncio.create_task(coroutine)
+    await asyncio.sleep(0)
+    stop.set()
+    await asyncio.wait_for(bg_task, timeout=0.1)
+
+    assert "bad" in tasks
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_tasks_handles_timezone_created_at(monkeypatch, clean_tasks):
+    aware_old = datetime.now(timezone.utc) - timedelta(days=3)
+    tasks["old-tz"] = _task("old-tz", "running")
+    tasks["old-tz"].created_at = aware_old.isoformat()
+    monkeypatch.setattr(config, "CLEANUP_TASK_FILES_DAYS", 1)
+    monkeypatch.setattr(
+        task_service,
+        "delete_task_for_retention_cleanup",
+        lambda task_id: tasks.pop(task_id, None) is not None,
+    )
+
+    stop = asyncio.Event()
+    coroutine = task_service.cleanup_old_tasks(poll_interval=0, stop_event=stop)
+    bg_task = asyncio.create_task(coroutine)
+    await asyncio.sleep(0)
+    stop.set()
+    await asyncio.wait_for(bg_task, timeout=0.1)
+
+    assert "old-tz" not in tasks
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_tasks_logs_when_persistent_delete_fails(monkeypatch, clean_tasks):
+    old = datetime.now() - timedelta(days=3)
+    tasks["old"] = _task("old", "running", created_at=old)
+    monkeypatch.setattr(config, "CLEANUP_TASK_FILES_DAYS", 1)
+    monkeypatch.setattr(task_service, "delete_task_for_retention_cleanup", lambda _task_id: False)
+
+    stop = asyncio.Event()
+    coroutine = task_service.cleanup_old_tasks(poll_interval=0, stop_event=stop)
+    bg_task = asyncio.create_task(coroutine)
+    await asyncio.sleep(0)
+    stop.set()
+    await asyncio.wait_for(bg_task, timeout=0.1)
+
+    assert "old" in tasks
 
 
 @pytest.mark.asyncio

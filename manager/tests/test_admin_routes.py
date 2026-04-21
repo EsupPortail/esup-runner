@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -298,6 +299,25 @@ def test_statistics_helpers_cover_branches(tmp_path, monkeypatch):
     assert counter_out[0]["label"] == "a"
     assert counter_out[0]["count"] == 2
 
+    assert statistics_routes._parse_iso_date("2026-02-01") == date(2026, 2, 1)
+    assert statistics_routes._parse_iso_date("2026-02-31") is None
+    assert statistics_routes._parse_iso_date(None) is None
+
+    rows = [
+        {"date": "2026-02-01"},
+        {"date": "2026-02-10"},
+        {"date": "invalid"},
+        {"date": ""},
+    ]
+    start_bound, end_bound = statistics_routes._available_date_bounds(rows)
+    assert start_bound == date(2026, 2, 1)
+    assert end_bound == date(2026, 2, 10)
+
+    assert statistics_routes._filter_rows_by_date_range(rows, None, None) == rows
+    assert statistics_routes._filter_rows_by_date_range(rows, date(2026, 2, 5), None) == [
+        {"date": "2026-02-10"}
+    ]
+
 
 def test_statistics_dashboard_renders_with_data(admin_client, monkeypatch, tmp_path):
     csv_dir = tmp_path / "data"
@@ -315,6 +335,39 @@ def test_statistics_dashboard_renders_with_data(admin_client, monkeypatch, tmp_p
     assert "2026-02-01 \u2192 2026-02-02" in resp.text
     assert "encode" in resp.text
     assert "/statistics/task-stats.csv" in resp.text
+
+
+def test_statistics_dashboard_filters_by_date_range(admin_client, monkeypatch, tmp_path):
+    csv_dir = tmp_path / "data"
+    csv_dir.mkdir()
+    (csv_dir / "task_stats.csv").write_text(
+        "task_id,date,task_type,etab_name\n"
+        "1,2026-02-01,encode,UM\n"
+        "2,2026-02-10,other,UA\n"
+        "3,2026-03-01,encode,UB\n"
+        "4,,encode,UC\n"
+    )
+
+    monkeypatch.setattr(statistics_routes, "Path", lambda *_a, **_k: csv_dir)
+
+    resp = admin_client.get("/statistics?start_date=2026-02-05&end_date=2026-02-28")
+    assert resp.status_code == 200
+    assert 'name="start_date"' in resp.text
+    assert 'name="end_date"' in resp.text
+    assert 'value="2026-02-05"' in resp.text
+    assert 'value="2026-02-28"' in resp.text
+    assert "2026-02-05 \u2192 2026-02-28" in resp.text
+
+    data_match = re.search(
+        r'<script id="statistics-data" type="application/json">\s*(.*?)\s*</script>',
+        resp.text,
+        re.DOTALL,
+    )
+    assert data_match is not None
+    stats_data = json.loads(data_match.group(1))
+    assert stats_data["by_date"] == [{"label": "2026-02-10", "count": 1}]
+    assert stats_data["by_type"] == [{"label": "other", "count": 1}]
+    assert stats_data["by_etab"] == [{"label": "UA", "count": 1}]
 
 
 def test_statistics_csv_download_returns_attachment(admin_client, monkeypatch, tmp_path):

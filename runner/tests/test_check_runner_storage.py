@@ -22,7 +22,7 @@ def test_resolve_whisper_min_free_gb_unknown_model():
 def test_build_rules_mentions_max_file_age_days():
     class DummyCfg:
         LOG_DIRECTORY = "/var/log/esup-runner"
-        STORAGE_DIR = "/tmp/esup-runner/storage"
+        STORAGE_DIR = "/tmp/esup-runner"
         CACHE_DIR = "/tmp/cache-root"
         WHISPER_MODEL = "turbo"
         MAX_FILE_AGE_DAYS = 3
@@ -40,7 +40,7 @@ def test_build_rules_mentions_max_file_age_days():
 def test_build_rules_keeps_unitary_checks_when_cache_paths_are_not_grouped():
     class DummyCfg:
         LOG_DIRECTORY = "/var/log/esup-runner"
-        STORAGE_DIR = "/tmp/esup-runner/storage"
+        STORAGE_DIR = "/tmp/esup-runner"
         CACHE_DIR = "/tmp/cache-root"
         WHISPER_MODELS_DIR = "/tmp/custom-whisper"
         HUGGINGFACE_MODELS_DIR = "/tmp/custom-hf"
@@ -110,7 +110,9 @@ def test_evaluate_rule_storage_dir_uses_required_minus_used(monkeypatch):
     assert status.ok is True
 
 
-def test_evaluate_rule_storage_dir_not_ok_when_required_additional_exceeds_free(monkeypatch):
+def test_evaluate_rule_storage_dir_not_ok_when_required_additional_exceeds_free(
+    monkeypatch,
+):
     rule = crs.DirectoryRule(
         env_key="STORAGE_DIR",
         path="/tmp/storage",
@@ -162,7 +164,9 @@ def test_evaluate_rule_uv_cache_missing_directory_is_ok_if_parent_writable_and_h
     )
 
     monkeypatch.setattr(
-        crs.Path, "exists", lambda self: str(self) == "/home/esup-runner/.cache/esup-runner"
+        crs.Path,
+        "exists",
+        lambda self: str(self) == "/home/esup-runner/.cache/esup-runner",
     )
     monkeypatch.setattr(crs.Path, "is_dir", lambda _self: True)
     monkeypatch.setattr(
@@ -194,7 +198,9 @@ def test_evaluate_rule_uv_cache_not_ok_when_parent_free_space_is_too_low(monkeyp
     )
 
     monkeypatch.setattr(
-        crs.Path, "exists", lambda self: str(self) == "/home/esup-runner/.cache/esup-runner"
+        crs.Path,
+        "exists",
+        lambda self: str(self) == "/home/esup-runner/.cache/esup-runner",
     )
     monkeypatch.setattr(crs.Path, "is_dir", lambda _self: True)
     monkeypatch.setattr(

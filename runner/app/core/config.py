@@ -316,7 +316,7 @@ class Config:
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
         # Workspace and storage configuration
-        self.STORAGE_DIR: str = os.getenv("STORAGE_DIR", "/tmp/esup-runner/storage")
+        self.STORAGE_DIR: str = os.getenv("STORAGE_DIR", "/tmp/esup-runner")
 
         # Maximum video size in GB for processing (0 for unlimited)
         self.MAX_VIDEO_SIZE_GB: int = int(os.getenv("MAX_VIDEO_SIZE_GB", 0))

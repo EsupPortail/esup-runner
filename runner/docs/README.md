@@ -15,6 +15,10 @@ For Docker-based installation, see [DOCKER.md](DOCKER.md).
 
 See [UPGRADE.md](UPGRADE.md).
 
+## Operations
+
+See [OPERATIONS.md](OPERATIONS.md).
+
 ### Quick install (Ubuntu/Debian)
 
 ```bash
@@ -120,8 +124,8 @@ The runner ships with three handlers (see [app/task_handlers](../app/task_handle
 
 ### Transcription (`transcription`)
 - Handler: [app/task_handlers/transcription/transcription_handler.py](../app/task_handlers/transcription/transcription_handler.py)
-- Purpose: run the FFmpeg whisper filter to generate subtitles from audio/video, then package outputs (VTT by default, SRT optional) and metadata.
-- Parameters: `language`, `format` (vtt|srt), `model` (small|medium|large|turbo), `normalize` (audio pre-normalization toggle), plus tracking metadata (`video_id`, `video_slug`, `video_title`). GPU use follows `ENCODING_TYPE`.
+- Purpose: run the FFmpeg whisper filter to generate subtitles from audio/video, then package outputs (currently WebVTT) and metadata.
+- Parameters: `language`, `format` (currently `vtt`), `model` (small|medium|large|turbo), `normalize` (audio pre-normalization toggle), plus tracking metadata (`video_id`, `video_slug`, `video_title`). GPU use follows `ENCODING_TYPE`.
 
 ## How tasks are processed
 - Each handler inherits from [app/task_handlers/base_handler.py](../app/task_handlers/base_handler.py), which manages workspaces, downloads, input validation, and metadata writing.
@@ -150,6 +154,7 @@ Legacy alias for logs is still supported: `LOG_DIRECTORY`.
 ## Additional references
 - Installation: [docs/INSTALLATION.md](INSTALLATION.md)
 - Docker installation: [docs/DOCKER.md](DOCKER.md)
+- Operations runbook: [docs/OPERATIONS.md](OPERATIONS.md)
 - FFmpeg GPU setup (entry point): [docs/FFMPEG_SETUP.md](FFMPEG_SETUP.md)
 - FFmpeg/CUDA GPU matrix: [docs/gpu/README.md](gpu/README.md)
 - Upgrading: [UPGRADE.md](UPGRADE.md)

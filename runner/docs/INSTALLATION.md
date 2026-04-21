@@ -2,6 +2,7 @@
 
 This guide describes how to install and run the **Esup-Runner Runner** service on a Debian/Ubuntu server.
 For Docker-based deployment, see [DOCKER.md](DOCKER.md).
+For day-to-day operations after installation, see [OPERATIONS.md](OPERATIONS.md).
 
 ## Version compatibility note (Runner & Manager)
 

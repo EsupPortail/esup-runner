@@ -142,3 +142,4 @@ Set `WHISPER_CHUNK_THRESHOLD_SECONDS` only if you explicitly need to override th
 
 ## Related docs
 - Full environment variable reference: [docs/PARAMETERS.md](PARAMETERS.md)
+- Operations runbook: [docs/OPERATIONS.md](OPERATIONS.md)

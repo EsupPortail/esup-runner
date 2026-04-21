@@ -18,6 +18,7 @@ Useful docs:
 - Installation: `INSTALLATION.md`
 - Configuration: `CONFIGURATION.md`
 - Parameters: `PARAMETERS.md`
+- Operations: `OPERATIONS.md`
 - Version management: `VERSION_MANAGEMENT.md`
 
 ---

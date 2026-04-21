@@ -12,7 +12,7 @@ RUNNER_BASE_NAME=my-runner
 RUNNER_TASK_TYPES=[2x(encoding,studio,transcription)]
 RUNNER_TOKEN=change-me-runner-token
 MANAGER_URL=http://127.0.0.1:8081
-STORAGE_DIR=/tmp/esup-runner/storage
+STORAGE_DIR=/tmp/esup-runner
 EXTERNAL_SCRIPT_TIMEOUT_SECONDS=18000
 LOG_DIR=/var/log/esup-runner
 LOG_LEVEL=INFO
@@ -35,7 +35,7 @@ WHISPER_LANGUAGE=auto
 - `MANAGER_URL` (default `http://localhost:8081`): Manager base URL for registration and callbacks.
 
 ## Storage and cleanup
-- `STORAGE_DIR` (default `/tmp/esup-runner/storage`): Root workspace for task data.
+- `STORAGE_DIR` (runtime default `/tmp/esup-runner`): Root workspace for task data.
 - `MAX_VIDEO_SIZE_GB` (int, default `0` = unlimited): Reject downloads above this size.
 - `MAX_FILE_AGE_DAYS` (int, default `0` = keep forever): Cleanup threshold.
 - `CLEANUP_INTERVAL_HOURS` (int, default `24`): Periodic cleanup interval.
@@ -99,3 +99,4 @@ Compatibility note:
 - Task type grouping and multi-instance details: [docs/CONFIGURATION.md](CONFIGURATION.md)
 - Transcription-specific behavior and exit codes: [docs/TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md)
 - Cut parameter specifics for encoding tasks: [docs/TYPE_ENCODING.md](TYPE_ENCODING.md)
+- Operations runbook: [docs/OPERATIONS.md](OPERATIONS.md)

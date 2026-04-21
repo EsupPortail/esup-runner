@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from filelock import FileLock, Timeout
+from filelock import BaseFileLock, FileLock, Timeout
 
 from app.models.models import Task
 
@@ -28,7 +28,7 @@ class DailyJSONPersistence:
         self.data_directory.mkdir(parents=True, exist_ok=True)
         self.lock_timeout = lock_timeout
         self._current_date: Optional[date] = None
-        self._current_lock: Optional[FileLock] = None
+        self._current_lock: Optional[BaseFileLock] = None
 
     def _get_date_suffix(self, target_date: Optional[date] = None) -> str:
         """
@@ -90,7 +90,7 @@ class DailyJSONPersistence:
         safe_task_id = self._sanitize_task_id(task_id)
         return deleted_directory / f"{safe_task_id}.json"
 
-    def _get_deleted_lock(self) -> FileLock:
+    def _get_deleted_lock(self) -> BaseFileLock:
         """Return the lock guarding deleted task tombstones."""
         deleted_directory = self._get_deleted_directory_path()
         deleted_directory.mkdir(parents=True, exist_ok=True)
@@ -109,12 +109,12 @@ class DailyJSONPersistence:
         directory = self._get_directory_path(target_date)
         return directory / ".lock"
 
-    def _get_current_lock(self) -> FileLock:
+    def _get_current_lock(self) -> BaseFileLock:
         """
         Get lock for current date. Creates new lock if date changed.
 
         Returns:
-            FileLock: Lock for current date's directory
+            BaseFileLock: Lock for current date's directory
         """
         current_date = datetime.now().date()
 

@@ -38,7 +38,7 @@ ENV_KEY_ALIASES = {
 # Keep these defaults aligned with app/core/config.py.
 DEFAULT_DIRECTORY_VALUES = {
     "LOG_DIR": "/var/log/esup-runner",
-    "STORAGE_DIR": "/tmp/esup-runner/storage",
+    "STORAGE_DIR": "/tmp/esup-runner",
     "CACHE_DIR": "/home/esup-runner/.cache/esup-runner",
 }
 

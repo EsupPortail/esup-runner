@@ -17,9 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added bitrate auto-inference when `video_bitrate`/`audio_bitrate` are omitted, including custom renditions.
 - Added targeted encoding tests for validation/inference, dynamic selection, and thumbnail size limits.
 - Added a download link for manager statistics CSV (`task_stats.csv`) with a date-stamped filename (`task_stats_YYYYMMDD.csv`) to avoid ambiguity.
+- Added a dedicated runner operations runbook (`docs/OPERATIONS.md`) covering service runbook, health/readiness checks, multi-instance validation, storage/cache maintenance, and documentation cross-links.
 
 ### Changed
 
+- Updated `STORAGE_DIR` to always default to `/tmp/esup-runner` when not explicitly set.
 - Updated task execution flow to record status transitions during `run`/`process_task`, normalize `script_output` payloads, and expose optional `error_message`/`script_output` in status responses.
 - Unified runner check-script text output (`check_ffmpeg.py`, `check_gpu.py`, `check_runner_resources.py`, `check_runner_storage.py`, `check_version.py`) to the shared `✓ INFO` / `⚠ WARNING` / `✗ ERROR` format and aligned final conclusions.
 - Moved check output formatting logic out of `scripts/` into the internal application module (`app/core/_check_output.py`).

@@ -8,7 +8,9 @@ import asyncio
 import csv
 import ipaddress
 import json
+import os
 import socket
+import sys
 import time
 import uuid
 from datetime import datetime
@@ -60,6 +62,22 @@ _MAX_BULK_DELETE_TASKS = 200
 _MAX_BULK_RESTART_TASKS = 200
 _MANIFEST_READ_ATTEMPTS = 5
 _MANIFEST_READ_DELAY_SECONDS = 0.2
+_TASK_STATS_EXCLUDED_ETAB_NAMES = {"quick manual test"}
+
+
+def _is_pytest_run() -> bool:
+    """Return True when running under pytest (tests or collection)."""
+    return (
+        os.getenv("PYTEST_CURRENT_TEST") is not None
+        or "pytest" in sys.modules
+        or any(PathlibPath(arg).name.startswith("pytest") for arg in sys.argv)
+    )
+
+
+def _is_test_task_for_stats(task: Task) -> bool:
+    """Return True when task should be excluded from task_stats.csv."""
+    etab_name = str(getattr(task, "etab_name", "") or "").strip().lower()
+    return etab_name in _TASK_STATS_EXCLUDED_ETAB_NAMES
 
 
 def _runner_auth_headers(runner: Runner, accept: str) -> Dict[str, str]:
@@ -85,6 +103,17 @@ def _runner_auth_headers(runner: Runner, accept: str) -> Dict[str, str]:
 
 def _append_task_stats_csv(task: Task) -> None:
     """Append a single task stats row to data/task_stats.csv."""
+    if _is_pytest_run():
+        logger.debug("Skipping task_stats.csv append during pytest for task %s", task.task_id)
+        return
+    if _is_test_task_for_stats(task):
+        logger.debug(
+            "Skipping task_stats.csv append for test task %s (etab_name=%s)",
+            task.task_id,
+            task.etab_name,
+        )
+        return
+
     data_dir = PathlibPath("data")
     data_dir.mkdir(parents=True, exist_ok=True)
     csv_path = data_dir / "task_stats.csv"

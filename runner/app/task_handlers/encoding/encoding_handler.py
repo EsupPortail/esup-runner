@@ -136,11 +136,13 @@ class VideoEncodingHandler(BaseTaskHandler):
             self.logger.info(f"Run external script: {script_path} with args: {args}")
 
             # Execute encoding script
-            script_result = self.run_external_script(
+            script_result = self.run_external_script_for_task(
                 script_path,
                 args,
                 timeout=config.EXTERNAL_SCRIPT_TIMEOUT_SECONDS,
+                task_id=task_id,
             )
+            script_result = self._fill_empty_streams_from_encoding_log(script_result, output_dir)
 
             # Collect results
             results = {
@@ -172,6 +174,26 @@ class VideoEncodingHandler(BaseTaskHandler):
             pass
             # Cleanup workspace after task completion
             # self.cleanup_workspace()
+
+    def _fill_empty_streams_from_encoding_log(
+        self, script_result: Dict[str, Any], output_dir: Path
+    ) -> Dict[str, Any]:
+        """Fallback to `encoding.log` when external script streams are empty."""
+        if not isinstance(script_result, dict):
+            return script_result
+
+        stdout_text = str(script_result.get("stdout") or "").strip()
+        if stdout_text:
+            return script_result
+
+        encoding_log = output_dir / "encoding.log"
+        log_tail = self._read_log_tail(encoding_log).strip()
+        if not log_tail:
+            return script_result
+
+        enriched_result = dict(script_result)
+        enriched_result["stdout"] = log_tail
+        return enriched_result
 
     def _build_script_arguments(
         self, parameters: Dict[str, Any], base_dir: str, input_file: str, work_dir: str

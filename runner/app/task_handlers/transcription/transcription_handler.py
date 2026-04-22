@@ -118,11 +118,13 @@ class TranscriptionHandler(BaseTaskHandler):
             )
 
             self.logger.info(f"Run transcription script: {script_path} with args: {args}")
-            script_result = self.run_external_script(
+            script_result = self.run_external_script_for_task(
                 script_path,
                 args,
                 timeout=config.EXTERNAL_SCRIPT_TIMEOUT_SECONDS,
+                task_id=task_id,
             )
+            script_result = self._reclassify_non_error_stderr(script_result)
 
             # Prepare results summary
             results: Dict[str, Any] = {
@@ -143,6 +145,38 @@ class TranscriptionHandler(BaseTaskHandler):
         except Exception as e:
             self.logger.error(f"Transcription task {task_id} execution failed: {e}")
             return {"success": False, "error": str(e), "task_type": self.task_type}
+
+    def _reclassify_non_error_stderr(self, script_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Move known non-error progress lines from stderr to stdout."""
+        stderr_text = str(script_result.get("stderr") or "")
+        if not stderr_text.strip():
+            return script_result
+
+        progress_lines: List[str] = []
+        error_lines: List[str] = []
+        for line in stderr_text.splitlines():
+            if line.lstrip().startswith("Loading weights:"):
+                progress_lines.append(line)
+            else:
+                error_lines.append(line)
+
+        if not progress_lines:
+            return script_result
+
+        stdout_text = str(script_result.get("stdout") or "")
+        progress_text = "\n".join(progress_lines).strip()
+
+        merged_stdout = stdout_text.rstrip()
+        if merged_stdout:
+            merged_stdout += "\n\n" + progress_text
+        else:
+            merged_stdout = progress_text
+
+        merged_stderr = "\n".join(error_lines).strip()
+        normalized_result = dict(script_result)
+        normalized_result["stdout"] = merged_stdout
+        normalized_result["stderr"] = merged_stderr
+        return normalized_result
 
     def _build_script_arguments(
         self, parameters: Dict[str, Any], base_dir: str, input_file: str, work_dir: str
@@ -184,7 +218,11 @@ class TranscriptionHandler(BaseTaskHandler):
         args.extend(["--gpu-device", str(config.GPU_HWACCEL_DEVICE)])
 
         # Normalize MP3 (optional, default false)
-        normalize = str(parameters.get("normalize", False)).lower() in ("true", "1", "yes")
+        normalize = str(parameters.get("normalize", False)).lower() in (
+            "true",
+            "1",
+            "yes",
+        )
         args.extend(["--normalize", "true" if normalize else "false"])
 
         # Debug

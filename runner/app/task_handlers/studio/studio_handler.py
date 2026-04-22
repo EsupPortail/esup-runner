@@ -60,7 +60,11 @@ class StudioEncodingHandler(BaseTaskHandler):
             base_video_name = "studio_base.mp4"
 
             studio_result, base_video_path = self._generate_base_video(
-                task_request, workspace, work_dir, base_video_name
+                task_request,
+                workspace,
+                work_dir,
+                base_video_name,
+                task_id=task_id,
             )
             if not studio_result.get("success"):
                 return studio_result
@@ -79,7 +83,13 @@ class StudioEncodingHandler(BaseTaskHandler):
             if prepare_error:
                 return prepare_error
 
-            enc_result = self._run_encoding(task_request, workspace, base_video_name, work_dir)
+            enc_result = self._run_encoding(
+                task_request,
+                workspace,
+                base_video_name,
+                work_dir,
+                task_id=task_id,
+            )
             results = self._build_results(enc_result, studio_result, output_dir, base_video_path)
 
             self.save_task_metadata(task_id, results, output_dir)
@@ -95,6 +105,8 @@ class StudioEncodingHandler(BaseTaskHandler):
         workspace: Path,
         work_dir: str,
         output_file: str,
+        *,
+        task_id: str | None = None,
     ) -> tuple[Dict[str, Any], Path]:
         studio_script = self.scripts_dir / "studio.py"
         base_video_path = workspace / work_dir / output_file
@@ -109,10 +121,11 @@ class StudioEncodingHandler(BaseTaskHandler):
         )
 
         self.logger.info(f"Run studio script: {studio_script} with args: {studio_args}")
-        studio_result = self.run_external_script(
+        studio_result = self.run_external_script_for_task(
             studio_script,
             studio_args,
             timeout=config.EXTERNAL_SCRIPT_TIMEOUT_SECONDS,
+            task_id=task_id,
         )
 
         self._log_studio_selected_mode(studio_result)
@@ -134,7 +147,13 @@ class StudioEncodingHandler(BaseTaskHandler):
             return studio_result, base_video_path
 
         retry_result = self._retry_studio_cpu(
-            studio_script, task_request, workspace, work_dir, output_file, studio_result
+            studio_script,
+            task_request,
+            workspace,
+            work_dir,
+            output_file,
+            studio_result,
+            task_id=task_id,
         )
         if retry_result:
             return retry_result, base_video_path
@@ -155,6 +174,8 @@ class StudioEncodingHandler(BaseTaskHandler):
         work_dir: str,
         output_file: str,
         studio_result: Dict[str, Any],
+        *,
+        task_id: str | None = None,
     ) -> Dict[str, Any] | None:
         forced_cpu = self._get_bool_param(task_request.parameters.get("force_cpu", False))
         if config.ENCODING_TYPE != "GPU" or forced_cpu:
@@ -170,10 +191,11 @@ class StudioEncodingHandler(BaseTaskHandler):
             parameters=retry_params,
         )
         self.logger.info(f"Studio script failed on GPU, retrying with CPU. Args: {retry_args}")
-        studio_result_retry = self.run_external_script(
+        studio_result_retry = self.run_external_script_for_task(
             studio_script,
             retry_args,
             timeout=config.EXTERNAL_SCRIPT_TIMEOUT_SECONDS,
+            task_id=task_id,
         )
 
         self._log_studio_selected_mode(studio_result_retry, context="(retry)")
@@ -281,7 +303,13 @@ class StudioEncodingHandler(BaseTaskHandler):
                 }
 
     def _run_encoding(
-        self, task_request: TaskRequest, workspace: Path, base_video_name: str, work_dir: str
+        self,
+        task_request: TaskRequest,
+        workspace: Path,
+        base_video_name: str,
+        work_dir: str,
+        *,
+        task_id: str | None = None,
     ) -> Dict[str, Any]:
         self.logger.info(
             f"Base studio video generated at: {workspace / work_dir / base_video_name}. Proceeding to encoding."
@@ -294,11 +322,37 @@ class StudioEncodingHandler(BaseTaskHandler):
             work_dir=work_dir,
         )
         self.logger.info(f"Run encoding script: {encoding_script} with args: {enc_args}")
-        return self.run_external_script(
+        enc_result = self.run_external_script_for_task(
             encoding_script,
             enc_args,
             timeout=config.EXTERNAL_SCRIPT_TIMEOUT_SECONDS,
+            task_id=task_id,
         )
+        return self._fill_empty_encoding_stream_from_log(
+            enc_result,
+            workspace / work_dir / "encoding.log",
+        )
+
+    def _fill_empty_encoding_stream_from_log(
+        self,
+        enc_result: Dict[str, Any],
+        encoding_log_path: Path,
+    ) -> Dict[str, Any]:
+        """Fallback to encoding.log when encoding stdout is empty."""
+        if not isinstance(enc_result, dict):
+            return enc_result
+
+        stdout_text = str(enc_result.get("stdout") or "").strip()
+        if stdout_text:
+            return enc_result
+
+        log_tail = self._read_log_tail(encoding_log_path).strip()
+        if not log_tail:
+            return enc_result
+
+        enriched = dict(enc_result)
+        enriched["stdout"] = log_tail
+        return enriched
 
     def _build_results(
         self,

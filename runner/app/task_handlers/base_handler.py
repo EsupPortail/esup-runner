@@ -10,7 +10,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import requests  # type: ignore[import-untyped]
 
@@ -157,8 +157,117 @@ class BaseTaskHandler(ABC):
 
         return datetime.now().isoformat()
 
+    def _build_script_command(self, script_path: Path, args: List[str]) -> List[str]:
+        """Build external script command with normalized string arguments."""
+        import sys
+
+        return [str(sys.executable), str(script_path)] + [str(arg) for arg in args]
+
+    def _register_script_process(self, task_id: str | None, process_pid: int) -> None:
+        """Persist process metadata for restart recovery."""
+        if not task_id:
+            return
+
+        try:
+            from app.core.state import set_task_metadata
+
+            set_task_metadata(task_id, process_pid=process_pid)
+        except Exception:
+            pass
+
+    def _terminate_external_process(self, process: Any) -> None:
+        """Forcefully terminate an external process started in a new session."""
+        import signal
+
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except Exception:
+            process.kill()
+
+        try:
+            process.wait(timeout=5)
+        except Exception:
+            pass
+
+    def _wait_external_process(
+        self, process: Any, timeout: int
+    ) -> tuple[Optional[int], Optional[str]]:
+        """Wait for process completion and handle timeout cleanup."""
+        import subprocess
+
+        try:
+            return process.wait(timeout=timeout), None
+        except subprocess.TimeoutExpired:
+            self._terminate_external_process(process)
+            return None, f"Script timeout after {timeout} seconds"
+
+    def _build_script_result(
+        self, returncode: int, stdout_log: Path, stderr_log: Path
+    ) -> Dict[str, Any]:
+        """Build normalized script execution result payload."""
+        stdout_text = self._read_log_tail(stdout_log)
+        stderr_text = self._read_log_tail(stderr_log)
+
+        return {
+            "success": returncode == 0,
+            "returncode": returncode,
+            "stdout": stdout_text,
+            "stderr": stderr_text,
+        }
+
+    def _run_external_script_basic(
+        self, cmd: List[str], timeout: int, env: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """Run a script without recovery metadata support (legacy-compatible path)."""
+        import subprocess
+
+        try:
+            completed = subprocess.run(
+                cmd,
+                cwd=self.workspace_dir,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                start_new_session=True,
+            )
+            return {
+                "success": completed.returncode == 0,
+                "returncode": completed.returncode,
+                "stdout": completed.stdout or "",
+                "stderr": completed.stderr or "",
+            }
+        except subprocess.TimeoutExpired:
+            return {"success": False, "error": f"Script timeout after {timeout} seconds"}
+        except Exception as e:
+            return {"success": False, "error": f"Script execution failed: {e}"}
+
+    def run_external_script_for_task(
+        self,
+        script_path: Path,
+        args: List[str],
+        timeout: int = 3600,
+        *,
+        task_id: str | None = None,
+    ) -> Dict[str, Any]:
+        """Call `run_external_script` while tolerating monkeypatched callables without `task_id`."""
+        if task_id is None:
+            return self.run_external_script(script_path, args, timeout=timeout)
+
+        try:
+            return self.run_external_script(script_path, args, timeout=timeout, task_id=task_id)
+        except TypeError as exc:
+            if "task_id" not in str(exc):
+                raise
+            return self.run_external_script(script_path, args, timeout=timeout)
+
     def run_external_script(
-        self, script_path: Path, args: List[str], timeout: int = 3600
+        self,
+        script_path: Path,
+        args: List[str],
+        timeout: int = 3600,
+        *,
+        task_id: str | None = None,
     ) -> Dict[str, Any]:
         """
         Run external Python script with timeout.
@@ -172,36 +281,63 @@ class BaseTaskHandler(ABC):
             Dict containing script execution results
         """
         import subprocess
-        import sys
 
         if not script_path.exists():
             return {"success": False, "error": f"Script not found: {script_path}"}
 
-        # Ensure every argument is a string to avoid join/subprocess type errors
-        cmd = [str(sys.executable), str(script_path)] + [str(arg) for arg in args]
+        cmd = self._build_script_command(script_path, args)
         self.logger.info(f"Executing script: {' '.join(cmd)}")
 
-        try:
-            env = self._build_execution_env()
-            result = subprocess.run(
-                cmd,
-                timeout=timeout,
-                capture_output=True,
-                text=True,
-                cwd=self.workspace_dir,
-                env=env,
-            )
+        env = self._build_execution_env()
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
 
-            return {
-                "success": result.returncode == 0,
-                "returncode": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-            }
-        except subprocess.TimeoutExpired:
-            return {"success": False, "error": f"Script timeout after {timeout} seconds"}
+        # Legacy-compatible path used by tests/patches and callers that do not
+        # need process_pid persistence for restart recovery.
+        if task_id is None:
+            return self._run_external_script_basic(cmd, timeout, env)
+
+        stdout_log = self.workspace_dir / "info_script.log"
+        stderr_log = self.workspace_dir / "error_script.log"
+
+        try:
+            with (
+                open(stdout_log, "a", encoding="utf-8") as stdout_file,
+                open(stderr_log, "a", encoding="utf-8") as stderr_file,
+            ):
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=self.workspace_dir,
+                    env=env,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    start_new_session=True,
+                )
+
+                self._register_script_process(task_id, process.pid)
+                returncode, timeout_error = self._wait_external_process(process, timeout)
+                if timeout_error is not None:
+                    return {"success": False, "error": timeout_error}
+
+            if returncode is None:
+                return {
+                    "success": False,
+                    "error": "Script terminated without return code",
+                }
+
+            return self._build_script_result(returncode, stdout_log, stderr_log)
         except Exception as e:
             return {"success": False, "error": f"Script execution failed: {e}"}
+
+    def _read_log_tail(self, file_path: Path, max_chars: int = 200000) -> str:
+        """Read a text file and keep only the tail to bound payload size."""
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return ""
+
+        if len(content) <= max_chars:
+            return content
+        return content[-max_chars:]
 
     def log_ffmpeg_build_warnings(self, *, for_webm: bool = False) -> None:
         """Log non-blocking warnings about FFmpeg build configuration.

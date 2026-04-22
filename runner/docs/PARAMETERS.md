@@ -36,6 +36,7 @@ WHISPER_LANGUAGE=auto
 
 ## Storage and cleanup
 - `STORAGE_DIR` (runtime default `/tmp/esup-runner`): Root workspace for task data.
+- `RUNNER_TASK_STATUS_FILE` (optional, default `STORAGE_DIR/runner_task_statuses.json`): Persistent JSON state used to restore in-flight tasks after runner restart (status, callback URL, process metadata). When `RUNNER_INSTANCE_ID` is set, the effective file is instance-scoped with suffix `.instance-<id>` to avoid cross-instance collisions.
 - `MAX_VIDEO_SIZE_GB` (int, default `0` = unlimited): Reject downloads above this size.
 - `MAX_FILE_AGE_DAYS` (int, default `0` = keep forever): Cleanup threshold.
 - `CLEANUP_INTERVAL_HOURS` (int, default `24`): Periodic cleanup interval.

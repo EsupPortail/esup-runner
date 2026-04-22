@@ -162,6 +162,73 @@ class Config:
     Assumes .env file has already been loaded.
     """
 
+    def _configure_runner_task_types(
+        self, runner_instances_env: Optional[str], runner_task_types_spec: str
+    ) -> None:
+        """Configure RUNNER_TASK_TYPES* attributes for grouped or legacy syntax."""
+        grouped = _parse_grouped_task_types_spec(runner_task_types_spec)
+        if grouped is None:
+            self._configure_legacy_task_types(runner_task_types_spec)
+            return
+
+        self._configure_grouped_task_types(grouped, runner_instances_env)
+
+    def _configure_grouped_task_types(
+        self, grouped: List[Set[str]], runner_instances_env: Optional[str]
+    ) -> None:
+        """Configure per-instance task types from grouped RUNNER_TASK_TYPES syntax."""
+        self.RUNNER_TASK_TYPES_BY_INSTANCE = grouped
+        computed_instances = len(self.RUNNER_TASK_TYPES_BY_INSTANCE)
+        self._warn_grouped_instances_override(runner_instances_env, computed_instances)
+        self.RUNNER_INSTANCES = computed_instances
+        self.RUNNER_TASK_TYPES = self._resolve_grouped_instance_task_types(computed_instances)
+
+    def _configure_legacy_task_types(self, runner_task_types_spec: str) -> None:
+        """Configure task types when using simple CSV RUNNER_TASK_TYPES syntax."""
+        self.RUNNER_INSTANCES = int(os.getenv("RUNNER_INSTANCES", 1))
+        task_types = _parse_task_types_csv(runner_task_types_spec)
+        self.RUNNER_TASK_TYPES = task_types
+        self.RUNNER_TASK_TYPES_BY_INSTANCE = [set(task_types) for _ in range(self.RUNNER_INSTANCES)]
+
+    def _warn_grouped_instances_override(
+        self, runner_instances_env: Optional[str], computed_instances: int
+    ) -> None:
+        """Warn when RUNNER_INSTANCES conflicts with grouped task types."""
+        if runner_instances_env is None:
+            return
+
+        try:
+            configured_instances = int(runner_instances_env)
+        except ValueError:
+            warnings.warn(
+                "Invalid RUNNER_INSTANCES value ignored because RUNNER_TASK_TYPES uses grouped syntax."
+            )
+            return
+
+        if configured_instances != computed_instances:
+            warnings.warn(
+                "RUNNER_INSTANCES is ignored because RUNNER_TASK_TYPES uses grouped syntax "
+                f"(computed instances={computed_instances}, configured RUNNER_INSTANCES={configured_instances})."
+            )
+
+    def _resolve_grouped_instance_task_types(self, computed_instances: int) -> Set[str]:
+        """Resolve current instance task types under grouped syntax."""
+        instance_id_env = os.getenv("RUNNER_INSTANCE_ID")
+        if instance_id_env is None:
+            # In the launcher/main process (no instance id), expose the union.
+            union: Set[str] = set()
+            for types in self.RUNNER_TASK_TYPES_BY_INSTANCE:
+                union |= set(types)
+            return union
+
+        instance_id = int(instance_id_env)
+        if not (0 <= instance_id < computed_instances):
+            raise ValueError(
+                f"RUNNER_INSTANCE_ID={instance_id} out of range for grouped RUNNER_TASK_TYPES (instances={computed_instances})"
+            )
+
+        return set(self.RUNNER_TASK_TYPES_BY_INSTANCE[instance_id])
+
     def __init__(self):
         """Initialize configuration values."""
 
@@ -189,48 +256,7 @@ class Config:
         #            => all instances handle the same set.
         # - Grouped:  RUNNER_TASK_TYPES=[2x(encoding,studio,transcription),1x(encoding,studio),1x(transcription)]
         #            => total instances is derived from the sum of the multipliers.
-        grouped = _parse_grouped_task_types_spec(runner_task_types_spec)
-        if grouped is not None:
-            self.RUNNER_TASK_TYPES_BY_INSTANCE: List[Set[str]] = grouped
-            computed_instances = len(self.RUNNER_TASK_TYPES_BY_INSTANCE)
-            if runner_instances_env is not None:
-                try:
-                    configured_instances = int(runner_instances_env)
-                    if configured_instances != computed_instances:
-                        warnings.warn(
-                            "RUNNER_INSTANCES is ignored because RUNNER_TASK_TYPES uses grouped syntax "
-                            f"(computed instances={computed_instances}, configured RUNNER_INSTANCES={configured_instances})."
-                        )
-                except ValueError:
-                    warnings.warn(
-                        "Invalid RUNNER_INSTANCES value ignored because RUNNER_TASK_TYPES uses grouped syntax."
-                    )
-
-            self.RUNNER_INSTANCES = computed_instances
-
-            instance_id_env = os.getenv("RUNNER_INSTANCE_ID")
-            if instance_id_env is None:
-                # In the launcher/main process (no instance id), expose the union.
-                union: Set[str] = set()
-                for types in self.RUNNER_TASK_TYPES_BY_INSTANCE:
-                    union |= set(types)
-                self.RUNNER_TASK_TYPES = union
-            else:
-                instance_id = int(instance_id_env)
-                if not (0 <= instance_id < computed_instances):
-                    raise ValueError(
-                        f"RUNNER_INSTANCE_ID={instance_id} out of range for grouped RUNNER_TASK_TYPES (instances={computed_instances})"
-                    )
-                self.RUNNER_TASK_TYPES = set(self.RUNNER_TASK_TYPES_BY_INSTANCE[instance_id])
-
-        else:
-            # Legacy behavior: same task types for all instances.
-            self.RUNNER_INSTANCES = int(os.getenv("RUNNER_INSTANCES", 1))
-            task_types = _parse_task_types_csv(runner_task_types_spec)
-            self.RUNNER_TASK_TYPES = task_types
-            self.RUNNER_TASK_TYPES_BY_INSTANCE = [
-                set(task_types) for _ in range(self.RUNNER_INSTANCES)
-            ]
+        self._configure_runner_task_types(runner_instances_env, runner_task_types_spec)
 
         # Monitor instances and automatically restart failed ones
         self.RUNNER_MONITORING: bool = os.getenv("RUNNER_MONITORING", "False").lower() in (
@@ -318,6 +344,13 @@ class Config:
         # Workspace and storage configuration
         self.STORAGE_DIR: str = os.getenv("STORAGE_DIR", "/tmp/esup-runner")
 
+        # Persistent runner-side task status file (used for restart recovery)
+        configured_task_status_file = (os.getenv("RUNNER_TASK_STATUS_FILE") or "").strip()
+        if configured_task_status_file:
+            self.RUNNER_TASK_STATUS_FILE: str = str(Path(configured_task_status_file))
+        else:
+            self.RUNNER_TASK_STATUS_FILE = str(Path(self.STORAGE_DIR) / "runner_task_statuses.json")
+
         # Maximum video size in GB for processing (0 for unlimited)
         self.MAX_VIDEO_SIZE_GB: int = int(os.getenv("MAX_VIDEO_SIZE_GB", 0))
 
@@ -362,9 +395,7 @@ class Config:
         # Logical whisper model (small|medium|large|turbo)
         self.WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "small").lower()
         # Shared cache root for transcription models and uv cache.
-        cache_dir = Path(
-            os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
-        ).expanduser()
+        cache_dir = Path(os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner"))
         self.CACHE_DIR: str = str(cache_dir)
         # Directory where whisper models (.gguf/.bin) are stored
         self.WHISPER_MODELS_DIR: str = os.getenv(

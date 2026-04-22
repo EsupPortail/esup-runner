@@ -10,6 +10,7 @@ ExecStart=/usr/bin/env uv run esup-runner-runner
 Restart=always
 EnvironmentFile=/opt/esup-runner/runner/.env
 ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
 
 
 [Install]

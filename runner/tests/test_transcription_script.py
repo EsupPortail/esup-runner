@@ -116,6 +116,65 @@ def test_run_transcription_uses_auto_source_language_for_requested_target_langua
     assert captured["language"] == "auto"
 
 
+def test_run_whisper_cli_reports_resolution_hint_when_binary_is_missing(
+    monkeypatch, tmp_path, capsys
+):
+    tr = _load_transcription_script_module()
+
+    def fake_subprocess_run(*_args, **_kwargs):
+        raise FileNotFoundError(2, "No such file or directory", "whisper")
+
+    monkeypatch.setattr(tr.subprocess, "run", fake_subprocess_run)
+
+    rc, detected_language = tr.run_whisper_cli(
+        audio_path=tmp_path / "audio.mp3",
+        out_dir=tmp_path / "output",
+        language="auto",
+        model="small",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        debug=False,
+    )
+
+    captured = capsys.readouterr().out
+    assert rc == 127
+    assert detected_language is None
+    assert "Unable to run whisper CLI: command not found in PATH: whisper" in captured
+    assert "make sync-transcription-cpu" in captured
+
+
+def test_runner_project_dir_returns_fallback_on_resolution_error(monkeypatch):
+    tr = _load_transcription_script_module()
+
+    class BrokenPath:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def resolve(self):
+            raise RuntimeError("path resolution failed")
+
+    monkeypatch.setattr(tr, "Path", BrokenPath)
+
+    assert tr._runner_project_dir() == "<runner-dir>"
+
+
+def test_dependency_resolution_hint_prints_missing_python_module(monkeypatch, capsys):
+    tr = _load_transcription_script_module()
+    monkeypatch.setattr(tr, "_runner_project_dir", lambda: "/opt/esup-runner/runner")
+
+    tr._print_transcription_dependency_resolution_hint(
+        use_gpu=True,
+        missing_python_module="torch",
+    )
+
+    captured = capsys.readouterr().out
+    assert "- Missing Python module: torch" in captured
+    assert "make sync-transcription-gpu" in captured
+
+
 def test_plan_audio_chunks_splits_long_audio():
     tr = _load_transcription_script_module()
 

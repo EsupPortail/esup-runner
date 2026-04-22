@@ -149,6 +149,30 @@ async def test_register_with_manager_exception(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_register_with_manager_sends_busy_availability_when_runner_unavailable(monkeypatch):
+    captured = {}
+
+    class CaptureAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **kwargs):
+            captured["json"] = kwargs.get("json", {})
+            return FakeResponse(200)
+
+    monkeypatch.setattr(manager_service, "is_available", lambda: False)
+    monkeypatch.setattr(manager_service.httpx, "AsyncClient", lambda *_, **__: CaptureAsyncClient())
+
+    ok = await manager_service.register_with_manager()
+
+    assert ok is True
+    assert captured["json"]["availability"] == "busy"
+
+
+@pytest.mark.asyncio
 async def test_check_manager_health_exception(monkeypatch):
     async def _responder():
         raise RuntimeError("boom")

@@ -11,7 +11,13 @@ import httpx
 from app.__version__ import __version__
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
-from app.core.state import get_runner_id, get_runner_instance_url, is_registered, set_registered
+from app.core.state import (
+    get_runner_id,
+    get_runner_instance_url,
+    is_available,
+    is_registered,
+    set_registered,
+)
 
 logger = setup_default_logging()
 
@@ -36,6 +42,7 @@ async def register_with_manager():
                     "id": get_runner_id(),
                     "url": get_runner_instance_url(),
                     "task_types": list(config.RUNNER_TASK_TYPES),
+                    "availability": "available" if is_available() else "busy",
                 },
                 headers={
                     "Accept": "application/json",

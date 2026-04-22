@@ -285,6 +285,72 @@ def test_encoding_handler_execute_task_error_paths(monkeypatch, tmp_path):
     assert res_exception["error"] == "boom"
 
 
+def test_encoding_handler_fills_stdout_from_encoding_log_when_streams_are_empty(
+    monkeypatch, tmp_path
+):
+    handler = VideoEncodingHandler()
+    task_id = "encoding-log-fallback"
+
+    monkeypatch.setattr(
+        "app.task_handlers.encoding.encoding_handler.storage_manager.base_path", str(tmp_path)
+    )
+
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    (scripts_dir / "encoding.py").write_text("print('unused')\n", encoding="utf-8")
+    handler.scripts_dir = scripts_dir
+
+    workspace = tmp_path / task_id
+    output_dir = workspace / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "encoding.log").write_text(
+        "Encoding file: sample.mp4\n- End of encoding\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        handler,
+        "download_source_file",
+        lambda source_url, dest_file: {"success": True, "file_path": dest_file},
+    )
+    monkeypatch.setattr(
+        handler,
+        "run_external_script_for_task",
+        lambda *args, **kwargs: {"success": True, "returncode": 0, "stdout": "", "stderr": ""},
+    )
+
+    request = _task_request("encoding", "https://example.org/sample.mp4", {})
+    result = handler.execute_task(task_id, request)
+
+    assert result["success"] is True
+    assert "Encoding file: sample.mp4" in result["script_output"]["stdout"]
+    assert result["script_output"]["stderr"] == ""
+
+
+def test_encoding_handler_fill_empty_streams_from_encoding_log_fallback_branches(tmp_path):
+    handler = VideoEncodingHandler()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    non_dict_result = "not-a-dict"
+    assert (
+        handler._fill_empty_streams_from_encoding_log(non_dict_result, output_dir)
+        == non_dict_result
+    )
+
+    already_has_stdout = {"success": True, "stdout": "already-captured", "stderr": ""}
+    assert (
+        handler._fill_empty_streams_from_encoding_log(already_has_stdout, output_dir)
+        == already_has_stdout
+    )
+
+    empty_streams_result = {"success": True, "stdout": "", "stderr": ""}
+    assert (
+        handler._fill_empty_streams_from_encoding_log(empty_streams_result, output_dir)
+        == empty_streams_result
+    )
+
+
 def test_encoding_handler_build_script_arguments_gpu_and_error_extractors(monkeypatch):
     handler = VideoEncodingHandler()
     monkeypatch.setattr(config, "ENCODING_TYPE", "GPU")
@@ -362,6 +428,60 @@ def test_transcription_handler_execute_task_error_paths(monkeypatch, tmp_path):
     assert res_exception["error"] == "boom"
 
     assert TranscriptionHandler.get_description() == "Transcription handler"
+
+
+def test_transcription_handler_reclassifies_loading_weights_from_stderr():
+    handler = TranscriptionHandler()
+
+    script_result = {
+        "success": True,
+        "returncode": 0,
+        "stdout": "VTT written to: /tmp/output/subtitles.vtt",
+        "stderr": (
+            "Loading weights:   0%|          | 0/256 [00:00<?, ?it/s]\n"
+            "Loading weights: 100%|##########| 256/256 [00:00<00:00, 682.86it/s]\n"
+            "real warning line"
+        ),
+    }
+
+    normalized = handler._reclassify_non_error_stderr(script_result)
+
+    assert "VTT written to" in normalized["stdout"]
+    assert "Loading weights:" in normalized["stdout"]
+    assert "real warning line" not in normalized["stdout"]
+    assert "real warning line" in normalized["stderr"]
+    assert "Loading weights:" not in normalized["stderr"]
+
+
+def test_transcription_handler_reclassify_keeps_non_loading_stderr_unchanged():
+    handler = TranscriptionHandler()
+    script_result = {
+        "success": True,
+        "returncode": 0,
+        "stdout": "VTT written to: /tmp/output/subtitles.vtt",
+        "stderr": "real warning line",
+    }
+
+    normalized = handler._reclassify_non_error_stderr(script_result)
+
+    assert normalized is script_result
+    assert normalized["stdout"] == "VTT written to: /tmp/output/subtitles.vtt"
+    assert normalized["stderr"] == "real warning line"
+
+
+def test_transcription_handler_reclassify_moves_loading_weights_when_stdout_empty():
+    handler = TranscriptionHandler()
+    script_result = {
+        "success": True,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "Loading weights: 100%|##########| 256/256 [00:00<00:00, 682.86it/s]",
+    }
+
+    normalized = handler._reclassify_non_error_stderr(script_result)
+
+    assert normalized["stdout"].startswith("Loading weights:")
+    assert normalized["stderr"] == ""
 
 
 def test_studio_handler_execute_task_error_paths(monkeypatch, tmp_path):
@@ -573,5 +693,30 @@ def test_studio_handler_helpers_cover_remaining_branches(monkeypatch, tmp_path):
     assert "--hwaccel-device" in enc_args
     assert "--cuda-visible-devices" in enc_args
     assert "--custom_flag" in enc_args
+
+    encoding_log = tmp_path / "encoding-stage.log"
+    encoding_log.write_text("encoding stage output", encoding="utf-8")
+    enriched = handler._fill_empty_encoding_stream_from_log(
+        {"success": True, "stdout": "", "stderr": ""},
+        encoding_log,
+    )
+    assert enriched["stdout"] == "encoding stage output"
+
+    untouched = handler._fill_empty_encoding_stream_from_log(
+        {"success": True, "stdout": "already", "stderr": ""},
+        encoding_log,
+    )
+    assert untouched["stdout"] == "already"
+
+    passthrough = handler._fill_empty_encoding_stream_from_log("not-a-dict", encoding_log)
+    assert passthrough == "not-a-dict"
+
+    empty_log = tmp_path / "encoding-empty.log"
+    empty_log.write_text("   ", encoding="utf-8")
+    unchanged = handler._fill_empty_encoding_stream_from_log(
+        {"success": True, "stdout": "", "stderr": ""},
+        empty_log,
+    )
+    assert unchanged["stdout"] == ""
 
     assert StudioEncodingHandler.get_description() == "Studio encoding handler"

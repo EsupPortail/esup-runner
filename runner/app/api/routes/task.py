@@ -6,6 +6,7 @@ Handles task execution, status tracking, and result streaming endpoints.
 
 import asyncio
 import json
+import os
 import re
 import shutil
 from pathlib import Path
@@ -19,10 +20,13 @@ from app.core.auth import get_current_manager
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
 from app.core.state import (
+    get_runner_id,
+    get_runner_state,
     get_task_status,
     is_available,
     is_registered,
     set_available,
+    set_task_metadata,
     set_task_status,
 )
 from app.managers.storage_manager import storage_manager
@@ -38,6 +42,10 @@ router = APIRouter(prefix="/task", tags=["Task"])
 
 _TASK_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _RESULT_PATH_PART_RE = re.compile(r"^[A-Za-z0-9._ -]+$")
+_RECOVERY_MONITOR_INTERVAL_SECONDS = 10
+_MAX_RECOVERY_LOG_CHARS = 100000
+_RECOVERY_AUTO_RESTART_MAX_ATTEMPTS = 1
+_RECOVERY_MONITORS: dict[str, asyncio.Task] = {}
 
 # ======================================================
 # Utility Functions
@@ -128,12 +136,56 @@ def _derive_failure_status(error_message: str) -> str:
     return "failed"
 
 
+def _collect_script_stream_chunks(
+    script_output: object,
+    *,
+    context: Optional[str] = None,
+) -> list[str]:
+    """Collect `[info_script.log]` / `[error_script.log]`-style chunks from nested payloads."""
+    if isinstance(script_output, dict):
+        chunks: list[str] = []
+
+        has_stream_keys = "stdout" in script_output or "stderr" in script_output
+        if has_stream_keys:
+            label_prefix = f"{context}/" if context else ""
+            stdout_text = str(script_output.get("stdout") or "").strip()
+            stderr_text = str(script_output.get("stderr") or "").strip()
+            if stdout_text:
+                chunks.append(f"[{label_prefix}info_script.log]\n{stdout_text}")
+            if stderr_text:
+                chunks.append(f"[{label_prefix}error_script.log]\n{stderr_text}")
+
+        for key, value in script_output.items():
+            if key in {"stdout", "stderr"}:
+                continue
+            key_text = str(key).strip()
+            if not key_text:
+                continue
+            child_context = key_text if context is None else f"{context}.{key_text}"
+            chunks.extend(_collect_script_stream_chunks(value, context=child_context))
+        return chunks
+
+    if isinstance(script_output, list):
+        list_chunks: list[str] = []
+        for index, value in enumerate(script_output):
+            child_context = str(index) if context is None else f"{context}[{index}]"
+            list_chunks.extend(_collect_script_stream_chunks(value, context=child_context))
+        return list_chunks
+
+    return []
+
+
 def _normalize_script_output(script_output: object) -> Optional[str]:
     """Normalize script output into a serializable string for status payloads."""
     if script_output is None:
         return None
     if isinstance(script_output, str):
         return script_output
+
+    stream_chunks = _collect_script_stream_chunks(script_output)
+    if stream_chunks:
+        return "\n\n".join(stream_chunks)
+
     try:
         return json.dumps(script_output, indent=2, ensure_ascii=False)
     except (TypeError, ValueError):
@@ -212,12 +264,567 @@ def _resolve_legacy_manifest_if_exists(task_id: str) -> Path | None:
     return resolved
 
 
+def _read_text_tail(file_path: Path, max_chars: int = _MAX_RECOVERY_LOG_CHARS) -> str:
+    """Read a text file and keep only the tail to cap response size."""
+    try:
+        content = file_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+    if len(content) <= max_chars:
+        return content
+    return content[-max_chars:]
+
+
+def _parse_process_pid(payload: dict) -> int | None:
+    """Extract persisted process PID from task payload."""
+    raw_pid = payload.get("process_pid")
+    if raw_pid is None:
+        return None
+    try:
+        pid = int(raw_pid)
+    except (TypeError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _is_process_alive(pid: int) -> bool:
+    """Return True when the process currently exists."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _collect_recovery_script_output(task_id: str, payload: dict) -> Optional[str]:
+    """Collect script stdout/stderr logs for recovery diagnostics."""
+    candidate_paths: list[Path] = []
+
+    task_root = _resolve_task_root_if_exists(task_id)
+    if task_root is not None:
+        candidate_paths.extend(
+            [
+                task_root / "info_script.log",
+                task_root / "error_script.log",
+            ]
+        )
+
+    # Keep compatibility with previously persisted absolute paths.
+    for key in ("script_stdout_path", "script_stderr_path"):
+        raw_path = payload.get(key)
+        if not isinstance(raw_path, str):
+            continue
+        normalized_path = raw_path.strip()
+        if not normalized_path:
+            continue
+        candidate = Path(normalized_path)
+        if candidate not in candidate_paths:
+            candidate_paths.append(candidate)
+
+    chunks: list[str] = []
+    for path in candidate_paths:
+        text = _read_text_tail(path)
+        if not text.strip():
+            continue
+        chunks.append(f"[{path.name}]\n{text.strip()}")
+
+    if not chunks:
+        return None
+
+    merged = "\n\n".join(chunks)
+    if len(merged) <= _MAX_RECOVERY_LOG_CHARS:
+        return merged
+    return merged[-_MAX_RECOVERY_LOG_CHARS:]
+
+
+def _resolve_task_output_dir_if_exists(task_id: str) -> Path | None:
+    """Resolve task output directory for recovery workflows."""
+    task_root = _resolve_task_root_if_exists(task_id)
+    if task_root is None:
+        return None
+
+    output_candidate = _find_direct_child_entry(task_root, "output")
+    if output_candidate is None:
+        return None
+
+    try:
+        output_dir = _resolve_within_base(output_candidate, task_root)
+    except HTTPException:
+        return None
+
+    if not output_dir.is_dir():
+        return None
+    return output_dir
+
+
+def _has_useful_output_files(output_dir: Path) -> bool:
+    """Return True when output dir includes at least one deliverable file."""
+    ignored_names = {
+        "task_metadata.json",
+        "info_video.json",
+        "encoding.log",
+    }
+    for path in output_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.name.lower() in ignored_names:
+            continue
+        return True
+    return False
+
+
+def _read_recovery_task_results(task_id: str) -> Optional[dict]:
+    """Read `results` from task metadata when present."""
+    output_dir = _resolve_task_output_dir_if_exists(task_id)
+    if output_dir is None:
+        return None
+
+    metadata_candidate = _find_direct_child_entry(output_dir, "task_metadata.json")
+    if metadata_candidate is None:
+        return None
+
+    try:
+        metadata_path = _resolve_within_base(metadata_candidate, output_dir)
+    except HTTPException:
+        return None
+
+    if not metadata_path.is_file():
+        return None
+
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    raw_results = payload.get("results")
+    if not isinstance(raw_results, dict):
+        return None
+
+    return dict(raw_results)
+
+
+def _ensure_recovery_manifest(task_id: str) -> bool:
+    """Ensure canonical manifest exists using current task output directory."""
+    try:
+        _resolve_task_manifest_path(task_id)
+        return True
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            return False
+
+    output_dir = _resolve_task_output_dir_if_exists(task_id)
+    if output_dir is None:
+        return False
+
+    if not _has_useful_output_files(output_dir):
+        return False
+
+    output_files = [
+        str(path.relative_to(output_dir)) for path in output_dir.rglob("*") if path.is_file()
+    ]
+    manifest = {
+        "task_id": task_id,
+        "files": output_files,
+    }
+    manifest_bytes = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+    manifest_path = output_dir.parent / "manifest.json"
+    temp_manifest_path = manifest_path.with_name(".manifest.json.tmp")
+
+    try:
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(temp_manifest_path, "wb") as manifest_file:
+            manifest_file.write(manifest_bytes)
+            manifest_file.flush()
+            os.fsync(manifest_file.fileno())
+        temp_manifest_path.replace(manifest_path)
+    except Exception:
+        return False
+
+    return True
+
+
+def _infer_workspace_terminal_status(
+    task_id: str, payload: dict
+) -> Optional[tuple[str, Optional[str], Optional[str]]]:
+    """Infer terminal status from workspace artifacts after a restart."""
+    raw_results = _read_recovery_task_results(task_id)
+    script_output = (
+        _normalize_script_output(raw_results.get("script_output"))
+        if isinstance(raw_results, dict)
+        else None
+    )
+    if not script_output:
+        script_output = _collect_recovery_script_output(task_id, payload)
+
+    if isinstance(raw_results, dict) and raw_results.get("success") is True:
+        if not _ensure_recovery_manifest(task_id):
+            return None
+        return ("completed", None, script_output)
+
+    if isinstance(raw_results, dict):
+        error_message = str(
+            raw_results.get("error")
+            or payload.get("error_message")
+            or "Task failed before runner restart"
+        )
+        failure_status = _derive_failure_status(error_message)
+        return (failure_status, error_message, script_output)
+
+    if not _ensure_recovery_manifest(task_id):
+        return None
+
+    return ("completed", None, script_output)
+
+
+def _refresh_availability_from_recovered_state() -> None:
+    """Set runner availability from currently tracked running tasks."""
+    has_running_tasks = bool(_get_owned_task_statuses({"running"}))
+    set_available(not has_running_tasks)
+
+
+def initialize_startup_availability() -> None:
+    """Set startup availability before manager registration.
+
+    When persisted recoverable tasks exist for this runner instance, mark the
+    runner unavailable immediately so the manager does not dispatch new tasks
+    before reconciliation/restart flows complete.
+    """
+    if _get_owned_task_statuses({"running", "failed", "timeout"}):
+        set_available(False)
+
+
+def _get_owned_task_statuses(statuses: set[str]) -> dict[str, dict]:
+    """Return task statuses owned by this runner for requested status values."""
+    current_runner_id = str(get_runner_id() or "").strip()
+    instance_scoped_state = bool((os.getenv("RUNNER_INSTANCE_ID") or "").strip())
+    runner_state = get_runner_state()
+    task_statuses = runner_state.get("task_statuses", {})
+
+    if not isinstance(task_statuses, dict):
+        return {}
+
+    owned_statuses: dict[str, dict] = {}
+    for task_id, payload in task_statuses.items():
+        if not isinstance(payload, dict):
+            continue
+
+        status = str(payload.get("status") or "").strip().lower()
+        if status not in statuses:
+            continue
+
+        payload_runner_id = str(payload.get("runner_id") or "").strip()
+        # When task-status storage is scoped per instance, runner_id can drift across
+        # restarts (host/port/env changes) without implying a foreign owner.
+        if (
+            payload_runner_id
+            and current_runner_id
+            and payload_runner_id != current_runner_id
+            and not instance_scoped_state
+        ):
+            continue
+
+        normalized_task_id = str(task_id).strip()
+        if not normalized_task_id:
+            continue
+        owned_statuses[normalized_task_id] = dict(payload)
+
+    return owned_statuses
+
+
+def _get_recovery_restart_attempts(payload: dict) -> int:
+    """Return normalized startup auto-restart attempts for one task payload."""
+    raw_attempts = payload.get("recovery_restart_attempts", 0)
+    try:
+        attempts = int(raw_attempts)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, attempts)
+
+
+def _load_recovery_task_request(task_id: str, payload: dict) -> Optional[TaskRequest]:
+    """Load persisted TaskRequest payload used for startup task auto-restart."""
+    raw_task_request = payload.get("task_request")
+
+    if isinstance(raw_task_request, str):
+        try:
+            raw_task_request = json.loads(raw_task_request)
+        except Exception:
+            return None
+
+    if not isinstance(raw_task_request, dict):
+        return None
+
+    task_request_payload = dict(raw_task_request)
+    task_request_payload["task_id"] = task_id
+
+    completion_callback = payload.get("completion_callback")
+    if (
+        isinstance(completion_callback, str)
+        and completion_callback.strip()
+        and not task_request_payload.get("completion_callback")
+    ):
+        task_request_payload["completion_callback"] = completion_callback
+
+    try:
+        return TaskRequest.model_validate(task_request_payload)
+    except Exception:
+        return None
+
+
+def _schedule_failed_task_restart(task_id: str, payload: dict) -> bool:
+    """Schedule automatic restart of one failed task after startup recovery."""
+    restart_attempts = _get_recovery_restart_attempts(payload)
+    if restart_attempts >= _RECOVERY_AUTO_RESTART_MAX_ATTEMPTS:
+        logger.warning(
+            "Skipping automatic restart for task %s: max attempts reached (%s)",
+            task_id,
+            _RECOVERY_AUTO_RESTART_MAX_ATTEMPTS,
+        )
+        return False
+
+    task_request = _load_recovery_task_request(task_id, payload)
+    if task_request is None:
+        logger.warning(
+            "Skipping automatic restart for task %s: missing or invalid persisted task_request",
+            task_id,
+        )
+        return False
+
+    set_task_metadata(
+        task_id,
+        runner_id=get_runner_id(),
+        completion_callback=task_request.completion_callback,
+        task_request=task_request.model_dump(mode="json"),
+        recovery_restart_attempts=restart_attempts + 1,
+        error_message=None,
+    )
+    set_task_status(task_id, "running")
+    asyncio.create_task(process_task(task_id, task_request))
+
+    logger.info(
+        "Scheduled automatic restart for task %s after startup recovery (attempt %s/%s)",
+        task_id,
+        restart_attempts + 1,
+        _RECOVERY_AUTO_RESTART_MAX_ATTEMPTS,
+    )
+    return True
+
+
+async def _finalize_recovered_task(
+    task_id: str,
+    payload: dict,
+    *,
+    status: str,
+    error_message: Optional[str] = None,
+    script_output: Optional[str] = None,
+) -> None:
+    """Persist terminal status and re-notify manager callback when possible."""
+    set_task_status(
+        task_id,
+        status,
+        error_message=error_message,
+        script_output=script_output,
+    )
+
+    completion_callback = payload.get("completion_callback")
+    if isinstance(completion_callback, str) and completion_callback.strip():
+        await notify_completion(
+            completion_callback,
+            task_id,
+            status,
+            error_message,
+            script_output,
+        )
+
+
+async def _reconcile_recovered_task(task_id: str, payload: dict) -> str:
+    """Reconcile one previously running task after a runner restart."""
+    try:
+        _resolve_task_manifest_path(task_id)
+        script_output = _collect_recovery_script_output(task_id, payload)
+        await _finalize_recovered_task(
+            task_id,
+            payload,
+            status="completed",
+            script_output=script_output,
+        )
+        return "completed"
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+
+    pid = _parse_process_pid(payload)
+    if pid is not None and _is_process_alive(pid):
+        set_task_status(task_id, "running")
+        return "running"
+
+    workspace_terminal_status = _infer_workspace_terminal_status(task_id, payload)
+    if workspace_terminal_status is not None:
+        status, error_message, script_output = workspace_terminal_status
+        await _finalize_recovered_task(
+            task_id,
+            payload,
+            status=status,
+            error_message=error_message,
+            script_output=script_output,
+        )
+        return status
+
+    script_output = _collect_recovery_script_output(task_id, payload)
+    error_message = str(payload.get("error_message") or "Task process is no longer running")
+    failure_status = _derive_failure_status(error_message)
+    await _finalize_recovered_task(
+        task_id,
+        payload,
+        status=failure_status,
+        error_message=error_message,
+        script_output=script_output,
+    )
+    return failure_status
+
+
+async def _monitor_recovered_task(task_id: str) -> None:
+    """Background monitor for a recovered in-flight task."""
+    try:
+        while True:
+            await asyncio.sleep(_RECOVERY_MONITOR_INTERVAL_SECONDS)
+
+            payload = get_task_status(task_id)
+            if not isinstance(payload, dict):
+                return
+            if payload.get("status") != "running":
+                return
+
+            reconciled_status = await _reconcile_recovered_task(task_id, payload)
+            if reconciled_status != "running":
+                _refresh_availability_from_recovered_state()
+                return
+    except Exception as exc:
+        logger.error("Recovered task monitor failed for %s: %s", task_id, exc, exc_info=True)
+    finally:
+        _RECOVERY_MONITORS.pop(task_id, None)
+
+
+def _schedule_recovery_monitor(task_id: str) -> None:
+    """Schedule background monitoring for one recovered running task."""
+    existing = _RECOVERY_MONITORS.get(task_id)
+    if existing is not None and not existing.done():
+        return
+    _RECOVERY_MONITORS[task_id] = asyncio.create_task(_monitor_recovered_task(task_id))
+
+
+async def _recover_owned_running_tasks(running_tasks: dict[str, dict]) -> None:
+    """Recover running tasks tracked for the current runner instance."""
+    if not running_tasks:
+        return
+
+    logger.info("Recovering %s running task(s) after restart", len(running_tasks))
+
+    for task_id, payload in running_tasks.items():
+        try:
+            status = await _reconcile_recovered_task(task_id, payload)
+        except Exception as exc:
+            logger.error("Failed to recover task %s: %s", task_id, exc, exc_info=True)
+            continue
+
+        if status == "running":
+            _schedule_recovery_monitor(task_id)
+
+
+async def _recover_failed_task(task_id: str, payload: dict) -> bool:
+    """Recover one failed task. Returns True when a restart is scheduled."""
+    workspace_terminal_status = _infer_workspace_terminal_status(task_id, payload)
+    if workspace_terminal_status is not None:
+        status, _error_message, script_output = workspace_terminal_status
+        if status == "completed":
+            await _finalize_recovered_task(
+                task_id,
+                payload,
+                status="completed",
+                script_output=script_output,
+            )
+            return False
+
+    return _schedule_failed_task_restart(task_id, payload)
+
+
+async def _recover_owned_failed_tasks(failed_tasks: dict[str, dict]) -> int:
+    """Recover failed/timeout tasks and return the number of restarted tasks."""
+    if not failed_tasks:
+        return 0
+
+    logger.info(
+        "Inspecting %s failed task(s) for startup auto-restart",
+        len(failed_tasks),
+    )
+
+    restarted_tasks = 0
+    for task_id, payload in failed_tasks.items():
+        try:
+            if await _recover_failed_task(task_id, payload):
+                restarted_tasks += 1
+        except Exception as exc:
+            logger.error("Failed to recover failed task %s: %s", task_id, exc, exc_info=True)
+
+    if restarted_tasks:
+        logger.info("Scheduled automatic restart for %s failed task(s)", restarted_tasks)
+
+    return restarted_tasks
+
+
+async def recover_running_tasks_after_restart() -> None:
+    """Restore running task state after process restart using persisted JSON."""
+    running_tasks = _get_owned_task_statuses({"running"})
+    if running_tasks:
+        await _recover_owned_running_tasks(running_tasks)
+
+    # Re-read failed/timeout after running-task reconciliation so tasks that
+    # just transitioned from running -> failed/timeout are restarted now.
+    failed_tasks = _get_owned_task_statuses({"failed", "timeout"})
+    if not running_tasks and not failed_tasks:
+        _refresh_availability_from_recovered_state()
+        return
+
+    await _recover_owned_failed_tasks(failed_tasks)
+
+    _refresh_availability_from_recovered_state()
+
+
+async def stop_recovery_monitors() -> None:
+    """Cancel all running recovery monitor tasks."""
+    if not _RECOVERY_MONITORS:
+        return
+
+    monitors = list(_RECOVERY_MONITORS.values())
+    _RECOVERY_MONITORS.clear()
+
+    for monitor_task in monitors:
+        monitor_task.cancel()
+    await asyncio.gather(*monitors, return_exceptions=True)
+
+
 async def process_task(task_id: str, task_request: TaskRequest):
     """
     Process task using task dispatcher.
     """
     completion_callback = task_request.completion_callback
     try:
+        set_task_metadata(
+            task_id,
+            runner_id=get_runner_id(),
+            completion_callback=completion_callback,
+            task_request=task_request.model_dump(mode="json"),
+        )
+
         # Mark runner as busy
         set_available(False)
         set_task_status(task_id, "running")
@@ -286,8 +893,9 @@ async def process_task(task_id: str, task_request: TaskRequest):
         if completion_callback:
             await notify_completion(completion_callback, task_id, failure_status, error_msg)
     finally:
-        # Mark runner as available again
-        set_available(True)
+        # Recompute availability from tracked running tasks to avoid
+        # advertising availability while other tasks are still running.
+        _refresh_availability_from_recovered_state()
 
 
 @router.get(
@@ -456,7 +1064,10 @@ async def get_task_result(
 @router.get(
     "/result/{task_id}/file/{filename}",
     responses={
-        200: {"description": "Task result file", "content": {"application/octet-stream": {}}},
+        200: {
+            "description": "Task result file",
+            "content": {"application/octet-stream": {}},
+        },
         404: {"description": "Result file not found"},
     },
     summary="Get task result file",
@@ -532,8 +1143,8 @@ async def delete_task_result(task_id: str, current_manager: str = Depends(get_cu
     if legacy_manifest is not None:
         legacy_manifest.unlink()
 
-    # Mark runner as available
-    set_available(True)
+    # Recompute availability from tracked running tasks.
+    _refresh_availability_from_recovered_state()
     return {"status": "deleted"}
 
 
@@ -572,6 +1183,12 @@ async def run_task(
     # Mark runner as busy
     set_available(False)
     set_task_status(task_request.task_id, "running")
+    set_task_metadata(
+        task_request.task_id,
+        runner_id=get_runner_id(),
+        completion_callback=task_request.completion_callback,
+        task_request=task_request.model_dump(mode="json"),
+    )
 
     # Start task processing in background
     background_tasks.add_task(

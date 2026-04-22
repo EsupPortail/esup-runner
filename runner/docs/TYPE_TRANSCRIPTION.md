@@ -119,6 +119,7 @@ The external script returns `0` on success. The most common non-zero exit codes 
 | `32` | Translation failed | The subtitle translation step failed while processing cues |
 | `33` | Translation decision failed | A target subtitle language was requested, but the runner could not determine a spoken source language |
 | `124` | Timeout | `ffmpeg` or Whisper CLI exceeded the allowed runtime |
+| `127` | Whisper CLI not found | `whisper` is missing from the runtime (`PATH`) and/or transcription dependencies were not synced (`make sync-transcription-cpu` or `make sync-transcription-gpu`) |
 
 Notes:
 - The dedicated local translation path currently only covers `fr <-> en`.

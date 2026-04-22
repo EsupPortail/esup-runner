@@ -131,6 +131,41 @@ _TRANSLATION_BACKEND_LOCAL = "local_translation"
 _TRANSLATION_BACKEND_WHISPER_LEGACY = "whisper_legacy_fallback"
 
 
+def _runner_project_dir() -> str:
+    """Best-effort absolute path to the runner project root for operator hints."""
+    try:
+        return str(Path(__file__).resolve().parents[4])
+    except Exception:
+        return "<runner-dir>"
+
+
+def _print_transcription_dependency_resolution_hint(
+    *,
+    use_gpu: bool,
+    missing_python_module: Optional[str] = None,
+    missing_cli_command: Optional[str] = None,
+) -> None:
+    """Print actionable remediation steps when Whisper runtime dependencies are missing."""
+    mode = "GPU" if use_gpu else "CPU"
+    sync_cmd = "make sync-transcription-gpu" if use_gpu else "make sync-transcription-cpu"
+    runner_dir = _runner_project_dir()
+
+    print("Transcription runtime dependencies are incomplete.")
+    if missing_python_module:
+        print(f"- Missing Python module: {missing_python_module}")
+    if missing_cli_command:
+        print(f"- Missing CLI command in PATH: {missing_cli_command}")
+
+    print("Resolution:")
+    print(f"  1) Install transcription dependencies ({mode} profile):")
+    print(f"     cd {runner_dir} && {sync_cmd}")
+    print("  2) Restart the runner service:")
+    print("     systemctl --user restart esup-runner-runner")
+    print("  3) Verify the runtime:")
+    print(f'     cd {runner_dir} && uv run python -c "import torch, whisper"')
+    print(f"     cd {runner_dir} && uv run which whisper")
+
+
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse command-line arguments for the transcription script."""
     parser = argparse.ArgumentParser(description="Generate subtitles using openai-whisper CLI")
@@ -676,9 +711,19 @@ def run_whisper_cli(
 
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec, env=env)
+    except FileNotFoundError:
+        print("Unable to run whisper CLI: command not found in PATH: whisper")
+        _print_transcription_dependency_resolution_hint(
+            use_gpu=use_gpu,
+            missing_cli_command="whisper",
+        )
+        return 127, None
     except subprocess.TimeoutExpired:
         print(f"whisper CLI timed out after {timeout_sec}s")
         return 124, None
+    except Exception as e:
+        print(f"whisper CLI execution failed before start: {e}")
+        return 1, None
     if debug:
         print(proc.stdout)
         print(proc.stderr)
@@ -687,7 +732,9 @@ def run_whisper_cli(
     return proc.returncode, detected_code
 
 
-def _import_whisper_modules() -> tuple[Optional[Any], Optional[Any], Optional[Callable[..., Any]]]:
+def _import_whisper_modules(
+    use_gpu: bool = False,
+) -> tuple[Optional[Any], Optional[Any], Optional[Callable[..., Any]]]:
     """Import Whisper Python API modules and return them when available."""
     try:
         import torch  # type: ignore
@@ -695,6 +742,12 @@ def _import_whisper_modules() -> tuple[Optional[Any], Optional[Any], Optional[Ca
         from whisper.utils import get_writer  # type: ignore
 
         return torch, whisper, get_writer
+    except ModuleNotFoundError as e:
+        missing_name = getattr(e, "name", None) or str(e)
+        print("Falling back to CLI: whisper Python API dependencies are missing.")
+        print(f"- Missing Python module: {missing_name}")
+        print("Attempting whisper CLI fallback...")
+        return None, None, None
     except Exception as e:
         print(f"Falling back to CLI: failed to import whisper API ({e})")
         return None, None, None
@@ -2623,7 +2676,7 @@ def run_whisper_python(
 
     Note: This path does not enforce a hard timeout like subprocess; rely on caller-level time budget if needed.
     """
-    torch, whisper, get_writer = _import_whisper_modules()
+    torch, whisper, get_writer = _import_whisper_modules(use_gpu=use_gpu)
     if not torch or not whisper or not get_writer:
         return 255, None
 
@@ -2767,6 +2820,7 @@ def _run_transcription(
         use_gpu=effective_use_gpu,
     )
 
+    backend_name = "whisper Python API"
     rc, detected_lang = run_whisper_python(
         audio_path=audio_src,
         out_dir=work_dir,
@@ -2786,6 +2840,7 @@ def _run_transcription(
         debug=debug,
     )
     if rc == 255:
+        print("Whisper Python API unavailable; attempting whisper CLI fallback.")
         rc, detected_lang = run_whisper_cli(
             audio_path=audio_src,
             out_dir=work_dir,
@@ -2798,8 +2853,9 @@ def _run_transcription(
             timeout_sec=timeout_sec,
             debug=debug,
         )
+        backend_name = "whisper CLI"
     if rc != 0:
-        print(f"whisper CLI failed with return code {rc}")
+        print(f"{backend_name} failed with return code {rc}")
     return rc, _normalize_language_code(detected_lang)
 
 

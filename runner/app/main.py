@@ -14,7 +14,11 @@ from fastapi.templating import Jinja2Templates
 from app.api.openapi import OpenAPIConfig, setup_openapi_config
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
-from app.core.state import set_runner_instance_id, set_runner_instance_url
+from app.core.state import (
+    reload_task_statuses_from_disk,
+    set_runner_instance_id,
+    set_runner_instance_url,
+)
 from app.managers.service_manager import background_manager
 from app.services.manager_service import register_with_manager
 
@@ -22,7 +26,8 @@ from app.services.manager_service import register_with_manager
 runner_instance_id: int = int(os.getenv("RUNNER_INSTANCE_ID", "0"))
 runner_instance_port: int = int(os.getenv("RUNNER_PORT", "8082"))
 runner_instance_url: str = os.getenv(
-    "RUNNER_INSTANCE_URL", f"{config.RUNNER_PROTOCOL}://{config.RUNNER_HOST}:{runner_instance_port}"
+    "RUNNER_INSTANCE_URL",
+    f"{config.RUNNER_PROTOCOL}://{config.RUNNER_HOST}:{runner_instance_port}",
 )
 
 # Set instance-specific runner informations
@@ -33,6 +38,9 @@ set_runner_instance_id(
     runner_instance_port=runner_instance_port,
 )
 set_runner_instance_url(runner_instance_url)
+# In forked workers, state module may have been imported before instance env vars
+# were finalized. Reload statuses now with the effective instance context.
+reload_task_statuses_from_disk()
 
 # Configure logging with instance ID
 logger = setup_default_logging()
@@ -62,11 +70,18 @@ async def lifespan(app: FastAPI):
     app.include_router(task.router)
     app.include_router(runner.router)
 
+    # Ensure availability is already false when in-flight tasks were persisted,
+    # before manager registration/ping happens.
+    task.initialize_startup_availability()
+
     # Initial registration with Manager
     await register_with_manager()
 
     # Start background services
     await background_manager.start_all_services()
+
+    # Recover in-flight tasks persisted before runner restart.
+    await task.recover_running_tasks_after_restart()
 
     yield
 
@@ -74,6 +89,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Shutting down runner instance {runner_instance_id}")
 
     # Stop background services
+    await task.stop_recovery_monitors()
     await background_manager.stop_all_services()
 
 
@@ -108,6 +124,10 @@ async def root():
     return {
         "message": "Runner API",
         "version": OpenAPIConfig.VERSION,
-        "documentation": {"swagger": "/docs", "redoc": "/redoc", "openapi": "/openapi.json"},
+        "documentation": {
+            "swagger": "/docs",
+            "redoc": "/redoc",
+            "openapi": "/openapi.json",
+        },
         "health_check": "/runner/health",
     }

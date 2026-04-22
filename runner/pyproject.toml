@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "esup-runner-runner"
-version = "1.1.1"
+version = "1.2.0"
 description = "ESUP-Runner Runner - Outsourcing system for encoding, transcription, and other processes"
 readme = "README.md"
 requires-python = ">=3.11"

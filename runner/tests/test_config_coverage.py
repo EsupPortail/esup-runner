@@ -1,5 +1,6 @@
 import builtins
 import importlib.util
+import json
 import sys
 import types
 import warnings
@@ -9,6 +10,19 @@ import pytest
 
 import app.core.config as config_module
 import app.core.state as state_module
+
+
+@pytest.fixture(autouse=True)
+def restore_config_module_globals():
+    original_config = config_module.config
+    original_instance = config_module._CONFIG_INSTANCE
+    original_loaded = config_module._CONFIG_ENV_LOADED
+
+    yield
+
+    config_module.config = original_config
+    config_module._CONFIG_INSTANCE = original_instance
+    config_module._CONFIG_ENV_LOADED = original_loaded
 
 
 def test_parse_helpers_cover_defaults_invalid_values_and_bounds(monkeypatch):
@@ -143,7 +157,19 @@ def test_config_warns_when_grouped_task_types_override_runner_instances(monkeypa
     assert any("RUNNER_INSTANCES is ignored" in str(w.message) for w in caught)
 
 
-def test_config_warns_when_grouped_task_types_ignore_invalid_runner_instances(monkeypatch):
+def test_config_warn_grouped_instances_override_ignores_missing_env():
+    cfg = object.__new__(config_module.Config)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cfg._warn_grouped_instances_override(None, computed_instances=2)
+
+    assert caught == []
+
+
+def test_config_warns_when_grouped_task_types_ignore_invalid_runner_instances(
+    monkeypatch,
+):
     monkeypatch.setenv("RUNNER_TASK_TYPES", "[1x(encoding)]")
     monkeypatch.setenv("RUNNER_INSTANCES", "invalid")
 
@@ -173,7 +199,10 @@ def test_config_uses_legacy_task_type_distribution(monkeypatch):
 
     assert cfg.RUNNER_INSTANCES == 2
     assert cfg.RUNNER_TASK_TYPES == {"encoding", "studio"}
-    assert cfg.RUNNER_TASK_TYPES_BY_INSTANCE == [{"encoding", "studio"}, {"encoding", "studio"}]
+    assert cfg.RUNNER_TASK_TYPES_BY_INSTANCE == [
+        {"encoding", "studio"},
+        {"encoding", "studio"},
+    ]
 
 
 def test_config_validate_configuration_success(monkeypatch):
@@ -209,6 +238,20 @@ def test_config_manager_url_strips_trailing_slash(monkeypatch):
     cfg = config_module.Config()
 
     assert cfg.MANAGER_URL == "http://1.2.3.4:8000"
+
+
+def test_config_runner_task_status_file_default_and_override(monkeypatch):
+    monkeypatch.setenv("STORAGE_DIR", "/tmp/esup-runner-storage")
+    monkeypatch.delenv("RUNNER_TASK_STATUS_FILE", raising=False)
+
+    cfg_default = config_module.Config()
+    assert (
+        cfg_default.RUNNER_TASK_STATUS_FILE == "/tmp/esup-runner-storage/runner_task_statuses.json"
+    )
+
+    monkeypatch.setenv("RUNNER_TASK_STATUS_FILE", "/tmp/custom-runner-state.json")
+    cfg_override = config_module.Config()
+    assert cfg_override.RUNNER_TASK_STATUS_FILE == "/tmp/custom-runner-state.json"
 
 
 def test_config_validate_instances_requires_at_least_one():
@@ -360,6 +403,166 @@ def test_state_task_status_helpers_cover_early_returns_and_clear():
         # clear_task_status: non-dict branch (line 284 false path)
         state_module._RUNNER_STATE["task_statuses"] = []
         state_module.clear_task_status("task-3")
+    finally:
+        state_module._RUNNER_STATE.clear()
+        state_module._RUNNER_STATE.update(snapshot)
+
+
+def test_state_metadata_and_running_helpers(tmp_path, monkeypatch):
+    snapshot = state_module._RUNNER_STATE.copy()
+    snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
+    state_file = tmp_path / "runner_task_statuses.json"
+    monkeypatch.setenv("RUNNER_TASK_STATUS_FILE", str(state_file))
+
+    try:
+        state_module._RUNNER_STATE["task_statuses"] = {}
+
+        state_module.set_task_status("task-meta", "running")
+        state_module.set_task_metadata(
+            "task-meta",
+            completion_callback="http://manager.example.org/task/completion",
+            process_pid=4321,
+        )
+
+        payload = state_module.get_task_status("task-meta")
+        assert payload is not None
+        assert payload["status"] == "running"
+        assert payload["completion_callback"].startswith("http://manager")
+        assert payload["process_pid"] == 4321
+
+        running = state_module.get_running_task_statuses()
+        assert "task-meta" in running
+
+        state_module.set_task_status("task-meta", "completed")
+        completed_payload = state_module.get_task_status("task-meta")
+        assert completed_payload is not None
+        assert completed_payload["status"] == "completed"
+        assert "process_pid" not in completed_payload
+        assert state_module.get_running_task_statuses() == {}
+        assert not state_file.exists()
+    finally:
+        state_module._RUNNER_STATE.clear()
+        state_module._RUNNER_STATE.update(snapshot)
+
+
+def test_state_persistence_keeps_only_recovery_fields(tmp_path, monkeypatch):
+    snapshot = state_module._RUNNER_STATE.copy()
+    snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
+    state_file = tmp_path / "runner_task_statuses.json"
+    monkeypatch.setenv("RUNNER_TASK_STATUS_FILE", str(state_file))
+
+    try:
+        state_module._RUNNER_STATE["task_statuses"] = {}
+
+        state_module.set_task_status("task-compact", "running")
+        state_module.set_task_metadata(
+            "task-compact",
+            runner_id="runner-a",
+            completion_callback="http://manager.example.org/task/completion",
+            task_type="encoding",
+            task_request={
+                "task_id": "task-compact",
+                "etab_name": "UM",
+                "app_name": "Pod",
+                "task_type": "encoding",
+                "source_url": "https://example.org/video.mp4",
+                "parameters": {},
+                "notify_url": "http://notify",
+                "completion_callback": "http://manager.example.org/task/completion",
+            },
+            process_pid=4567,
+            script_stdout_path="/tmp/stdout.log",
+            script_stderr_path="/tmp/stderr.log",
+            recovery_restart_attempts=1,
+            queued_at="2026-04-21T16:00:00",
+            processing_started_at="2026-04-21T16:00:01",
+            recovery_restarted_at="2026-04-21T16:00:02",
+            workspace_dir="/tmp/workspace",
+            script_output="noise",
+        )
+
+        persisted = json.loads(state_file.read_text(encoding="utf-8"))
+        compact_payload = persisted["task-compact"]
+
+        assert compact_payload["task_id"] == "task-compact"
+        assert compact_payload["status"] == "running"
+        assert compact_payload["runner_id"] == "runner-a"
+        assert compact_payload["completion_callback"].startswith("http://manager")
+        assert compact_payload["process_pid"] == 4567
+        assert compact_payload["recovery_restart_attempts"] == 1
+        assert "task_request" in compact_payload
+
+        assert "task_type" not in compact_payload
+        assert "script_stdout_path" not in compact_payload
+        assert "script_stderr_path" not in compact_payload
+        assert "queued_at" not in compact_payload
+        assert "processing_started_at" not in compact_payload
+        assert "recovery_restarted_at" not in compact_payload
+        assert "workspace_dir" not in compact_payload
+        assert "script_output" not in compact_payload
+    finally:
+        state_module._RUNNER_STATE.clear()
+        state_module._RUNNER_STATE.update(snapshot)
+
+
+def test_state_load_task_statuses_from_disk_supports_plain_dict(tmp_path, monkeypatch):
+    snapshot = state_module._RUNNER_STATE.copy()
+    snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
+    state_file = tmp_path / "runner_task_statuses.json"
+    monkeypatch.setenv("RUNNER_TASK_STATUS_FILE", str(state_file))
+
+    state_file.write_text(
+        json.dumps(
+            {
+                "task-plain": {
+                    "status": "running",
+                    "completion_callback": "http://cb",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        state_module._RUNNER_STATE["task_statuses"] = {}
+        state_module._load_task_statuses_from_disk()
+        payload = state_module.get_task_status("task-plain")
+        assert payload is not None
+        assert payload["task_id"] == "task-plain"
+        assert payload["status"] == "running"
+    finally:
+        state_module._RUNNER_STATE.clear()
+        state_module._RUNNER_STATE.update(snapshot)
+
+
+def test_state_reload_task_statuses_from_disk_resets_and_reloads(tmp_path, monkeypatch):
+    snapshot = state_module._RUNNER_STATE.copy()
+    snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
+    state_file = tmp_path / "runner_task_statuses.json"
+    monkeypatch.setenv("RUNNER_TASK_STATUS_FILE", str(state_file))
+
+    state_file.write_text(
+        json.dumps(
+            {
+                "task-reloaded": {
+                    "task_id": "task-reloaded",
+                    "status": "running",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        state_module._RUNNER_STATE["task_statuses"] = {
+            "stale-task": {"task_id": "stale-task", "status": "running"}
+        }
+        state_module.reload_task_statuses_from_disk()
+
+        assert state_module.get_task_status("stale-task") is None
+        payload = state_module.get_task_status("task-reloaded")
+        assert payload is not None
+        assert payload["status"] == "running"
     finally:
         state_module._RUNNER_STATE.clear()
         state_module._RUNNER_STATE.update(snapshot)

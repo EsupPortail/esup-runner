@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-22
+
 ### Added
 
 - Added `GET /task/status/{task_id}` in `app/api/routes/task.py` so the manager can reconcile task state after outages.
@@ -23,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated `STORAGE_DIR` to always default to `/tmp/esup-runner` when not explicitly set.
 - Updated task execution flow to record status transitions during `run`/`process_task`, normalize `script_output` payloads, and expose optional `error_message`/`script_output` in status responses.
+- Standardized `script_output` rendering across task types to the log-style sections `[info_script.log]` and `[error_script.log]` (including contextual labels for nested payloads such as studio/encoding stages).
+- Updated encoding/studio task handlers to preserve meaningful `script_output.stdout` when external script stdout is empty by falling back to `encoding.log` content.
+- Updated transcription `script_output` classification so non-error Whisper progress lines (`Loading weights:`) are moved from `stderr` to `stdout` and appear under `[info_script.log]`.
+- Startup recovery now reconciles in-flight tasks after runner restart.
+- Startup recovery now requalifies initially failed tasks as `completed` when workspace evidence confirms completion (manifest or final artifacts).
+- Startup recovery now automatically restarts tasks that are genuinely failed.
+- Runner availability is now preserved as `busy` during startup reconciliation/restart, including at manager registration.
 - Unified runner check-script text output (`check_ffmpeg.py`, `check_gpu.py`, `check_runner_resources.py`, `check_runner_storage.py`, `check_version.py`) to the shared `✓ INFO` / `⚠ WARNING` / `✗ ERROR` format and aligned final conclusions.
 - Moved check output formatting logic out of `scripts/` into the internal application module (`app/core/_check_output.py`).
 - Updated runner metadata license reference from `LGPL 3.0` to `GPL 3.0` in `app/__version__.py`.
@@ -35,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved recovery after manager unavailability by enabling post-restart status reconciliation from runner state.
 - Adjusted `scripts/check_gpu.py` severity/exit behavior for CPU deployments: CUDA runtime unavailability is now non-blocking (`warning`, exit code `0`) when `ENCODING_TYPE=CPU`, while remaining blocking for `ENCODING_TYPE=GPU` (exit code `1`).
 - Fixed 1080p HLS profile to use 1080 bitrate values (not 720).
+- Improved transcription dependency failure reporting in `app/task_handlers/transcription/scripts/transcription.py`: missing `torch`/`whisper` now prints actionable remediation steps (`make sync-transcription-cpu|gpu`, service restart, runtime checks) instead of exposing a raw traceback.
+- Added focused regression tests for the new transcription dependency-resolution messages and fallback branches, closing remaining coverage gaps in that script section.
 
 ## [1.1.1] - 2026-04-15
 

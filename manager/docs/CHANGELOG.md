@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-22
+
 ### Added
 
 - Added an hourly running-task reconciliation background service that polls each assigned runner via `GET /task/status/{task_id}`.
@@ -25,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated manager metadata/documentation license references from `LGPL 3.0` to `GPL 3.0` (`app/__version__.py`, `docs/README.md`, `docs/VERSION_MANAGEMENT.md`).
 - Updated monorepo `update-stack.sh` with clearer step-based CLI output, concrete usage examples, and automatic `check_pipeline_tasks.py --with-transcription-translation` execution when runner sync mode targets transcription (`transcription-cpu`/`transcription-gpu`).
 - Updated task-route test fixtures for completion/CSV scenarios to use explicit `test-task-*` identifiers instead of ambiguous `t1` IDs.
+- Refreshed dependency lockfile in `manager/uv.lock`.
 
 ### Fixed
 

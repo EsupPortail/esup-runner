@@ -26,6 +26,41 @@ journalctl --user -u esup-runner-runner -f
 journalctl --user -u esup-runner-runner -n 200 --no-pager
 ```
 
+## Task handling after service restart
+
+When you restart the service:
+
+```bash
+systemctl --user restart esup-runner-runner
+```
+
+the runner automatically checks tasks that were in progress before restart.
+
+In most cases, no manual action is needed:
+
+- tasks that are still running continue to be tracked
+- tasks that already produced final files are marked as completed
+- tasks in `failed`/`timeout` with a persisted request are automatically restarted
+- tasks that cannot be recovered are marked as failed (or timeout)
+
+The runner then sends updated task status back to the manager.
+During this startup reconciliation window, runner availability is kept `false`
+to avoid accepting new work too early.
+
+### Quick operator check
+
+After a restart, verify only these points:
+
+1. Service is up.
+2. API health/readiness endpoints respond.
+3. Logs do not show repeated recovery errors.
+
+```bash
+systemctl --user status esup-runner-runner
+journalctl --user -u esup-runner-runner -n 200 --no-pager
+journalctl --user -u esup-runner-runner -n 300 --no-pager | grep -E "Recovering|Inspecting|Scheduled automatic restart|Failed to recover|Skipping automatic restart"
+```
+
 ## API health and readiness checks
 
 The runner exposes:

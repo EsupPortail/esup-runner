@@ -747,6 +747,16 @@ def test_process_encoding_rejects_zero_second_input(tmp_path):
     enc.launch_encode.assert_not_called()
 
 
+def test_prepare_input_file_rejects_missing_or_empty_input(tmp_path):
+    enc = _load_encoding_script_module()
+    enc._VIDEOS_DIR = str(tmp_path)
+
+    args = Mock(input_file="missing.mp4")
+
+    with pytest.raises(enc.EncodingValidationError, match="Invalid file or path:"):
+        enc._prepare_input_file(args)
+
+
 def test_process_encoding_rejects_invalid_source_video_file(tmp_path):
     enc = _load_encoding_script_module()
 
@@ -798,3 +808,26 @@ def test_process_encoding_rejects_zero_second_effective_duration_after_cut(tmp_p
         enc._process_encoding(args=Mock())
 
     enc.launch_encode.assert_not_called()
+
+
+def test_main_writes_invalid_input_error_to_stderr_and_exits_non_zero(capsys):
+    enc = _load_encoding_script_module()
+
+    parser = Mock()
+    parser.parse_args.return_value = Mock()
+
+    enc._build_arg_parser = Mock(return_value=parser)
+    enc._apply_cli_config = Mock(return_value="")
+    enc._process_encoding = Mock(
+        side_effect=enc.EncodingValidationError("Invalid file or path: /tmp/input.mp4")
+    )
+    enc.encode_log = Mock()
+    enc.add_info_video = Mock()
+
+    with pytest.raises(SystemExit) as exc:
+        enc.main()
+
+    captured = capsys.readouterr()
+    assert exc.value.code == 1
+    assert "Invalid file or path: /tmp/input.mp4" in captured.err
+    enc.add_info_video.assert_called_once_with("error", "Invalid file or path: /tmp/input.mp4")

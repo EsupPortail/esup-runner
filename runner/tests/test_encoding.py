@@ -1,4 +1,3 @@
-import io
 from unittest.mock import Mock, patch
 
 from app.models.models import TaskRequest
@@ -22,10 +21,11 @@ def make_task_request():
 def test_encoding_handler_success(mock_get, mock_run):
     # Mock HTTP download of the source video
     def _resp():
+        payload = b"fake-video-bytes"
         r = Mock()
         r.status_code = 200
-        r.headers = {"Content-Length": str(1024 * 1024)}  # 1MB
-        r.raw = io.BytesIO(b"fake-video-bytes")
+        r.headers = {"Content-Length": str(len(payload))}
+        r.iter_content = lambda chunk_size=8192: iter([payload])
         # Context manager support
         r.__enter__ = lambda s: s
         r.__exit__ = lambda s, exc_type, exc, tb: None

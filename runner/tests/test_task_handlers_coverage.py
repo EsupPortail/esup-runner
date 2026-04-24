@@ -196,10 +196,18 @@ def test_base_handler_download_source_file_error_paths(monkeypatch, tmp_path):
     dest_file = tmp_path / "download.bin"
 
     class _Response:
-        def __init__(self, status_code: int, headers: dict[str, str]):
+        def __init__(self, status_code: int, headers: dict[str, str], payload: bytes = b"payload"):
             self.status_code = status_code
             self.headers = headers
-            self.raw = io.BytesIO(b"payload")
+            self._payload = payload
+
+        def iter_content(self, chunk_size: int = 8192):
+            stream = io.BytesIO(self._payload)
+            while True:
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
 
         def __enter__(self):
             return self
@@ -232,9 +240,160 @@ def test_base_handler_download_source_file_error_paths(monkeypatch, tmp_path):
             raise RuntimeError("network down")
 
     monkeypatch.setattr(base_handler_module.requests, "Session", lambda: _SessionCrash())
+    monkeypatch.setattr(base_handler_module.time, "sleep", lambda *_args, **_kwargs: None)
     crashed = handler.download_source_file("https://example.org/a.mp4", str(dest_file))
     assert crashed["success"] is False
     assert "Impossible to download" in crashed["error"]
+
+
+def test_base_handler_download_source_file_retries_then_succeeds(monkeypatch, tmp_path):
+    handler = _ConcreteBaseHandler()
+    dest_file = tmp_path / "download.bin"
+
+    class _Response:
+        def __init__(self, status_code: int, headers: dict[str, str], payload: bytes):
+            self.status_code = status_code
+            self.headers = headers
+            self._payload = payload
+
+        def iter_content(self, chunk_size: int = 8192):
+            stream = io.BytesIO(self._payload)
+            while True:
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _FlakySession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, *_args, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return _Response(200, {"Content-Length": "7"}, b"")
+            return _Response(200, {"Content-Length": "7"}, b"payload")
+
+    session = _FlakySession()
+    monkeypatch.setattr(base_handler_module.requests, "Session", lambda: session)
+    monkeypatch.setattr(base_handler_module.time, "sleep", lambda *_args, **_kwargs: None)
+
+    result = handler.download_source_file("https://example.org/a.mp4", str(dest_file))
+
+    assert result["success"] is True
+    assert session.calls == 2
+    assert dest_file.read_bytes() == b"payload"
+
+
+def test_base_handler_download_source_file_retries_and_fails_on_truncated_payload(
+    monkeypatch, tmp_path
+):
+    handler = _ConcreteBaseHandler()
+    dest_file = tmp_path / "download.bin"
+
+    class _Response:
+        def __init__(self, status_code: int, headers: dict[str, str], payload: bytes):
+            self.status_code = status_code
+            self.headers = headers
+            self._payload = payload
+
+        def iter_content(self, chunk_size: int = 8192):
+            stream = io.BytesIO(self._payload)
+            while True:
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _AlwaysTruncatedSession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, *_args, **_kwargs):
+            self.calls += 1
+            return _Response(200, {"Content-Length": "7"}, b"short")
+
+    session = _AlwaysTruncatedSession()
+    monkeypatch.setattr(base_handler_module.requests, "Session", lambda: session)
+    monkeypatch.setattr(base_handler_module.time, "sleep", lambda *_args, **_kwargs: None)
+
+    result = handler.download_source_file("https://example.org/a.mp4", str(dest_file))
+
+    assert result["success"] is False
+    assert session.calls == 3
+    assert "Incomplete download" in result["error"]
+    assert not dest_file.exists()
+
+
+def test_base_handler_download_helpers_cover_remaining_branches(tmp_path):
+    handler = _ConcreteBaseHandler()
+
+    class _BrokenPath:
+        @staticmethod
+        def exists():
+            raise RuntimeError("cannot stat")
+
+        @staticmethod
+        def unlink():
+            raise RuntimeError("cannot unlink")
+
+    handler._cleanup_partial_download_file(_BrokenPath())  # type: ignore[arg-type]
+
+    class _ResponseWithEmptyChunk:
+        @staticmethod
+        def iter_content(chunk_size: int = 8192):
+            _ = chunk_size
+            yield b""
+            yield b"abc"
+
+    target = tmp_path / "download.part"
+    bytes_written = handler._stream_response_to_file(_ResponseWithEmptyChunk(), target, 8)
+    assert bytes_written == 3
+    assert target.read_bytes() == b"abc"
+
+    assert handler._parse_expected_download_size(None) is None
+    assert handler._validate_expected_download_size(None) is None
+
+
+def test_base_handler_download_source_file_once_handles_non_404_status(tmp_path):
+    handler = _ConcreteBaseHandler()
+    part_path = tmp_path / "download.part"
+
+    class _Response:
+        status_code = 500
+        headers: dict[str, str] = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _Session:
+        @staticmethod
+        def get(*_args, **_kwargs):
+            return _Response()
+
+    result = handler._download_source_file_once(
+        session=_Session(),  # type: ignore[arg-type]
+        source_url="https://example.org/a.mp4",
+        part_path=part_path,
+        chunk_size=1024,
+    )
+    assert result["success"] is False
+    assert "HTTP 500" in result["error"]
 
 
 def test_encoding_handler_execute_task_error_paths(monkeypatch, tmp_path):
@@ -414,6 +573,16 @@ def test_transcription_handler_execute_task_error_paths(monkeypatch, tmp_path):
         "download_source_file",
         lambda source_url, dest_file: {"success": True, "file_path": dest_file},
     )
+    monkeypatch.setattr(
+        handler,
+        "_validate_input_media_with_ffprobe",
+        lambda _input_path: "Input media pre-check failed",
+    )
+    res_invalid_input = handler.execute_task("transcription-invalid-input", mp4_req)
+    assert res_invalid_input["success"] is False
+    assert "Input media pre-check failed" in res_invalid_input["error"]
+
+    monkeypatch.setattr(handler, "_validate_input_media_with_ffprobe", lambda _input_path: None)
     handler.scripts_dir = tmp_path / "missing-scripts"
     handler.scripts_dir.mkdir(parents=True, exist_ok=True)
     res_missing_script = handler.execute_task("transcription-missing-script", mp4_req)
@@ -451,6 +620,57 @@ def test_transcription_handler_reclassifies_loading_weights_from_stderr():
     assert "real warning line" not in normalized["stdout"]
     assert "real warning line" in normalized["stderr"]
     assert "Loading weights:" not in normalized["stderr"]
+
+
+def test_transcription_handler_validate_input_media_with_ffprobe_paths(monkeypatch, tmp_path):
+    handler = TranscriptionHandler()
+    input_path = tmp_path / "input.mp3"
+    input_path.write_bytes(b"fake")
+
+    class _ProbeOK:
+        returncode = 0
+        stdout = "42.0\n"
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: _ProbeOK())
+    assert handler._validate_input_media_with_ffprobe(input_path) is None
+
+    class _ProbeFail:
+        returncode = 1
+        stdout = ""
+        stderr = "Invalid argument"
+
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: _ProbeFail())
+    assert "Invalid argument" in (handler._validate_input_media_with_ffprobe(input_path) or "")
+
+    monkeypatch.setattr(
+        subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError())
+    )
+    assert handler._validate_input_media_with_ffprobe(input_path) is None
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired(cmd="ffprobe", timeout=15)
+        ),
+    )
+    assert "timed out" in (handler._validate_input_media_with_ffprobe(input_path) or "")
+
+    monkeypatch.setattr(
+        subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    assert "boom" in (handler._validate_input_media_with_ffprobe(input_path) or "")
+
+    class _ProbeFailNoDetails:
+        returncode = 1
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: _ProbeFailNoDetails())
+    assert handler._validate_input_media_with_ffprobe(input_path) == (
+        f"Input media pre-check failed for {input_path}"
+    )
 
 
 def test_transcription_handler_reclassify_keeps_non_loading_stderr_unchanged():

@@ -76,6 +76,7 @@ def test_transcription_handler_uses_configured_external_script_timeout(monkeypat
         "download_source_file",
         lambda source_url, dest_file: {"success": True, "file_path": dest_file},
     )
+    monkeypatch.setattr(handler, "_validate_input_media_with_ffprobe", lambda _input_path: None)
 
     def fake_run_external_script(script_path: Path, args: list[str], timeout: int = 0):
         recorded["timeout"] = timeout

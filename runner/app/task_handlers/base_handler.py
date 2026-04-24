@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from pathlib import Path
@@ -115,8 +116,6 @@ class BaseTaskHandler(ABC):
         """
         Clean up temporary workspace directory.
         """
-        import shutil
-
         if self.workspace_dir.exists():
             shutil.rmtree(self.workspace_dir)
             self.logger.info(f"Cleaned up workspace: {self.workspace_dir}")
@@ -420,6 +419,83 @@ class BaseTaskHandler(ABC):
         """
         return Path(filename).suffix.lstrip(".").lower()
 
+    def _cleanup_partial_download_file(self, part_path: Path) -> None:
+        """Best-effort cleanup of temporary download file."""
+        try:
+            if part_path.exists():
+                part_path.unlink()
+        except Exception:
+            pass
+
+    def _stream_response_to_file(self, response: Any, part_path: Path, chunk_size: int) -> int:
+        """Write streamed response body to a temporary file and return written bytes."""
+        bytes_written = 0
+        with open(part_path, "wb") as file:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if not chunk:
+                    continue
+                file.write(chunk)
+                bytes_written += len(chunk)
+        return bytes_written
+
+    def _parse_expected_download_size(self, raw_content_length: Optional[str]) -> Optional[int]:
+        """Return parsed Content-Length, or None when not provided."""
+        if raw_content_length is None:
+            return None
+        return int(raw_content_length)
+
+    def _validate_expected_download_size(self, expected_size: Optional[int]) -> Optional[str]:
+        """Validate declared source size against configured max and return an error when rejected."""
+        if expected_size is None:
+            return None
+
+        file_size_gb = round(expected_size / (1024 * 1024 * 1024), 2)
+        max_size_gb = config.MAX_VIDEO_SIZE_GB
+        if max_size_gb > 0 and expected_size > (max_size_gb * 1024 * 1024 * 1024):
+            return (
+                f"The file size ({file_size_gb} GB) exceeds the maximum allowed size of "
+                f"{max_size_gb} GB."
+            )
+        return None
+
+    def _download_source_file_once(
+        self,
+        session: requests.Session,
+        source_url: str,
+        part_path: Path,
+        chunk_size: int,
+    ) -> Dict[str, Any]:
+        """Execute one HTTP download attempt into part_path."""
+        with session.get(source_url, timeout=(10, 180), stream=True) as response:
+            if response.status_code != 200:
+                if response.status_code == 404:
+                    return {
+                        "success": False,
+                        "error": f"The {source_url} file was not found on the server.",
+                    }
+                return {
+                    "success": False,
+                    "error": (
+                        f"Impossible to download {source_url} file, "
+                        f"server returned HTTP {response.status_code}."
+                    ),
+                }
+
+            expected_size = self._parse_expected_download_size(
+                response.headers.get("Content-Length")
+            )
+            size_error = self._validate_expected_download_size(expected_size)
+            if size_error is not None:
+                return {"success": False, "error": size_error}
+
+            bytes_written = self._stream_response_to_file(response, part_path, chunk_size)
+            if bytes_written <= 0:
+                raise ValueError("Downloaded file is empty (0 bytes).")
+            if expected_size is not None and bytes_written != expected_size:
+                raise ValueError(f"Incomplete download ({bytes_written}/{expected_size} bytes).")
+
+            return {"success": True}
+
     def download_source_file(self, source_url: str, dest_file: str) -> Dict[str, Any]:
         """Download source file.
 
@@ -430,44 +506,45 @@ class BaseTaskHandler(ABC):
         Returns:
             Dict containing download results
         """
-        # Check if video file exists
+        max_attempts = 3
+        base_retry_delay_seconds = 1.0
+        chunk_size = 1024 * 1024
+        destination = Path(dest_file)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        part_path = destination.with_name(destination.name + ".part")
+        last_error = "Unknown download error"
+        session = requests.Session()
+
         try:
-            # Session useful to achieve requests (and keep cookies between), if necessary
-            session = requests.Session()
-            with session.get(source_url, timeout=(10, 180), stream=True) as response:
-                # Can be useful to debug
-                # print(session.cookies.get_dict())
-                if response.status_code != 200:
-                    return {
-                        "success": False,
-                        "error": f"The {source_url} file was not found on the server.",
-                    }
+            for attempt in range(1, max_attempts + 1):
+                self._cleanup_partial_download_file(part_path)
+                try:
+                    attempt_result = self._download_source_file_once(
+                        session=session,
+                        source_url=source_url,
+                        part_path=part_path,
+                        chunk_size=chunk_size,
+                    )
+                    if not attempt_result.get("success"):
+                        return attempt_result
 
-                # Check content length
-                content_length = response.headers.get("Content-Length")
-                if content_length is not None:
-                    file_size = int(content_length)
-                    # Convert file size to GB
-                    file_size_gb = round(file_size / (1024 * 1024 * 1024), 2)
-                    # Maximum size check
-                    max_size_gb = config.MAX_VIDEO_SIZE_GB
-                    if max_size_gb > 0 and file_size > (max_size_gb * 1024 * 1024 * 1024):
-                        return {
-                            "success": False,
-                            "error": f"The file size ({file_size_gb} GB) exceeds the maximum allowed size of {max_size_gb} GB.",
-                        }
+                    os.replace(part_path, destination)
+                    return {"success": True, "file_path": str(destination)}
+                except Exception as e:
+                    last_error = str(e)
+                    if attempt < max_attempts:
+                        time.sleep(base_retry_delay_seconds * (2 ** (attempt - 1)))
 
-                # Write to destination file
-                with open(dest_file, "wb+") as file:
-                    # Download in chunks
-                    shutil.copyfileobj(response.raw, file)
-
-            return {"success": True, "file_path": dest_file}
-        except Exception as e:
+            self._cleanup_partial_download_file(part_path)
             return {
                 "success": False,
-                "error": f"Impossible to download {source_url} file, with error: {e}.",
+                "error": f"Impossible to download {source_url} file, with error: {last_error}.",
             }
+        finally:
+            self._cleanup_partial_download_file(part_path)
+            close = getattr(session, "close", None)
+            if callable(close):
+                close()
 
     @classmethod
     def get_description(cls) -> str:

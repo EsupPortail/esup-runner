@@ -103,6 +103,9 @@ class TranscriptionHandler(BaseTaskHandler):
             dl = self.download_source_file(task_request.source_url, str(input_path))
             if not dl.get("success"):
                 raise Exception(dl.get("error", "Unable to download input"))
+            input_validation_error = self._validate_input_media_with_ffprobe(input_path)
+            if input_validation_error is not None:
+                raise Exception(input_validation_error)
 
             # Determine script path
             script_path = self.scripts_dir / "transcription.py"
@@ -145,6 +148,38 @@ class TranscriptionHandler(BaseTaskHandler):
         except Exception as e:
             self.logger.error(f"Transcription task {task_id} execution failed: {e}")
             return {"success": False, "error": str(e), "task_type": self.task_type}
+
+    def _validate_input_media_with_ffprobe(self, input_path: Path) -> str | None:
+        """Return an error when ffprobe cannot read the downloaded media."""
+        import subprocess
+
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nokey=1:noprint_wrappers=1",
+            str(input_path),
+        ]
+        try:
+            probe = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        except FileNotFoundError:
+            self.logger.warning("ffprobe not found; skipping input media pre-check")
+            return None
+        except subprocess.TimeoutExpired:
+            return f"Input media pre-check timed out for {input_path}"
+        except Exception as exc:
+            return f"Input media pre-check failed for {input_path}: {exc}"
+
+        if probe.returncode == 0:
+            return None
+
+        details = (probe.stderr or probe.stdout or "").strip()
+        if details:
+            return f"Input media pre-check failed for {input_path}: {details}"
+        return f"Input media pre-check failed for {input_path}"
 
     def _reclassify_non_error_stderr(self, script_result: Dict[str, Any]) -> Dict[str, Any]:
         """Move known non-error progress lines from stderr to stdout."""

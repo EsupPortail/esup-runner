@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `scripts/check_pipeline_tasks.py` encoding smoke-test payload so `rendition` is sent as a valid JSON string (not a Python dict string), preventing runner warnings (`Failed to parse rendition parameter`) and unintended fallback to default rendition configuration.
+
 ## [1.2.0] - 2026-04-22
 
 ### Added

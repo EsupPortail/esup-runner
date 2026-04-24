@@ -2547,8 +2547,7 @@ def _prepare_input_file(args) -> tuple[str, str]:
     path_file = os.path.join(_VIDEOS_DIR, input_file)
 
     if not (os.path.isfile(path_file) and os.path.getsize(path_file) > 0):
-        msg += "\nInvalid file or path: %s\n" % path_file
-        return "", msg
+        raise EncodingValidationError(f"Invalid file or path: {path_file}")
 
     filename = sanitize_filename(input_file)
     original_path = os.path.join(_VIDEOS_DIR, input_file)
@@ -2623,7 +2622,7 @@ def _process_encoding(args) -> str:
     filename, prep_msg = _prepare_input_file(args)
     msg += prep_msg
     if not filename:
-        return msg
+        raise EncodingValidationError((prep_msg or "Invalid file or path").strip())
 
     info_video = get_info_video(filename)
     _validate_source_media_info(info_video)

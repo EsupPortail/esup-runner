@@ -51,6 +51,7 @@ Notes
 
 import argparse
 import asyncio
+import json
 import os
 import re
 import sys
@@ -95,6 +96,12 @@ DEFAULT_SOURCE_URLS = [
         "WIKITONGUES-_Clara_speaking_French.webm.360p.vp9.webm"
     ),
 ]
+
+# For encoding/studio tasks, nested params such as `rendition` must be sent as JSON strings.
+ENCODING_SMOKE_RENDITION = json.dumps(
+    {"360": {"resolution": "640x360", "encode_mp4": True}},
+    separators=(",", ":"),
+)
 
 # Required by the API schema.
 # The manager will POST to this URL when the task completes.
@@ -360,8 +367,8 @@ def _build_task_plan(with_transcription_translation: bool, source_url: str) -> l
                 TASK_TYPE_ENCODING,
                 source_url,
                 {
-                    # For "encoding", keep the minimal rendition map for a quick smoke test.
-                    "rendition": {"360": "640x360"}
+                    # Keep a minimal, valid encoding ladder for a quick smoke test.
+                    "rendition": ENCODING_SMOKE_RENDITION,
                 },
             ),
             "download_first_file": True,

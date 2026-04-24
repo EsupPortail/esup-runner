@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Hardened source media download in `app/task_handlers/base_handler.py`: downloads now stream to a temporary `.part` file and are atomically moved to the final path only after full validation.
+- Added defensive download checks in the shared handler: reject empty payloads, verify byte count against `Content-Length` when present, and retry transient failures with exponential backoff.
+- Added a transcription input pre-check in `app/task_handlers/transcription/transcription_handler.py` using `ffprobe` before launching Whisper, with explicit failure messages when media is unreadable.
+- Updated encoding input validation in `app/task_handlers/encoding/scripts/encoding.py` to raise `EncodingValidationError` as soon as the source media is missing or empty, aligning failure handling with CLI exit behavior.
+- Expanded runner test coverage for streamed download retries, transcription `ffprobe` pre-check branches, and invalid-input encoding CLI paths.
+
+### Fixed
+
+- Fixed intermittent transcription failures caused by partially downloaded or zero-byte source files being treated as successful downloads.
+- Fixed encoding failure reporting so missing or empty input media now produces an explicit non-zero error path instead of a silent early return.
+
 ## [1.2.0] - 2026-04-22
 
 ### Added

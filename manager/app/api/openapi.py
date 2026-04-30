@@ -4,14 +4,46 @@ OpenAPI configuration for Runner Manager API.
 Handles custom documentation, tags, and API schema generation.
 """
 
-from typing import Callable, Dict, List, Optional
+from typing import Annotated, Callable, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Cookie, Depends, FastAPI, Request
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app.__version__ import __author__, __email__, __version__
+
+
+def _set_openapi_auth_cookie_if_needed(
+    *,
+    response,
+    request: Request,
+    token: Optional[str],
+    token_cookie: Optional[str],
+    rotate_each_request: bool,
+    cookie_name: str,
+    cookie_max_age_seconds: int,
+    build_cookie_value: Callable[[str], Optional[str]],
+) -> None:
+    """Attach signed OpenAPI auth cookie when rotation policy requires it."""
+    if not token:
+        return
+    if not (rotate_each_request or not token_cookie):
+        return
+
+    cookie_value = build_cookie_value(token)
+    if not cookie_value:
+        return
+
+    response.set_cookie(
+        key=cookie_name,
+        value=cookie_value,
+        max_age=cookie_max_age_seconds,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        path="/",
+    )
 
 
 def custom_openapi(app: FastAPI) -> Callable[[], Dict]:
@@ -228,7 +260,12 @@ def setup_protected_openapi_routes(app: FastAPI) -> None:
     Args:
         app: FastAPI application instance
     """
-    from app.core.auth import verify_openapi_token
+    from app.core.auth import (
+        OPENAPI_TOKEN_COOKIE_NAME,
+        build_openapi_cookie_value,
+        verify_openapi_token,
+    )
+    from app.core.config import config
 
     # Set openapi_url for generating the schema
     if not app.openapi_url:
@@ -240,50 +277,75 @@ def setup_protected_openapi_routes(app: FastAPI) -> None:
     # Override /docs route
     @app.get("/docs", include_in_schema=False)
     async def custom_swagger_ui_html(
-        request: Request, token: Optional[str] = Depends(verify_openapi_token)
+        request: Request,
+        token: Optional[str] = Depends(verify_openapi_token),
+        token_cookie: Annotated[Optional[str], Cookie(alias=OPENAPI_TOKEN_COOKIE_NAME)] = None,
     ):
         """Protected Swagger UI documentation."""
-        # Add token to openapi_url if authentication is required
-        # Only add token if it's not None (i.e., when API_DOCS_VISIBILITY is private)
-        if token:
-            openapi_url_with_token = f"{openapi_url}?token={token}"
-        else:
-            openapi_url_with_token = openapi_url
-
-        return get_swagger_ui_html(
-            openapi_url=openapi_url_with_token,
+        response = get_swagger_ui_html(
+            openapi_url=openapi_url,
             title=app.title + " - Swagger UI",
             oauth2_redirect_url=app.swagger_ui_oauth2_redirect_url,
             swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
             swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
         )
+        _set_openapi_auth_cookie_if_needed(
+            response=response,
+            request=request,
+            token=token,
+            token_cookie=token_cookie,
+            rotate_each_request=config.OPENAPI_COOKIE_ROTATE_EACH_REQUEST,
+            cookie_name=OPENAPI_TOKEN_COOKIE_NAME,
+            cookie_max_age_seconds=config.OPENAPI_COOKIE_MAX_AGE_SECONDS,
+            build_cookie_value=build_openapi_cookie_value,
+        )
+        return response
 
     # Override /redoc route
     @app.get("/redoc", include_in_schema=False)
     async def custom_redoc_html(
-        request: Request, token: Optional[str] = Depends(verify_openapi_token)
+        request: Request,
+        token: Optional[str] = Depends(verify_openapi_token),
+        token_cookie: Annotated[Optional[str], Cookie(alias=OPENAPI_TOKEN_COOKIE_NAME)] = None,
     ):
         """Protected ReDoc documentation."""
-        # Add token to openapi_url if authentication is required
-        # Only add token if it's not None (i.e., when API_DOCS_VISIBILITY is private)
-        if token:
-            openapi_url_with_token = f"{openapi_url}?token={token}"
-        else:
-            openapi_url_with_token = openapi_url
-
-        return get_redoc_html(
-            openapi_url=openapi_url_with_token,
+        response = get_redoc_html(
+            openapi_url=openapi_url,
             title=app.title + " - ReDoc",
             redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js",
         )
+        _set_openapi_auth_cookie_if_needed(
+            response=response,
+            request=request,
+            token=token,
+            token_cookie=token_cookie,
+            rotate_each_request=config.OPENAPI_COOKIE_ROTATE_EACH_REQUEST,
+            cookie_name=OPENAPI_TOKEN_COOKIE_NAME,
+            cookie_max_age_seconds=config.OPENAPI_COOKIE_MAX_AGE_SECONDS,
+            build_cookie_value=build_openapi_cookie_value,
+        )
+        return response
 
     # Override /openapi.json route
     @app.get("/openapi.json", include_in_schema=False)
     async def custom_openapi_json(
-        request: Request, token: Optional[str] = Depends(verify_openapi_token)
+        request: Request,
+        token: Optional[str] = Depends(verify_openapi_token),
+        token_cookie: Annotated[Optional[str], Cookie(alias=OPENAPI_TOKEN_COOKIE_NAME)] = None,
     ):
         """Protected OpenAPI schema."""
-        return JSONResponse(app.openapi())
+        response = JSONResponse(app.openapi())
+        _set_openapi_auth_cookie_if_needed(
+            response=response,
+            request=request,
+            token=token,
+            token_cookie=token_cookie,
+            rotate_each_request=config.OPENAPI_COOKIE_ROTATE_EACH_REQUEST,
+            cookie_name=OPENAPI_TOKEN_COOKIE_NAME,
+            cookie_max_age_seconds=config.OPENAPI_COOKIE_MAX_AGE_SECONDS,
+            build_cookie_value=build_openapi_cookie_value,
+        )
+        return response
 
 
 class OpenAPIConfig:

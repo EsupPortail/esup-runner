@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Updated `scripts/generate_tree_diagram.py` default ignore patterns to exclude cache/build artifacts and local data directories from rendered trees (`.uv-cache`, `data`, `*.egg-info`, `htmlcov`).
 - Hardened source media download in `app/task_handlers/base_handler.py`: downloads now stream to a temporary `.part` file and are atomically moved to the final path only after full validation.
 - Added defensive download checks in the shared handler: reject empty payloads, verify byte count against `Content-Length` when present, and retry transient failures with exponential backoff.
 - Added a transcription input pre-check in `app/task_handlers/transcription/transcription_handler.py` using `ffprobe` before launching Whisper, with explicit failure messages when media is unreadable.
@@ -19,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed intermittent transcription failures caused by partially downloaded or zero-byte source files being treated as successful downloads.
 - Fixed encoding failure reporting so missing or empty input media now produces an explicit non-zero error path instead of a silent early return.
+- Fixed studio base generation failure when one mediapackage source is audio-only: mapping now follows the effective pipeline and no longer references `[vout]` when no mixed-video filter graph is built.
 
 ## [1.2.0] - 2026-04-22
 

@@ -205,6 +205,81 @@ def test_reload_config_env_updates_shared_object(monkeypatch):
     cfg._CONFIG_ENV_LOADED = original_loaded
 
 
+def test_config_reload_marker_publish_and_consume(monkeypatch, tmp_path):
+    from app.core import config as cfg
+
+    marker_path = tmp_path / ".config_reload"
+    monkeypatch.setattr(cfg, "_CONFIG_RELOAD_MARKER_PATH", marker_path)
+    monkeypatch.setattr(cfg, "_CONFIG_RELOAD_MARKER_MTIME_NS", 0)
+
+    reload_calls = {"count": 0}
+
+    def fake_reload():
+        reload_calls["count"] += 1
+        return cfg.config
+
+    monkeypatch.setattr(cfg, "reload_config_env", fake_reload)
+
+    published = cfg.publish_config_reload_event()
+    assert marker_path.exists()
+    assert published > 0
+
+    # Simulate another worker that has not seen this marker yet.
+    monkeypatch.setattr(cfg, "_CONFIG_RELOAD_MARKER_MTIME_NS", 0)
+    assert cfg.reload_config_if_signaled() is True
+    assert reload_calls["count"] == 1
+
+    # Same marker should not trigger repeated reloads.
+    assert cfg.reload_config_if_signaled() is False
+    assert reload_calls["count"] == 1
+
+
+def test_read_config_reload_marker_mtime_ns_handles_oserror(monkeypatch):
+    from app.core import config as cfg
+
+    class _PathWithStatError:
+        def stat(self):
+            raise OSError("stat-failed")
+
+    monkeypatch.setattr(cfg, "_CONFIG_RELOAD_MARKER_PATH", _PathWithStatError())
+
+    assert cfg._read_config_reload_marker_mtime_ns() == 0
+
+
+def test_read_config_reload_marker_mtime_ns_handles_filenotfound(monkeypatch):
+    from app.core import config as cfg
+
+    class _PathMissing:
+        def stat(self):
+            raise FileNotFoundError("missing")
+
+    monkeypatch.setattr(cfg, "_CONFIG_RELOAD_MARKER_PATH", _PathMissing())
+
+    assert cfg._read_config_reload_marker_mtime_ns() == 0
+
+
+def test_publish_config_reload_event_handles_oserror(monkeypatch, capsys):
+    from app.core import config as cfg
+
+    class _BadParent:
+        def mkdir(self, *_args, **_kwargs):
+            raise OSError("mkdir-failed")
+
+    class _BadPath:
+        parent = _BadParent()
+
+        def touch(self, **_kwargs):
+            raise AssertionError("touch should not be called when mkdir fails")
+
+    monkeypatch.setattr(cfg, "_CONFIG_RELOAD_MARKER_PATH", _BadPath())
+    monkeypatch.setattr(cfg, "_CONFIG_RELOAD_MARKER_MTIME_NS", 123)
+
+    assert cfg.publish_config_reload_event() == 123
+    out = capsys.readouterr().out
+    assert "failed to publish config reload marker" in out
+    assert "mkdir-failed" in out
+
+
 def test_validate_configuration_warns_when_missing_tokens_and_admin(capsys):
     from app.core.config import Config
 
@@ -229,6 +304,9 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     monkeypatch.delenv("LOG_DIRECTORY", raising=False)
     monkeypatch.setenv("CACHE_DIR", "/tmp/esup-cache")
     monkeypatch.delenv("UV_CACHE_DIR", raising=False)
+    monkeypatch.setenv("OPENAPI_COOKIE_MAX_AGE_SECONDS", "1200")
+    monkeypatch.setenv("OPENAPI_COOKIE_ROTATE_EACH_REQUEST", "false")
+    monkeypatch.setenv("OPENAPI_COOKIE_SECRET", "cookie-secret")
 
     # Token/admin discovery via prefixes
     monkeypatch.setenv("AUTHORIZED_TOKENS__client", "tok")
@@ -243,6 +321,9 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     assert cfg.UV_CACHE_DIR == "/tmp/esup-cache/uv"
     assert cfg.AUTHORIZED_TOKENS == {"client": "tok"}
     assert cfg.ADMIN_USERS == {"admin": "hash"}
+    assert cfg.OPENAPI_COOKIE_MAX_AGE_SECONDS == 1200
+    assert cfg.OPENAPI_COOKIE_ROTATE_EACH_REQUEST is False
+    assert cfg.OPENAPI_COOKIE_SECRET == "cookie-secret"
 
     # RUNNERS_STORAGE_ENABLED with missing path should raise
     monkeypatch.setenv("RUNNERS_STORAGE_ENABLED", "true")

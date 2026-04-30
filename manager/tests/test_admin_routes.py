@@ -231,9 +231,11 @@ def test_reload_config_endpoint_returns_expected_payload(admin_client, monkeypat
     fake = SimpleNamespace(
         API_DOCS_VISIBILITY="public",
         AUTHORIZED_TOKENS={"x": "y", "z": "w"},
+        ADMIN_USERS={"alice": "h1", "bob": "h2"},
     )
 
     monkeypatch.setattr(config_module, "reload_config_env", lambda: fake)
+    monkeypatch.setattr(config_module, "publish_config_reload_event", lambda: 0)
 
     resp = admin_client.post("/admin/reload-config")
     assert resp.status_code == 200
@@ -241,28 +243,50 @@ def test_reload_config_endpoint_returns_expected_payload(admin_client, monkeypat
     payload = resp.json()
     assert payload["api_docs_visibility"] == "public"
     assert payload["authorized_tokens"] == ["x", "z"]
+    assert payload["authorized_tokens_count"] == 2
+    assert payload["admin_users"] == ["alice", "bob"]
+    assert payload["admin_users_count"] == 2
 
 
 @pytest.mark.parametrize(
-    "visibility,expected_has_token",
+    "visibility,expected_cookie_set",
     [
         ("private", True),
         ("public", False),
     ],
 )
-def test_documentation_page_private_includes_token(  # noqa: D401
-    admin_client, monkeypatch, visibility: str, expected_has_token: bool
+def test_documentation_page_uses_cookie_without_query_token(  # noqa: D401
+    admin_client, monkeypatch, visibility: str, expected_cookie_set: bool
 ):
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", visibility)
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"t": "sekret"})
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_SECRET", "unit-test-secret")
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_MAX_AGE_SECONDS", 900)
 
     resp = admin_client.get("/admin/docs")
     assert resp.status_code == 200
 
-    if expected_has_token:
-        assert "?token=sekret" in resp.text
+    assert "?token=sekret" not in resp.text
+    set_cookie = resp.headers.get("set-cookie", "")
+    if expected_cookie_set:
+        assert "openapi_token=" in set_cookie
+        assert "openapi_token=sekret" not in set_cookie
+        assert "Max-Age=900" in set_cookie
     else:
-        assert "?token=sekret" not in resp.text
+        assert "openapi_token=" in set_cookie
+
+
+def test_documentation_page_deletes_cookie_when_builder_returns_none(admin_client, monkeypatch):
+    monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "private")
+    monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"t": "sekret"})
+    monkeypatch.setattr(admin_routes, "build_openapi_cookie_value", lambda _token: None)
+
+    resp = admin_client.get("/admin/docs")
+    assert resp.status_code == 200
+
+    set_cookie = resp.headers.get("set-cookie", "")
+    assert "openapi_token=" in set_cookie
+    assert "Max-Age=0" in set_cookie
 
 
 def test_admin_dashboard_logs_csv_errors(admin_client, clean_state, monkeypatch, tmp_path):

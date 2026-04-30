@@ -49,8 +49,8 @@
     {% if api_docs_visibility == 'private' %}
       <div class="alert alert-warning" role="alert">
         <i class="bi bi-shield-lock me-2" aria-hidden="true"></i>
-        <strong>Protected Documentation:</strong> The API documentation is protected. An authentication token is
-        automatically added to the links below to grant you access.
+        <strong>Protected Documentation:</strong> The API documentation is protected. Access is granted via a secure
+        HTTP-only cookie.
       </div>
     {% endif %}
 
@@ -121,8 +121,7 @@
                   Access the raw OpenAPI 3.0 specification in JSON format.
                   This is useful for generating client libraries or importing into API tools.
                 </p>
-                <a href="/openapi.json{% if api_token %}?token={{ api_token }}{% endif %}" class="btn btn-primary"
-                  target="_blank">
+                <a href="/openapi.json" class="btn btn-primary" target="_blank">
                   <i class="bi bi-box-arrow-up-right me-2" aria-hidden="true"></i>
                   View OpenAPI JSON
                 </a>
@@ -146,8 +145,7 @@
                   Interactive API documentation with Swagger UI.
                   Test endpoints directly from your browser with a user-friendly interface.
                 </p>
-                <a href="/docs{% if api_token %}?token={{ api_token }}{% endif %}" class="btn btn-success"
-                  target="_blank">
+                <a href="/docs" class="btn btn-success" target="_blank">
                   <i class="bi bi-box-arrow-up-right me-2" aria-hidden="true"></i>
                   Open Swagger Docs
                 </a>
@@ -171,8 +169,7 @@
                   Beautiful, responsive API documentation powered by ReDoc.
                   Ideal for reading and understanding the API structure.
                 </p>
-                <a href="/redoc{% if api_token %}?token={{ api_token }}{% endif %}" class="btn btn-info"
-                  target="_blank">
+                <a href="/redoc" class="btn btn-info" target="_blank">
                   <i class="bi bi-box-arrow-up-right me-2" aria-hidden="true"></i>
                   Open ReDoc Docs
                 </a>

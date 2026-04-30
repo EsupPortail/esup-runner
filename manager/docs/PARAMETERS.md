@@ -45,7 +45,10 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 
 ## OpenAPI visibility
 - `API_DOCS_VISIBILITY` (default `public`): `public` or `private`.
-- `OPENAPI_ALLOW_QUERY_TOKEN` (bool, default `false`): Allows `?token=...` on docs/OpenAPI routes.
+- `OPENAPI_ALLOW_QUERY_TOKEN` (bool, default `false`): Allows `?token=...` on docs/OpenAPI routes (legacy/fallback; admin docs uses a secure cookie instead).
+- `OPENAPI_COOKIE_MAX_AGE_SECONDS` (int, default `900`): Advanced cookie tuning; TTL of the signed OpenAPI auth cookie used by admin/docs flow.
+- `OPENAPI_COOKIE_ROTATE_EACH_REQUEST` (bool, default `true`): Advanced cookie tuning; rotates OpenAPI auth cookie on each protected docs request.
+- `OPENAPI_COOKIE_SECRET` (string, default empty): Optional explicit signing secret for OpenAPI auth cookie (recommended in production). Cookie is signed (integrity), not encrypted. If empty, manager derives a fallback secret from configured tokens/admin hashes. Use a long random shared value on every manager instance (example: `openssl rand -hex 32`).
 
 ## Logging and cache
 - `LOG_DIR` (default `/var/log/esup-runner/`): Log directory; trailing slash is normalized automatically.

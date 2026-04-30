@@ -7,9 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated OpenAPI documentation references (`docs/CONFIGURATION.md`, `docs/PARAMETERS.md`) with detailed `OPENAPI_COOKIE_SECRET` behavior: signature purpose (integrity), non-encryption note, empty-value fallback, multi-instance recommendation, and secure secret generation example.
+- Updated `scripts/generate_tree_diagram.py` default ignore patterns to exclude cache/build artifacts and local data directories from rendered trees (`.uv-cache`, `data`, `*.egg-info`, `htmlcov`).
+
 ### Fixed
 
 - Fixed `scripts/check_pipeline_tasks.py` encoding smoke-test payload so `rendition` is sent as a valid JSON string (not a Python dict string), preventing runner warnings (`Failed to parse rendition parameter`) and unintended fallback to default rendition configuration.
+- Fixed admin/runtime config reload propagation across Gunicorn workers: `/admin/reload-config` now publishes a shared reload marker so updated `.env` `ADMIN_USERS__*` / `AUTHORIZED_TOKENS__*` are picked up without restarting the manager service.
+- Fixed private OpenAPI admin access flow to avoid clear-text token leakage in `/admin/docs` links and to authenticate docs via secure HttpOnly cookie (while keeping `?token=...` as optional fallback when `OPENAPI_ALLOW_QUERY_TOKEN=true`).
+- Fixed private OpenAPI cookie hardening: auth cookie is now signed/opaque (no raw token value), with configurable TTL (`OPENAPI_COOKIE_MAX_AGE_SECONDS`) and optional per-request rotation (`OPENAPI_COOKIE_ROTATE_EACH_REQUEST`).
+- Fixed `test_task_service_unit.py` persistence side effects by mocking `save_tasks()` in that test module, preventing orphan `run` tasks from being written to `data/YYYY-MM-DD/run.json` during test runs.
 
 ## [1.2.0] - 2026-04-22
 

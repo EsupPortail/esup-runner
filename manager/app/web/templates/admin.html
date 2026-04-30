@@ -308,7 +308,10 @@
           const authorizedTokensCount = Number.isInteger(data.authorized_tokens_count)
             ? data.authorized_tokens_count
             : (Array.isArray(data.authorized_tokens) ? data.authorized_tokens.length : 0);
-          reloadStatus.textContent = `Reload OK (authorized tokens: ${authorizedTokensCount})`;
+          const adminUsersCount = Number.isInteger(data.admin_users_count)
+            ? data.admin_users_count
+            : (Array.isArray(data.admin_users) ? data.admin_users.length : 0);
+          reloadStatus.textContent = `Reload OK (admins: ${adminUsersCount}, authorized tokens: ${authorizedTokensCount})`;
         } catch (error) {
           reloadStatus.textContent = 'Reload failed';
         } finally {

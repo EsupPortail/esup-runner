@@ -67,13 +67,39 @@ OpenAPI/docs can be public or token-protected:
 ```properties
 API_DOCS_VISIBILITY=public
 OPENAPI_ALLOW_QUERY_TOKEN=false
+OPENAPI_COOKIE_SECRET=
 ```
 
 Behavior:
 - `API_DOCS_VISIBILITY=public`: `/docs`, `/redoc`, `/openapi.json` are publicly accessible.
 - `API_DOCS_VISIBILITY=private`: OpenAPI routes require a valid API token.
-- In private mode, tokens are read from headers first; query token (`?token=...`) is accepted only if `OPENAPI_ALLOW_QUERY_TOKEN=true`.
+- In private mode, tokens are read from headers first, then from the secure OpenAPI cookie used by `/admin/docs`; query token (`?token=...`) is accepted only if `OPENAPI_ALLOW_QUERY_TOKEN=true`.
 - Query tokens are not recommended for production because they can leak via logs/history.
+- Set `OPENAPI_COOKIE_SECRET` in production to use an explicit cookie-signing secret.
+
+### Advanced OpenAPI cookie tuning (optional)
+
+These parameters are available but usually do not need to be changed:
+
+```properties
+OPENAPI_COOKIE_MAX_AGE_SECONDS=900
+OPENAPI_COOKIE_ROTATE_EACH_REQUEST=true
+```
+
+- `OPENAPI_COOKIE_MAX_AGE_SECONDS` controls cookie TTL (default: 900s).
+- `OPENAPI_COOKIE_ROTATE_EACH_REQUEST=true` refreshes cookie value/TTL on each protected docs request.
+- They are intentionally omitted from the default `.env.example` to keep the base config focused on commonly adjusted settings.
+
+How `OPENAPI_COOKIE_SECRET` works:
+- The OpenAPI auth cookie is **signed** (HMAC) with `OPENAPI_COOKIE_SECRET` so tampering is detected.
+- The cookie is not encrypted; this setting ensures integrity/authenticity, not confidentiality.
+- If `OPENAPI_COOKIE_SECRET` is empty, the manager derives a fallback secret from current configured tokens/admin hashes.
+- For stable behavior across restarts and multi-instance deployments, set an explicit long random secret and keep it identical on all manager instances.
+
+Example secret generation:
+```bash
+openssl rand -hex 32
+```
 
 ## Logging and cache directories
 

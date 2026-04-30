@@ -6,6 +6,7 @@ Handles environment variables, security settings, and application configuration.
 
 import ipaddress
 import os
+from pathlib import Path
 from typing import Dict, Optional
 
 from app.core.passwords import BcryptPasswordContext
@@ -13,6 +14,9 @@ from app.core.passwords import BcryptPasswordContext
 # Module-level global state - these persist across imports
 _CONFIG_ENV_LOADED: bool = False
 _CONFIG_INSTANCE: Optional["Config"] = None
+_CONFIG_RELOAD_MARKER_MTIME_NS: int = 0
+_MANAGER_ROOT = Path(__file__).resolve().parents[2]
+_CONFIG_RELOAD_MARKER_PATH = _MANAGER_ROOT / "data" / ".config_reload"
 
 
 # Keys/prefixes managed by this config; cleared on reload to reflect deletions in .env
@@ -56,6 +60,9 @@ _CONFIG_ENV_KEYS = [
     "RUNNER_URL_ALLOWED_HOSTS",
     "RUNNER_URL_ALLOW_PRIVATE_NETWORKS",
     "OPENAPI_ALLOW_QUERY_TOKEN",
+    "OPENAPI_COOKIE_MAX_AGE_SECONDS",
+    "OPENAPI_COOKIE_ROTATE_EACH_REQUEST",
+    "OPENAPI_COOKIE_SECRET",
 ]
 
 
@@ -238,6 +245,43 @@ def _clear_config_env_vars() -> None:
                 os.environ.pop(key, None)
 
 
+def _read_config_reload_marker_mtime_ns() -> int:
+    """Return reload marker mtime in nanoseconds, or 0 if unavailable."""
+    try:
+        return _CONFIG_RELOAD_MARKER_PATH.stat().st_mtime_ns
+    except FileNotFoundError:
+        return 0
+    except OSError:
+        return 0
+
+
+def publish_config_reload_event() -> int:
+    """Publish a reload signal for sibling workers using a shared marker file."""
+    global _CONFIG_RELOAD_MARKER_MTIME_NS
+
+    try:
+        _CONFIG_RELOAD_MARKER_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _CONFIG_RELOAD_MARKER_PATH.touch(exist_ok=True)
+        _CONFIG_RELOAD_MARKER_MTIME_NS = _read_config_reload_marker_mtime_ns()
+    except OSError as exc:
+        print(f"Warning: failed to publish config reload marker: {exc}")
+
+    return _CONFIG_RELOAD_MARKER_MTIME_NS
+
+
+def reload_config_if_signaled() -> bool:
+    """Reload this worker config if another worker published a newer reload signal."""
+    global _CONFIG_RELOAD_MARKER_MTIME_NS
+
+    marker_mtime_ns = _read_config_reload_marker_mtime_ns()
+    if marker_mtime_ns <= _CONFIG_RELOAD_MARKER_MTIME_NS:
+        return False
+
+    reload_config_env()
+    _CONFIG_RELOAD_MARKER_MTIME_NS = marker_mtime_ns
+    return True
+
+
 class Config:
     """
     Configuration class that reads from environment variables.
@@ -396,6 +440,21 @@ class Config:
         self.OPENAPI_ALLOW_QUERY_TOKEN: bool = _parse_bool(
             os.getenv("OPENAPI_ALLOW_QUERY_TOKEN"), default=False
         )
+        # OpenAPI auth cookie TTL (seconds). Used by /admin/docs -> /docs|/redoc|/openapi.json flow.
+        self.OPENAPI_COOKIE_MAX_AGE_SECONDS: int = _parse_int(
+            os.getenv("OPENAPI_COOKIE_MAX_AGE_SECONDS"),
+            900,
+            min_value=60,
+            max_value=86400,
+        )
+        # Rotate OpenAPI auth cookie on each protected docs request.
+        self.OPENAPI_COOKIE_ROTATE_EACH_REQUEST: bool = _parse_bool(
+            os.getenv("OPENAPI_COOKIE_ROTATE_EACH_REQUEST"),
+            default=True,
+        )
+        # Optional explicit signing secret for OpenAPI auth cookie.
+        # If empty, a deterministic fallback derived from configured secrets is used.
+        self.OPENAPI_COOKIE_SECRET: str = (os.getenv("OPENAPI_COOKIE_SECRET", "") or "").strip()
 
         # Admin users configuration
         self.ADMIN_USERS: Dict[str, str] = self._load_admin_users()
@@ -458,6 +517,8 @@ class Config:
             )
             self.PRIORITIES_ENABLED = False
 
+
+_CONFIG_RELOAD_MARKER_MTIME_NS = _read_config_reload_marker_mtime_ns()
 
 # Create global config instance using the factory function
 config: "Config" = get_config()

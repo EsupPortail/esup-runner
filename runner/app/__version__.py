@@ -10,7 +10,7 @@ The version follows semantic versioning: MAJOR.MINOR.PATCH
 - PATCH: Backward compatible bug fixes
 """
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 __version_info__ = tuple(int(x) for x in __version__.split("."))
 
 # Additional version metadata

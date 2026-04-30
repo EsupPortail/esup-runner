@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-04-30
+
 ### Changed
 
 - Updated `scripts/generate_tree_diagram.py` default ignore patterns to exclude cache/build artifacts and local data directories from rendered trees (`.uv-cache`, `data`, `*.egg-info`, `htmlcov`).

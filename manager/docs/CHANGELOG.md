@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-04-30
+
 ### Changed
 
 - Updated OpenAPI documentation references (`docs/CONFIGURATION.md`, `docs/PARAMETERS.md`) with detailed `OPENAPI_COOKIE_SECRET` behavior: signature purpose (integrity), non-encryption note, empty-value fallback, multi-instance recommendation, and secure secret generation example.

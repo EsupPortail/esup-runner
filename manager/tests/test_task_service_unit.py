@@ -32,6 +32,12 @@ def clean_runners():
     runners.update(original)
 
 
+@pytest.fixture(autouse=True)
+def prevent_persistence_side_effects(monkeypatch):
+    """Avoid writing task state to real ./data during unit tests."""
+    monkeypatch.setattr(task_service, "save_tasks", lambda: True)
+
+
 def _task(
     task_id: str,
     status: str,

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app.api.openapi import (
     OpenAPIConfig,
@@ -15,6 +17,7 @@ from app.api.openapi import (
     setup_openapi_config,
     setup_protected_openapi_routes,
 )
+from app.core.config import config
 
 
 def test_get_openapi_tags_contains_expected_names():
@@ -119,33 +122,105 @@ def test_setup_openapi_config_assigns_openapi_callable():
     assert "openapi" in schema
 
 
-def test_setup_protected_openapi_routes_appends_token_to_openapi_url_in_docs():
+def test_set_openapi_auth_cookie_if_needed_skips_when_builder_returns_none():
+    from app.api import openapi as openapi_module
+
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "https",
+            "path": "/docs",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 443),
+        }
+    )
+    response = Response()
+
+    openapi_module._set_openapi_auth_cookie_if_needed(
+        response=response,
+        request=request,
+        token="tok",
+        token_cookie=None,
+        rotate_each_request=True,
+        cookie_name="openapi_token",
+        cookie_max_age_seconds=900,
+        build_cookie_value=lambda _token: None,
+    )
+
+    assert response.headers.get("set-cookie") is None
+
+
+def test_setup_protected_openapi_routes_docs_uses_cookie_and_no_query_token(monkeypatch):
     # Start with docs disabled so we know the override route comes from setup_protected_openapi_routes
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
     setup_protected_openapi_routes(app)
 
     from app.core.auth import verify_openapi_token
 
+    monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"docs": "tok123"})
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_SECRET", "unit-test-secret")
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_MAX_AGE_SECONDS", 900)
     app.dependency_overrides[verify_openapi_token] = lambda: "tok123"
 
     with TestClient(app) as client:
         resp = client.get("/docs")
         assert resp.status_code == 200
-        assert "openapi.json?token=tok123" in resp.text
+        assert "openapi.json?token=tok123" not in resp.text
+        assert "openapi.json" in resp.text
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "openapi_token=" in set_cookie
+        assert "openapi_token=tok123" not in set_cookie
+        assert "Max-Age=900" in set_cookie
 
 
-def test_setup_protected_openapi_routes_appends_token_to_redoc(monkeypatch):
+def test_setup_protected_openapi_routes_redoc_uses_cookie_and_no_query_token(monkeypatch):
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
     setup_protected_openapi_routes(app)
 
     from app.core.auth import verify_openapi_token
 
+    monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"docs": "tok456"})
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_SECRET", "unit-test-secret")
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_MAX_AGE_SECONDS", 900)
     app.dependency_overrides[verify_openapi_token] = lambda: "tok456"
 
     with TestClient(app) as client:
         resp = client.get("/redoc")
         assert resp.status_code == 200
-        assert "openapi.json?token=tok456" in resp.text
+        assert "openapi.json?token=tok456" not in resp.text
+        assert "openapi.json" in resp.text
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "openapi_token=" in set_cookie
+        assert "openapi_token=tok456" not in set_cookie
+        assert "Max-Age=900" in set_cookie
+
+
+def test_setup_protected_openapi_routes_skips_rotation_when_disabled_and_cookie_present(
+    monkeypatch,
+):
+    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+    setup_protected_openapi_routes(app)
+
+    from app.core.auth import build_openapi_cookie_value, verify_openapi_token
+
+    monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"docs": "tok-no-rotate"})
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_SECRET", "unit-test-secret")
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_MAX_AGE_SECONDS", 900)
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_ROTATE_EACH_REQUEST", False)
+    app.dependency_overrides[verify_openapi_token] = lambda: "tok-no-rotate"
+
+    existing_cookie = build_openapi_cookie_value("tok-no-rotate")
+    assert existing_cookie is not None
+
+    with TestClient(app) as client:
+        client.cookies.set("openapi_token", existing_cookie)
+        resp = client.get("/docs")
+        assert resp.status_code == 200
+        assert resp.headers.get("set-cookie") is None
 
 
 def test_setup_protected_openapi_routes_without_token_keeps_plain_openapi_url_and_openapi_json_works():

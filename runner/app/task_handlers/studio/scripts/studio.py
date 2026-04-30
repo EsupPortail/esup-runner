@@ -461,20 +461,20 @@ def build_pipeline(pres_url, pers_url, pres_h, pers_h, presenter_layout, args, i
 
     full_gpu = _build_full_gpu_pipeline(pres_url, pers_url, pres_h, pers_h, presenter_layout, args)
     if full_gpu is not None:
-        input_args2, subcmd, video_codec = full_gpu
-        return subcmd, video_codec, input_args2, cpu_encoder
+        input_args2, subcmd, video_codec, map_opts = full_gpu
+        return subcmd, video_codec, input_args2, cpu_encoder, map_opts
 
     gpu_enc = _build_gpu_encode_only_pipeline(
         pres_url, pers_url, pres_h, pers_h, presenter_layout, args
     )
     if gpu_enc is not None:
-        input_args2, subcmd, video_codec = gpu_enc
-        return subcmd, video_codec, input_args2, cpu_encoder
+        input_args2, subcmd, video_codec, map_opts = gpu_enc
+        return subcmd, video_codec, input_args2, cpu_encoder, map_opts
 
-    input_args2, subcmd, video_codec = _build_cpu_pipeline(
+    input_args2, subcmd, video_codec, map_opts = _build_cpu_pipeline(
         pres_url, pers_url, pres_h, pers_h, presenter_layout, args
     )
-    return subcmd, video_codec, input_args2, cpu_encoder
+    return subcmd, video_codec, input_args2, cpu_encoder, map_opts
 
 
 def _is_gpu_requested(args: argparse.Namespace) -> bool:
@@ -570,10 +570,10 @@ def _build_full_gpu_pipeline(
     pers_h: int,
     presenter_layout: str,
     args: argparse.Namespace,
-) -> tuple[str, str, str] | None:
+) -> tuple[str, str, str, str] | None:
     """Build a pipeline that uses GPU decode (CUVID) + GPU encode (NVENC) when possible.
 
-    Returns (input_args, subcmd, video_codec) or None if not possible.
+    Returns (input_args, subcmd, video_codec, map_opts) or None if not possible.
     """
     prepared = _prepare_full_gpu_inputs(
         pres_url=pres_url,
@@ -591,7 +591,8 @@ def _build_full_gpu_pipeline(
         pip_h=pip_h,
         overlay_pos=overlay_pos,
     )
-    return input_args, gpu_filter, _build_nvenc_video_codec(args)
+    map_opts = '-map "[vout]" -map 0:a? '
+    return input_args, gpu_filter, _build_nvenc_video_codec(args), map_opts
 
 
 def _build_gpu_encode_only_pipeline(
@@ -601,10 +602,10 @@ def _build_gpu_encode_only_pipeline(
     pers_h: int,
     presenter_layout: str,
     args: argparse.Namespace,
-) -> tuple[str, str, str] | None:
+) -> tuple[str, str, str, str] | None:
     """Build a CPU decode/filter + NVENC encode pipeline.
 
-    Returns (input_args, subcmd, video_codec) or None if NVENC not available.
+    Returns (input_args, subcmd, video_codec, map_opts) or None if NVENC not available.
     """
 
     if not _is_gpu_requested(args):
@@ -618,9 +619,33 @@ def _build_gpu_encode_only_pipeline(
         return None
 
     input_args = ""
+    map_opts = "-map 0:v -map 0:a? "
     if pres_url and pers_url:
-        input_args = f'-i "{pres_url}" -i "{pers_url}" '
-        subcmd = build_filter(pres_h, pers_h, presenter_layout)
+        if pres_h > 0 and pers_h > 0:
+            input_args = f'-i "{pres_url}" -i "{pers_url}" '
+            subcmd = build_filter(pres_h, pers_h, presenter_layout)
+            map_opts = '-map "[vout]" -map 0:a? '
+        elif pres_h > 0:
+            print(
+                "Presenter source has no video stream; falling back to presentation-only pipeline"
+            )
+            input_args = f'-i "{pres_url}" '
+            target_h = pres_h
+            subcmd = f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
+        elif pers_h > 0:
+            print(
+                "Presentation source has no video stream; falling back to presenter-only pipeline"
+            )
+            input_args = f'-i "{pers_url}" '
+            target_h = pers_h
+            subcmd = f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
+        else:
+            print(
+                "Could not detect video dimensions for studio mix; falling back to presentation-only pipeline"
+            )
+            input_args = f'-i "{pres_url}" '
+            target_h = 720
+            subcmd = f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
     elif pres_url:
         input_args = f'-i "{pres_url}" '
         target_h = pres_h or 720
@@ -632,7 +657,7 @@ def _build_gpu_encode_only_pipeline(
     else:
         return None
 
-    return input_args, subcmd, _build_nvenc_video_codec(args)
+    return input_args, subcmd, _build_nvenc_video_codec(args), map_opts
 
 
 def _load_mediapackage_and_layout(
@@ -646,11 +671,65 @@ def _load_mediapackage_and_layout(
     return pres_url, pers_url, presenter_layout, smil_url
 
 
-def _build_map_opts(pres_url_local: str | None, pers_url_local: str | None) -> str:
-    """Build FFmpeg stream mapping options for the current studio inputs."""
-    if pres_url_local and pers_url_local:
-        return '-map "[vout]" -map 0:a? '
-    return "-map 0:v -map 0:a? "
+def _select_cpu_input_args(
+    pres_url: str | None,
+    pers_url: str | None,
+    pres_h: int,
+    pers_h: int,
+) -> tuple[str, str, str]:
+    """Select CPU input args and mapping.
+
+    Returns: (input_args, map_opts, source_kind) where source_kind is one of
+    "mixed", "presentation", or "presenter".
+    """
+    if pres_url and pers_url:
+        if pres_h > 0 and pers_h > 0:
+            return f'-i "{pres_url}" -i "{pers_url}" ', '-map "[vout]" -map 0:a? ', "mixed"
+        if pres_h > 0:
+            print(
+                "Presenter source has no video stream; falling back to presentation-only pipeline"
+            )
+            return f'-i "{pres_url}" ', "-map 0:v -map 0:a? ", "presentation"
+        if pers_h > 0:
+            print(
+                "Presentation source has no video stream; falling back to presenter-only pipeline"
+            )
+            return f'-i "{pers_url}" ', "-map 0:v -map 0:a? ", "presenter"
+        print(
+            "Could not detect video dimensions for studio mix; falling back to presentation-only pipeline"
+        )
+        return f'-i "{pres_url}" ', "-map 0:v -map 0:a? ", "presentation"
+    if pres_url:
+        return f'-i "{pres_url}" ', "-map 0:v -map 0:a? ", "presentation"
+    if pers_url:
+        return f'-i "{pers_url}" ', "-map 0:v -map 0:a? ", "presenter"
+    raise ValueError("No media tracks")
+
+
+def _single_source_height(source_kind: str, pres_h: int, pers_h: int) -> int:
+    """Return target height for a single-source pipeline."""
+    if source_kind == "presentation":
+        return pres_h or 720
+    if source_kind == "presenter":
+        return pers_h or 720
+    return 720
+
+
+def _build_cpu_single_source_subcmd(
+    cpu_encoder: str, cpu_is_libx264: bool, target_h: int, args: argparse.Namespace
+) -> str:
+    """Build filter and codec options for a single-source CPU path."""
+    x264_preset = _first_token(args.studio_preset, "slow")
+    x264_crf = _first_token(args.studio_crf, "20")
+    subcmd = (
+        f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
+        f"-c:v {cpu_encoder} "
+    )
+    if cpu_is_libx264:
+        subcmd += f"-preset {x264_preset} -crf {x264_crf} "
+    else:
+        subcmd += "-q:v 23 "
+    return subcmd
 
 
 def _build_cpu_pipeline(
@@ -660,47 +739,33 @@ def _build_cpu_pipeline(
     pers_h: int,
     presenter_layout: str,
     args: argparse.Namespace,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
     """Build a full CPU pipeline (decode + filter + encode)."""
-
-    input_args = ""
-    if pres_url and pers_url:
-        input_args = f'-i "{pres_url}" -i "{pers_url}" '
-    elif pres_url:
-        input_args = f'-i "{pres_url}" '
-    elif pers_url:
-        input_args = f'-i "{pers_url}" '
-    else:
-        raise ValueError("No media tracks")
+    input_args, map_opts, source_kind = _select_cpu_input_args(
+        pres_url=pres_url,
+        pers_url=pers_url,
+        pres_h=pres_h,
+        pers_h=pers_h,
+    )
 
     cpu_encoder, enc_warn = _choose_h264_encoder()
     if enc_warn:
         print(enc_warn.strip())
     cpu_is_libx264 = cpu_encoder == "libx264"
 
-    if pres_url and pers_url:
+    if source_kind == "mixed":
         subcmd = build_filter(pres_h, pers_h, presenter_layout)
         x264_preset = _first_token(args.studio_preset, "medium")
         x264_crf = _first_token(args.studio_crf, "23")
-    else:
-        target_h = (pres_h or pers_h) or 720
-        x264_preset = _first_token(args.studio_preset, "slow")
-        x264_crf = _first_token(args.studio_crf, "20")
-        subcmd = (
-            f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
-            f"-c:v {cpu_encoder} "
-        )
         if cpu_is_libx264:
-            subcmd += f"-preset {x264_preset} -crf {x264_crf} "
+            video_codec = f"-c:v {cpu_encoder} -preset {x264_preset} -crf {x264_crf} "
         else:
-            subcmd += "-q:v 23 "
-        return input_args, subcmd, ""
+            video_codec = f"-c:v {cpu_encoder} -q:v 23 "
+        return input_args, subcmd, video_codec, map_opts
 
-    if cpu_is_libx264:
-        video_codec = f"-c:v {cpu_encoder} -preset {x264_preset} -crf {x264_crf} "
-    else:
-        video_codec = f"-c:v {cpu_encoder} -q:v 23 "
-    return input_args, subcmd, video_codec
+    target_h = _single_source_height(source_kind, pres_h, pers_h)
+    subcmd = _build_cpu_single_source_subcmd(cpu_encoder, cpu_is_libx264, target_h, args)
+    return input_args, subcmd, "", map_opts
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -764,14 +829,19 @@ def _run_pipelines(
     args: argparse.Namespace,
     studio_allow_nvenc: bool,
     subtime: str,
-    map_opts: str,
     audio_bitrate: str,
     output_opts: str,
     output_path: str,
 ) -> int:
     """Execute studio pipeline attempts in fallback order until one succeeds."""
 
-    def _run_attempt(label: str, input_args: str, subcmd: str, video_codec: str) -> int:
+    def _run_attempt(
+        label: str,
+        input_args: str,
+        subcmd: str,
+        video_codec: str,
+        map_opts: str,
+    ) -> int:
         """Run one concrete FFmpeg studio pipeline attempt."""
         vc = video_codec
         sc = subcmd
@@ -804,8 +874,8 @@ def _run_pipelines(
         pres_url_local, pers_url_local, pres_h, pers_h, presenter_layout, args
     )
     if full_gpu is not None:
-        ia, sc, vc = full_gpu
-        rc = _run_attempt("FULL_GPU", ia, sc, vc)
+        ia, sc, vc, mo = full_gpu
+        rc = _run_attempt("FULL_GPU", ia, sc, vc, mo)
         if rc == 0:
             return 0
         print("FULL_GPU failed; retrying with CPU decode + NVENC encode")
@@ -814,16 +884,16 @@ def _run_pipelines(
         pres_url_local, pers_url_local, pres_h, pers_h, presenter_layout, args
     )
     if gpu_enc is not None:
-        ia, sc, vc = gpu_enc
-        rc = _run_attempt("GPU_ENC_ONLY", ia, sc, vc)
+        ia, sc, vc, mo = gpu_enc
+        rc = _run_attempt("GPU_ENC_ONLY", ia, sc, vc, mo)
         if rc == 0:
             return 0
         print("GPU_ENC_ONLY failed; retrying full CPU pipeline")
 
-    ia, sc, vc = _build_cpu_pipeline(
+    ia, sc, vc, mo = _build_cpu_pipeline(
         pres_url_local, pers_url_local, pres_h, pers_h, presenter_layout, args
     )
-    return _run_attempt("CPU", ia, sc, vc)
+    return _run_attempt("CPU", ia, sc, vc, mo)
 
 
 def _main_impl(args: argparse.Namespace) -> int:
@@ -851,8 +921,6 @@ def _main_impl(args: argparse.Namespace) -> int:
     output_path = os.path.join(work_dir, args.output_file)
     audio_bitrate = args.studio_audio_bitrate or "192k"
     output_opts = "-movflags +faststart -f mp4 -fps_mode cfr -r 30 -max_muxing_queue_size 4000 "
-    map_opts = _build_map_opts(pres_url_local, pers_url_local)
-
     return _run_pipelines(
         pres_url_local=pres_url_local,
         pers_url_local=pers_url_local,
@@ -862,7 +930,6 @@ def _main_impl(args: argparse.Namespace) -> int:
         args=args,
         studio_allow_nvenc=studio_allow_nvenc,
         subtime=subtime,
-        map_opts=map_opts,
         audio_bitrate=audio_bitrate,
         output_opts=output_opts,
         output_path=output_path,

@@ -17,7 +17,7 @@ from slowapi.util import get_remote_address
 
 from app.__version__ import __version__
 from app.core import config as config_module
-from app.core.auth import verify_admin
+from app.core.auth import OPENAPI_TOKEN_COOKIE_NAME, build_openapi_cookie_value, verify_admin
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_task as get_task_from_state
@@ -375,9 +375,13 @@ async def credentials_page(request: Request):
 async def reload_config_endpoint(_: bool = Depends(verify_admin)):
     """Reload .env and return key values to confirm refresh."""
     new_config = config_module.reload_config_env()
+    config_module.publish_config_reload_event()
     return {
         "api_docs_visibility": new_config.API_DOCS_VISIBILITY,
         "authorized_tokens": list(new_config.AUTHORIZED_TOKENS.keys()),
+        "authorized_tokens_count": len(new_config.AUTHORIZED_TOKENS),
+        "admin_users": list(new_config.ADMIN_USERS.keys()),
+        "admin_users_count": len(new_config.ADMIN_USERS),
     }
 
 
@@ -408,21 +412,37 @@ async def documentation_page(request: Request):
     """
     dark_mode = request.cookies.get("theme") == "dark"
 
-    # Get first authorized token to use for protected documentation access
+    # Get first authorized token to bootstrap OpenAPI docs auth via cookie.
     api_token = None
     if config.API_DOCS_VISIBILITY == "private" and config.AUTHORIZED_TOKENS:
-        # Use the first available token
+        # Use the first available token.
         api_token = next(iter(config.AUTHORIZED_TOKENS.values()))
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "documentation.html",
         {
             "request": request,
             "api_docs_visibility": config.API_DOCS_VISIBILITY,
-            "api_token": api_token,
             "dark_mode_enabled": dark_mode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,
         },
     )
+    if api_token:
+        cookie_value = build_openapi_cookie_value(api_token)
+        if cookie_value:
+            response.set_cookie(
+                key=OPENAPI_TOKEN_COOKIE_NAME,
+                value=cookie_value,
+                max_age=config.OPENAPI_COOKIE_MAX_AGE_SECONDS,
+                httponly=True,
+                secure=request.url.scheme == "https",
+                samesite="lax",
+                path="/",
+            )
+        else:
+            response.delete_cookie(key=OPENAPI_TOKEN_COOKIE_NAME, path="/")
+    else:
+        response.delete_cookie(key=OPENAPI_TOKEN_COOKIE_NAME, path="/")
+    return response

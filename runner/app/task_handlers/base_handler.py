@@ -21,6 +21,28 @@ from app.models.models import TaskRequest
 
 logger = setup_default_logging()
 
+_STDERR_ERROR_TOKENS = (
+    "error",
+    "warning",
+    "warn",
+    "fail",
+    "invalid",
+    "unable",
+    "cannot",
+    "can't",
+    "exception",
+    "traceback",
+    "fatal",
+    "critical",
+    "denied",
+    "forbidden",
+    "not found",
+    "no such file",
+    "unknown",
+    "deprecated",
+    "non-monotonous",
+)
+
 
 @lru_cache(maxsize=1)
 def _ffmpeg_buildconf_text() -> str:
@@ -323,9 +345,80 @@ class BaseTaskHandler(ABC):
                     "error": "Script terminated without return code",
                 }
 
+            self._reclassify_success_stderr(stdout_log, stderr_log, returncode)
             return self._build_script_result(returncode, stdout_log, stderr_log)
         except Exception as e:
             return {"success": False, "error": f"Script execution failed: {e}"}
+
+    def _is_probable_error_stderr_line(self, line: str) -> bool:
+        """Return whether a stderr line likely represents an error/warning."""
+        normalized = (line or "").strip().lower()
+        if not normalized:
+            return False
+        if normalized.startswith("traceback"):
+            return True
+        return any(token in normalized for token in _STDERR_ERROR_TOKENS)
+
+    def _reclassify_success_stderr(
+        self,
+        stdout_log: Path,
+        stderr_log: Path,
+        returncode: int,
+    ) -> None:
+        """Move non-error stderr lines to stdout when script exited successfully."""
+        if returncode != 0:
+            return
+
+        stderr_lines = self._read_log_lines(stderr_log)
+        if not stderr_lines:
+            return
+
+        moved_lines, kept_lines = self._partition_stderr_lines(stderr_lines)
+        if not moved_lines:
+            return
+
+        try:
+            self._append_lines_to_stdout_log(stdout_log, moved_lines)
+            self._write_log_lines(stderr_log, kept_lines)
+        except Exception:
+            return
+
+    def _read_log_lines(self, log_path: Path) -> list[str]:
+        """Read a text log file and return lines preserving line endings."""
+        try:
+            return log_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+        except Exception:
+            return []
+
+    def _partition_stderr_lines(self, stderr_lines: list[str]) -> tuple[list[str], list[str]]:
+        """Split stderr lines into moved (non-error) and kept (error-like) buckets."""
+        moved_lines: list[str] = []
+        kept_lines: list[str] = []
+        for line in stderr_lines:
+            if self._is_probable_error_stderr_line(line):
+                kept_lines.append(line)
+            else:
+                moved_lines.append(line)
+        return moved_lines, kept_lines
+
+    def _append_lines_to_stdout_log(self, stdout_log: Path, moved_lines: list[str]) -> None:
+        """Append lines to stdout log, keeping line boundaries clean."""
+        stdout_prefix = ""
+        existing_stdout = ""
+        if stdout_log.exists():
+            existing_stdout = stdout_log.read_text(encoding="utf-8", errors="replace")
+        if existing_stdout and not existing_stdout.endswith("\n"):
+            stdout_prefix = "\n"
+
+        with open(stdout_log, "a", encoding="utf-8") as stdout_file:
+            if stdout_prefix:
+                stdout_file.write(stdout_prefix)
+            stdout_file.writelines(moved_lines)
+
+    def _write_log_lines(self, log_path: Path, lines: list[str]) -> None:
+        """Overwrite a log file with provided lines."""
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            log_file.writelines(lines)
 
     def _read_log_tail(self, file_path: Path, max_chars: int = 200000) -> str:
         """Read a text file and keep only the tail to bound payload size."""

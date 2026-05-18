@@ -7,6 +7,7 @@ and optional SMIL cutting, produce a single MP4 that serves as input to the enco
 
 import argparse
 import json
+import math
 import os
 import re
 import shlex
@@ -16,6 +17,22 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from functools import lru_cache
+
+# Reject absurd/unbounded SMIL clip values beyond 5 days.
+MAX_SMIL_TIME_SECONDS = 5 * 24 * 60 * 60
+_WEBM_EXTENSIONS = {".webm"}
+_WEBM_VIDEO_CODECS = {"vp8", "vp9", "av1"}
+
+
+def _sanitize_smil_time(seconds: float | None) -> float | None:
+    """Return a safe SMIL time value in seconds or None when invalid."""
+    if seconds is None:
+        return None
+    if not math.isfinite(seconds) or seconds < 0:
+        return None
+    if seconds > MAX_SMIL_TIME_SECONDS:
+        return None
+    return seconds
 
 
 def fetch_text(url: str) -> str:
@@ -79,9 +96,12 @@ def parse_time(val: str | None) -> float | None:
     """Parse a SMIL time value into seconds."""
     if not val:
         return None
+    val = val.strip()
+    if not val:
+        return None
     if val.endswith("s"):
         try:
-            return float(val[:-1])
+            return _sanitize_smil_time(float(val[:-1]))
         except Exception:
             return None
     m = re.match(r"^(\d+):(\d+):(\d+(?:\.\d+)?)$", val)
@@ -89,7 +109,7 @@ def parse_time(val: str | None) -> float | None:
         h = int(m.group(1))
         mi = int(m.group(2))
         s = float(m.group(3))
-        return h * 3600 + mi * 60 + s
+        return _sanitize_smil_time(h * 3600 + mi * 60 + s)
     return None
 
 
@@ -99,6 +119,16 @@ def _first_token(val: str | None, default: str) -> str:
         return default
     token = str(val).strip().split()[0]
     return token or default
+
+
+def _looks_like_webm_source(path_or_url: str | None) -> bool:
+    """Return whether a source path/URL looks like a WebM media file."""
+    if not path_or_url:
+        return False
+    parsed = urllib.parse.urlparse(path_or_url)
+    path = parsed.path if parsed.scheme else path_or_url
+    ext = os.path.splitext(str(path))[1].lower()
+    return ext in _WEBM_EXTENSIONS
 
 
 def _download_allowed_hosts_from_env() -> list[str]:
@@ -275,6 +305,16 @@ def probe_codec(source: str) -> str:
     except Exception:
         pass
     return ""
+
+
+def _is_webm_input_source(source: str | None) -> bool:
+    """Return whether a local/remote source should be treated as WebM input."""
+    if _looks_like_webm_source(source):
+        return True
+    if not source:
+        return False
+    codec = (probe_codec(source) or "").strip().lower()
+    return codec in _WEBM_VIDEO_CODECS
 
 
 def _choose_cuda_decoder_for(source: str) -> str | None:
@@ -458,14 +498,17 @@ def build_pipeline(pres_url, pers_url, pres_h, pers_h, presenter_layout, args, i
     cpu_encoder, enc_warn = _choose_h264_encoder()
     if enc_warn:
         print(enc_warn.strip())
+    webm_input = _is_webm_input_source(pres_url) or _is_webm_input_source(pers_url)
 
-    full_gpu = _build_full_gpu_pipeline(pres_url, pers_url, pres_h, pers_h, presenter_layout, args)
+    full_gpu = _build_full_gpu_pipeline(
+        pres_url, pers_url, pres_h, pers_h, presenter_layout, args, webm_input=webm_input
+    )
     if full_gpu is not None:
         input_args2, subcmd, video_codec, map_opts = full_gpu
         return subcmd, video_codec, input_args2, cpu_encoder, map_opts
 
     gpu_enc = _build_gpu_encode_only_pipeline(
-        pres_url, pers_url, pres_h, pers_h, presenter_layout, args
+        pres_url, pers_url, pres_h, pers_h, presenter_layout, args, webm_input=webm_input
     )
     if gpu_enc is not None:
         input_args2, subcmd, video_codec, map_opts = gpu_enc
@@ -484,13 +527,17 @@ def _is_gpu_requested(args: argparse.Namespace) -> bool:
     return (args.force_cpu or "").lower() not in ("true", "1", "yes")
 
 
-def _build_nvenc_video_codec(args: argparse.Namespace) -> str:
+def _build_nvenc_video_codec(args: argparse.Namespace, *, webm_input: bool) -> str:
     """Build the NVENC video codec options string for studio encoding."""
     nvenc_preset = _first_token(args.studio_preset, "p4")
     nvenc_cq = _first_token(args.studio_crf, "")
     rc_opt = f"-preset {nvenc_preset} "
     if nvenc_cq:
         rc_opt += f"-cq {nvenc_cq} "
+    if webm_input:
+        # WebM sources can expose unstable timing metadata with passthrough flows;
+        # use a stricter NVENC RC profile to avoid very low effective video bitrate.
+        rc_opt += "-rc cbr -cbr 1 -spatial-aq 1 -aq-strength 8 -temporal-aq 1 -qmin 0 -qmax 35 "
     return f"-c:v h264_nvenc {rc_opt}-profile:v high -pix_fmt yuv420p "
 
 
@@ -570,6 +617,7 @@ def _build_full_gpu_pipeline(
     pers_h: int,
     presenter_layout: str,
     args: argparse.Namespace,
+    webm_input: bool,
 ) -> tuple[str, str, str, str] | None:
     """Build a pipeline that uses GPU decode (CUVID) + GPU encode (NVENC) when possible.
 
@@ -592,7 +640,7 @@ def _build_full_gpu_pipeline(
         overlay_pos=overlay_pos,
     )
     map_opts = '-map "[vout]" -map 0:a? '
-    return input_args, gpu_filter, _build_nvenc_video_codec(args), map_opts
+    return input_args, gpu_filter, _build_nvenc_video_codec(args, webm_input=webm_input), map_opts
 
 
 def _build_gpu_encode_only_pipeline(
@@ -602,6 +650,7 @@ def _build_gpu_encode_only_pipeline(
     pers_h: int,
     presenter_layout: str,
     args: argparse.Namespace,
+    webm_input: bool,
 ) -> tuple[str, str, str, str] | None:
     """Build a CPU decode/filter + NVENC encode pipeline.
 
@@ -657,7 +706,7 @@ def _build_gpu_encode_only_pipeline(
     else:
         return None
 
-    return input_args, subcmd, _build_nvenc_video_codec(args), map_opts
+    return input_args, subcmd, _build_nvenc_video_codec(args, webm_input=webm_input), map_opts
 
 
 def _load_mediapackage_and_layout(
@@ -828,6 +877,7 @@ def _run_pipelines(
     presenter_layout: str,
     args: argparse.Namespace,
     studio_allow_nvenc: bool,
+    webm_input: bool,
     subtime: str,
     audio_bitrate: str,
     output_opts: str,
@@ -871,7 +921,7 @@ def _run_pipelines(
         args.force_cpu = "true"
 
     full_gpu = _build_full_gpu_pipeline(
-        pres_url_local, pers_url_local, pres_h, pers_h, presenter_layout, args
+        pres_url_local, pers_url_local, pres_h, pers_h, presenter_layout, args, webm_input
     )
     if full_gpu is not None:
         ia, sc, vc, mo = full_gpu
@@ -881,7 +931,7 @@ def _run_pipelines(
         print("FULL_GPU failed; retrying with CPU decode + NVENC encode")
 
     gpu_enc = _build_gpu_encode_only_pipeline(
-        pres_url_local, pers_url_local, pres_h, pers_h, presenter_layout, args
+        pres_url_local, pers_url_local, pres_h, pers_h, presenter_layout, args, webm_input
     )
     if gpu_enc is not None:
         ia, sc, vc, mo = gpu_enc
@@ -907,6 +957,9 @@ def _main_impl(args: argparse.Namespace) -> int:
 
     pres_url_local = _materialize_source(pres_url, work_dir, "presentation")
     pers_url_local = _materialize_source(pers_url, work_dir, "presenter")
+    webm_input = _is_webm_input_source(pres_url_local) or _is_webm_input_source(pers_url_local)
+    if webm_input:
+        print("WebM source detected: enabling WebM-specific NVENC rate-control profile")
 
     # Kept for compatibility: if false, GPU is forced off.
     studio_allow_nvenc = (args.studio_allow_nvenc or "").lower() in ("true", "1", "yes")
@@ -929,6 +982,7 @@ def _main_impl(args: argparse.Namespace) -> int:
         presenter_layout=presenter_layout,
         args=args,
         studio_allow_nvenc=studio_allow_nvenc,
+        webm_input=webm_input,
         subtime=subtime,
         audio_bitrate=audio_bitrate,
         output_opts=output_opts,

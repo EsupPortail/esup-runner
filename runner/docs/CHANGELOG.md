@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `source_fps` in encoding metadata (`get_info_video()`), estimated from ffprobe and refined for WebM when needed.
+
+### Changed
+
+- `base_handler.py`: on successful script execution, non-error `stderr` lines are moved to `stdout` for cleaner logs.
+- `encoding.py` and `studio.py`: improved WebM handling with CFR output and safer NVENC/quality settings to stabilize bitrate/quality.
+- `studio.py`: hardened SMIL time parsing (reject invalid/unbounded values and cap SMIL clip timestamps to 5 days).
+- Expanded regression tests for these behaviors (`base_handler`, `encoding`, `studio`).
+
+### Fixed
+
+- Fixed FFmpeg progress lines being reported as errors in successful tasks.
+- Fixed unstable/too-low bitrate risk on WebM sources in encoding/studio NVENC flows.
+
 ## [1.2.1] - 2026-04-30
 
 ### Changed

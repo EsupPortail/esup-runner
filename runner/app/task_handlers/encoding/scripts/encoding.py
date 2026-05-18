@@ -148,23 +148,30 @@ GPU = (
 COMMON_CPU = (
     f" {_STREAM_MAP_PRIMARY} -c:a aac -ar 48000 -strict experimental -profile:v high "
     '-pix_fmt yuv420p -force_key_frames "expr:gte(t,n_forced*2)" '
-    "-fps_mode passthrough -preset slow -qmin 20 -qmax 50 "
+    "-preset slow -qmin 20 -qmax 50 "
 )
 
 COMMON_GPU = (
     f" {_STREAM_MAP_PRIMARY} -c:a aac -ar 48000 -strict experimental -profile:v high "
     '-force_key_frames "expr:gte(t,n_forced*2)" '
-    "-fps_mode passthrough -preset p4 -qmin 20 -qmax 50 "
+    "-preset p4 -qmin 20 -qmax 50 "
 )
 
 # GPU scaling filter
 scale_gpu = (
     COMMON_GPU
+    + "{fps_mode_options}"
     + '-vf "scale_cuda=-2:{height}" -c:v h264_nvenc -sc_threshold 0 -bf 0 -rc-lookahead 0 '
+    + "{nvenc_rate_control_options}"
 )
 
 # CPU scaling filter (libx264 preferred; fallback decided at runtime)
-scale_cpu = COMMON_CPU + '-vf "scale=-2:{height}" -c:v {encoder} -sc_threshold 0 '
+scale_cpu = (
+    COMMON_CPU
+    + "{fps_mode_options}"
+    + '-vf "scale=-2:{height}" -c:v {encoder} -sc_threshold 0 '
+    + "{cpu_quality_options}"
+)
 
 # Output format options
 HLS_OUTPUT_OPTIONS = (
@@ -192,6 +199,15 @@ _VIDEO_IDENTIFICATION: dict = {}
 # Candidate values accepted for duration fields returned by ffprobe.
 DurationValue = Union[str, int, float, None]
 
+_WEBM_EXTENSIONS = {".webm"}
+_WEBM_VIDEO_CODECS = {"vp8", "vp9", "av1"}
+_WEBM_OUTPUT_FPS = 30
+_WEBM_MIN_OUTPUT_FPS = 6
+_WEBM_MAX_OUTPUT_FPS = 30
+
+# Effective input video fps detected for the currently processed file.
+_SOURCE_VIDEO_FPS = 0.0
+
 # =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
@@ -199,6 +215,40 @@ DurationValue = Union[str, int, float, None]
 
 class EncodingValidationError(RuntimeError):
     """Raised when the input media should not be encoded."""
+
+
+def _is_webm_source(*, file: str, codec: str) -> bool:
+    """Return whether the input is a WebM source."""
+    ext = os.path.splitext(str(file))[1].lower()
+    if ext in _WEBM_EXTENSIONS:
+        return True
+    return (codec or "").strip().lower() in _WEBM_VIDEO_CODECS
+
+
+def _build_fps_mode_options(*, is_webm_source: bool) -> str:
+    """Return FPS mode options for the source type."""
+    if is_webm_source:
+        fps = _WEBM_OUTPUT_FPS
+        if _SOURCE_VIDEO_FPS > 0:
+            fps = int(round(_SOURCE_VIDEO_FPS))
+            fps = min(_WEBM_MAX_OUTPUT_FPS, max(_WEBM_MIN_OUTPUT_FPS, fps))
+        return f"-fps_mode cfr -r {fps} "
+    return "-fps_mode passthrough "
+
+
+def _build_nvenc_rate_control_options(*, is_webm_source: bool) -> str:
+    """Return NVENC rate-control overrides for WebM sources."""
+    if not is_webm_source:
+        return ""
+    return "-rc cbr -cbr 1 -spatial-aq 1 -aq-strength 8 -temporal-aq 1 -qmin 0 -qmax 35 "
+
+
+def _build_cpu_quality_options(*, is_webm_source: bool) -> str:
+    """Return libx264 quality-bound overrides for WebM sources."""
+    if not is_webm_source:
+        return ""
+    # Keep bitrate ladder constraints but avoid overly coarse quantization on slides/text.
+    return "-qmin 0 -qmax 35 "
 
 
 def timestamp_to_seconds(timestamp: str) -> int:
@@ -616,6 +666,9 @@ def get_cmd_gpu(format: str, codec: str, height: int, file: str) -> str:
     ffmpeg_cmd = GPU.format(
         hwaccel_device=_HWACCEL_DEVICE, codec=codec, input=os.path.join(_VIDEOS_DIR, file)
     )
+    webm_source = _is_webm_source(file=file, codec=codec)
+    fps_mode_options = _build_fps_mode_options(is_webm_source=webm_source)
+    nvenc_rate_control_options = _build_nvenc_rate_control_options(is_webm_source=webm_source)
 
     # Remove extension and sanitize
     filename = os.path.splitext(os.path.basename(file))[0]
@@ -623,7 +676,11 @@ def get_cmd_gpu(format: str, codec: str, height: int, file: str) -> str:
 
     selected_renditions = _select_renditions_for_encode(source_height=height, output_format=format)
     for rendition_key, rendition_cfg, rendition_height in selected_renditions:
-        ffmpeg_cmd += scale_gpu.format(height=rendition_height)
+        ffmpeg_cmd += scale_gpu.format(
+            height=rendition_height,
+            fps_mode_options=fps_mode_options,
+            nvenc_rate_control_options=nvenc_rate_control_options,
+        )
         ffmpeg_cmd += SUBTIME + _build_video_output_segment(
             output_format=format,
             rendition_key=rendition_key,
@@ -650,6 +707,9 @@ def get_cmd_cpu(format: str, codec: str, height: int, file: str) -> str:
     # Start with CPU base command
     encoder, _ = _choose_h264_encoder()
     ffmpeg_cmd = CPU.format(codec=codec, input=os.path.join(_VIDEOS_DIR, file))
+    webm_source = _is_webm_source(file=file, codec=codec)
+    fps_mode_options = _build_fps_mode_options(is_webm_source=webm_source)
+    cpu_quality_options = _build_cpu_quality_options(is_webm_source=webm_source)
 
     # Remove extension and sanitize
     filename = os.path.splitext(os.path.basename(file))[0]
@@ -657,7 +717,12 @@ def get_cmd_cpu(format: str, codec: str, height: int, file: str) -> str:
 
     selected_renditions = _select_renditions_for_encode(source_height=height, output_format=format)
     for rendition_key, rendition_cfg, rendition_height in selected_renditions:
-        ffmpeg_cmd += scale_cpu.format(height=rendition_height, encoder=encoder)
+        ffmpeg_cmd += scale_cpu.format(
+            height=rendition_height,
+            encoder=encoder,
+            fps_mode_options=fps_mode_options,
+            cpu_quality_options=cpu_quality_options,
+        )
         ffmpeg_cmd += SUBTIME + _build_video_output_segment(
             output_format=format,
             rendition_key=rendition_key,
@@ -2003,6 +2068,57 @@ def _duration_seconds_from_value(value: DurationValue) -> float:
         return _seconds_from_timestamp(s)
 
 
+def _parse_fps_value(raw_value: Any) -> float:
+    """Parse an ffprobe frame-rate value like '30000/1001' into a float."""
+    if raw_value is None:
+        return 0.0
+    text = str(raw_value).strip()
+    if not text or text == "0/0":
+        return 0.0
+    if "/" in text:
+        parts = text.split("/", 1)
+        try:
+            num = float(parts[0])
+            den = float(parts[1])
+            if den <= 0:
+                return 0.0
+            return num / den
+        except (TypeError, ValueError):
+            return 0.0
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        return 0.0
+    return value if value > 0 else 0.0
+
+
+def _probe_packet_based_fps(path: str, duration_seconds: int) -> float:
+    """Estimate fps from packet count when stream metadata is unreliable."""
+    if duration_seconds <= 0:
+        return 0.0
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-count_packets",
+        "-show_entries",
+        "stream=nb_read_packets",
+        "-of",
+        "default=nw=1:nk=1",
+        path,
+    ]
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode("utf-8").strip()
+        packet_count = int(out) if out else 0
+    except Exception:
+        packet_count = 0
+    if packet_count <= 0:
+        return 0.0
+    return float(packet_count) / float(duration_seconds)
+
+
 def _extract_duration_from_probe(info: Dict[str, Any]) -> int:
     """Extract the best available duration (in whole seconds) from ffprobe JSON.
 
@@ -2038,6 +2154,101 @@ def _extract_duration_from_probe(info: Dict[str, Any]) -> int:
     return int(max_duration) if max_duration > 0 else 0
 
 
+def _is_image_codec_name(codec_name: str) -> bool:
+    """Return whether a codec name should be treated as image-only."""
+    codec_text = str(codec_name or "").lower()
+    return any(ext in codec_text for ext in _IMAGE_CODEC)
+
+
+def _analyze_streams(streams: Any) -> tuple[bool, bool, bool, str, int, float, str]:
+    """Analyze ffprobe streams and return media flags + primary video metadata."""
+    has_stream_video = False
+    has_stream_thumbnail = False
+    has_stream_audio = False
+    codec = ""
+    height = 0
+    source_fps = 0.0
+    stream_log = ""
+    selected_primary_video = False
+
+    if not isinstance(streams, list):
+        return (
+            has_stream_video,
+            has_stream_thumbnail,
+            has_stream_audio,
+            codec,
+            height,
+            source_fps,
+            stream_log,
+        )
+
+    for stream in streams:
+        if not isinstance(stream, dict):
+            continue
+
+        stream_type = stream.get("codec_type", "unknown")
+        codec_name = stream.get("codec_name", "unknown")
+        stream_log += f"{stream_type}: {codec_name}\n"
+
+        if stream_type == "audio":
+            has_stream_audio = True
+            continue
+
+        if stream_type != "video":
+            continue
+
+        if _is_image_codec_name(codec_name):
+            # It's already an image, no need to generate thumbnail.
+            has_stream_thumbnail = True
+            continue
+
+        # It's a video, we need to generate a thumbnail.
+        has_stream_video = True
+        has_stream_thumbnail = True  # Will be generated from video.
+        if selected_primary_video:
+            continue
+
+        # Keep the first non-image video stream as reference because
+        # ffmpeg default stream selection uses the primary track.
+        codec = codec_name
+        height = stream.get("height", 0)
+        avg_fps = _parse_fps_value(stream.get("avg_frame_rate"))
+        real_fps = _parse_fps_value(stream.get("r_frame_rate"))
+        source_fps = avg_fps if avg_fps > 0 else real_fps
+        selected_primary_video = True
+
+    return (
+        has_stream_video,
+        has_stream_thumbnail,
+        has_stream_audio,
+        codec,
+        height,
+        source_fps,
+        stream_log,
+    )
+
+
+def _refine_source_fps(
+    *, file: str, codec: str, duration: int, source_fps: float
+) -> tuple[float, str]:
+    """Refine source fps and return (fps, log_line)."""
+    if not codec:
+        return source_fps, ""
+
+    if codec.lower() in _WEBM_VIDEO_CODECS:
+        source_path = os.path.join(_VIDEOS_DIR, file)
+        packet_fps = _probe_packet_based_fps(source_path, duration)
+        if packet_fps > 0:
+            return packet_fps, f"webm packet-based fps estimate: {packet_fps:.3f}\n"
+        if source_fps > 0:
+            return source_fps, f"webm stream fps estimate: {source_fps:.3f}\n"
+        return source_fps, ""
+
+    if source_fps > 0:
+        return source_fps, f"stream fps estimate: {source_fps:.3f}\n"
+    return source_fps, ""
+
+
 def get_info_video(file: str) -> dict:
     """
     Extract comprehensive information about video file.
@@ -2057,14 +2268,6 @@ def get_info_video(file: str) -> dict:
     ).format(_VIDEOS_DIR, file)
     msg += probe_cmd + "\n"
 
-    # Initialize default values
-    has_stream_video = False
-    has_stream_thumbnail = False
-    has_stream_audio = False
-    codec = ""
-    height = 0
-    duration = 0
-
     info, return_msg = get_info_from_video(probe_cmd)
     msg += json.dumps(info, indent=2) + "\n"
     msg += return_msg + "\n"
@@ -2083,33 +2286,25 @@ def get_info_video(file: str) -> dict:
     if duration <= 0:
         msg += "Warning: duration unavailable in ffprobe metadata; defaulting to 0\n"
 
-    # Analyze streams
-    streams = info.get("streams", [])
-    selected_primary_video = False
-    for stream in streams:
-        stream_type = stream.get("codec_type", "unknown")
-        codec_name = stream.get("codec_name", "unknown")
+    (
+        has_stream_video,
+        has_stream_thumbnail,
+        has_stream_audio,
+        codec,
+        height,
+        source_fps,
+        stream_log,
+    ) = _analyze_streams(info.get("streams", []))
+    msg += stream_log
 
-        msg += f"{stream_type}: {codec_name}\n"
-
-        if stream_type == "video":
-            is_image_codec = any(ext in codec_name.lower() for ext in _IMAGE_CODEC)
-            if is_image_codec:
-                # It's already an image, no need to generate thumbnail
-                has_stream_thumbnail = True
-            else:
-                # It's a video, we need to generate a thumbnail.
-                has_stream_video = True
-                has_stream_thumbnail = True  # Will be generated from video
-                # Keep the first non-image video stream as reference because
-                # ffmpeg default stream selection uses the primary track.
-                if not selected_primary_video:
-                    codec = codec_name
-                    height = stream.get("height", 0)
-                    selected_primary_video = True
-
-        elif stream_type == "audio":
-            has_stream_audio = True
+    if has_stream_video:
+        source_fps, fps_log = _refine_source_fps(
+            file=file,
+            codec=codec,
+            duration=duration,
+            source_fps=source_fps,
+        )
+        msg += fps_log
 
     encode_log(msg)
 
@@ -2120,6 +2315,7 @@ def get_info_video(file: str) -> dict:
         "codec": codec,
         "height": height,
         "duration": duration,
+        "source_fps": source_fps,
     }
 
 
@@ -2493,9 +2689,10 @@ def _parse_video_identification(args, msg: str) -> str:
 def _apply_cli_config(args) -> str:
     """Apply CLI options to the script's global runtime configuration."""
     msg = ""
-    global _DEBUG, _VIDEOS_DIR, _VIDEOS_OUTPUT_DIR, _ENCODING_TYPE, _HWACCEL_DEVICE
+    global _DEBUG, _VIDEOS_DIR, _VIDEOS_OUTPUT_DIR, _ENCODING_TYPE, _HWACCEL_DEVICE, _SOURCE_VIDEO_FPS
     _DEBUG = args.debug and args.debug.lower() == "true"
     _ENCODING_TYPE = args.encoding_type
+    _SOURCE_VIDEO_FPS = 0.0
     _VIDEOS_DIR = args.base_dir or "/tmp/esup-runner/task01"
     workdir = args.work_dir or "output"
     _VIDEOS_OUTPUT_DIR = os.path.join(_VIDEOS_DIR, workdir)
@@ -2618,6 +2815,7 @@ def _validate_working_duration(working_duration: int) -> None:
 
 def _process_encoding(args) -> str:
     """Run the end-to-end encoding workflow for the provided CLI arguments."""
+    global _SOURCE_VIDEO_FPS
     msg = ""
     filename, prep_msg = _prepare_input_file(args)
     msg += prep_msg
@@ -2625,6 +2823,9 @@ def _process_encoding(args) -> str:
         raise EncodingValidationError((prep_msg or "Invalid file or path").strip())
 
     info_video = get_info_video(filename)
+    _SOURCE_VIDEO_FPS = float(info_video.get("source_fps") or 0.0)
+    if _SOURCE_VIDEO_FPS > 0:
+        msg += f"Using source fps estimate for encode decisions: {_SOURCE_VIDEO_FPS:.3f}\n"
     _validate_source_media_info(info_video)
     working_duration, duration_msg = _compute_working_duration(info_video)
     msg += duration_msg

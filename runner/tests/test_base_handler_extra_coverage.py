@@ -138,6 +138,88 @@ def test_base_handler_read_log_tail_missing_and_truncated(tmp_path):
     assert handler._read_log_tail(long_log, max_chars=3) == "def"
 
 
+def test_base_handler_reclassify_success_stderr_moves_non_error_lines(tmp_path):
+    handler = _ConcreteBaseHandler()
+    stdout_log = tmp_path / "info_script.log"
+    stderr_log = tmp_path / "error_script.log"
+
+    stdout_log.write_text("existing stdout", encoding="utf-8")
+    stderr_log.write_text(
+        "frame=   10 fps=20.0\n" "Output #0, mp4, to '/tmp/out.mp4':\n" "real warning line\n",
+        encoding="utf-8",
+    )
+
+    handler._reclassify_success_stderr(stdout_log, stderr_log, returncode=0)
+
+    stdout_text = stdout_log.read_text(encoding="utf-8")
+    stderr_text = stderr_log.read_text(encoding="utf-8")
+
+    assert "existing stdout" in stdout_text
+    assert "frame=   10 fps=20.0" in stdout_text
+    assert "Output #0, mp4, to '/tmp/out.mp4':" in stdout_text
+    assert "real warning line" not in stdout_text
+    assert stderr_text.strip() == "real warning line"
+
+
+def test_base_handler_reclassify_success_stderr_keeps_stderr_on_failure(tmp_path):
+    handler = _ConcreteBaseHandler()
+    stdout_log = tmp_path / "info_script.log"
+    stderr_log = tmp_path / "error_script.log"
+
+    stdout_log.write_text("existing stdout", encoding="utf-8")
+    stderr_log.write_text("frame=   10 fps=20.0\n", encoding="utf-8")
+
+    handler._reclassify_success_stderr(stdout_log, stderr_log, returncode=1)
+
+    assert stdout_log.read_text(encoding="utf-8") == "existing stdout"
+    assert stderr_log.read_text(encoding="utf-8") == "frame=   10 fps=20.0\n"
+
+
+def test_base_handler_probable_error_stderr_line_empty_and_traceback():
+    handler = _ConcreteBaseHandler()
+    assert handler._is_probable_error_stderr_line("") is False
+    assert handler._is_probable_error_stderr_line(" Traceback (most recent call last):") is True
+
+
+def test_base_handler_reclassify_success_stderr_returns_on_empty_or_all_error_lines(tmp_path):
+    handler = _ConcreteBaseHandler()
+    stdout_log = tmp_path / "info_script.log"
+    missing_stderr_log = tmp_path / "missing_error_script.log"
+    stderr_log = tmp_path / "error_script.log"
+
+    stdout_log.write_text("existing stdout", encoding="utf-8")
+
+    # Missing file forces _read_log_lines exception path and [] fallback.
+    assert handler._read_log_lines(missing_stderr_log) == []
+    handler._reclassify_success_stderr(stdout_log, missing_stderr_log, returncode=0)
+    assert stdout_log.read_text(encoding="utf-8") == "existing stdout"
+
+    stderr_log.write_text("warning: keep in stderr\ntraceback line\n", encoding="utf-8")
+    handler._reclassify_success_stderr(stdout_log, stderr_log, returncode=0)
+
+    assert stdout_log.read_text(encoding="utf-8") == "existing stdout"
+    assert stderr_log.read_text(encoding="utf-8") == "warning: keep in stderr\ntraceback line\n"
+
+
+def test_base_handler_reclassify_success_stderr_swallows_rewrite_errors(monkeypatch, tmp_path):
+    handler = _ConcreteBaseHandler()
+    stdout_log = tmp_path / "info_script.log"
+    stderr_log = tmp_path / "error_script.log"
+
+    stdout_log.write_text("existing stdout\n", encoding="utf-8")
+    stderr_log.write_text("frame=   10 fps=20.0\n", encoding="utf-8")
+    monkeypatch.setattr(
+        handler,
+        "_append_lines_to_stdout_log",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("append failed")),
+    )
+
+    handler._reclassify_success_stderr(stdout_log, stderr_log, returncode=0)
+
+    # Reclassification errors are intentionally swallowed.
+    assert stderr_log.read_text(encoding="utf-8") == "frame=   10 fps=20.0\n"
+
+
 def test_encoding_handler_extract_script_error_prefers_explicit_error():
     handler = VideoEncodingHandler()
     assert handler._extract_script_error({"error": " explicit failure "}) == "explicit failure"

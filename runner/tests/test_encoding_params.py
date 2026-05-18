@@ -408,6 +408,32 @@ def test_get_cmd_gpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
     assert " -c:v h264_cuvid " not in cmd
 
 
+def test_get_cmd_gpu_uses_webm_specific_cfr_and_nvenc_rate_control(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+
+    cmd = enc.get_cmd_gpu("m3u8", "vp8", 720, "input.webm")
+
+    assert "-fps_mode cfr -r 30 " in cmd
+    assert "-rc cbr -cbr 1 " in cmd
+    assert "-spatial-aq 1 -aq-strength 8 -temporal-aq 1 " in cmd
+    assert "-qmin 0 -qmax 35 " in cmd
+
+
+def test_get_cmd_gpu_keeps_passthrough_for_non_webm_sources(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+
+    cmd = enc.get_cmd_gpu("m3u8", "h264", 720, "input.mp4")
+
+    assert "-fps_mode passthrough " in cmd
+    assert "-rc cbr -cbr 1 " not in cmd
+
+
 def test_bitrate_helpers_cover_error_and_kilobit_formatting():
     enc = _load_encoding_script_module()
 
@@ -650,6 +676,35 @@ def test_get_cmd_cpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
     assert "-map 0:v:0? -map 0:a?" in cmd
 
 
+def test_get_cmd_cpu_uses_cfr_for_webm_sources_only(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+    enc._choose_h264_encoder = Mock(return_value=("libx264", ""))
+
+    webm_cmd = enc.get_cmd_cpu("m3u8", "vp8", 360, "input.webm")
+    mp4_cmd = enc.get_cmd_cpu("m3u8", "h264", 360, "input.mp4")
+
+    assert "-fps_mode cfr -r 30 " in webm_cmd
+    assert "-qmin 0 -qmax 35 " in webm_cmd
+    assert "-fps_mode passthrough " in mp4_cmd
+    assert "-qmin 0 -qmax 35 " not in mp4_cmd
+
+
+def test_get_cmd_cpu_webm_cfr_uses_estimated_source_fps_when_available(tmp_path):
+    enc = _load_encoding_script_module()
+
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+    enc._choose_h264_encoder = Mock(return_value=("libx264", ""))
+    enc._SOURCE_VIDEO_FPS = 12.4
+
+    webm_cmd = enc.get_cmd_cpu("m3u8", "vp8", 360, "input.webm")
+
+    assert "-fps_mode cfr -r 12 " in webm_cmd
+
+
 def test_get_cmd_cpu_uses_1080_rate_ladder_for_hls(tmp_path):
     enc = _load_encoding_script_module()
 
@@ -716,6 +771,106 @@ def test_get_info_video_keeps_first_non_image_video_stream_as_primary(tmp_path):
     assert info["height"] == 1080
     assert info["has_stream_video"] is True
     assert info["has_stream_audio"] is True
+
+
+def test_parse_fps_value_covers_valid_and_invalid_inputs():
+    enc = _load_encoding_script_module()
+
+    assert enc._parse_fps_value(None) == 0.0
+    assert enc._parse_fps_value("") == 0.0
+    assert enc._parse_fps_value("0/0") == 0.0
+    assert enc._parse_fps_value("30000/1001") == pytest.approx(29.97003, rel=1e-5)
+    assert enc._parse_fps_value("30/0") == 0.0
+    assert enc._parse_fps_value("a/b") == 0.0
+    assert enc._parse_fps_value("25") == 25.0
+    assert enc._parse_fps_value("-3") == 0.0
+    assert enc._parse_fps_value("not-a-number") == 0.0
+
+
+def test_probe_packet_based_fps_covers_zero_duration_success_and_failure():
+    enc = _load_encoding_script_module()
+
+    assert enc._probe_packet_based_fps("/tmp/input.webm", 0) == 0.0
+
+    original_check_output = enc.subprocess.check_output
+    try:
+        enc.subprocess.check_output = lambda *_args, **_kwargs: b"735\n"
+        assert enc._probe_packet_based_fps("/tmp/input.webm", 105) == 7.0
+
+        enc.subprocess.check_output = lambda *_args, **_kwargs: b""
+        assert enc._probe_packet_based_fps("/tmp/input.webm", 100) == 0.0
+
+        def _raise(*_args, **_kwargs):
+            raise RuntimeError("ffprobe failed")
+
+        enc.subprocess.check_output = _raise
+        assert enc._probe_packet_based_fps("/tmp/input.webm", 100) == 0.0
+    finally:
+        enc.subprocess.check_output = original_check_output
+
+
+def test_analyze_streams_covers_non_list_non_dict_and_image_video_cases():
+    enc = _load_encoding_script_module()
+
+    flags = enc._analyze_streams(streams=None)
+    assert flags == (False, False, False, "", 0, 0.0, "")
+
+    analyzed = enc._analyze_streams(
+        streams=[
+            "not-a-dict",
+            {"codec_type": "subtitle", "codec_name": "mov_text"},
+            {"codec_type": "video", "codec_name": "png"},
+            {"codec_type": "audio", "codec_name": "aac"},
+        ]
+    )
+    assert analyzed[0] is False
+    assert analyzed[1] is True
+    assert analyzed[2] is True
+    assert analyzed[3] == ""
+    assert analyzed[4] == 0
+    assert analyzed[5] == 0.0
+    assert "subtitle: mov_text" in analyzed[6]
+    assert "video: png" in analyzed[6]
+    assert "audio: aac" in analyzed[6]
+
+
+def test_refine_source_fps_covers_no_codec_webm_and_non_webm_paths(tmp_path):
+    enc = _load_encoding_script_module()
+    enc._VIDEOS_DIR = str(tmp_path)
+
+    fps, log = enc._refine_source_fps(file="input.webm", codec="", duration=100, source_fps=0.0)
+    assert fps == 0.0
+    assert log == ""
+
+    original_probe_packet = enc._probe_packet_based_fps
+    try:
+        enc._probe_packet_based_fps = lambda _path, _duration: 8.5
+        fps, log = enc._refine_source_fps(
+            file="input.webm", codec="vp8", duration=100, source_fps=0.0
+        )
+        assert fps == 8.5
+        assert "webm packet-based fps estimate: 8.500" in log
+
+        enc._probe_packet_based_fps = lambda _path, _duration: 0.0
+        fps, log = enc._refine_source_fps(
+            file="input.webm", codec="vp8", duration=100, source_fps=0.0
+        )
+        assert fps == 0.0
+        assert log == ""
+
+        fps, log = enc._refine_source_fps(
+            file="input.webm", codec="vp8", duration=100, source_fps=7.25
+        )
+        assert fps == 7.25
+        assert "webm stream fps estimate: 7.250" in log
+
+        fps, log = enc._refine_source_fps(
+            file="input.mp4", codec="h264", duration=100, source_fps=29.97
+        )
+        assert fps == 29.97
+        assert "stream fps estimate: 29.970" in log
+    finally:
+        enc._probe_packet_based_fps = original_probe_packet
 
 
 def test_process_encoding_rejects_zero_second_input(tmp_path):

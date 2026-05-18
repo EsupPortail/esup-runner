@@ -4,6 +4,13 @@ from pathlib import Path
 
 import pytest
 
+_MAX_DOUBLE_LIKE_SECONDS = (
+    "1797693134862315708145274237317043567980705675258449965989174768031572607800285387605895586"
+    "3276687817154045895351438246423432132688946418276846754670353751698604991057655128207624549"
+    "0090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738"
+    "177180919299881250404026184124858368.000s"
+)
+
 
 def _load_studio_script_module():
     """Load studio.py as a module without requiring scripts/ to be a package."""
@@ -157,3 +164,72 @@ def test_build_cpu_single_source_subcmd_uses_qv_for_non_libx264():
     )
     assert "-c:v h264 " in subcmd
     assert "-q:v 23 " in subcmd
+
+
+def test_parse_time_rejects_unbounded_values():
+    studio = _load_studio_script_module()
+
+    assert studio.parse_time(_MAX_DOUBLE_LIKE_SECONDS) is None
+    assert studio.parse_time("1e309s") is None
+
+
+def test_parse_time_caps_values_over_five_days():
+    studio = _load_studio_script_module()
+
+    assert studio.parse_time("432000s") == pytest.approx(432000.0)
+    assert studio.parse_time("432000.001s") is None
+
+
+def test_parse_smil_cut_keeps_clip_begin_when_clip_end_is_unbounded():
+    studio = _load_studio_script_module()
+
+    smil_text = f"""
+    <smil>
+      <body>
+        <video clipBegin="2.722s" clipEnd="{_MAX_DOUBLE_LIKE_SECONDS}" />
+      </body>
+    </smil>
+    """
+
+    clip_begin, clip_end = studio.parse_smil_cut(smil_text)
+    assert clip_begin == pytest.approx(2.722)
+    assert clip_end is None
+
+
+def test_sanitize_smil_time_rejects_none():
+    studio = _load_studio_script_module()
+    assert studio._sanitize_smil_time(None) is None
+
+
+def test_build_nvenc_video_codec_enables_webm_specific_rate_control():
+    studio = _load_studio_script_module()
+    args = _make_args(studio_preset="p4", studio_crf="23")
+
+    webm_codec = studio._build_nvenc_video_codec(args, webm_input=True)
+    mp4_codec = studio._build_nvenc_video_codec(args, webm_input=False)
+
+    assert "-rc cbr -cbr 1 " in webm_codec
+    assert "-spatial-aq 1 -aq-strength 8 -temporal-aq 1 " in webm_codec
+    assert "-qmin 0 -qmax 35 " in webm_codec
+    assert "-rc cbr -cbr 1 " not in mp4_codec
+
+
+def test_is_webm_input_source_uses_extension_or_codec_probe():
+    studio = _load_studio_script_module()
+
+    assert studio._is_webm_input_source("https://example.org/video.webm") is True
+    assert studio._is_webm_input_source("/tmp/video.webm") is True
+
+    original_probe = studio.probe_codec
+    try:
+        studio.probe_codec = lambda _src: "vp9"
+        assert studio._is_webm_input_source("/tmp/video.unknown") is True
+    finally:
+        studio.probe_codec = original_probe
+
+
+def test_looks_like_webm_source_and_is_webm_input_source_cover_false_paths():
+    studio = _load_studio_script_module()
+
+    assert studio._looks_like_webm_source(None) is False
+    assert studio._is_webm_input_source(None) is False

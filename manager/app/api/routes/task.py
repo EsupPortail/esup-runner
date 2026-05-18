@@ -563,7 +563,14 @@ async def view_tasks(
     all_tasks_list = list(get_tasks_snapshot().values())
 
     # Available statuses and task types
-    available_statuses = ["pending", "running", "completed", "failed", "warning", "timeout"]
+    available_statuses = [
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "warning",
+        "timeout",
+    ]
     available_task_types = list(set(task.task_type for task in all_tasks_list if task.task_type))
 
     # Apply filters
@@ -1070,7 +1077,10 @@ async def get_task_result(task_id: str = Path(..., description="Task identifier"
 @router.get(
     "/result/{task_id}/file/{file_path:path}",
     responses={
-        200: {"description": "Task result file", "content": {"application/octet-stream": {}}},
+        200: {
+            "description": "Task result file",
+            "content": {"application/octet-stream": {}},
+        },
         404: {"description": "Task or file not found"},
         425: {"description": "Task not completed yet"},
     },
@@ -1467,7 +1477,8 @@ def _verify_runner_token(runner: Runner, current_token: str) -> None:
     """Ensure completion callback token belongs to the assigned runner."""
     if runner.token != current_token:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Token not authorized for this task"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token not authorized for this task",
         )
 
 

@@ -421,7 +421,8 @@ async def submit_task_or_exit(
         if _is_no_runners_available_error(message):
             print(
                 format_status(
-                    f"Task submission failed ({task_type}): No runners available", level="error"
+                    f"Task submission failed ({task_type}): No runners available",
+                    level="error",
                 )
             )
             print(
@@ -592,7 +593,8 @@ async def maybe_download_first_file(
     if not isinstance(first, str) or not first:
         print(
             format_status(
-                "Manifest contains a non-string file entry; skipping download", level="warning"
+                "Manifest contains a non-string file entry; skipping download",
+                level="warning",
             )
         )
         return

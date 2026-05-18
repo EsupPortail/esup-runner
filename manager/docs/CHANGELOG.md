@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Applied code-style formatting updates in `app/api/routes/task.py` and `scripts/check_pipeline_tasks.py` (line wrapping/readability only, with no functional runtime change).
+
 ## [1.2.1] - 2026-04-30
 
 ### Changed

@@ -53,6 +53,17 @@ from typing import Any, Callable, Dict, Optional
 # something an operator should tune per deployment.
 _MIN_VTT_COVERAGE_RATIO = 0.75
 _MAX_VTT_FINAL_GAP_SECONDS = 300.0
+# Guardrail for suspicious "holes" inside the subtitle timeline.
+# This catches internal jumps that are too large to be considered normal
+# subtitle pacing for spoken content and should trigger operator attention.
+_MAX_VTT_INTERNAL_GAP_SECONDS = 15.0
+_MAX_VTT_INTERNAL_GAP_COUNT = 0
+# Best-effort repair knobs for suspicious internal gaps. They stay conservative:
+# this is a non-blocking quality improvement pass, not a full second transcription.
+_MAX_INTERNAL_GAP_REPAIR_ATTEMPTS = 3
+_INTERNAL_GAP_REPAIR_CONTEXT_PADDING_SECONDS = 1.0
+_INTERNAL_GAP_REPAIR_CUE_OVERLAP_TOLERANCE_SECONDS = 0.4
+_INTERNAL_GAP_REPAIR_MIN_WINDOW_SECONDS = 2.0
 
 # Chunking defaults are hardware-sensitive. On CPU we prefer chunking sooner to
 # cap runtime/memory spikes for long files, while on GPU we keep larger single-pass
@@ -2060,12 +2071,13 @@ def _build_transcription_runtime_metadata(
     whisper_model: str,
     use_gpu: bool,
     translation: Dict[str, Any],
+    vtt_internal_gaps: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build stable runtime metadata written to info_video.json."""
     normalized_detected_language = _normalize_language_code(detected_language)
     normalized_requested_language = _normalize_language_code(requested_language)
     normalized_final_language = _normalize_language_code(final_language)
-    return {
+    metadata: Dict[str, Any] = {
         "transcription": {
             "whisper_model": map_model_name(whisper_model, "python"),
             "hardware_profile": _translation_hardware_profile(use_gpu),
@@ -2075,6 +2087,9 @@ def _build_transcription_runtime_metadata(
             "translation": translation,
         }
     }
+    if vtt_internal_gaps is not None:
+        metadata["transcription"]["vtt_internal_gaps"] = vtt_internal_gaps
+    return metadata
 
 
 def _run_whisper_with_explicit_language(
@@ -3017,6 +3032,574 @@ def _validate_vtt_coverage(
     return 0
 
 
+def _read_vtt_cue_time_ranges(vtt_path: Path) -> tuple[bool, list[tuple[float, float, int]]]:
+    """Read cue time ranges from a WebVTT file.
+
+    Returns a tuple of:
+    - read_ok
+    - parsed cues as (start_sec, end_sec, line_number)
+    """
+    cues: list[tuple[float, float, int]] = []
+    try:
+        for line_number, line in enumerate(
+            vtt_path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            if "-->" not in line:
+                continue
+            try:
+                raw_start, raw_end = line.split("-->", 1)
+                start_token = raw_start.strip().split()[0]
+                end_token = raw_end.strip().split()[0]
+            except Exception:
+                continue
+            start_sec = _parse_vtt_timestamp(start_token)
+            end_sec = _parse_vtt_timestamp(end_token)
+            if start_sec is None or end_sec is None:
+                continue
+            if end_sec <= start_sec:
+                continue
+            cues.append((start_sec, end_sec, line_number))
+    except Exception:
+        return False, []
+
+    return True, cues
+
+
+def _detect_vtt_internal_gaps(vtt_path: Path, max_internal_gap_sec: float) -> Dict[str, Any]:
+    """Detect suspiciously long gaps between adjacent subtitle cues."""
+    read_ok, cues = _read_vtt_cue_time_ranges(vtt_path)
+    if not read_ok:
+        return {
+            "read_ok": False,
+            "cue_count": 0,
+            "gap_threshold_sec": float(max_internal_gap_sec),
+            "gap_count": 0,
+            "largest_gap_sec": 0.0,
+            "gaps": [],
+        }
+
+    gaps: list[Dict[str, Any]] = []
+    if max_internal_gap_sec > 0:
+        for i in range(1, len(cues)):
+            previous_end = float(cues[i - 1][1])
+            next_start = float(cues[i][0])
+            next_line = int(cues[i][2])
+            gap_sec = next_start - previous_end
+            if gap_sec >= float(max_internal_gap_sec):
+                gaps.append(
+                    {
+                        "gap_sec": gap_sec,
+                        "previous_end_sec": previous_end,
+                        "next_start_sec": next_start,
+                        "line_number": next_line,
+                    }
+                )
+
+    largest_gap_sec = max((float(gap["gap_sec"]) for gap in gaps), default=0.0)
+    return {
+        "read_ok": True,
+        "cue_count": len(cues),
+        "gap_threshold_sec": float(max_internal_gap_sec),
+        "gap_count": len(gaps),
+        "largest_gap_sec": largest_gap_sec,
+        "gaps": gaps,
+    }
+
+
+def _format_vtt_timestamp(value_sec: float) -> str:
+    """Format seconds to WebVTT HH:MM:SS.mmm."""
+    safe_value = max(0.0, float(value_sec))
+    hours = int(safe_value // 3600)
+    minutes = int((safe_value % 3600) // 60)
+    seconds = safe_value - (hours * 3600) - (minutes * 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
+
+
+def _read_vtt_cues(vtt_path: Path) -> tuple[bool, list[tuple[float, float, str]]]:
+    """Read normalized subtitle cues as (start, end, text)."""
+    cues: list[tuple[float, float, str]] = []
+    try:
+        content = vtt_path.read_text(encoding="utf-8")
+    except Exception:
+        return False, []
+
+    for block in (content or "").split("\n\n"):
+        parsed = _parse_vtt_postprocess_block(block)
+        if isinstance(parsed, str):
+            continue
+        cue_prefix, cue_text = parsed
+        if not cue_prefix:
+            continue
+        start_sec, end_sec = _parse_vtt_cue_time_range(cue_prefix[-1])
+        if start_sec is None or end_sec is None:
+            continue
+        if float(end_sec) <= float(start_sec):
+            continue
+        normalized_text = _normalize_vtt_cue_text(cue_text)
+        if not normalized_text:
+            continue
+        cues.append((float(start_sec), float(end_sec), normalized_text))
+    return True, cues
+
+
+def _dedupe_sorted_vtt_cues(cues: list[tuple[float, float, str]]) -> list[tuple[float, float, str]]:
+    """Dedupe obvious near-identical adjacent cues after merge."""
+    merged: list[tuple[float, float, str]] = []
+    for start_sec, end_sec, text in sorted(cues, key=lambda item: (item[0], item[1], item[2])):
+        normalized_text = _normalize_vtt_cue_text(text)
+        if not normalized_text:
+            continue
+        start_sec = round(float(start_sec), 3)
+        end_sec = round(float(end_sec), 3)
+        if end_sec <= start_sec:
+            continue
+        if not merged:
+            merged.append((start_sec, end_sec, normalized_text))
+            continue
+
+        prev_start, prev_end, prev_text = merged[-1]
+        same_text = normalized_text == prev_text
+        almost_same_window = abs(start_sec - prev_start) <= 0.05 and abs(end_sec - prev_end) <= 0.08
+        if same_text and almost_same_window:
+            continue
+
+        if same_text and start_sec <= prev_end + 0.05:
+            merged[-1] = (prev_start, round(max(prev_end, end_sec), 3), prev_text)
+            continue
+
+        merged.append((start_sec, end_sec, normalized_text))
+    return merged
+
+
+def _render_vtt_from_cues(
+    cues: list[tuple[float, float, str]],
+    *,
+    max_line_width: int,
+    max_line_count: int,
+) -> str:
+    """Render a VTT document from normalized cues."""
+    blocks: list[str] = ["WEBVTT"]
+    for start_sec, end_sec, text in cues:
+        wrapped_lines = _wrap_vtt_cue_text(
+            text,
+            max_line_width=max_line_width,
+            max_line_count=max_line_count,
+        )
+        if not wrapped_lines:
+            continue
+        timestamp_line = f"{_format_vtt_timestamp(start_sec)} --> {_format_vtt_timestamp(end_sec)}"
+        blocks.append("\n".join([timestamp_line] + wrapped_lines))
+    return "\n\n".join(blocks).rstrip() + "\n"
+
+
+def _run_gap_window_rerun(
+    *,
+    audio_src: Path,
+    out_dir: Path,
+    model: str,
+    whisper_models_dir: str,
+    use_gpu: bool,
+    gpu_device: int,
+    vad_filter: bool,
+    timeout_sec: int,
+    transcription_language: str,
+    start_sec: float,
+    duration_sec: float,
+    gap_start_sec: float,
+    gap_end_sec: float,
+    overlap_tolerance_sec: float,
+    debug: bool,
+) -> tuple[bool, list[tuple[float, float, str]]]:
+    """Transcribe one short audio window and return cues overlapping the target gap."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    clip_stem = f"{audio_src.stem}.gap_{int(start_sec * 1000):010d}_{int(duration_sec * 1000):07d}"
+    clip_path = out_dir / f"{clip_stem}.mp3"
+
+    rc = _extract_audio_chunk(
+        audio_path=audio_src,
+        chunk_path=clip_path,
+        start_sec=float(start_sec),
+        duration_sec=float(duration_sec),
+        timeout_sec=timeout_sec,
+        debug=debug,
+    )
+    if rc != 0:
+        return False, []
+
+    rc, _detected_lang = run_whisper_python(
+        audio_path=clip_path,
+        out_dir=out_dir,
+        language=transcription_language,
+        model=model,
+        whisper_models_dir=whisper_models_dir,
+        use_gpu=use_gpu,
+        gpu_device=gpu_device,
+        vad_filter=vad_filter,
+        timeout_sec=timeout_sec,
+        chunk_duration_sec=0,
+        chunk_overlap_sec=0,
+        chunk_threshold_sec=0,
+        vtt_highlight_words=False,
+        vtt_max_line_count=2,
+        vtt_max_line_width=40,
+        debug=debug,
+    )
+    if rc == 255:
+        rc, _detected_lang = run_whisper_cli(
+            audio_path=clip_path,
+            out_dir=out_dir,
+            language=transcription_language,
+            model=model,
+            whisper_models_dir=whisper_models_dir,
+            use_gpu=use_gpu,
+            gpu_device=gpu_device,
+            vad_filter=vad_filter,
+            timeout_sec=timeout_sec,
+            debug=debug,
+        )
+    if rc != 0:
+        return False, []
+
+    generated_vtt = _find_generated_vtt(clip_path, out_dir)
+    if generated_vtt is None or not generated_vtt.exists():
+        return False, []
+
+    read_ok, local_cues = _read_vtt_cues(generated_vtt)
+    if not read_ok:
+        return False, []
+
+    adjusted_cues: list[tuple[float, float, str]] = []
+    for local_start, local_end, local_text in local_cues:
+        absolute_start = float(start_sec) + float(local_start)
+        absolute_end = float(start_sec) + float(local_end)
+        if absolute_end <= absolute_start:
+            continue
+        if absolute_end < gap_start_sec - float(overlap_tolerance_sec):
+            continue
+        if absolute_start > gap_end_sec + float(overlap_tolerance_sec):
+            continue
+        adjusted_cues.append((absolute_start, absolute_end, local_text))
+    return True, adjusted_cues
+
+
+def _attempt_best_effort_vtt_internal_gap_repair(
+    *,
+    vtt_path: Path,
+    audio_src: Path,
+    work_dir: Path,
+    model: str,
+    whisper_models_dir: str,
+    use_gpu: bool,
+    gpu_device: int,
+    vad_filter: bool,
+    timeout_sec: int,
+    detected_language: Optional[str],
+    max_internal_gap_sec: float,
+    max_repair_attempts: int,
+    max_line_width: int,
+    max_line_count: int,
+    debug: bool,
+) -> Dict[str, Any]:
+    """Best-effort repair pass for suspicious internal subtitle gaps.
+
+    The pass is intentionally non-blocking. It tries short-window reruns around
+    suspicious gaps and merges any recovered cues back into the main VTT.
+    """
+    initial_analysis = _detect_vtt_internal_gaps(vtt_path, max_internal_gap_sec)
+    metadata: Dict[str, Any] = {
+        "enabled": True,
+        "threshold_seconds": float(max_internal_gap_sec),
+        "detected_before_count": int(initial_analysis.get("gap_count", 0)),
+        "largest_gap_before_seconds": float(initial_analysis.get("largest_gap_sec", 0.0)),
+        "rerun_attempted": False,
+        "rerun_attempts": 0,
+        "rerun_successes": 0,
+        "inserted_cue_count": 0,
+        "detected_after_count": int(initial_analysis.get("gap_count", 0)),
+        "largest_gap_after_seconds": float(initial_analysis.get("largest_gap_sec", 0.0)),
+        "read_ok": bool(initial_analysis.get("read_ok", False)),
+    }
+    if not initial_analysis.get("read_ok", False):
+        metadata["note"] = "vtt_read_failed"
+        return metadata
+
+    suspicious_gaps = list(initial_analysis.get("gaps", []))
+    if not suspicious_gaps:
+        metadata["note"] = "no_suspicious_gap_detected"
+        return metadata
+
+    read_ok, existing_cues = _read_vtt_cues(vtt_path)
+    if not read_ok:
+        metadata["note"] = "vtt_cue_parse_failed"
+        return metadata
+
+    audio_duration_sec = _probe_duration_seconds(audio_src, debug=debug)
+    transcription_language = _normalize_language_code(
+        detected_language
+    ) or _resolve_transcription_language("auto")
+    repair_dir = work_dir / "_gap_repairs"
+    max_attempts = max(0, int(max_repair_attempts))
+    candidate_gaps = sorted(
+        suspicious_gaps,
+        key=lambda gap: float(gap.get("gap_sec", 0.0)),
+        reverse=True,
+    )[:max_attempts]
+
+    inserted_cues: list[tuple[float, float, str]] = []
+    rerun_successes = 0
+    rerun_attempts = 0
+    for gap in candidate_gaps:
+        gap_start_sec = float(gap.get("previous_end_sec", 0.0))
+        gap_end_sec = float(gap.get("next_start_sec", 0.0))
+        padded_start_sec = max(
+            0.0,
+            gap_start_sec - float(_INTERNAL_GAP_REPAIR_CONTEXT_PADDING_SECONDS),
+        )
+        padded_end_sec = gap_end_sec + float(_INTERNAL_GAP_REPAIR_CONTEXT_PADDING_SECONDS)
+        if audio_duration_sec > 0:
+            padded_end_sec = min(float(audio_duration_sec), padded_end_sec)
+        window_duration_sec = padded_end_sec - padded_start_sec
+        if window_duration_sec < float(_INTERNAL_GAP_REPAIR_MIN_WINDOW_SECONDS):
+            continue
+
+        rerun_attempts += 1
+        ok, recovered_cues = _run_gap_window_rerun(
+            audio_src=audio_src,
+            out_dir=repair_dir,
+            model=model,
+            whisper_models_dir=whisper_models_dir,
+            use_gpu=use_gpu,
+            gpu_device=gpu_device,
+            vad_filter=vad_filter,
+            timeout_sec=timeout_sec,
+            transcription_language=transcription_language,
+            start_sec=padded_start_sec,
+            duration_sec=window_duration_sec,
+            gap_start_sec=gap_start_sec,
+            gap_end_sec=gap_end_sec,
+            overlap_tolerance_sec=_INTERNAL_GAP_REPAIR_CUE_OVERLAP_TOLERANCE_SECONDS,
+            debug=debug,
+        )
+        if not ok or not recovered_cues:
+            continue
+        rerun_successes += 1
+        inserted_cues.extend(recovered_cues)
+
+    metadata["rerun_attempted"] = rerun_attempts > 0
+    metadata["rerun_attempts"] = rerun_attempts
+    metadata["rerun_successes"] = rerun_successes
+    metadata["inserted_cue_count"] = len(inserted_cues)
+
+    if inserted_cues:
+        merged_cues = _dedupe_sorted_vtt_cues(existing_cues + inserted_cues)
+        rendered_content = _render_vtt_from_cues(
+            merged_cues,
+            max_line_width=max_line_width,
+            max_line_count=max_line_count,
+        )
+        vtt_path.write_text(rendered_content, encoding="utf-8")
+        _postprocess_vtt_file(
+            vtt_path,
+            max_line_width=max_line_width,
+            max_line_count=max_line_count,
+            debug=debug,
+        )
+
+    final_analysis = _detect_vtt_internal_gaps(vtt_path, max_internal_gap_sec)
+    metadata["detected_after_count"] = int(final_analysis.get("gap_count", 0))
+    metadata["largest_gap_after_seconds"] = float(final_analysis.get("largest_gap_sec", 0.0))
+    metadata["read_ok"] = bool(final_analysis.get("read_ok", False))
+    metadata["gaps_after"] = final_analysis.get("gaps", [])[:3]
+    if metadata["detected_after_count"] <= metadata["detected_before_count"]:
+        metadata["repair_improved_or_equal"] = True
+    else:
+        metadata["repair_improved_or_equal"] = False
+    return metadata
+
+
+def _validate_vtt_internal_gaps(
+    vtt_path: Path,
+    max_internal_gap_sec: float,
+    max_internal_gap_count: int,
+    debug: bool,
+) -> int:
+    """Fail when the generated VTT contains suspiciously long internal gaps."""
+    if max_internal_gap_sec <= 0:
+        return 0
+
+    analysis = _detect_vtt_internal_gaps(vtt_path, max_internal_gap_sec)
+    if not analysis.get("read_ok", False):
+        print("VTT internal-gap validation failed: unable to read the generated VTT")
+        return 8
+
+    gap_count = int(analysis.get("gap_count", 0))
+    suspicious_gaps = list(analysis.get("gaps", []))
+    if int(analysis.get("cue_count", 0)) < 2:
+        return 0
+
+    if debug:
+        print(
+            "VTT internal-gap validation: "
+            f"suspicious_gaps={gap_count}, "
+            f"threshold={max_internal_gap_sec:.3f}s, "
+            f"largest_gap={float(analysis.get('largest_gap_sec', 0.0)):.3f}s"
+        )
+
+    if gap_count > int(max_internal_gap_count):
+        sample = ", ".join(
+            (
+                f"{float(gap.get('previous_end_sec', 0.0)):.3f}"
+                f"->{float(gap.get('next_start_sec', 0.0)):.3f} "
+                f"({float(gap.get('gap_sec', 0.0)):.3f}s, line {int(gap.get('line_number', 0))})"
+            )
+            for gap in suspicious_gaps[:3]
+        )
+        print(
+            "VTT internal-gap validation failed: output contains suspiciously long internal gaps "
+            f"(count={gap_count}, allowed={max_internal_gap_count}, "
+            f"threshold={max_internal_gap_sec:.3f}s, samples=[{sample}])"
+        )
+        return 8
+
+    return 0
+
+
+def _default_non_blocking_internal_gap_metadata(
+    *, note: str, error: Optional[str] = None
+) -> Dict[str, Any]:
+    """Build the default non-blocking internal-gap metadata payload."""
+    metadata: Dict[str, Any] = {
+        "enabled": True,
+        "blocking": False,
+        "threshold_seconds": float(_MAX_VTT_INTERNAL_GAP_SECONDS),
+        "allowed_gap_count": int(_MAX_VTT_INTERNAL_GAP_COUNT),
+        "note": note,
+    }
+    if error:
+        metadata["error"] = error
+    return metadata
+
+
+def _run_non_blocking_internal_gap_repair(
+    *,
+    expected_vtt: Path,
+    audio_src: Path,
+    work_dir: Path,
+    args: argparse.Namespace,
+    timeout_sec: int,
+    effective_use_gpu: bool,
+    detected_language: Optional[str],
+    vtt_max_line_width: int,
+    vtt_max_line_count: int,
+    debug: bool,
+) -> Dict[str, Any]:
+    """Run best-effort internal-gap repair without ever blocking the workflow."""
+    metadata = _default_non_blocking_internal_gap_metadata(note="pre_translation_repair_not_run")
+    try:
+        metadata = _attempt_best_effort_vtt_internal_gap_repair(
+            vtt_path=expected_vtt,
+            audio_src=audio_src,
+            work_dir=work_dir,
+            model=str(args.model),
+            whisper_models_dir=str(args.whisper_models_dir),
+            use_gpu=effective_use_gpu,
+            gpu_device=int(args.gpu_device),
+            vad_filter=(args.vad_filter == "true"),
+            timeout_sec=timeout_sec,
+            detected_language=detected_language,
+            max_internal_gap_sec=_MAX_VTT_INTERNAL_GAP_SECONDS,
+            max_repair_attempts=_MAX_INTERNAL_GAP_REPAIR_ATTEMPTS,
+            max_line_width=vtt_max_line_width,
+            max_line_count=vtt_max_line_count,
+            debug=debug,
+        )
+    except Exception as exc:
+        # Non-blocking by design: keep the transcription result even when repair fails.
+        metadata = _default_non_blocking_internal_gap_metadata(
+            note="pre_translation_repair_exception",
+            error=str(exc),
+        )
+        print(f"VTT internal-gap repair warning: {exc}")
+
+    if int(metadata.get("detected_before_count", 0)) > 0:
+        print(
+            "VTT internal-gap check (non-blocking): "
+            f"detected={int(metadata.get('detected_before_count', 0))}, "
+            f"recovered_cues={int(metadata.get('inserted_cue_count', 0))}, "
+            f"remaining={int(metadata.get('detected_after_count', 0))}"
+        )
+    return metadata
+
+
+def _build_whisper_fallback_options(
+    *,
+    args: argparse.Namespace,
+    effective_use_gpu: bool,
+    timeout_sec: int,
+    vtt_max_line_count: int,
+    vtt_max_line_width: int,
+) -> Dict[str, Any]:
+    """Build options shared with Whisper fallback translation helpers."""
+    return {
+        "model": args.model,
+        "whisper_models_dir": str(args.whisper_models_dir),
+        "use_gpu": effective_use_gpu,
+        "gpu_device": int(args.gpu_device),
+        "vad_filter": args.vad_filter == "true",
+        "timeout_sec": timeout_sec,
+        "chunk_duration_sec": int(args.chunk_duration_seconds),
+        "chunk_overlap_sec": int(args.chunk_overlap_seconds),
+        "chunk_threshold_sec": _resolve_chunk_threshold_seconds(
+            configured_value=args.chunk_threshold_seconds,
+            use_gpu=effective_use_gpu,
+        ),
+        "vtt_highlight_words": str(args.vtt_highlight_words).lower() == "true",
+        "vtt_max_line_count": int(vtt_max_line_count),
+        "vtt_max_line_width": int(vtt_max_line_width),
+    }
+
+
+def _validate_final_vtt_and_collect_gap_analysis(
+    *,
+    expected_vtt: Path,
+    audio_src: Path,
+    input_path: Path,
+    debug: bool,
+) -> tuple[int, Dict[str, Any]]:
+    """Run final VTT validations and return non-blocking internal-gap analysis."""
+    reference_duration_sec = _probe_duration_seconds(audio_src, debug=debug)
+    if reference_duration_sec <= 0:
+        reference_duration_sec = _probe_duration_seconds(input_path, debug=debug)
+
+    # Keep the coverage validation thresholds internal. They are a defensive
+    # quality gate against silently truncated subtitles, not an operator-facing
+    # tuning surface.
+    rc = _validate_vtt_coverage(
+        vtt_path=expected_vtt,
+        reference_duration_sec=reference_duration_sec,
+        min_coverage_ratio=_MIN_VTT_COVERAGE_RATIO,
+        max_final_gap_sec=_MAX_VTT_FINAL_GAP_SECONDS,
+        debug=debug,
+    )
+    if rc != 0:
+        return rc, {}
+
+    gap_validation_rc = _validate_vtt_internal_gaps(
+        vtt_path=expected_vtt,
+        max_internal_gap_sec=_MAX_VTT_INTERNAL_GAP_SECONDS,
+        max_internal_gap_count=_MAX_VTT_INTERNAL_GAP_COUNT,
+        debug=debug,
+    )
+    final_gap_analysis = _detect_vtt_internal_gaps(expected_vtt, _MAX_VTT_INTERNAL_GAP_SECONDS)
+    if gap_validation_rc != 0:
+        print(
+            "VTT internal-gap warning (non-blocking): "
+            f"count={int(final_gap_analysis.get('gap_count', 0))}, "
+            f"threshold={float(_MAX_VTT_INTERNAL_GAP_SECONDS):.3f}s"
+        )
+    return 0, final_gap_analysis
+
+
 def main() -> int:
     """Run the transcription script end to end and return an exit code."""
     args = parse_args()
@@ -3025,6 +3608,8 @@ def main() -> int:
     input_path = base_dir / args.input_file
     work_dir = base_dir / args.work_dir
     debug = str(args.debug).lower() in ("true", "1", "yes")
+    vtt_max_line_count = int(args.vtt_max_line_count)
+    vtt_max_line_width = int(args.vtt_max_line_width)
     video_identification = _extract_video_identification(args)
 
     if not input_path.exists():
@@ -3055,30 +3640,34 @@ def main() -> int:
     rc = _finalize_vtt(
         audio_src,
         work_dir,
-        max_line_count=int(args.vtt_max_line_count),
-        max_line_width=int(args.vtt_max_line_width),
+        max_line_count=vtt_max_line_count,
+        max_line_width=vtt_max_line_width,
         debug=debug,
     )
     if rc != 0:
         return rc
 
-    whisper_fallback_options = {
-        "model": args.model,
-        "whisper_models_dir": str(args.whisper_models_dir),
-        "use_gpu": effective_use_gpu,
-        "gpu_device": int(args.gpu_device),
-        "vad_filter": args.vad_filter == "true",
-        "timeout_sec": timeout_sec,
-        "chunk_duration_sec": int(args.chunk_duration_seconds),
-        "chunk_overlap_sec": int(args.chunk_overlap_seconds),
-        "chunk_threshold_sec": _resolve_chunk_threshold_seconds(
-            configured_value=args.chunk_threshold_seconds,
-            use_gpu=effective_use_gpu,
-        ),
-        "vtt_highlight_words": str(args.vtt_highlight_words).lower() == "true",
-        "vtt_max_line_count": int(args.vtt_max_line_count),
-        "vtt_max_line_width": int(args.vtt_max_line_width),
-    }
+    expected_vtt = work_dir / f"{Path(audio_src).stem}.vtt"
+    vtt_gap_repair_metadata = _run_non_blocking_internal_gap_repair(
+        expected_vtt=expected_vtt,
+        audio_src=audio_src,
+        work_dir=work_dir,
+        args=args,
+        timeout_sec=timeout_sec,
+        effective_use_gpu=effective_use_gpu,
+        detected_language=detected_language,
+        vtt_max_line_width=vtt_max_line_width,
+        vtt_max_line_count=vtt_max_line_count,
+        debug=debug,
+    )
+
+    whisper_fallback_options = _build_whisper_fallback_options(
+        args=args,
+        effective_use_gpu=effective_use_gpu,
+        timeout_sec=timeout_sec,
+        vtt_max_line_count=vtt_max_line_count,
+        vtt_max_line_width=vtt_max_line_width,
+    )
     rc, translation_metadata, final_subtitle_language = _maybe_translate_final_vtt(
         audio_src,
         work_dir,
@@ -3087,32 +3676,36 @@ def main() -> int:
         whisper_fallback_options=whisper_fallback_options,
         use_gpu=effective_use_gpu,
         huggingface_models_dir=args.huggingface_models_dir,
-        max_line_count=int(args.vtt_max_line_count),
-        max_line_width=int(args.vtt_max_line_width),
+        max_line_count=vtt_max_line_count,
+        max_line_width=vtt_max_line_width,
         debug=debug,
     )
     if rc != 0:
         return rc
 
-    expected_vtt = work_dir / f"{Path(audio_src).stem}.vtt"
-    reference_duration_sec = _probe_duration_seconds(audio_src, debug=debug)
-    if reference_duration_sec <= 0:
-        reference_duration_sec = _probe_duration_seconds(input_path, debug=debug)
-
-    # Keep the coverage validation thresholds internal. They are a defensive
-    # quality gate against silently truncated subtitles, not an operator-facing
-    # tuning surface.
-    rc = _validate_vtt_coverage(
-        vtt_path=expected_vtt,
-        reference_duration_sec=reference_duration_sec,
-        min_coverage_ratio=_MIN_VTT_COVERAGE_RATIO,
-        max_final_gap_sec=_MAX_VTT_FINAL_GAP_SECONDS,
+    rc, final_gap_analysis = _validate_final_vtt_and_collect_gap_analysis(
+        expected_vtt=expected_vtt,
+        audio_src=audio_src,
+        input_path=input_path,
         debug=debug,
     )
     if rc != 0:
         return rc
 
     task_metadata = dict(video_identification)
+    vtt_internal_gaps_metadata: Dict[str, Any] = {
+        "enabled": True,
+        "blocking": False,
+        "threshold_seconds": float(_MAX_VTT_INTERNAL_GAP_SECONDS),
+        "allowed_gap_count": int(_MAX_VTT_INTERNAL_GAP_COUNT),
+        "repair": vtt_gap_repair_metadata,
+        "final_output": {
+            "read_ok": bool(final_gap_analysis.get("read_ok", False)),
+            "gap_count": int(final_gap_analysis.get("gap_count", 0)),
+            "largest_gap_seconds": float(final_gap_analysis.get("largest_gap_sec", 0.0)),
+            "sample_gaps": list(final_gap_analysis.get("gaps", []))[:3],
+        },
+    }
     task_metadata.update(
         _build_transcription_runtime_metadata(
             requested_language=args.language,
@@ -3121,6 +3714,7 @@ def main() -> int:
             whisper_model=args.model,
             use_gpu=effective_use_gpu,
             translation=translation_metadata,
+            vtt_internal_gaps=vtt_internal_gaps_metadata,
         )
     )
     _write_info_video_metadata(work_dir, task_metadata, debug)

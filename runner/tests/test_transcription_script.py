@@ -633,6 +633,1059 @@ def test_validate_vtt_coverage_accepts_empty_vtt_for_no_speech_audio(tmp_path):
     assert rc == 0
 
 
+def test_validate_vtt_internal_gaps_rejects_suspicious_hole(tmp_path):
+    tr = _load_transcription_script_module()
+
+    vtt_path = tmp_path / "subtitles.vtt"
+    vtt_path.write_text(
+        "WEBVTT\n\n"
+        "00:00:00.000 --> 00:00:05.000\n"
+        "Bonjour\n\n"
+        "00:00:30.200 --> 00:00:34.000\n"
+        "Reprise\n\n",
+        encoding="utf-8",
+    )
+
+    rc = tr._validate_vtt_internal_gaps(
+        vtt_path=vtt_path,
+        max_internal_gap_sec=15.0,
+        max_internal_gap_count=0,
+        debug=False,
+    )
+
+    assert rc == 8
+
+
+def test_validate_vtt_internal_gaps_accepts_short_pause(tmp_path):
+    tr = _load_transcription_script_module()
+
+    vtt_path = tmp_path / "subtitles.vtt"
+    vtt_path.write_text(
+        "WEBVTT\n\n"
+        "00:00:00.000 --> 00:00:05.000\n"
+        "Bonjour\n\n"
+        "00:00:07.000 --> 00:00:09.000\n"
+        "Suite\n\n",
+        encoding="utf-8",
+    )
+
+    rc = tr._validate_vtt_internal_gaps(
+        vtt_path=vtt_path,
+        max_internal_gap_sec=15.0,
+        max_internal_gap_count=0,
+        debug=False,
+    )
+
+    assert rc == 0
+
+
+def test_validate_vtt_internal_gaps_accepts_when_gap_count_within_budget(tmp_path):
+    tr = _load_transcription_script_module()
+
+    vtt_path = tmp_path / "subtitles.vtt"
+    vtt_path.write_text(
+        "WEBVTT\n\n"
+        "00:00:00.000 --> 00:00:05.000\n"
+        "Bonjour\n\n"
+        "00:00:30.000 --> 00:00:33.000\n"
+        "Suite\n\n",
+        encoding="utf-8",
+    )
+
+    rc = tr._validate_vtt_internal_gaps(
+        vtt_path=vtt_path,
+        max_internal_gap_sec=15.0,
+        max_internal_gap_count=1,
+        debug=False,
+    )
+
+    assert rc == 0
+
+
+def test_detect_vtt_internal_gaps_reports_expected_metrics(tmp_path):
+    tr = _load_transcription_script_module()
+
+    vtt_path = tmp_path / "subtitles.vtt"
+    vtt_path.write_text(
+        "WEBVTT\n\n"
+        "00:00:00.000 --> 00:00:05.000\n"
+        "Bonjour\n\n"
+        "00:00:30.200 --> 00:00:34.000\n"
+        "Reprise\n\n",
+        encoding="utf-8",
+    )
+
+    analysis = tr._detect_vtt_internal_gaps(vtt_path, max_internal_gap_sec=15.0)
+
+    assert analysis["read_ok"] is True
+    assert analysis["cue_count"] == 2
+    assert analysis["gap_count"] == 1
+    assert round(float(analysis["largest_gap_sec"]), 3) == 25.2
+    assert int(analysis["gaps"][0]["line_number"]) == 6
+
+
+def test_attempt_best_effort_gap_repair_skips_when_no_suspicious_gap(tmp_path):
+    tr = _load_transcription_script_module()
+
+    vtt_path = tmp_path / "subtitles.vtt"
+    vtt_path.write_text(
+        "WEBVTT\n\n"
+        "00:00:00.000 --> 00:00:05.000\n"
+        "Bonjour\n\n"
+        "00:00:06.000 --> 00:00:10.000\n"
+        "Suite\n\n",
+        encoding="utf-8",
+    )
+
+    metadata = tr._attempt_best_effort_vtt_internal_gap_repair(
+        vtt_path=vtt_path,
+        audio_src=tmp_path / "audio.mp3",
+        work_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        detected_language="fr",
+        max_internal_gap_sec=15.0,
+        max_repair_attempts=3,
+        max_line_width=40,
+        max_line_count=2,
+        debug=False,
+    )
+
+    assert metadata["detected_before_count"] == 0
+    assert metadata["rerun_attempted"] is False
+    assert metadata["note"] == "no_suspicious_gap_detected"
+
+
+def test_read_vtt_cue_time_ranges_ignores_malformed_invalid_and_reversed_cues(tmp_path):
+    tr = _load_transcription_script_module()
+
+    vtt_path = tmp_path / "subtitles.vtt"
+    vtt_path.write_text(
+        "WEBVTT\n\n"
+        "00:00:00.000 -->\n"
+        "Missing end\n\n"
+        "XX:YY --> 00:00:03.000\n"
+        "Invalid start\n\n"
+        "00:00:05.000 --> 00:00:04.000\n"
+        "Reversed\n\n"
+        "00:00:01.000 --> 00:00:02.000\n"
+        "Valid\n\n",
+        encoding="utf-8",
+    )
+
+    read_ok, cues = tr._read_vtt_cue_time_ranges(vtt_path)
+
+    assert read_ok is True
+    assert cues == [(1.0, 2.0, 12)]
+
+
+def test_read_vtt_cue_time_ranges_returns_false_when_read_fails(tmp_path):
+    tr = _load_transcription_script_module()
+
+    read_ok, cues = tr._read_vtt_cue_time_ranges(tmp_path / "missing.vtt")
+
+    assert read_ok is False
+    assert cues == []
+
+
+def test_detect_vtt_internal_gaps_handles_unreadable_vtt(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(tr, "_read_vtt_cue_time_ranges", lambda _p: (False, []))
+
+    analysis = tr._detect_vtt_internal_gaps(tmp_path / "missing.vtt", max_internal_gap_sec=12.0)
+
+    assert analysis["read_ok"] is False
+    assert analysis["gap_threshold_sec"] == 12.0
+    assert analysis["gap_count"] == 0
+
+
+def test_format_vtt_timestamp_clamps_negative_values():
+    tr = _load_transcription_script_module()
+
+    assert tr._format_vtt_timestamp(-2.345) == "00:00:00.000"
+    assert tr._format_vtt_timestamp(3661.2) == "01:01:01.200"
+
+
+def test_read_vtt_cues_filters_invalid_ranges_and_empty_text(tmp_path):
+    tr = _load_transcription_script_module()
+
+    vtt_path = tmp_path / "subtitles.vtt"
+    vtt_path.write_text(
+        "WEBVTT\n\n"
+        "00:00:01.000 --> 00:00:00.500\n"
+        "Reversed\n\n"
+        "AA:BB --> 00:00:02.000\n"
+        "Invalid\n\n"
+        "00:00:03.000 --> 00:00:04.000\n"
+        "\n\n"
+        "00:00:05.000 --> 00:00:06.000\n"
+        "Texte valide\n\n",
+        encoding="utf-8",
+    )
+
+    read_ok, cues = tr._read_vtt_cues(vtt_path)
+
+    assert read_ok is True
+    assert cues == [(5.0, 6.0, "Texte valide")]
+
+
+def test_read_vtt_cues_skips_blocks_with_empty_cue_prefix(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    vtt_path = tmp_path / "subtitles.vtt"
+    vtt_path.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nTexte\n", encoding="utf-8")
+
+    monkeypatch.setattr(tr, "_parse_vtt_postprocess_block", lambda _block: ([], "Texte"))
+
+    read_ok, cues = tr._read_vtt_cues(vtt_path)
+
+    assert read_ok is True
+    assert cues == []
+
+
+def test_read_vtt_cues_returns_false_when_file_missing(tmp_path):
+    tr = _load_transcription_script_module()
+
+    read_ok, cues = tr._read_vtt_cues(tmp_path / "missing.vtt")
+
+    assert read_ok is False
+    assert cues == []
+
+
+def test_dedupe_sorted_vtt_cues_dedupes_and_merges_adjacent_identical_texts():
+    tr = _load_transcription_script_module()
+
+    merged = tr._dedupe_sorted_vtt_cues(
+        [
+            (2.00, 3.00, "Hello"),
+            (1.00, 2.00, "Hello"),
+            (1.00, 2.04, "Hello"),  # almost same window -> drop duplicate
+            (4.00, 3.00, "bad"),  # invalid
+            (5.00, 5.50, "   "),  # empty normalized text
+            (3.50, 4.00, "Bye"),
+        ]
+    )
+
+    assert merged == [(1.0, 3.0, "Hello"), (3.5, 4.0, "Bye")]
+
+
+def test_render_vtt_from_cues_keeps_header_and_skips_empty_wrapped_cues():
+    tr = _load_transcription_script_module()
+
+    rendered = tr._render_vtt_from_cues(
+        [(0.0, 1.0, ""), (1.0, 2.0, "bonjour tout le monde")],
+        max_line_width=12,
+        max_line_count=2,
+    )
+
+    assert rendered.startswith("WEBVTT")
+    assert "00:00:01.000 --> 00:00:02.000" in rendered
+    assert "bonjour" in rendered
+
+
+def test_run_gap_window_rerun_returns_false_when_chunk_extraction_fails(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(tr, "_extract_audio_chunk", lambda **kwargs: 22)
+
+    ok, cues = tr._run_gap_window_rerun(
+        audio_src=tmp_path / "audio.mp3",
+        out_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        transcription_language="auto",
+        start_sec=10.0,
+        duration_sec=8.0,
+        gap_start_sec=12.0,
+        gap_end_sec=14.0,
+        overlap_tolerance_sec=0.4,
+        debug=False,
+    )
+
+    assert ok is False
+    assert cues == []
+
+
+def test_run_gap_window_rerun_returns_false_when_transcribe_rc_is_non_zero(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(tr, "_extract_audio_chunk", lambda **kwargs: 0)
+    monkeypatch.setattr(tr, "run_whisper_python", lambda **kwargs: (42, None))
+
+    ok, cues = tr._run_gap_window_rerun(
+        audio_src=tmp_path / "audio.mp3",
+        out_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        transcription_language="auto",
+        start_sec=10.0,
+        duration_sec=8.0,
+        gap_start_sec=12.0,
+        gap_end_sec=14.0,
+        overlap_tolerance_sec=0.4,
+        debug=False,
+    )
+
+    assert ok is False
+    assert cues == []
+
+
+def test_run_gap_window_rerun_uses_cli_fallback_and_filters_out_of_gap_cues(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    generated_vtt = tmp_path / "out" / "clip.vtt"
+    generated_vtt.parent.mkdir(parents=True, exist_ok=True)
+    generated_vtt.write_text("WEBVTT\n\n", encoding="utf-8")
+
+    monkeypatch.setattr(tr, "_extract_audio_chunk", lambda **kwargs: 0)
+    monkeypatch.setattr(tr, "run_whisper_python", lambda **kwargs: (255, None))
+    monkeypatch.setattr(tr, "run_whisper_cli", lambda **kwargs: (0, None))
+    monkeypatch.setattr(tr, "_find_generated_vtt", lambda _audio_path, _out_dir: generated_vtt)
+    monkeypatch.setattr(
+        tr,
+        "_read_vtt_cues",
+        lambda _path: (
+            True,
+            [
+                (0.0, 1.0, "too early"),
+                (1.5, 2.5, "inside"),
+                (4.6, 5.0, "too late"),
+            ],
+        ),
+    )
+
+    ok, cues = tr._run_gap_window_rerun(
+        audio_src=tmp_path / "audio.mp3",
+        out_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        transcription_language="auto",
+        start_sec=10.0,
+        duration_sec=8.0,
+        gap_start_sec=12.0,
+        gap_end_sec=14.0,
+        overlap_tolerance_sec=0.4,
+        debug=False,
+    )
+
+    assert ok is True
+    assert cues == [(11.5, 12.5, "inside")]
+
+
+def test_run_gap_window_rerun_skips_recovered_cues_with_non_positive_duration(
+    monkeypatch, tmp_path
+):
+    tr = _load_transcription_script_module()
+
+    generated_vtt = tmp_path / "out" / "clip.vtt"
+    generated_vtt.parent.mkdir(parents=True, exist_ok=True)
+    generated_vtt.write_text("WEBVTT\n\n", encoding="utf-8")
+
+    monkeypatch.setattr(tr, "_extract_audio_chunk", lambda **kwargs: 0)
+    monkeypatch.setattr(tr, "run_whisper_python", lambda **kwargs: (0, None))
+    monkeypatch.setattr(tr, "_find_generated_vtt", lambda _audio_path, _out_dir: generated_vtt)
+    monkeypatch.setattr(
+        tr,
+        "_read_vtt_cues",
+        lambda _path: (
+            True,
+            [
+                (2.0, 2.0, "invalid"),
+                (2.0, 3.0, "valid"),
+            ],
+        ),
+    )
+
+    ok, cues = tr._run_gap_window_rerun(
+        audio_src=tmp_path / "audio.mp3",
+        out_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        transcription_language="auto",
+        start_sec=10.0,
+        duration_sec=8.0,
+        gap_start_sec=11.0,
+        gap_end_sec=14.0,
+        overlap_tolerance_sec=0.4,
+        debug=False,
+    )
+
+    assert ok is True
+    assert cues == [(12.0, 13.0, "valid")]
+
+
+def test_run_gap_window_rerun_returns_false_when_generated_vtt_is_missing(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(tr, "_extract_audio_chunk", lambda **kwargs: 0)
+    monkeypatch.setattr(tr, "run_whisper_python", lambda **kwargs: (0, None))
+    monkeypatch.setattr(tr, "_find_generated_vtt", lambda _audio_path, _out_dir: None)
+
+    ok, cues = tr._run_gap_window_rerun(
+        audio_src=tmp_path / "audio.mp3",
+        out_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        transcription_language="auto",
+        start_sec=10.0,
+        duration_sec=8.0,
+        gap_start_sec=12.0,
+        gap_end_sec=14.0,
+        overlap_tolerance_sec=0.4,
+        debug=False,
+    )
+
+    assert ok is False
+    assert cues == []
+
+
+def test_run_gap_window_rerun_returns_false_when_local_cues_cannot_be_read(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    generated_vtt = tmp_path / "out" / "clip.vtt"
+    generated_vtt.parent.mkdir(parents=True, exist_ok=True)
+    generated_vtt.write_text("WEBVTT\n\n", encoding="utf-8")
+
+    monkeypatch.setattr(tr, "_extract_audio_chunk", lambda **kwargs: 0)
+    monkeypatch.setattr(tr, "run_whisper_python", lambda **kwargs: (0, None))
+    monkeypatch.setattr(tr, "_find_generated_vtt", lambda _audio_path, _out_dir: generated_vtt)
+    monkeypatch.setattr(tr, "_read_vtt_cues", lambda _path: (False, []))
+
+    ok, cues = tr._run_gap_window_rerun(
+        audio_src=tmp_path / "audio.mp3",
+        out_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        transcription_language="auto",
+        start_sec=10.0,
+        duration_sec=8.0,
+        gap_start_sec=12.0,
+        gap_end_sec=14.0,
+        overlap_tolerance_sec=0.4,
+        debug=False,
+    )
+
+    assert ok is False
+    assert cues == []
+
+
+def test_attempt_best_effort_gap_repair_reports_vtt_read_failure(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(
+        tr,
+        "_detect_vtt_internal_gaps",
+        lambda _path, _threshold: {
+            "read_ok": False,
+            "gap_count": 0,
+            "largest_gap_sec": 0.0,
+            "gaps": [],
+        },
+    )
+
+    metadata = tr._attempt_best_effort_vtt_internal_gap_repair(
+        vtt_path=tmp_path / "subtitles.vtt",
+        audio_src=tmp_path / "audio.mp3",
+        work_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        detected_language="fr",
+        max_internal_gap_sec=15.0,
+        max_repair_attempts=3,
+        max_line_width=40,
+        max_line_count=2,
+        debug=False,
+    )
+
+    assert metadata["note"] == "vtt_read_failed"
+
+
+def test_attempt_best_effort_gap_repair_reports_vtt_cue_parse_failure(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    analyses = [
+        {
+            "read_ok": True,
+            "gap_count": 1,
+            "largest_gap_sec": 18.0,
+            "gaps": [
+                {
+                    "gap_sec": 18.0,
+                    "previous_end_sec": 10.0,
+                    "next_start_sec": 28.0,
+                    "line_number": 42,
+                }
+            ],
+        }
+    ]
+    monkeypatch.setattr(tr, "_detect_vtt_internal_gaps", lambda _p, _s: analyses[0])
+    monkeypatch.setattr(tr, "_read_vtt_cues", lambda _p: (False, []))
+
+    metadata = tr._attempt_best_effort_vtt_internal_gap_repair(
+        vtt_path=tmp_path / "subtitles.vtt",
+        audio_src=tmp_path / "audio.mp3",
+        work_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        detected_language="fr",
+        max_internal_gap_sec=15.0,
+        max_repair_attempts=3,
+        max_line_width=40,
+        max_line_count=2,
+        debug=False,
+    )
+
+    assert metadata["note"] == "vtt_cue_parse_failed"
+
+
+def test_attempt_best_effort_gap_repair_skips_too_short_window(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(
+        tr,
+        "_detect_vtt_internal_gaps",
+        lambda _path, _threshold: {
+            "read_ok": True,
+            "gap_count": 1,
+            "largest_gap_sec": 18.0,
+            "gaps": [
+                {
+                    "gap_sec": 18.0,
+                    "previous_end_sec": 5.0,
+                    "next_start_sec": 5.0,
+                    "line_number": 42,
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(tr, "_read_vtt_cues", lambda _path: (True, [(0.0, 1.0, "Intro")]))
+    monkeypatch.setattr(tr, "_probe_duration_seconds", lambda _path, debug=False: 4.5)
+    monkeypatch.setattr(
+        tr,
+        "_run_gap_window_rerun",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("Should not be called")),
+    )
+
+    metadata = tr._attempt_best_effort_vtt_internal_gap_repair(
+        vtt_path=tmp_path / "subtitles.vtt",
+        audio_src=tmp_path / "audio.mp3",
+        work_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        detected_language="fr",
+        max_internal_gap_sec=15.0,
+        max_repair_attempts=3,
+        max_line_width=40,
+        max_line_count=2,
+        debug=False,
+    )
+
+    assert metadata["rerun_attempted"] is False
+    assert metadata["rerun_attempts"] == 0
+
+
+def test_attempt_best_effort_gap_repair_continues_when_rerun_returns_no_cues(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    analyses = [
+        {
+            "read_ok": True,
+            "gap_count": 1,
+            "largest_gap_sec": 18.0,
+            "gaps": [
+                {
+                    "gap_sec": 18.0,
+                    "previous_end_sec": 5.0,
+                    "next_start_sec": 8.0,
+                    "line_number": 42,
+                }
+            ],
+        },
+        {
+            "read_ok": True,
+            "gap_count": 1,
+            "largest_gap_sec": 18.0,
+            "gaps": [],
+        },
+    ]
+    call_index = {"i": 0}
+
+    def fake_detect(_path, _threshold):
+        idx = min(call_index["i"], len(analyses) - 1)
+        call_index["i"] += 1
+        return analyses[idx]
+
+    monkeypatch.setattr(tr, "_detect_vtt_internal_gaps", fake_detect)
+    monkeypatch.setattr(tr, "_read_vtt_cues", lambda _path: (True, [(0.0, 1.0, "Intro")]))
+    monkeypatch.setattr(tr, "_probe_duration_seconds", lambda _path, debug=False: 50.0)
+    monkeypatch.setattr(tr, "_run_gap_window_rerun", lambda **kwargs: (False, []))
+
+    metadata = tr._attempt_best_effort_vtt_internal_gap_repair(
+        vtt_path=tmp_path / "subtitles.vtt",
+        audio_src=tmp_path / "audio.mp3",
+        work_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        detected_language="fr",
+        max_internal_gap_sec=15.0,
+        max_repair_attempts=3,
+        max_line_width=40,
+        max_line_count=2,
+        debug=False,
+    )
+
+    assert metadata["rerun_attempted"] is True
+    assert metadata["rerun_attempts"] == 1
+    assert metadata["rerun_successes"] == 0
+    assert metadata["inserted_cue_count"] == 0
+
+
+def test_attempt_best_effort_gap_repair_merges_recovered_cues(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    vtt_path = tmp_path / "subtitles.vtt"
+    vtt_path.write_text("WEBVTT\n\n", encoding="utf-8")
+
+    analyses = [
+        {
+            "read_ok": True,
+            "gap_count": 1,
+            "largest_gap_sec": 15.0,
+            "gaps": [
+                {
+                    "gap_sec": 15.0,
+                    "previous_end_sec": 5.0,
+                    "next_start_sec": 20.0,
+                    "line_number": 10,
+                }
+            ],
+        },
+        {
+            "read_ok": True,
+            "gap_count": 0,
+            "largest_gap_sec": 0.0,
+            "gaps": [],
+        },
+    ]
+
+    call_index = {"i": 0}
+
+    def fake_detect(_path, _threshold):
+        idx = min(call_index["i"], len(analyses) - 1)
+        call_index["i"] += 1
+        return analyses[idx]
+
+    monkeypatch.setattr(tr, "_detect_vtt_internal_gaps", fake_detect)
+    monkeypatch.setattr(
+        tr,
+        "_read_vtt_cues",
+        lambda _path: (True, [(0.0, 5.0, "Intro"), (20.0, 22.0, "Suite")]),
+    )
+    monkeypatch.setattr(tr, "_probe_duration_seconds", lambda _path, debug=False: 30.0)
+    monkeypatch.setattr(tr, "_run_gap_window_rerun", lambda **kwargs: (True, [(6.0, 7.0, "Recup")]))
+    monkeypatch.setattr(tr, "_render_vtt_from_cues", lambda cues, **kwargs: "WEBVTT\n\n")
+    monkeypatch.setattr(tr, "_postprocess_vtt_file", lambda *args, **kwargs: None)
+
+    metadata = tr._attempt_best_effort_vtt_internal_gap_repair(
+        vtt_path=vtt_path,
+        audio_src=tmp_path / "audio.mp3",
+        work_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        detected_language="fr",
+        max_internal_gap_sec=15.0,
+        max_repair_attempts=2,
+        max_line_width=40,
+        max_line_count=2,
+        debug=False,
+    )
+
+    assert metadata["rerun_attempted"] is True
+    assert metadata["rerun_attempts"] == 1
+    assert metadata["rerun_successes"] == 1
+    assert metadata["inserted_cue_count"] == 1
+    assert metadata["detected_after_count"] == 0
+    assert metadata["repair_improved_or_equal"] is True
+
+
+def test_attempt_best_effort_gap_repair_sets_repair_improved_or_equal_false_when_gap_count_worsens(
+    monkeypatch, tmp_path
+):
+    tr = _load_transcription_script_module()
+
+    analyses = [
+        {
+            "read_ok": True,
+            "gap_count": 1,
+            "largest_gap_sec": 15.0,
+            "gaps": [
+                {
+                    "gap_sec": 15.0,
+                    "previous_end_sec": 5.0,
+                    "next_start_sec": 20.0,
+                    "line_number": 10,
+                }
+            ],
+        },
+        {
+            "read_ok": True,
+            "gap_count": 2,
+            "largest_gap_sec": 22.0,
+            "gaps": [],
+        },
+    ]
+    call_index = {"i": 0}
+
+    def fake_detect(_path, _threshold):
+        idx = min(call_index["i"], len(analyses) - 1)
+        call_index["i"] += 1
+        return analyses[idx]
+
+    monkeypatch.setattr(tr, "_detect_vtt_internal_gaps", fake_detect)
+    monkeypatch.setattr(tr, "_read_vtt_cues", lambda _path: (True, [(0.0, 5.0, "Intro")]))
+    monkeypatch.setattr(tr, "_probe_duration_seconds", lambda _path, debug=False: 30.0)
+    monkeypatch.setattr(tr, "_run_gap_window_rerun", lambda **kwargs: (False, []))
+
+    metadata = tr._attempt_best_effort_vtt_internal_gap_repair(
+        vtt_path=tmp_path / "subtitles.vtt",
+        audio_src=tmp_path / "audio.mp3",
+        work_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        detected_language="fr",
+        max_internal_gap_sec=15.0,
+        max_repair_attempts=2,
+        max_line_width=40,
+        max_line_count=2,
+        debug=False,
+    )
+
+    assert metadata["repair_improved_or_equal"] is False
+
+
+def test_validate_vtt_internal_gaps_returns_zero_when_threshold_is_disabled(tmp_path):
+    tr = _load_transcription_script_module()
+
+    rc = tr._validate_vtt_internal_gaps(
+        vtt_path=tmp_path / "subtitles.vtt",
+        max_internal_gap_sec=0.0,
+        max_internal_gap_count=0,
+        debug=False,
+    )
+
+    assert rc == 0
+
+
+def test_validate_vtt_internal_gaps_returns_error_when_vtt_cannot_be_read(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(
+        tr,
+        "_detect_vtt_internal_gaps",
+        lambda _path, _threshold: {
+            "read_ok": False,
+            "cue_count": 0,
+            "gap_count": 0,
+            "largest_gap_sec": 0.0,
+            "gaps": [],
+        },
+    )
+
+    rc = tr._validate_vtt_internal_gaps(
+        vtt_path=tmp_path / "subtitles.vtt",
+        max_internal_gap_sec=15.0,
+        max_internal_gap_count=0,
+        debug=False,
+    )
+
+    assert rc == 8
+
+
+def test_validate_vtt_internal_gaps_accepts_when_there_is_less_than_two_cues(monkeypatch, tmp_path):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(
+        tr,
+        "_detect_vtt_internal_gaps",
+        lambda _path, _threshold: {
+            "read_ok": True,
+            "cue_count": 1,
+            "gap_count": 0,
+            "largest_gap_sec": 0.0,
+            "gaps": [],
+        },
+    )
+
+    rc = tr._validate_vtt_internal_gaps(
+        vtt_path=tmp_path / "subtitles.vtt",
+        max_internal_gap_sec=15.0,
+        max_internal_gap_count=0,
+        debug=False,
+    )
+
+    assert rc == 0
+
+
+def test_validate_vtt_internal_gaps_debug_mode_logs_metrics(monkeypatch, tmp_path, capsys):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(
+        tr,
+        "_detect_vtt_internal_gaps",
+        lambda _path, _threshold: {
+            "read_ok": True,
+            "cue_count": 2,
+            "gap_count": 0,
+            "largest_gap_sec": 0.0,
+            "gaps": [],
+        },
+    )
+
+    rc = tr._validate_vtt_internal_gaps(
+        vtt_path=tmp_path / "subtitles.vtt",
+        max_internal_gap_sec=15.0,
+        max_internal_gap_count=0,
+        debug=True,
+    )
+
+    captured = capsys.readouterr().out
+    assert rc == 0
+    assert "VTT internal-gap validation:" in captured
+
+
+def test_default_non_blocking_internal_gap_metadata_sets_error_only_when_provided():
+    tr = _load_transcription_script_module()
+
+    without_error = tr._default_non_blocking_internal_gap_metadata(note="ok")
+    with_error = tr._default_non_blocking_internal_gap_metadata(note="boom", error="stack")
+
+    assert without_error["note"] == "ok"
+    assert "error" not in without_error
+    assert with_error["error"] == "stack"
+
+
+def test_run_non_blocking_internal_gap_repair_returns_warning_payload_when_repair_raises(
+    monkeypatch, tmp_path
+):
+    tr = _load_transcription_script_module()
+
+    def boom(**kwargs):
+        raise RuntimeError("repair failed")
+
+    monkeypatch.setattr(tr, "_attempt_best_effort_vtt_internal_gap_repair", boom)
+
+    args = types.SimpleNamespace(
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        gpu_device=0,
+        vad_filter="true",
+    )
+    metadata = tr._run_non_blocking_internal_gap_repair(
+        expected_vtt=tmp_path / "subtitles.vtt",
+        audio_src=tmp_path / "audio.mp3",
+        work_dir=tmp_path / "out",
+        args=args,
+        timeout_sec=30,
+        effective_use_gpu=False,
+        detected_language="fr",
+        vtt_max_line_width=40,
+        vtt_max_line_count=2,
+        debug=False,
+    )
+
+    assert metadata["note"] == "pre_translation_repair_exception"
+    assert "repair failed" in metadata["error"]
+
+
+def test_run_non_blocking_internal_gap_repair_logs_when_gaps_were_detected(
+    monkeypatch, tmp_path, capsys
+):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(
+        tr,
+        "_attempt_best_effort_vtt_internal_gap_repair",
+        lambda **kwargs: {
+            "detected_before_count": 2,
+            "inserted_cue_count": 1,
+            "detected_after_count": 1,
+        },
+    )
+
+    args = types.SimpleNamespace(
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        gpu_device=0,
+        vad_filter="true",
+    )
+    metadata = tr._run_non_blocking_internal_gap_repair(
+        expected_vtt=tmp_path / "subtitles.vtt",
+        audio_src=tmp_path / "audio.mp3",
+        work_dir=tmp_path / "out",
+        args=args,
+        timeout_sec=30,
+        effective_use_gpu=False,
+        detected_language="fr",
+        vtt_max_line_width=40,
+        vtt_max_line_count=2,
+        debug=False,
+    )
+
+    captured = capsys.readouterr().out
+    assert metadata["detected_before_count"] == 2
+    assert "VTT internal-gap check (non-blocking)" in captured
+
+
+def test_build_whisper_fallback_options_exposes_expected_runtime_values(monkeypatch):
+    tr = _load_transcription_script_module()
+
+    monkeypatch.setattr(tr, "_resolve_chunk_threshold_seconds", lambda **kwargs: 777)
+    args = types.SimpleNamespace(
+        model="turbo",
+        whisper_models_dir="/tmp/w",
+        gpu_device=3,
+        vad_filter="true",
+        chunk_duration_seconds="300",
+        chunk_overlap_seconds="4",
+        chunk_threshold_seconds="",
+        vtt_highlight_words="false",
+    )
+
+    options = tr._build_whisper_fallback_options(
+        args=args,
+        effective_use_gpu=True,
+        timeout_sec=91,
+        vtt_max_line_count=2,
+        vtt_max_line_width=44,
+    )
+
+    assert options["model"] == "turbo"
+    assert options["whisper_models_dir"] == "/tmp/w"
+    assert options["use_gpu"] is True
+    assert options["gpu_device"] == 3
+    assert options["chunk_threshold_sec"] == 777
+    assert options["timeout_sec"] == 91
+
+
+def test_validate_final_vtt_and_collect_gap_analysis_returns_coverage_error_early(
+    monkeypatch, tmp_path
+):
+    tr = _load_transcription_script_module()
+
+    calls = {"n": 0}
+
+    def fake_probe(_path, debug=False):
+        calls["n"] += 1
+        return 0.0 if calls["n"] == 1 else 42.0
+
+    monkeypatch.setattr(tr, "_probe_duration_seconds", fake_probe)
+    monkeypatch.setattr(tr, "_validate_vtt_coverage", lambda **kwargs: 7)
+
+    rc, analysis = tr._validate_final_vtt_and_collect_gap_analysis(
+        expected_vtt=tmp_path / "subtitles.vtt",
+        audio_src=tmp_path / "audio.mp3",
+        input_path=tmp_path / "input.mp3",
+        debug=False,
+    )
+
+    assert rc == 7
+    assert analysis == {}
+    assert calls["n"] == 2
+
+
+def test_validate_final_vtt_and_collect_gap_analysis_logs_non_blocking_warning(
+    monkeypatch, tmp_path, capsys
+):
+    tr = _load_transcription_script_module()
+
+    calls = {"n": 0}
+
+    def fake_probe(_path, debug=False):
+        calls["n"] += 1
+        return 0.0 if calls["n"] == 1 else 42.0
+
+    monkeypatch.setattr(tr, "_probe_duration_seconds", fake_probe)
+    monkeypatch.setattr(tr, "_validate_vtt_coverage", lambda **kwargs: 0)
+    monkeypatch.setattr(tr, "_validate_vtt_internal_gaps", lambda **kwargs: 8)
+    monkeypatch.setattr(
+        tr,
+        "_detect_vtt_internal_gaps",
+        lambda _vtt_path, _threshold: {
+            "read_ok": True,
+            "cue_count": 4,
+            "gap_count": 2,
+            "largest_gap_sec": 20.0,
+            "gaps": [],
+        },
+    )
+
+    rc, analysis = tr._validate_final_vtt_and_collect_gap_analysis(
+        expected_vtt=tmp_path / "subtitles.vtt",
+        audio_src=tmp_path / "audio.mp3",
+        input_path=tmp_path / "input.mp3",
+        debug=False,
+    )
+
+    captured = capsys.readouterr().out
+    assert rc == 0
+    assert analysis["gap_count"] == 2
+    assert "VTT internal-gap warning (non-blocking)" in captured
+    assert calls["n"] == 2
+
+
 def test_parse_vtt_timestamp_accepts_minutes_seconds_format():
     tr = _load_transcription_script_module()
 
@@ -1189,6 +2242,31 @@ def test_build_transcription_runtime_metadata_includes_translation_model():
     assert metadata["transcription"]["final_subtitle_language"] == "en"
     assert metadata["transcription"]["translation"]["backend"] == "local_translation"
     assert metadata["transcription"]["translation"]["model"] == "Helsinki-NLP/opus-mt-tc-big-fr-en"
+
+
+def test_build_transcription_runtime_metadata_includes_internal_gap_report():
+    tr = _load_transcription_script_module()
+
+    metadata = tr._build_transcription_runtime_metadata(
+        requested_language="auto",
+        detected_language="fr",
+        final_language="fr",
+        whisper_model="turbo",
+        use_gpu=False,
+        translation={
+            "applied": False,
+            "backend": "none",
+            "source_language": "fr",
+            "target_language": "fr",
+            "model": None,
+            "hardware_profile": "cpu",
+        },
+        vtt_internal_gaps={"enabled": True, "blocking": False, "final_output": {"gap_count": 2}},
+    )
+
+    assert metadata["transcription"]["vtt_internal_gaps"]["enabled"] is True
+    assert metadata["transcription"]["vtt_internal_gaps"]["blocking"] is False
+    assert metadata["transcription"]["vtt_internal_gaps"]["final_output"]["gap_count"] == 2
 
 
 def test_write_info_video_metadata_merges_runtime_details(tmp_path):

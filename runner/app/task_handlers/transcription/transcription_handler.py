@@ -24,12 +24,14 @@ from app.task_handlers.base_handler import BaseTaskHandler
 
 class TranscriptionHandler(BaseTaskHandler):
     """
-    Handles transcription tasks using ffmpeg's whisper filter.
+    Handles transcription tasks via the standalone Whisper script pipeline.
 
     Workflow:
-    - Download/prepare input media
-    - Run internal transcription script that calls ffmpeg whisper
-    - Convert SRT to VTT if needed and package results
+    - Download and ffprobe-validate input media in a task workspace.
+    - Run `scripts/transcription.py`, which performs audio preparation, source-language
+      transcription, VTT finalization, optional non-blocking internal-gap repair,
+      optional translation, and final output validation.
+    - Package script outputs and metadata for task result publication.
     """
 
     task_type = "transcription"
@@ -55,7 +57,7 @@ class TranscriptionHandler(BaseTaskHandler):
 
         Optional supported parameters:
         - language: final subtitle language code or 'auto'
-        - format: output subtitle format (vtt|srt), default vtt
+        - format: output subtitle format (currently `vtt` only)
         - model: logical whisper model (small|medium|large|turbo)
         - duration/model_type: legacy compatibility metadata from manager payloads
         - video_id/video_slug/video_title: optional tracking metadata

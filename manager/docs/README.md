@@ -288,7 +288,7 @@ The `parameters` object is **task-type specific** and is interpreted by the runn
 Current runner compatibility notes:
 
 - For `encoding` and `studio` tasks, nested `rendition`, `cut`, and `dressing` values should be sent as JSON strings.
-- For `transcription` tasks, supported parameters include `language`, `format` (currently `vtt`), `model`, and `normalize`.
+- For `transcription` tasks, supported parameters include `language`, `format` (currently `vtt`), `model`, `normalize`, optional tracking metadata (`video_id`, `video_slug`, `video_title`), plus compatibility fields (`model_type`, `duration`).
 
 #### Example: `task_type = "encoding"`
 

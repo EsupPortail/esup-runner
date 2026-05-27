@@ -47,6 +47,12 @@ _STDERR_ERROR_TOKENS = (
 _DOWNLOAD_MAX_ATTEMPTS = 5
 _DOWNLOAD_RETRY_DELAY_SECONDS = 2.0
 _DOWNLOAD_RETRY_BACKOFF_FACTOR = 2.0
+_DOWNLOAD_RETRY_MAX_DELAY_SECONDS = 30.0
+_DOWNLOAD_MAX_ATTEMPTS_WHEN_SOURCE_NOT_READY = 12
+
+
+class _SourceTemporarilyUnavailableError(ValueError):
+    """Raised when the source endpoint returns an empty placeholder response."""
 
 
 @lru_cache(maxsize=1)
@@ -591,11 +597,14 @@ class BaseTaskHandler(ABC):
                 declared_size = expected_size if expected_size is not None else "unknown"
                 content_type = response.headers.get("Content-Type") or "unknown"
                 last_modified = response.headers.get("Last-Modified") or "unknown"
-                raise ValueError(
+                error_message = (
                     "Downloaded file is empty "
                     f"(0 bytes; Content-Length={declared_size}; "
                     f"Content-Type={content_type}; Last-Modified={last_modified})"
                 )
+                if self._is_source_not_ready_placeholder_response(expected_size, content_type):
+                    raise _SourceTemporarilyUnavailableError(error_message)
+                raise ValueError(error_message)
             if expected_size is not None and bytes_written != expected_size:
                 raise ValueError(f"Incomplete download ({bytes_written}/{expected_size} bytes).")
 
@@ -605,6 +614,17 @@ class BaseTaskHandler(ABC):
         """Build a normalized download failure message."""
         normalized_error = str(error).rstrip(".")
         return f"Impossible to download {source_url} file, with error: {normalized_error}."
+
+    def _is_source_not_ready_placeholder_response(
+        self, expected_size: Optional[int], content_type: str
+    ) -> bool:
+        """Return whether response resembles a temporary placeholder page."""
+        normalized_content_type = str(content_type).split(";", 1)[0].strip().lower()
+        is_placeholder_content_type = normalized_content_type in {
+            "text/html",
+            "application/xhtml+xml",
+        }
+        return is_placeholder_content_type and expected_size in (None, 0)
 
     def download_source_file(self, source_url: str, dest_file: str) -> Dict[str, Any]:
         """Download source file.
@@ -625,9 +645,11 @@ class BaseTaskHandler(ABC):
         part_path = destination.with_name(destination.name + ".part")
         last_error = "Unknown download error"
         session = requests.Session()
+        attempt = 0
 
         try:
-            for attempt in range(1, max_attempts + 1):
+            while attempt < max_attempts:
+                attempt += 1
                 self._cleanup_partial_download_file(part_path)
                 try:
                     attempt_result = self._download_source_file_once(
@@ -643,10 +665,26 @@ class BaseTaskHandler(ABC):
                     return {"success": True, "file_path": str(destination)}
                 except Exception as e:
                     last_error = str(e)
+                    if isinstance(e, _SourceTemporarilyUnavailableError):
+                        previous_max_attempts = max_attempts
+                        max_attempts = max(
+                            max_attempts,
+                            _DOWNLOAD_MAX_ATTEMPTS_WHEN_SOURCE_NOT_READY,
+                        )
+                        if max_attempts > previous_max_attempts:
+                            self.logger.info(
+                                "Source %s appears temporarily unavailable (empty HTML placeholder) at attempt %s/%s; extending download retry budget from %s to %s attempts",
+                                source_url,
+                                attempt,
+                                previous_max_attempts,
+                                previous_max_attempts,
+                                max_attempts,
+                            )
                     if attempt < max_attempts:
                         retry_delay = base_retry_delay_seconds * (
                             retry_backoff_factor ** (attempt - 1)
                         )
+                        retry_delay = min(retry_delay, _DOWNLOAD_RETRY_MAX_DELAY_SECONDS)
                         self.logger.warning(
                             "Download attempt %s/%s failed for %s: %s; retrying in %.1fs",
                             attempt,

@@ -1,4 +1,4 @@
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates runner authentication header building with token presence validation."""
 
 import pytest
 from fastapi import HTTPException

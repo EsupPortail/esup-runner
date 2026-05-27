@@ -1,6 +1,6 @@
 """OpenAPI authentication regression tests."""
 
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates OpenAPI documentation access control based on visibility configuration."""
 
 import pytest
 

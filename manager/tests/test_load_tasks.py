@@ -1,6 +1,6 @@
 """Tests for SafeDailyJSONPersistence.load_tasks."""
 
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates task loading from specific dates with newest version preference logic."""
 
 import json
 from datetime import date, timedelta

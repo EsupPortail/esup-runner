@@ -1,4 +1,4 @@
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates manager runtime checks including API endpoints, health status, and runner list."""
 
 from types import SimpleNamespace
 

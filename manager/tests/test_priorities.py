@@ -1,6 +1,6 @@
 """Tests for domain-based priorities and quota rejection."""
 
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates domain-based task quotas and priority hostname matching logic."""
 
 from datetime import datetime
 

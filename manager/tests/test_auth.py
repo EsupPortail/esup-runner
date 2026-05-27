@@ -1,6 +1,6 @@
 """Authentication and authorization regression tests."""
 
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates token verification, OpenAPI cookie handling, and admin authorization logic."""
 
 import base64
 import hashlib

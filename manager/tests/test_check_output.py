@@ -1,4 +1,4 @@
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates output formatting, colorization control, and check status level computation."""
 
 import app.core._check_output as out
 

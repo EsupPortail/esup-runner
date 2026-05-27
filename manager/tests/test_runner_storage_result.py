@@ -1,4 +1,4 @@
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates task manifest retrieval from shared storage with status transition handling."""
 
 import json
 from datetime import datetime

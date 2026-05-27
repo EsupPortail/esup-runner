@@ -1,6 +1,6 @@
 """Task-level persistence tests."""
 
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates task-level persistence round-trip serialization and daily JSON file storage."""
 
 from datetime import datetime
 

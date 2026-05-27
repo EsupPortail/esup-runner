@@ -1,4 +1,4 @@
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates configuration parsing, environment loading, and dotenv file handling."""
 
 import builtins
 import sys

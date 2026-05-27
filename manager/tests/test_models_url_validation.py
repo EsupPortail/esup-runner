@@ -1,4 +1,4 @@
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates task request URL safety checking for private networks and protocol schemes."""
 
 import pytest
 

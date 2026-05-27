@@ -1,4 +1,4 @@
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates email configuration, sender address building, and notify retry message composition."""
 
 from __future__ import annotations
 

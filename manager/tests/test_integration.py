@@ -3,7 +3,7 @@ Integration tests for the Manager (configuration, state management, internal log
 All comments are in English for clarity.
 """
 
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates manager configuration, runner state management, and task state operations."""
 
 from datetime import datetime
 

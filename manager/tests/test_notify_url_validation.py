@@ -1,4 +1,4 @@
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates notify URL host allowlist checking and DNS resolution with IP validation."""
 
 import pytest
 from fastapi import HTTPException

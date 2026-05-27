@@ -1,6 +1,6 @@
 """Unit tests for password hashing helpers."""
 
-"""Test scope: validates expected behavior and regression scenarios."""
+"""Validates bcrypt password hashing and verification with bytes and string inputs."""
 
 import pytest
 

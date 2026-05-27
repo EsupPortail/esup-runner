@@ -807,7 +807,7 @@ def _build_encode_thumbnail_job(
     *,
     file: str,
     filename: str,
-    duration: int,
+    duration: float,
     thumbnail_index: int,
 ) -> tuple[str, str, Dict[str, object], bool, Dict[str, Any]]:
     """Build a thumbnail extraction job payload for the flow orchestrator."""
@@ -923,7 +923,7 @@ def encode(
     codec: str,
     height: int,
     file: str,
-    duration: int = 0,
+    duration: float = 0,
     thumbnail_index: int = 0,
 ) -> bool:
     """

@@ -1,5 +1,7 @@
 """Tests for domain-based priorities and quota rejection."""
 
+"""Test scope: validates expected behavior and regression scenarios."""
+
 from datetime import datetime
 
 import pytest
@@ -34,6 +36,7 @@ def _make_task(task_id: str, notify_url: str, status: str = "running") -> Task:
 
 
 def test_hostname_from_url():
+    """Validate Hostname from url."""
     assert hostname_from_url("https://pod.umontpellier.fr/callback") == "pod.umontpellier.fr"
     assert hostname_from_url("http://UMONTPELLIER.FR") == "umontpellier.fr"
     assert hostname_from_url("not-a-url") is None
@@ -50,10 +53,12 @@ def test_hostname_from_url():
     ],
 )
 def test_is_priority_hostname(hostname, domain, expected):
+    """Validate Is priority hostname."""
     assert is_priority_hostname(hostname, domain) is expected
 
 
 def test_quota_math_flooring_with_minimum_one_for_positive_percent():
+    """Validate Quota math flooring with minimum one for positive percent."""
     assert max_other_concurrent_tasks(10, 20) == 2
     assert max_other_concurrent_tasks(3, 20) == 1
     assert max_other_concurrent_tasks(1, 25) == 1
@@ -63,6 +68,7 @@ def test_quota_math_flooring_with_minimum_one_for_positive_percent():
 
 
 def test_other_domain_running_count():
+    """Validate Other domain running count."""
     local_tasks = {
         "p1": _make_task("p1", "https://pod.umontpellier.fr/cb", status="running"),
         "o1": _make_task("o1", "https://other.fr/cb", status="running"),
@@ -73,6 +79,7 @@ def test_other_domain_running_count():
 
 
 def test_would_exceed_quota_rejects_non_priority():
+    """Validate Would exceed quota rejects non priority."""
     local_tasks = {
         "o1": _make_task("o1", "https://other.fr/cb", status="running"),
         "o2": _make_task("o2", "https://other.fr/cb", status="running"),
@@ -91,6 +98,7 @@ def test_would_exceed_quota_rejects_non_priority():
 
 
 def test_would_exceed_quota_allows_priority_even_if_full():
+    """Validate Would exceed quota allows priority even if full."""
     local_tasks = {
         "o1": _make_task("o1", "https://other.fr/cb", status="running"),
         "o2": _make_task("o2", "https://other.fr/cb", status="running"),
@@ -110,6 +118,7 @@ def test_would_exceed_quota_allows_priority_even_if_full():
 
 def test_execute_rejects_when_quota_reached(client, auth_headers, monkeypatch):
     # Arrange config
+    """Validate Execute rejects when quota reached."""
     from app.core.config import config
 
     monkeypatch.setattr(config, "PRIORITIES_ENABLED", True)

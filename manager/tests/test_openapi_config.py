@@ -21,12 +21,14 @@ from app.core.config import config
 
 
 def test_get_openapi_tags_contains_expected_names():
+    """Validate Get openapi tags contains expected names."""
     tags = _get_openapi_tags()
     names = {t["name"] for t in tags}
     assert {"API", "Logs", "Manager", "Runner", "Task"}.issubset(names)
 
 
 def test_assign_tags_to_endpoints_by_path_patterns():
+    """Validate Assign tags to endpoints by path patterns."""
     schema = {
         "paths": {
             "/admin/x": {"get": {}},
@@ -49,6 +51,7 @@ def test_assign_tags_to_endpoints_by_path_patterns():
 
 
 def test_add_security_schemes_adds_components_and_default_security():
+    """Validate Add security schemes adds components and default security."""
     schema = {"paths": {"/x": {"get": {}}, "/y": {"post": {}}}}
 
     _add_security_schemes(schema)
@@ -62,6 +65,7 @@ def test_add_security_schemes_adds_components_and_default_security():
 
 
 def test_enhance_schemas_with_examples_sets_examples_when_schemas_exist():
+    """Validate Enhance schemas with examples sets examples when schemas exist."""
     schema = {
         "components": {
             "schemas": {
@@ -80,6 +84,7 @@ def test_enhance_schemas_with_examples_sets_examples_when_schemas_exist():
 
 
 def test_enhance_schemas_with_examples_creates_components_when_missing():
+    """Validate Enhance schemas with examples creates components when missing."""
     schema: dict = {}
     _enhance_schemas_with_examples(schema)
     assert "components" in schema
@@ -87,6 +92,7 @@ def test_enhance_schemas_with_examples_creates_components_when_missing():
 
 
 def test_custom_openapi_sets_tags_logo_security_contact_license_and_caches():
+    """Validate Custom openapi sets tags logo security contact license and caches."""
     app = FastAPI(
         title="Test API",
         version="0.0.1",
@@ -116,6 +122,7 @@ def test_custom_openapi_sets_tags_logo_security_contact_license_and_caches():
 
 
 def test_setup_openapi_config_assigns_openapi_callable():
+    """Validate Setup openapi config assigns openapi callable."""
     app = FastAPI(title="X", version="1", description="d")
     setup_openapi_config(app)
     schema = app.openapi()
@@ -123,6 +130,7 @@ def test_setup_openapi_config_assigns_openapi_callable():
 
 
 def test_set_openapi_auth_cookie_if_needed_skips_when_builder_returns_none():
+    """Validate Set openapi auth cookie if needed skips when builder returns none."""
     from app.api import openapi as openapi_module
 
     request = Request(
@@ -156,6 +164,7 @@ def test_set_openapi_auth_cookie_if_needed_skips_when_builder_returns_none():
 
 def test_setup_protected_openapi_routes_docs_uses_cookie_and_no_query_token(monkeypatch):
     # Start with docs disabled so we know the override route comes from setup_protected_openapi_routes
+    """Validate Setup protected openapi routes docs uses cookie and no query token."""
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
     setup_protected_openapi_routes(app)
 
@@ -178,6 +187,7 @@ def test_setup_protected_openapi_routes_docs_uses_cookie_and_no_query_token(monk
 
 
 def test_setup_protected_openapi_routes_redoc_uses_cookie_and_no_query_token(monkeypatch):
+    """Validate Setup protected openapi routes redoc uses cookie and no query token."""
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
     setup_protected_openapi_routes(app)
 
@@ -202,6 +212,7 @@ def test_setup_protected_openapi_routes_redoc_uses_cookie_and_no_query_token(mon
 def test_setup_protected_openapi_routes_skips_rotation_when_disabled_and_cookie_present(
     monkeypatch,
 ):
+    """Validate Setup protected openapi routes skips rotation when disabled and cookie present."""
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
     setup_protected_openapi_routes(app)
 
@@ -224,6 +235,7 @@ def test_setup_protected_openapi_routes_skips_rotation_when_disabled_and_cookie_
 
 
 def test_setup_protected_openapi_routes_without_token_keeps_plain_openapi_url_and_openapi_json_works():
+    """Validate Setup protected openapi routes without token keeps plain openapi url and openapi json works."""
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
     setup_protected_openapi_routes(app)
 
@@ -245,6 +257,7 @@ def test_setup_protected_openapi_routes_without_token_keeps_plain_openapi_url_an
 
 
 def test_openapi_config_get_fastapi_config_has_expected_keys():
+    """Validate Openapi config get fastapi config has expected keys."""
     cfg = OpenAPIConfig.get_fastapi_config()
     assert cfg["title"] == OpenAPIConfig.TITLE
     assert cfg["openapi_url"] == OpenAPIConfig.OPENAPI_URL

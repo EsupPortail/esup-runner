@@ -28,6 +28,7 @@ def _runner(runner_id: str) -> Runner:
 
 
 def test_shared_store_is_visible_across_instances(tmp_path):
+    """Validate Shared store is visible across instances."""
     state_path = tmp_path / "runners_state.json"
     store_a = RunnerStore(shared_enabled=True, state_file=str(state_path), lock_timeout=1)
     store_b = RunnerStore(shared_enabled=True, state_file=str(state_path), lock_timeout=1)
@@ -46,6 +47,7 @@ def test_shared_store_is_visible_across_instances(tmp_path):
 
 
 def test_shared_store_initial_state_write_happens_under_lock(tmp_path, monkeypatch):
+    """Validate Shared store initial state write happens under lock."""
     state_path = tmp_path / "runners_state.json"
     lock_states: list[bool] = []
     original_write_disk = RunnerStore._write_disk
@@ -63,6 +65,7 @@ def test_shared_store_initial_state_write_happens_under_lock(tmp_path, monkeypat
 
 
 def test_in_memory_store_is_not_shared_between_instances(tmp_path):
+    """Validate In memory store is not shared between instances."""
     state_path = tmp_path / "runners_state.json"
     store_a = RunnerStore(shared_enabled=False, state_file=str(state_path))
     store_b = RunnerStore(shared_enabled=False, state_file=str(state_path))
@@ -73,6 +76,7 @@ def test_in_memory_store_is_not_shared_between_instances(tmp_path):
 
 
 def test_in_memory_store_mapping_helpers(tmp_path):
+    """Validate In memory store mapping helpers."""
     state_path = tmp_path / "runners_state.json"
     store = RunnerStore(shared_enabled=False, state_file=str(state_path))
 
@@ -101,6 +105,7 @@ def test_in_memory_store_mapping_helpers(tmp_path):
 
 
 def test_normalize_runner_accepts_dict_and_rejects_other_types(tmp_path):
+    """Validate Normalize runner accepts dict and rejects other types."""
     state_path = tmp_path / "runners_state.json"
     store = RunnerStore(shared_enabled=False, state_file=str(state_path))
 
@@ -113,6 +118,7 @@ def test_normalize_runner_accepts_dict_and_rejects_other_types(tmp_path):
 
 
 def test_with_lock_timeout_raises(tmp_path):
+    """Validate With lock timeout raises."""
     state_path = tmp_path / "runners_state.json"
     store = RunnerStore(shared_enabled=True, state_file=str(state_path), lock_timeout=1)
 
@@ -130,6 +136,7 @@ def test_with_lock_timeout_raises(tmp_path):
 
 
 def test_runner_to_dict_json_and_legacy_branches(tmp_path):
+    """Validate Runner to dict json and legacy branches."""
     state_path = tmp_path / "runners_state.json"
     store = RunnerStore(shared_enabled=False, state_file=str(state_path))
 
@@ -155,6 +162,7 @@ def test_runner_to_dict_json_and_legacy_branches(tmp_path):
 
 
 def test_read_disk_error_paths_and_invalid_payloads(tmp_path, monkeypatch):
+    """Validate Read disk error paths and invalid payloads."""
     state_path = tmp_path / "runners_state.json"
     store = RunnerStore(shared_enabled=True, state_file=str(state_path), lock_timeout=1)
 
@@ -192,6 +200,7 @@ def test_read_disk_error_paths_and_invalid_payloads(tmp_path, monkeypatch):
 
 
 def test_shared_store_keys_values_items_and_get(tmp_path):
+    """Validate Shared store keys values items and get."""
     state_path = tmp_path / "runners_state.json"
     store = RunnerStore(shared_enabled=True, state_file=str(state_path), lock_timeout=1)
 
@@ -207,6 +216,7 @@ def test_shared_store_keys_values_items_and_get(tmp_path):
 
 
 def test_default_state_file_is_anchored_to_manager_root():
+    """Validate Default state file is anchored to manager root."""
     store = RunnerStore(shared_enabled=False)
     expected = (Path(__file__).resolve().parents[1] / "data" / "runners_state.json").resolve()
     assert store._state_file.resolve() == expected

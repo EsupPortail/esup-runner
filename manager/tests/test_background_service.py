@@ -11,6 +11,7 @@ from app.services import background_service
 
 @pytest.mark.asyncio
 async def test_start_and_stop_all_services(monkeypatch):
+    """Validate Start and stop all services."""
     started = []
 
     async def fake_service(name: str):
@@ -43,6 +44,8 @@ async def test_start_and_stop_all_services(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_start_when_already_running(monkeypatch):
+    """Validate Start when already running."""
+
     async def noop():
         await asyncio.sleep(0)
 
@@ -60,6 +63,7 @@ async def test_start_when_already_running(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_stop_when_not_running():
+    """Validate Stop when not running."""
     mgr = background_service.BackgroundServiceManager()
     await mgr.stop_all_services()
     assert mgr.is_running is False
@@ -67,6 +71,7 @@ async def test_stop_when_not_running():
 
 @pytest.mark.asyncio
 async def test_get_service_status_reports_tasks():
+    """Validate Get service status reports tasks."""
     mgr = background_service.BackgroundServiceManager()
     task = asyncio.create_task(asyncio.sleep(0))
     mgr.tasks.append(task)

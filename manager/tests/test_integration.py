@@ -3,6 +3,8 @@ Integration tests for the Manager (configuration, state management, internal log
 All comments are in English for clarity.
 """
 
+"""Test scope: validates expected behavior and regression scenarios."""
+
 from datetime import datetime
 
 from app.__version__ import __version__

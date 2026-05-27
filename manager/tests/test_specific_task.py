@@ -1,5 +1,7 @@
 """Task-level persistence tests."""
 
+"""Test scope: validates expected behavior and regression scenarios."""
+
 from datetime import datetime
 
 from app.core.persistence import SafeDailyJSONPersistence
@@ -7,6 +9,7 @@ from app.models.models import Task
 
 
 def test_save_and_load_round_trip(tmp_path):
+    """Validate Save and load round trip."""
     persistence = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=1)
 
     task = Task(

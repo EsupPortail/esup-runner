@@ -79,6 +79,7 @@ def _runner(runner_id: str = "r1", token: str | None = "runner-token") -> Runner
 
 @pytest.mark.asyncio
 async def test_cleanup_old_tasks_removes_expired(monkeypatch, clean_tasks):
+    """Validate Cleanup old tasks removes expired."""
     old = datetime.now() - timedelta(days=3)
     tasks["old"] = _task("old", "completed", created_at=old)
     tasks["old-running"] = _task("old-running", "running", created_at=old)
@@ -104,6 +105,7 @@ async def test_cleanup_old_tasks_removes_expired(monkeypatch, clean_tasks):
 
 @pytest.mark.asyncio
 async def test_cleanup_old_tasks_handles_invalid_created_at(monkeypatch, clean_tasks):
+    """Validate Cleanup old tasks handles invalid created at."""
     tasks["bad"] = _task("bad", "completed")
     tasks["bad"].created_at = "not-a-date"
     monkeypatch.setattr(config, "CLEANUP_TASK_FILES_DAYS", 1)
@@ -121,6 +123,7 @@ async def test_cleanup_old_tasks_handles_invalid_created_at(monkeypatch, clean_t
 
 @pytest.mark.asyncio
 async def test_cleanup_old_tasks_handles_timezone_created_at(monkeypatch, clean_tasks):
+    """Validate Cleanup old tasks handles timezone created at."""
     aware_old = datetime.now(timezone.utc) - timedelta(days=3)
     tasks["old-tz"] = _task("old-tz", "running")
     tasks["old-tz"].created_at = aware_old.isoformat()
@@ -143,6 +146,7 @@ async def test_cleanup_old_tasks_handles_timezone_created_at(monkeypatch, clean_
 
 @pytest.mark.asyncio
 async def test_cleanup_old_tasks_logs_when_persistent_delete_fails(monkeypatch, clean_tasks):
+    """Validate Cleanup old tasks logs when persistent delete fails."""
     old = datetime.now() - timedelta(days=3)
     tasks["old"] = _task("old", "running", created_at=old)
     monkeypatch.setattr(config, "CLEANUP_TASK_FILES_DAYS", 1)
@@ -160,6 +164,7 @@ async def test_cleanup_old_tasks_logs_when_persistent_delete_fails(monkeypatch, 
 
 @pytest.mark.asyncio
 async def test_check_task_timeouts_marks_timeout(clean_tasks):
+    """Validate Check task timeouts marks timeout."""
     long_ago = datetime.now() - timedelta(hours=25)
     tasks["run"] = _task("run", "running", updated_at=long_ago)
 
@@ -178,6 +183,7 @@ async def test_check_task_timeouts_marks_timeout(clean_tasks):
 async def test_reconcile_running_tasks_with_runners_updates_terminal_status(
     monkeypatch, clean_tasks, clean_runners
 ):
+    """Validate Reconcile running tasks with runners updates terminal status."""
     long_ago = datetime.now() - timedelta(hours=2)
     tasks["run"] = _task("run", "running", updated_at=long_ago)
     runners["r1"] = Runner(
@@ -222,6 +228,7 @@ async def test_reconcile_running_tasks_with_runners_updates_terminal_status(
 async def test_reconcile_running_tasks_with_runners_keeps_running_and_refreshes_updated_at(
     monkeypatch, clean_tasks, clean_runners
 ):
+    """Validate Reconcile running tasks with runners keeps running and refreshes updated at."""
     old_updated = datetime.now() - timedelta(hours=3)
     tasks["run"] = _task("run", "running", updated_at=old_updated)
     previous_updated = tasks["run"].updated_at
@@ -250,6 +257,7 @@ async def test_reconcile_running_tasks_with_runners_keeps_running_and_refreshes_
 
 
 def test_build_runner_task_status_headers():
+    """Validate Build runner task status headers."""
     assert task_service._build_runner_task_status_headers(_runner(token=None)) is None
 
     headers = task_service._build_runner_task_status_headers(_runner(token="tok"))
@@ -258,12 +266,15 @@ def test_build_runner_task_status_headers():
 
 @pytest.mark.asyncio
 async def test_fetch_runner_task_status_returns_none_without_token():
+    """Validate Fetch runner task status returns none without token."""
     payload = await task_service._fetch_runner_task_status(_runner(token=None), "t1")
     assert payload is None
 
 
 @pytest.mark.asyncio
 async def test_fetch_runner_task_status_handles_request_error(monkeypatch):
+    """Validate Fetch runner task status handles request error."""
+
     class FakeClient:
         def __init__(self, *_, **__):
             pass
@@ -285,6 +296,8 @@ async def test_fetch_runner_task_status_handles_request_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_runner_task_status_handles_non_200(monkeypatch):
+    """Validate Fetch runner task status handles non 200."""
+
     class Response:
         status_code = 503
         text = "unavailable"
@@ -313,6 +326,8 @@ async def test_fetch_runner_task_status_handles_non_200(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_runner_task_status_handles_invalid_json(monkeypatch):
+    """Validate Fetch runner task status handles invalid json."""
+
     class Response:
         status_code = 200
         text = "ok"
@@ -341,6 +356,8 @@ async def test_fetch_runner_task_status_handles_invalid_json(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_runner_task_status_handles_non_object_payload(monkeypatch):
+    """Validate Fetch runner task status handles non object payload."""
+
     class Response:
         status_code = 200
         text = "ok"
@@ -369,6 +386,8 @@ async def test_fetch_runner_task_status_handles_non_object_payload(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_runner_task_status_success(monkeypatch):
+    """Validate Fetch runner task status success."""
+
     class Response:
         status_code = 200
         text = "ok"
@@ -396,17 +415,20 @@ async def test_fetch_runner_task_status_success(monkeypatch):
 
 
 def test_apply_runner_task_status_rejects_unknown_status(clean_tasks):
+    """Validate Apply runner task status rejects unknown status."""
     task = _task("t1", "running")
     assert task_service._apply_runner_task_status(task, {"status": "bogus"}) is False
 
 
 def test_refresh_running_task_returns_false_when_timestamp_unchanged(clean_tasks):
+    """Validate Refresh running task returns false when timestamp unchanged."""
     task = _task("t1", "running")
     same_timestamp = task.updated_at
     assert task_service._refresh_running_task(task, same_timestamp) is False
 
 
 def test_apply_terminal_runner_task_status_sets_terminal_fields(clean_tasks):
+    """Validate Apply terminal runner task status sets terminal fields."""
     task = _task("t1", "running")
     task.error = "old error"
     now_iso = datetime.now().isoformat()
@@ -426,6 +448,7 @@ def test_apply_terminal_runner_task_status_sets_terminal_fields(clean_tasks):
 
 
 def test_apply_terminal_error_branches(clean_tasks):
+    """Validate Apply terminal error branches."""
     task = _task("t1", "failed")
     task.error = None
     assert task_service._apply_terminal_error(task, "completed", {}) is False
@@ -440,6 +463,7 @@ def test_apply_terminal_error_branches(clean_tasks):
 
 
 def test_apply_script_output_branches(clean_tasks):
+    """Validate Apply script output branches."""
     task = _task("t1", "running")
     task.script_output = "same"
 
@@ -453,6 +477,7 @@ def test_apply_script_output_branches(clean_tasks):
 @pytest.mark.asyncio
 async def test_reconcile_single_running_task_branches(monkeypatch, clean_tasks, clean_runners):
     # task missing
+    """Validate Reconcile single running task branches."""
     assert await task_service._reconcile_single_running_task("missing") is False
 
     # task not running
@@ -487,6 +512,7 @@ async def test_reconcile_single_running_task_branches(monkeypatch, clean_tasks, 
 
 @pytest.mark.asyncio
 async def test_reconcile_running_tasks_with_runners_handles_loop_exception(monkeypatch):
+    """Validate Reconcile running tasks with runners handles loop exception."""
     stop = asyncio.Event()
     errors = {"count": 0}
 
@@ -509,6 +535,7 @@ async def test_reconcile_running_tasks_with_runners_handles_loop_exception(monke
 
 
 def test_update_and_get_tasks(clean_tasks):
+    """Validate Update and get tasks."""
     tasks["t1"] = _task("t1", "pending")
     assert task_service.update_task_status("t1", "running") is True
     assert task_service.update_task_status("missing", "running") is False
@@ -522,6 +549,7 @@ def test_update_and_get_tasks(clean_tasks):
 
 
 def test_get_all_tasks_and_stats(clean_tasks):
+    """Validate Get all tasks and stats."""
     tasks["a"] = _task("a", "completed")
     tasks["b"] = _task("b", "failed")
     tasks["c"] = _task("c", "running")

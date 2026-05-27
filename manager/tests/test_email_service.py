@@ -1,3 +1,5 @@
+"""Test scope: validates expected behavior and regression scenarios."""
+
 from __future__ import annotations
 
 import pytest
@@ -6,6 +8,7 @@ import app.services.email_service as email_service_module
 
 
 def test_email_helper_configuration_and_sender(monkeypatch):
+    """Validate Email helper configuration and sender."""
     monkeypatch.setattr(email_service_module.config, "SMTP_SERVER", "")
     monkeypatch.setattr(email_service_module.config, "MANAGER_EMAIL", "")
     assert email_service_module._is_email_configured() is False
@@ -27,6 +30,7 @@ def test_email_helper_configuration_and_sender(monkeypatch):
 
 
 def test_compose_notify_retry_exhausted_email(monkeypatch):
+    """Validate Compose notify retry exhausted email."""
     monkeypatch.setattr(email_service_module.config, "SMTP_SENDER", "")
     monkeypatch.setattr(email_service_module.config, "MANAGER_EMAIL", "ops@example.org")
 
@@ -50,6 +54,7 @@ def test_compose_notify_retry_exhausted_email(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_notify_retry_exhausted_email_skips_when_not_configured(monkeypatch):
+    """Validate Send notify retry exhausted email skips when not configured."""
     monkeypatch.setattr(email_service_module.config, "SMTP_SERVER", "")
     monkeypatch.setattr(email_service_module.config, "MANAGER_EMAIL", "")
 
@@ -65,6 +70,7 @@ async def test_send_notify_retry_exhausted_email_skips_when_not_configured(monke
 
 @pytest.mark.asyncio
 async def test_send_notify_retry_exhausted_email_success(monkeypatch):
+    """Validate Send notify retry exhausted email success."""
     captured = {}
 
     class FakeSMTP:
@@ -118,6 +124,7 @@ async def test_send_notify_retry_exhausted_email_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_notify_retry_exhausted_email_returns_false_on_send_error(monkeypatch):
+    """Validate Send notify retry exhausted email returns false on send error."""
     monkeypatch.setattr(email_service_module.config, "SMTP_SERVER", "smtp.example.org")
     monkeypatch.setattr(email_service_module.config, "MANAGER_EMAIL", "ops@example.org")
 

@@ -1,3 +1,5 @@
+"""Test scope: validates expected behavior and regression scenarios."""
+
 import pytest
 from fastapi import HTTPException
 
@@ -6,6 +8,7 @@ from app.models.models import Runner
 
 
 def test_runner_auth_headers_raises_when_token_missing():
+    """Validate Runner auth headers raises when token missing."""
     runner = Runner(id="r1", url="http://example.org:8082", task_types=["encoding"], token=None)
 
     with pytest.raises(HTTPException) as exc:

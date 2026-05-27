@@ -31,6 +31,7 @@ def _task(task_id: str, *, status: str, notify_url: str) -> Task:
 
 
 def test_hostname_from_url_edge_cases(monkeypatch):
+    """Validate Hostname from url edge cases."""
     assert priorities.hostname_from_url("") is None
 
     def raise_parse(*_args, **_kwargs):
@@ -41,6 +42,7 @@ def test_hostname_from_url_edge_cases(monkeypatch):
 
 
 def test_is_priority_hostname_and_task():
+    """Validate Is priority hostname and task."""
     assert priorities.is_priority_hostname(None, "example.com") is False
     assert priorities.is_priority_hostname("sub.example.com", "example.com") is True
 
@@ -49,6 +51,7 @@ def test_is_priority_hostname_and_task():
 
 
 def test_other_domain_quota_allows_priority_and_rejects_other():
+    """Validate Other domain quota allows priority and rejects other."""
     tasks = {
         "p1": _task("p1", status="running", notify_url="https://priority.example.com"),
         "o1": _task("o1", status="running", notify_url="https://other.test"),
@@ -97,6 +100,7 @@ def test_other_domain_quota_allows_priority_and_rejects_other():
 
 def test_other_domain_quota_single_runner_keeps_one_slot_when_percent_positive():
     # With one runner and a positive percentage, one non-priority slot remains available.
+    """Validate Other domain quota single runner keeps one slot when percent positive."""
     assert (
         priorities.would_exceed_other_domain_quota(
             request_notify_url="https://other.test",

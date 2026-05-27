@@ -105,6 +105,7 @@ def _task(task_id: str, runner_id: str, *, status: str, notify_url: str | None =
 
 
 def test_append_task_stats_csv_handles_invalid_date(task_module, tmp_path, monkeypatch):
+    """Validate Append task stats csv handles invalid date."""
     monkeypatch.setattr(task_module, "_is_pytest_run", lambda: False)
     monkeypatch.setattr(task_module, "PathlibPath", lambda path="": tmp_path / path)
 
@@ -140,6 +141,7 @@ def test_append_task_stats_csv_handles_invalid_date(task_module, tmp_path, monke
 
 
 def test_append_task_stats_csv_skips_during_pytest(task_module, tmp_path, monkeypatch):
+    """Validate Append task stats csv skips during pytest."""
     monkeypatch.setattr(task_module, "_is_pytest_run", lambda: True)
     monkeypatch.setattr(task_module, "PathlibPath", lambda path="": tmp_path / path)
 
@@ -169,6 +171,7 @@ def test_append_task_stats_csv_skips_during_pytest(task_module, tmp_path, monkey
 
 
 def test_append_task_stats_csv_skips_quick_manual_test_etab(task_module, tmp_path, monkeypatch):
+    """Validate Append task stats csv skips quick manual test etab."""
     monkeypatch.setattr(task_module, "_is_pytest_run", lambda: False)
     monkeypatch.setattr(task_module, "PathlibPath", lambda path="": tmp_path / path)
 
@@ -201,6 +204,7 @@ def test_task_completion_appends_stats_errors_are_logged(
     client, clean_state, monkeypatch, task_module
 ):
     # Avoid real persistence and notifications
+    """Validate Task completion appends stats errors are logged."""
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
 
     async def _send_ok(*_, **__):
@@ -268,6 +272,7 @@ def test_task_completion_appends_stats_errors_are_logged(
 
 @pytest.mark.asyncio
 async def test_send_notify_callback_success(monkeypatch, task_module, clean_state):
+    """Validate Send notify callback success."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed", notify_url="https://example.com/notify")
 
@@ -319,6 +324,7 @@ async def test_send_notify_callback_success(monkeypatch, task_module, clean_stat
 
 @pytest.mark.asyncio
 async def test_send_notify_callback_non_200_returns_error(monkeypatch, task_module, clean_state):
+    """Validate Send notify callback non 200 returns error."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed", notify_url="https://example.com/notify")
 
@@ -356,6 +362,7 @@ async def test_send_notify_callback_non_200_returns_error(monkeypatch, task_modu
 
 @pytest.mark.asyncio
 async def test_retry_notify_callback_returns_when_task_missing(task_module, clean_state):
+    """Validate Retry notify callback returns when task missing."""
     await task_module._retry_notify_callback(
         "missing", TaskCompletionNotification(task_id="missing", status="completed")
     )
@@ -365,6 +372,7 @@ async def test_retry_notify_callback_returns_when_task_missing(task_module, clea
 async def test_retry_notify_callback_returns_when_no_notify_url(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Retry notify callback returns when no notify url."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
     tasks["t1"].notify_url = None
@@ -385,6 +393,7 @@ async def test_retry_notify_callback_returns_when_no_notify_url(
 
 @pytest.mark.asyncio
 async def test_retry_notify_callback_succeeds_after_retry(monkeypatch, task_module, clean_state):
+    """Validate Retry notify callback succeeds after retry."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
 
@@ -419,6 +428,7 @@ async def test_retry_notify_callback_succeeds_after_retry(monkeypatch, task_modu
 async def test_retry_notify_callback_exhausts_and_handles_exceptions(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Retry notify callback exhausts and handles exceptions."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
 
@@ -450,6 +460,7 @@ async def test_retry_notify_callback_exhausts_and_handles_exceptions(
 async def test_retry_notify_callback_does_not_email_when_status_not_warning(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Retry notify callback does not email when status not warning."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
 
@@ -481,6 +492,7 @@ async def test_retry_notify_callback_does_not_email_when_status_not_warning(
 async def test_retry_notify_callback_ignores_email_errors_after_exhaustion(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Retry notify callback ignores email errors after exhaustion."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
 
@@ -512,6 +524,7 @@ async def test_retry_notify_callback_ignores_email_errors_after_exhaustion(
 async def test_retry_notify_callback_sleeps_when_delay_positive(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Retry notify callback sleeps when delay positive."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
 
@@ -538,6 +551,7 @@ async def test_retry_notify_callback_sleeps_when_delay_positive(
 
 
 def test_task_run_matches_expected_run_id(task_module):
+    """Validate Task run matches expected run id."""
     task = _task("t1", "r1", status="completed")
     task.run_id = "run-1"
 
@@ -549,6 +563,7 @@ def test_task_run_matches_expected_run_id(task_module):
 async def test_retry_notify_callback_returns_when_task_becomes_stale_after_sleep(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Retry notify callback returns when task becomes stale after sleep."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
     tasks["t1"].run_id = "run-1"
@@ -581,6 +596,7 @@ async def test_retry_notify_callback_returns_when_task_becomes_stale_after_sleep
 async def test_retry_notify_callback_returns_when_run_changes_after_notify_success(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Retry notify callback returns when run changes after notify success."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning", notify_url="https://example.com/notify")
     tasks["t1"].run_id = "run-1"
@@ -610,11 +626,13 @@ async def test_retry_notify_callback_returns_when_run_changes_after_notify_succe
 
 
 def test_normalize_task_ids_filters_invalid_empty_and_duplicates(task_module):
+    """Validate Normalize task ids filters invalid empty and duplicates."""
     normalized = task_module._normalize_task_ids(["  ", "t1", "t1", " t2 ", 123, "t2"])
     assert normalized == ["t1", "t2"]
 
 
 def test_http_exception_detail_to_text_variants(task_module):
+    """Validate Http exception detail to text variants."""
     assert task_module._http_exception_detail_to_text("simple") == "simple"
     assert task_module._http_exception_detail_to_text({"detail": "nested"}) == "nested"
     assert task_module._http_exception_detail_to_text({"detail": {"code": 123}}) == "{'code': 123}"
@@ -622,6 +640,7 @@ def test_http_exception_detail_to_text_variants(task_module):
 
 
 def test_set_notify_warning_failure_without_existing_error(monkeypatch, task_module, clean_state):
+    """Validate Set notify warning failure without existing error."""
     tasks["t1"] = _task("t1", "r1", status="failed")
     tasks["t1"].error = None
     previous_updated_at = tasks["t1"].updated_at
@@ -644,6 +663,7 @@ def test_set_notify_warning_failure_without_existing_error(monkeypatch, task_mod
 def test_restore_status_after_notify_sets_error_for_non_completed(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Restore status after notify sets error for non completed."""
     tasks["t1"] = _task("t1", "r1", status="warning")
     tasks["t1"].error = None
 
@@ -675,6 +695,7 @@ def test_restore_status_after_notify_sets_error_for_non_completed(
 
 
 def test_view_tasks_filters_and_renders(client, clean_state):
+    """Validate View tasks filters and renders."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
     tasks["t2"] = _task("t2", "r1", status="failed")
@@ -689,6 +710,7 @@ def test_view_tasks_filters_and_renders(client, clean_state):
 def test_view_tasks_search_task_type_and_status_counts_else(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate View tasks search task type and status counts else."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
     tasks["t2"] = _task("t2", "r1", status="failed")
@@ -717,6 +739,7 @@ def test_view_tasks_search_task_type_and_status_counts_else(
 
 
 def test_view_tasks_search_matches_video_identification_fields(client, clean_state):
+    """Validate View tasks search matches video identification fields."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
     tasks["t2"] = _task("t2", "r1", status="completed")
@@ -743,11 +766,13 @@ def test_view_tasks_search_matches_video_identification_fields(client, clean_sta
 
 
 def test_get_task_details_api_404(client, clean_state):
+    """Validate Get task details api 404."""
     resp = client.get("/tasks/api/nope")
     assert resp.status_code == 404
 
 
 def test_get_task_details_api_ok(client, clean_state):
+    """Validate Get task details api ok."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
     tasks["t1"].client_token = "client-secret"
@@ -759,6 +784,8 @@ def test_get_task_details_api_ok(client, clean_state):
 
 
 def test_redact_task_for_api_legacy_copy_branch(task_module):
+    """Validate Redact task for api legacy copy branch."""
+
     class LegacyTask:
         def __init__(self):
             self.client_token = "legacy-secret"
@@ -780,6 +807,7 @@ def test_redact_task_for_api_legacy_copy_branch(task_module):
 
 
 def test_delete_selected_tasks_deletes_and_reports(monkeypatch, client, task_module, clean_state):
+    """Validate Delete selected tasks deletes and reports."""
     runners["r1"] = _runner("r1")
     tasks["t-completed"] = _task("t-completed", "r1", status="completed")
     tasks["t-failed"] = _task("t-failed", "r1", status="failed")
@@ -815,6 +843,7 @@ def test_delete_selected_tasks_deletes_and_reports(monkeypatch, client, task_mod
 
 
 def test_delete_selected_tasks_rejects_empty_task_ids(client, clean_state):
+    """Validate Delete selected tasks rejects empty task ids."""
     resp = client.post("/tasks/delete-selected", json={"task_ids": []})
     assert resp.status_code == 400
     assert resp.json()["detail"] == "task_ids must contain at least one task ID"
@@ -822,6 +851,7 @@ def test_delete_selected_tasks_rejects_empty_task_ids(client, clean_state):
 
 @pytest.mark.asyncio
 async def test_delete_selected_tasks_rejects_non_list_task_ids(task_module):
+    """Validate Delete selected tasks rejects non list task ids."""
     with pytest.raises(HTTPException) as exc:
         await task_module.delete_selected_tasks({"task_ids": "t1"})  # type: ignore[arg-type]
     assert exc.value.status_code == 400
@@ -831,6 +861,7 @@ async def test_delete_selected_tasks_rejects_non_list_task_ids(task_module):
 def test_delete_selected_tasks_rejects_too_many_task_ids(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Delete selected tasks rejects too many task ids."""
     monkeypatch.setattr(task_module, "_MAX_BULK_DELETE_TASKS", 2)
     resp = client.post("/tasks/delete-selected", json={"task_ids": ["a", "b", "c"]})
     assert resp.status_code == 400
@@ -840,6 +871,7 @@ def test_delete_selected_tasks_rejects_too_many_task_ids(
 def test_delete_selected_tasks_collects_unexpected_failures(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Delete selected tasks collects unexpected failures."""
     tasks["t1"] = _task("t1", "r1", status="completed")
 
     def fake_delete(*_a, **_k):
@@ -857,6 +889,7 @@ def test_delete_selected_tasks_collects_unexpected_failures(
 
 
 def test_restart_selected_tasks_restarts_and_reports(monkeypatch, client, task_module, clean_state):
+    """Validate Restart selected tasks restarts and reports."""
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t-failed"] = _task("t-failed", "r1", status="failed")
     tasks["t-completed"] = _task("t-completed", "r1", status="completed")
@@ -923,6 +956,7 @@ def test_restart_selected_tasks_restarts_and_reports(monkeypatch, client, task_m
 
 
 def test_restart_selected_tasks_rejects_empty_task_ids(client, clean_state):
+    """Validate Restart selected tasks rejects empty task ids."""
     resp = client.post("/tasks/restart-selected", json={"task_ids": []})
     assert resp.status_code == 400
     assert resp.json()["detail"] == "task_ids must contain at least one task ID"
@@ -930,6 +964,7 @@ def test_restart_selected_tasks_rejects_empty_task_ids(client, clean_state):
 
 @pytest.mark.asyncio
 async def test_restart_selected_tasks_rejects_non_list_task_ids(task_module):
+    """Validate Restart selected tasks rejects non list task ids."""
     with pytest.raises(HTTPException) as exc:
         await task_module.restart_selected_tasks({"task_ids": "t1"})  # type: ignore[arg-type]
     assert exc.value.status_code == 400
@@ -939,6 +974,7 @@ async def test_restart_selected_tasks_rejects_non_list_task_ids(task_module):
 def test_restart_selected_tasks_rejects_too_many_task_ids(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Restart selected tasks rejects too many task ids."""
     monkeypatch.setattr(task_module, "_MAX_BULK_RESTART_TASKS", 2)
     resp = client.post("/tasks/restart-selected", json={"task_ids": ["a", "b", "c"]})
     assert resp.status_code == 400
@@ -948,6 +984,7 @@ def test_restart_selected_tasks_rejects_too_many_task_ids(
 def test_restart_selected_tasks_collects_http_exception_failures(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Restart selected tasks collects http exception failures."""
     tasks["t1"] = _task("t1", "r1", status="failed")
 
     async def fake_queue(*_a, **_k):
@@ -965,6 +1002,7 @@ def test_restart_selected_tasks_collects_http_exception_failures(
 def test_restart_selected_tasks_collects_unexpected_failures(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Restart selected tasks collects unexpected failures."""
     tasks["t1"] = _task("t1", "r1", status="failed")
 
     async def fake_queue(*_a, **_k):
@@ -989,6 +1027,7 @@ def test_restart_selected_tasks_collects_unexpected_failures(
 def test_execute_task_async_rejects_on_priority_quota(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Execute task async rejects on priority quota."""
     monkeypatch.setattr(task_module.config, "PRIORITIES_ENABLED", True)
     monkeypatch.setattr(task_module.config, "PRIORITY_DOMAIN", "priority.example")
     monkeypatch.setattr(task_module.config, "MAX_OTHER_DOMAIN_TASK_PERCENT", 0)
@@ -1019,6 +1058,7 @@ def test_execute_task_async_rejects_on_priority_quota(
 
 def test_execute_task_async_no_runners_available(monkeypatch, client, task_module, clean_state):
     # One runner in registry but it times out / is unavailable.
+    """Validate Execute task async no runners available."""
     runners["r1"] = _runner("r1", url="http://r1.example")
 
     class FakeAsyncClient:
@@ -1057,6 +1097,7 @@ def test_execute_task_async_no_runners_available(monkeypatch, client, task_modul
 def test_execute_task_async_success_creates_task_and_schedules(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Execute task async success creates task and schedules."""
     runners["r1"] = _runner("r1", url="http://r1.example")
 
     class FakeResponse:
@@ -1114,11 +1155,13 @@ def test_execute_task_async_success_creates_task_and_schedules(
 
 
 def test_get_task_status_404(client, clean_state):
+    """Validate Get task status 404."""
     resp = client.get("/task/status/nope")
     assert resp.status_code == 404
 
 
 def test_get_task_status_ok(client, clean_state):
+    """Validate Get task status ok."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
     tasks["t1"].client_token = "client-secret"
@@ -1130,6 +1173,7 @@ def test_get_task_status_ok(client, clean_state):
 
 
 def test_list_tasks_returns_dict(client, clean_state):
+    """Validate List tasks returns dict."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
     tasks["t1"].client_token = "client-secret"
@@ -1146,11 +1190,13 @@ def test_list_tasks_returns_dict(client, clean_state):
 
 
 def test_validate_result_path_rejects_traversal(task_module):
+    """Validate Validate result path rejects traversal."""
     with pytest.raises(Exception):
         task_module._validate_result_path("../secret")
 
 
 def test_resolve_shared_storage_base_errors(monkeypatch, task_module, tmp_path: Path):
+    """Validate Resolve shared storage base errors."""
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path / "nope"))
 
     with pytest.raises(Exception):
@@ -1158,6 +1204,7 @@ def test_resolve_shared_storage_base_errors(monkeypatch, task_module, tmp_path: 
 
 
 def test_resolve_shared_storage_base_resolve_exception(monkeypatch, task_module, tmp_path: Path):
+    """Validate Resolve shared storage base resolve exception."""
     (tmp_path / "base").mkdir()
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path / "base"))
 
@@ -1176,12 +1223,14 @@ def test_resolve_shared_storage_base_resolve_exception(monkeypatch, task_module,
 
 
 def test_resolve_shared_storage_base_happy_path(monkeypatch, task_module, tmp_path: Path):
+    """Validate Resolve shared storage base happy path."""
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
     base = task_module._resolve_shared_storage_base()
     assert base.exists() and base.is_dir()
 
 
 def test_resolve_shared_storage_base_prefers_new_var_name(monkeypatch, task_module, tmp_path: Path):
+    """Validate Resolve shared storage base prefers new var name."""
     new_base = tmp_path / "new-storage"
     legacy_base = tmp_path / "legacy-storage"
     new_base.mkdir()
@@ -1195,6 +1244,7 @@ def test_resolve_shared_storage_base_prefers_new_var_name(monkeypatch, task_modu
 
 
 def test_get_local_task_dir_rejects_outside_base(monkeypatch, task_module, tmp_path: Path):
+    """Validate Get local task dir rejects outside base."""
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
@@ -1204,6 +1254,7 @@ def test_get_local_task_dir_rejects_outside_base(monkeypatch, task_module, tmp_p
 
 
 def test_get_local_task_dir_404_when_missing(monkeypatch, task_module, tmp_path: Path):
+    """Validate Get local task dir 404 when missing."""
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
     with pytest.raises(HTTPException) as exc:
         task_module._get_local_task_dir("t-missing")
@@ -1211,6 +1262,7 @@ def test_get_local_task_dir_404_when_missing(monkeypatch, task_module, tmp_path:
 
 
 def test_get_local_task_dir_resolve_exception(monkeypatch, task_module, tmp_path: Path):
+    """Validate Get local task dir resolve exception."""
     monkeypatch.setattr(task_module, "_resolve_shared_storage_base", lambda: tmp_path)
 
     original_resolve = task_module.PathlibPath.resolve
@@ -1228,6 +1280,7 @@ def test_get_local_task_dir_resolve_exception(monkeypatch, task_module, tmp_path
 
 
 def test_get_local_output_dir_resolve_exception(monkeypatch, task_module, tmp_path: Path):
+    """Validate Get local output dir resolve exception."""
     task_dir = tmp_path / "t1"
     task_dir.mkdir(parents=True)
     monkeypatch.setattr(task_module, "_get_local_task_dir", lambda _task_id: task_dir)
@@ -1247,6 +1300,7 @@ def test_get_local_output_dir_resolve_exception(monkeypatch, task_module, tmp_pa
 
 
 def test_get_local_output_dir_rejects_symlink_outside(monkeypatch, task_module, tmp_path: Path):
+    """Validate Get local output dir rejects symlink outside."""
     task_dir = tmp_path / "t1"
     task_dir.mkdir(parents=True)
     outside = tmp_path / "outside"
@@ -1260,6 +1314,7 @@ def test_get_local_output_dir_rejects_symlink_outside(monkeypatch, task_module, 
 
 
 def test_get_local_output_dir_404_when_missing(monkeypatch, task_module, tmp_path: Path):
+    """Validate Get local output dir 404 when missing."""
     task_dir = tmp_path / "t1"
     task_dir.mkdir(parents=True)
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
@@ -1269,6 +1324,7 @@ def test_get_local_output_dir_404_when_missing(monkeypatch, task_module, tmp_pat
 
 
 def test_mark_warning_as_completed_calls_save_tasks(monkeypatch, task_module, clean_state):
+    """Validate Mark warning as completed calls save tasks."""
     tasks["t1"] = _task("t1", "r1", status="warning")
 
     called = {"count": 0}
@@ -1285,6 +1341,7 @@ def test_mark_warning_as_completed_calls_save_tasks(monkeypatch, task_module, cl
 def test_get_local_manifest_and_file_happy_path(
     monkeypatch, task_module, clean_state, tmp_path: Path
 ):
+    """Validate Get local manifest and file happy path."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning")
 
@@ -1305,6 +1362,7 @@ def test_get_local_manifest_and_file_happy_path(
 
 
 def test_get_local_manifest_missing_file_404(monkeypatch, task_module, clean_state, tmp_path: Path):
+    """Validate Get local manifest missing file 404."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1319,6 +1377,7 @@ def test_get_local_manifest_missing_file_404(monkeypatch, task_module, clean_sta
 def test_get_local_manifest_resolve_exception_500(
     monkeypatch, task_module, clean_state, tmp_path: Path
 ):
+    """Validate Get local manifest resolve exception 500."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1341,6 +1400,7 @@ def test_get_local_manifest_resolve_exception_500(
 
 
 def test_get_local_manifest_invalid_json(monkeypatch, task_module, clean_state, tmp_path: Path):
+    """Validate Get local manifest invalid json."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1354,6 +1414,7 @@ def test_get_local_manifest_invalid_json(monkeypatch, task_module, clean_state, 
 
 
 def test_stream_local_file_missing(monkeypatch, task_module, clean_state, tmp_path: Path):
+    """Validate Stream local file missing."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1369,6 +1430,7 @@ def test_stream_local_file_missing(monkeypatch, task_module, clean_state, tmp_pa
 def test_stream_local_file_rejects_path_outside_output(
     monkeypatch, task_module, clean_state, tmp_path: Path
 ):
+    """Validate Stream local file rejects path outside output."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1382,6 +1444,7 @@ def test_stream_local_file_rejects_path_outside_output(
 
 
 def test_stream_local_file_resolve_exception(monkeypatch, task_module, clean_state, tmp_path: Path):
+    """Validate Stream local file resolve exception."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1441,6 +1504,7 @@ class _FakeHTTPXClient:
 
 @pytest.mark.asyncio
 async def test_fetch_runner_resource_non_200_raises(task_module):
+    """Validate Fetch runner resource non 200 raises."""
     runner = _runner("r1")
     resp = _FakeHTTPXResponse(status_code=500)
     client = _FakeHTTPXClient(resp)
@@ -1457,6 +1521,7 @@ async def test_fetch_runner_resource_non_200_raises(task_module):
 
 @pytest.mark.asyncio
 async def test_fetch_runner_resource_200_returns_response(task_module):
+    """Validate Fetch runner resource 200 returns response."""
     runner = _runner("r1")
     resp = _FakeHTTPXResponse(status_code=200)
     client = _FakeHTTPXClient(resp)
@@ -1473,6 +1538,7 @@ async def test_fetch_runner_resource_200_returns_response(task_module):
 
 @pytest.mark.asyncio
 async def test_build_streaming_response_sets_headers_and_closes(task_module, clean_state):
+    """Validate Build streaming response sets headers and closes."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning")
 
@@ -1502,6 +1568,7 @@ async def test_build_streaming_response_sets_headers_and_closes(task_module, cle
 async def test_build_streaming_response_uses_response_content_disposition(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Build streaming response uses response content disposition."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning")
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
@@ -1515,6 +1582,7 @@ async def test_build_streaming_response_uses_response_content_disposition(
 
 @pytest.mark.asyncio
 async def test_stream_runner_manifest_success(monkeypatch, task_module, clean_state):
+    """Validate Stream runner manifest success."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning")
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
@@ -1555,6 +1623,7 @@ async def test_stream_runner_manifest_success(monkeypatch, task_module, clean_st
 
 @pytest.mark.asyncio
 async def test_stream_runner_file_success_and_encodes_path(monkeypatch, task_module, clean_state):
+    """Validate Stream runner file success and encodes path."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="warning")
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
@@ -1593,6 +1662,7 @@ async def test_stream_runner_file_success_and_encodes_path(monkeypatch, task_mod
 
 @pytest.mark.asyncio
 async def test_stream_runner_manifest_timeout(monkeypatch, task_module, clean_state):
+    """Validate Stream runner manifest timeout."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1615,6 +1685,7 @@ async def test_stream_runner_manifest_timeout(monkeypatch, task_module, clean_st
 
 @pytest.mark.asyncio
 async def test_stream_runner_manifest_request_error(monkeypatch, task_module, clean_state):
+    """Validate Stream runner manifest request error."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1641,6 +1712,7 @@ async def test_stream_runner_manifest_request_error(monkeypatch, task_module, cl
 async def test_stream_runner_manifest_http_exception_closes_client(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Stream runner manifest http exception closes client."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1663,6 +1735,7 @@ async def test_stream_runner_manifest_http_exception_closes_client(
 async def test_stream_runner_manifest_unexpected_exception_closes_client(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Stream runner manifest unexpected exception closes client."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1693,6 +1766,7 @@ async def test_stream_runner_manifest_unexpected_exception_closes_client(
 
 @pytest.mark.asyncio
 async def test_stream_runner_file_request_error(monkeypatch, task_module, clean_state):
+    """Validate Stream runner file request error."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1718,6 +1792,7 @@ async def test_stream_runner_file_request_error(monkeypatch, task_module, clean_
 async def test_stream_runner_file_http_exception_closes_client(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Stream runner file http exception closes client."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1738,6 +1813,7 @@ async def test_stream_runner_file_http_exception_closes_client(
 
 @pytest.mark.asyncio
 async def test_stream_runner_file_timeout(monkeypatch, task_module, clean_state):
+    """Validate Stream runner file timeout."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1760,6 +1836,7 @@ async def test_stream_runner_file_timeout(monkeypatch, task_module, clean_state)
 
 @pytest.mark.asyncio
 async def test_stream_runner_file_unexpected_exception(monkeypatch, task_module, clean_state):
+    """Validate Stream runner file unexpected exception."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1786,11 +1863,13 @@ async def test_stream_runner_file_unexpected_exception(monkeypatch, task_module,
 
 
 def test_get_valid_task_rejects_missing(task_module, clean_state):
+    """Validate Get valid task rejects missing."""
     with pytest.raises(Exception):
         task_module._get_valid_task("nope")
 
 
 def test_get_valid_task_rejects_failed(task_module, clean_state):
+    """Validate Get valid task rejects failed."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="failed")
     tasks["t1"].error = "boom"
@@ -1800,6 +1879,7 @@ def test_get_valid_task_rejects_failed(task_module, clean_state):
 
 
 def test_get_task_runner_raises_when_runner_missing(task_module, clean_state):
+    """Validate Get task runner raises when runner missing."""
     tasks["t1"] = _task("t1", "missing", status="completed")
     with pytest.raises(HTTPException) as exc:
         task_module._get_task_runner(tasks["t1"])
@@ -1807,6 +1887,7 @@ def test_get_task_runner_raises_when_runner_missing(task_module, clean_state):
 
 
 def test_get_task_result_425_when_running(client, clean_state):
+    """Validate Get task result 425 when running."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="running")
 
@@ -1817,6 +1898,7 @@ def test_get_task_result_425_when_running(client, clean_state):
 def test_get_task_result_local_storage(
     monkeypatch, client, task_module, clean_state, tmp_path: Path
 ):
+    """Validate Get task result local storage."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1834,6 +1916,7 @@ def test_get_task_result_local_storage(
 def test_get_task_result_file_local_storage(
     monkeypatch, client, task_module, clean_state, tmp_path: Path
 ):
+    """Validate Get task result file local storage."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1853,6 +1936,7 @@ def test_get_task_result_file_local_storage(
 def test_get_task_result_proxies_to_runner_when_storage_disabled(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Get task result proxies to runner when storage disabled."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_ENABLED", False)
@@ -1867,6 +1951,7 @@ def test_get_task_result_proxies_to_runner_when_storage_disabled(
 
 
 def test_get_task_result_file_rejects_traversal(client, clean_state):
+    """Validate Get task result file rejects traversal."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
@@ -1879,6 +1964,7 @@ def test_get_task_result_file_rejects_traversal(client, clean_state):
 def test_get_task_result_file_proxies_to_runner_when_storage_disabled(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Get task result file proxies to runner when storage disabled."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_ENABLED", False)
@@ -1898,6 +1984,7 @@ def test_get_task_result_file_proxies_to_runner_when_storage_disabled(
 
 
 def test_task_completion_404_task(client, task_module, clean_state):
+    """Validate Task completion 404 task."""
     app.dependency_overrides[verify_token] = lambda: "tok"
     try:
         resp = client.post("/task/completion", json={"task_id": "nope", "status": "completed"})
@@ -1907,6 +1994,7 @@ def test_task_completion_404_task(client, task_module, clean_state):
 
 
 def test_task_completion_notify_ok(monkeypatch, client, task_module, clean_state):
+    """Validate Task completion notify ok."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
 
@@ -1944,6 +2032,7 @@ def test_task_completion_notify_ok(monkeypatch, client, task_module, clean_state
 
 
 def test_task_completion_saves_before_notify(monkeypatch, client, task_module, clean_state):
+    """Validate Task completion saves before notify."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
 
@@ -1983,6 +2072,7 @@ def test_task_completion_saves_before_notify(monkeypatch, client, task_module, c
 def test_task_completion_notify_non_200_sets_warning_and_schedules_retry(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Task completion notify non 200 sets warning and schedules retry."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
 
@@ -2021,6 +2111,7 @@ def test_task_completion_notify_non_200_sets_warning_and_schedules_retry(
 
 
 def test_task_completion_failed_sets_error_message(client, task_module, clean_state):
+    """Validate Task completion failed sets error message."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running")
     tasks["t1"].notify_url = None
@@ -2045,6 +2136,7 @@ def test_task_completion_failed_sets_error_message(client, task_module, clean_st
 
 
 def test_task_completion_timeout_sets_error_message(client, task_module, clean_state):
+    """Validate Task completion timeout sets error message."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running")
     tasks["t1"].notify_url = None
@@ -2071,6 +2163,7 @@ def test_task_completion_timeout_sets_error_message(client, task_module, clean_s
 def test_task_completion_notify_exception_sets_warning_and_schedules_retry(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Task completion notify exception sets warning and schedules retry."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
 
@@ -2111,6 +2204,7 @@ def test_task_completion_notify_exception_sets_warning_and_schedules_retry(
 async def test_handle_notify_callback_ignores_stale_run_after_success(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Handle notify callback ignores stale run after success."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
     tasks["t1"].run_id = "run-new"
@@ -2146,6 +2240,7 @@ async def test_handle_notify_callback_ignores_stale_run_after_success(
 async def test_handle_notify_callback_ignores_stale_run_after_exception(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Handle notify callback ignores stale run after exception."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
     tasks["t1"].run_id = "run-new"
@@ -2181,6 +2276,7 @@ async def test_handle_notify_callback_ignores_stale_run_after_exception(
 def test_task_completion_timeout_notify_non_200_keeps_timeout_and_schedules_retry(
     monkeypatch, client, task_module, clean_state
 ):
+    """Validate Task completion timeout notify non 200 keeps timeout and schedules retry."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
 
@@ -2220,6 +2316,7 @@ def test_task_completion_timeout_notify_non_200_keeps_timeout_and_schedules_retr
 
 
 def test_task_completion_403_token_mismatch(client, task_module, clean_state):
+    """Validate Task completion 403 token mismatch."""
     runners["r1"] = _runner("r1", token="tok-real")
     tasks["t1"] = _task("t1", "r1", status="running")
 
@@ -2233,6 +2330,7 @@ def test_task_completion_403_token_mismatch(client, task_module, clean_state):
 
 
 def test_task_completion_404_runner_missing(client, task_module, clean_state):
+    """Validate Task completion 404 runner missing."""
     tasks["t1"] = _task("t1", "r1", status="running")
 
     app.dependency_overrides[verify_token] = lambda: "tok"
@@ -2253,6 +2351,7 @@ def test_task_completion_404_runner_missing(client, task_module, clean_state):
 async def test_execute_task_async_background_success_sets_runner_busy(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Execute task async background success sets runner busy."""
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t1"] = _task("t1", "r1", status="pending")
 
@@ -2296,6 +2395,7 @@ async def test_execute_task_async_background_success_sets_runner_busy(
 async def test_execute_task_async_background_failure_marks_task_failed(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Execute task async background failure marks task failed."""
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t1"] = _task("t1", "r1", status="pending")
 
@@ -2340,6 +2440,7 @@ async def test_execute_task_async_background_failure_marks_task_failed(
 async def test_execute_task_async_background_exception_marks_failed(
     monkeypatch, task_module, clean_state
 ):
+    """Validate Execute task async background exception marks failed."""
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t1"] = _task("t1", "r1", status="pending")
 

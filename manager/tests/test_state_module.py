@@ -28,6 +28,7 @@ def _task(task_id: str, updated_at: str | None = None) -> Task:
 
 
 def test_save_tasks_branches(monkeypatch):
+    """Validate Save tasks branches."""
     monkeypatch.setattr(state, "IS_PRODUCTION", False)
     monkeypatch.setattr(state.persistence, "save_tasks", lambda *_: True)
     assert state.save_tasks() is True
@@ -37,6 +38,7 @@ def test_save_tasks_branches(monkeypatch):
 
 
 def test_force_save_tasks_calls_save(monkeypatch):
+    """Validate Force save tasks calls save."""
     called = {"count": 0}
 
     def _save():
@@ -49,16 +51,19 @@ def test_force_save_tasks_calls_save(monkeypatch):
 
 
 def test_get_storage_info(monkeypatch):
+    """Validate Get storage info."""
     monkeypatch.setattr(state.persistence, "get_storage_info", lambda: {"ok": True})
     assert state.get_storage_info() == {"ok": True}
 
 
 def test_cleanup_old_task_files(monkeypatch):
+    """Validate Cleanup old task files."""
     monkeypatch.setattr(state.persistence, "cleanup_old_files", lambda days: days)
     assert state.cleanup_old_task_files(days_to_keep=7) == 7
 
 
 def test_load_historical_tasks(monkeypatch):
+    """Validate Load historical tasks."""
     monkeypatch.setattr(state.persistence, "load_historical_tasks", lambda *_: {"a": 1})
     start = datetime(2024, 1, 1)
     end = datetime(2024, 1, 2)
@@ -66,6 +71,7 @@ def test_load_historical_tasks(monkeypatch):
 
 
 def test_shutdown_handler(monkeypatch):
+    """Validate Shutdown handler."""
     calls = {"save": 0, "cleanup": 0}
 
     def _save():
@@ -85,6 +91,7 @@ def test_shutdown_handler(monkeypatch):
 
 
 def test_get_task_loads_from_persistence_in_production(monkeypatch):
+    """Validate Get task loads from persistence in production."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
 
@@ -108,6 +115,7 @@ def test_get_task_loads_from_persistence_in_production(monkeypatch):
 
 
 def test_get_task_refreshes_stale_memory_from_persistence(monkeypatch):
+    """Validate Get task refreshes stale memory from persistence."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
 
@@ -133,11 +141,14 @@ def test_get_task_refreshes_stale_memory_from_persistence(monkeypatch):
 
 
 def test_parse_updated_at_branches():
+    """Validate Parse updated at branches."""
     assert state._parse_updated_at(None) == datetime.min
     assert state._parse_updated_at("not-a-date") == datetime.min
 
 
 def test_get_deleted_task_ids_handles_exception(monkeypatch):
+    """Validate Get deleted task ids handles exception."""
+
     def _raise():
         raise RuntimeError("boom")
 
@@ -146,6 +157,7 @@ def test_get_deleted_task_ids_handles_exception(monkeypatch):
 
 
 def test_should_keep_local_only_task_returns_false_when_cleanup_days_zero(monkeypatch):
+    """Validate Should keep local only task returns false when cleanup days zero."""
     task = _task("retention-zero")
     monkeypatch.setattr(state.config, "CLEANUP_TASK_FILES_DAYS", 0)
 
@@ -153,6 +165,7 @@ def test_should_keep_local_only_task_returns_false_when_cleanup_days_zero(monkey
 
 
 def test_should_keep_local_only_task_falls_back_to_updated_at(monkeypatch):
+    """Validate Should keep local only task falls back to updated at."""
     task = _task("fallback-updated", updated_at="2026-02-16T10:00:00")
     task.created_at = "invalid-date"
     monkeypatch.setattr(state.config, "CLEANUP_TASK_FILES_DAYS", 365)
@@ -166,6 +179,7 @@ def test_should_keep_local_only_task_falls_back_to_updated_at(monkeypatch):
 
 
 def test_should_keep_local_only_task_returns_false_when_dates_invalid(monkeypatch):
+    """Validate Should keep local only task returns false when dates invalid."""
     task = _task("invalid-dates")
     task.created_at = "invalid-created"
     task.updated_at = "invalid-updated"
@@ -175,6 +189,7 @@ def test_should_keep_local_only_task_returns_false_when_dates_invalid(monkeypatc
 
 
 def test_merge_tasks_with_persistence_skips_local_deleted(monkeypatch):
+    """Validate Merge tasks with persistence skips local deleted."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["local-deleted"] = _task("local-deleted")
@@ -190,6 +205,7 @@ def test_merge_tasks_with_persistence_skips_local_deleted(monkeypatch):
 
 
 def test_save_tasks_production_skips_invalid_persisted_task(monkeypatch):
+    """Validate Save tasks production skips invalid persisted task."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["local"] = _task("local")
@@ -207,6 +223,7 @@ def test_save_tasks_production_skips_invalid_persisted_task(monkeypatch):
 
 
 def test_get_task_non_production_returns_local_without_persistence(monkeypatch):
+    """Validate Get task non production returns local without persistence."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["t-local"] = _task("t-local")
@@ -231,6 +248,7 @@ def test_get_task_non_production_returns_local_without_persistence(monkeypatch):
 
 
 def test_get_task_returns_none_for_deleted_task(monkeypatch):
+    """Validate Get task returns none for deleted task."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["t-deleted"] = _task("t-deleted")
@@ -248,6 +266,7 @@ def test_get_task_returns_none_for_deleted_task(monkeypatch):
 
 
 def test_get_task_invalid_persisted_payload_uses_local(monkeypatch):
+    """Validate Get task invalid persisted payload uses local."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["t1"] = _task("t1", updated_at="2026-02-16T10:00:00")
@@ -264,6 +283,7 @@ def test_get_task_invalid_persisted_payload_uses_local(monkeypatch):
 
 
 def test_get_task_returns_none_when_missing_everywhere_in_production(monkeypatch):
+    """Validate Get task returns none when missing everywhere in production."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
 
@@ -278,6 +298,7 @@ def test_get_task_returns_none_when_missing_everywhere_in_production(monkeypatch
 
 
 def test_get_task_keeps_local_when_persisted_is_not_newer(monkeypatch):
+    """Validate Get task keeps local when persisted is not newer."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
 
@@ -300,6 +321,7 @@ def test_get_task_keeps_local_when_persisted_is_not_newer(monkeypatch):
 
 
 def test_get_tasks_snapshot_non_production_returns_copy(monkeypatch):
+    """Validate Get tasks snapshot non production returns copy."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["t1"] = _task("t1")
@@ -318,6 +340,7 @@ def test_get_tasks_snapshot_non_production_returns_copy(monkeypatch):
 
 
 def test_get_tasks_snapshot_production_merges_and_refreshes_cache(monkeypatch):
+    """Validate Get tasks snapshot production merges and refreshes cache."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["shared"] = _task("shared", updated_at="2026-02-16T10:00:00")
@@ -350,6 +373,7 @@ def test_get_tasks_snapshot_production_merges_and_refreshes_cache(monkeypatch):
 
 
 def test_get_tasks_snapshot_filters_deleted_tasks(monkeypatch):
+    """Validate Get tasks snapshot filters deleted tasks."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["shared"] = _task("shared", updated_at="2026-02-16T10:00:00")
@@ -382,6 +406,7 @@ def test_get_tasks_snapshot_filters_deleted_tasks(monkeypatch):
 
 
 def test_get_tasks_snapshot_production_drops_stale_local_only_tasks(monkeypatch):
+    """Validate Get tasks snapshot production drops stale local only tasks."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
 
@@ -409,6 +434,7 @@ def test_get_tasks_snapshot_production_drops_stale_local_only_tasks(monkeypatch)
 
 
 def test_save_tasks_production_merges_and_upserts(monkeypatch):
+    """Validate Save tasks production merges and upserts."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
 
@@ -444,6 +470,7 @@ def test_save_tasks_production_merges_and_upserts(monkeypatch):
 
 
 def test_delete_task_removes_from_memory_when_persistence_succeeds(monkeypatch):
+    """Validate Delete task removes from memory when persistence succeeds."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["t1"] = _task("t1")
@@ -459,6 +486,7 @@ def test_delete_task_removes_from_memory_when_persistence_succeeds(monkeypatch):
 
 
 def test_delete_task_for_retention_cleanup_deletes_running_task(monkeypatch):
+    """Validate Delete task for retention cleanup deletes running task."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["t-running"] = _task("t-running")
@@ -474,6 +502,7 @@ def test_delete_task_for_retention_cleanup_deletes_running_task(monkeypatch):
 
 
 def test_delete_task_for_retention_cleanup_returns_false_when_persistence_fails(monkeypatch):
+    """Validate Delete task for retention cleanup returns false when persistence fails."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["t-running"] = _task("t-running")
@@ -489,6 +518,7 @@ def test_delete_task_for_retention_cleanup_returns_false_when_persistence_fails(
 
 
 def test_delete_task_keeps_memory_when_persistence_fails(monkeypatch):
+    """Validate Delete task keeps memory when persistence fails."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["t1"] = _task("t1")
@@ -504,6 +534,7 @@ def test_delete_task_keeps_memory_when_persistence_fails(monkeypatch):
 
 
 def test_delete_task_refuses_pending_or_running(monkeypatch):
+    """Validate Delete task refuses pending or running."""
     original_tasks = dict(state.tasks)
     state.tasks.clear()
     state.tasks["t-running"] = _task("t-running")
@@ -529,6 +560,8 @@ def test_delete_task_refuses_pending_or_running(monkeypatch):
 
 
 def test_resolve_persistence_directory_returns_absolute_path():
+    """Validate Resolve persistence directory returns absolute path."""
+
     class Backend:
         data_directory = state.persistence.data_directory
 
@@ -539,6 +572,8 @@ def test_resolve_persistence_directory_returns_absolute_path():
 
 
 def test_resolve_persistence_directory_fallback_on_exception():
+    """Validate Resolve persistence directory fallback on exception."""
+
     class FailingDirectory:
         def resolve(self):
             raise RuntimeError("boom")

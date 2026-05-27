@@ -1,3 +1,5 @@
+"""Test scope: validates expected behavior and regression scenarios."""
+
 import pytest
 from fastapi import HTTPException
 
@@ -5,6 +7,7 @@ import app.api.routes.task as task_module
 
 
 def test_host_matches_allowlist_variants():
+    """Validate Host matches allowlist variants."""
     assert task_module._host_matches_allowlist("example.com", ["example.com"]) is True
     assert task_module._host_matches_allowlist("a.example.com", ["example.com"]) is True
     assert task_module._host_matches_allowlist("example.com", [""]) is False
@@ -13,6 +16,7 @@ def test_host_matches_allowlist_variants():
 
 
 def test_is_disallowed_ip_invalid_is_true():
+    """Validate Is disallowed ip invalid is true."""
     assert task_module._is_disallowed_ip("not-an-ip") is True
     assert task_module._is_disallowed_ip("127.0.0.1") is True
     assert task_module._is_disallowed_ip("8.8.8.8") is False
@@ -29,6 +33,7 @@ def test_is_disallowed_ip_invalid_is_true():
     ),
 )
 def test_parse_notify_url_rejects_bad_inputs(url: str, detail: str):
+    """Validate Parse notify url rejects bad inputs."""
     with pytest.raises(HTTPException) as exc:
         task_module._parse_notify_url(url)
     assert exc.value.status_code == 400
@@ -36,6 +41,7 @@ def test_parse_notify_url_rejects_bad_inputs(url: str, detail: str):
 
 
 def test_validate_notify_url_host_rejects_allowlist_miss_and_localhost(monkeypatch):
+    """Validate Validate notify url host rejects allowlist miss and localhost."""
     monkeypatch.setattr(task_module.config, "NOTIFY_URL_ALLOWED_HOSTS", ["allowed.example"])
     with pytest.raises(HTTPException):
         task_module._validate_notify_url_host("evil.example")
@@ -47,6 +53,8 @@ def test_validate_notify_url_host_rejects_allowlist_miss_and_localhost(monkeypat
 
 @pytest.mark.asyncio
 async def test_resolve_notify_url_ips_raises_on_exception(monkeypatch):
+    """Validate Resolve notify url ips raises on exception."""
+
     async def boom(_host: str):
         raise RuntimeError("dns")
 
@@ -58,6 +66,8 @@ async def test_resolve_notify_url_ips_raises_on_exception(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_resolve_notify_url_ips_raises_on_empty_list(monkeypatch):
+    """Validate Resolve notify url ips raises on empty list."""
+
     async def empty(_host: str):
         return []
 
@@ -68,6 +78,7 @@ async def test_resolve_notify_url_ips_raises_on_empty_list(monkeypatch):
 
 
 def test_validate_notify_url_public_ips_rejects_private():
+    """Validate Validate notify url public ips rejects private."""
     with pytest.raises(HTTPException) as exc:
         task_module._validate_notify_url_public_ips(["127.0.0.1"])
     assert exc.value.status_code == 400
@@ -75,6 +86,7 @@ def test_validate_notify_url_public_ips_rejects_private():
 
 @pytest.mark.asyncio
 async def test_validate_notify_url_happy_path_without_dns(monkeypatch):
+    """Validate Validate notify url happy path without dns."""
     monkeypatch.setattr(task_module.config, "NOTIFY_URL_ALLOWED_HOSTS", [])
     monkeypatch.setattr(task_module.config, "NOTIFY_URL_ALLOW_PRIVATE_NETWORKS", False)
 
@@ -89,6 +101,8 @@ async def test_validate_notify_url_happy_path_without_dns(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_notify_callback_handles_empty_notify_url(monkeypatch):
+    """Validate Send notify callback handles empty notify url."""
+
     class DummyTask:
         notify_url = ""
 
@@ -104,6 +118,8 @@ async def test_send_notify_callback_handles_empty_notify_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_notify_callback_sends_auth_header_from_task_token(monkeypatch):
+    """Validate Send notify callback sends auth header from task token."""
+
     async def noop(_url: str):
         return _url
 
@@ -150,6 +166,8 @@ async def test_send_notify_callback_sends_auth_header_from_task_token(monkeypatc
 
 @pytest.mark.asyncio
 async def test_send_notify_callback_non_200_returns_error(monkeypatch):
+    """Validate Send notify callback non 200 returns error."""
+
     async def noop(_url: str):
         return _url
 

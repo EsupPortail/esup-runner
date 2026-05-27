@@ -51,10 +51,12 @@ def runner_module():
 
 
 def test_verify_runner_token_false_when_missing(clean_runners_state, runner_module):
+    """Validate Verify runner token false when missing."""
     assert runner_module.verify_runner_token("nope", "tok") is False
 
 
 def test_verify_runner_token_true_when_matches(clean_runners_state, runner_module):
+    """Validate Verify runner token true when matches."""
     runners["r1"] = Runner(
         id="r1",
         url="http://r1.example",
@@ -70,6 +72,7 @@ def test_verify_runner_token_true_when_matches(clean_runners_state, runner_modul
 
 
 def test_verify_runner_token_false_when_mismatch(clean_runners_state, runner_module):
+    """Validate Verify runner token false when mismatch."""
     runners["r1"] = Runner(
         id="r1",
         url="http://r1.example",
@@ -85,6 +88,7 @@ def test_verify_runner_token_false_when_mismatch(clean_runners_state, runner_mod
 
 
 def test_register_runner_sets_token_version_and_heartbeat(runner_client, clean_runners_state):
+    """Validate Register runner sets token version and heartbeat."""
     payload = {
         "id": "r1",
         "url": "http://r1.example",
@@ -105,6 +109,7 @@ def test_register_runner_sets_token_version_and_heartbeat(runner_client, clean_r
 
 
 def test_register_runner_rejects_non_base_url(runner_client, clean_runners_state):
+    """Validate Register runner rejects non base url."""
     payload = {
         "id": "r1",
         "url": "http://r1.example/not-allowed-path",
@@ -122,6 +127,7 @@ def test_register_runner_rejects_non_base_url(runner_client, clean_runners_state
 
 
 def test_runner_heartbeat_ok_after_register(runner_client, clean_runners_state):
+    """Validate Runner heartbeat ok after register."""
     payload = {
         "id": "r1",
         "url": "http://r1.example",
@@ -142,12 +148,14 @@ def test_runner_heartbeat_ok_after_register(runner_client, clean_runners_state):
 
 
 def test_runner_heartbeat_404_when_runner_missing(runner_client, clean_runners_state):
+    """Validate Runner heartbeat 404 when runner missing."""
     resp = runner_client.post("/runner/heartbeat/does-not-exist")
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Runner not found"
 
 
 def test_runner_heartbeat_403_when_token_mismatch(runner_client, clean_runners_state):
+    """Validate Runner heartbeat 403 when token mismatch."""
     runners["r1"] = Runner(
         id="r1",
         url="http://r1.example",
@@ -180,6 +188,7 @@ def test_runner_heartbeat_403_when_token_mismatch(runner_client, clean_runners_s
     ],
 )
 def test_host_matches_allowlist_variants(runner_module, host, allowed_hosts, expected):
+    """Validate Host matches allowlist variants."""
     assert runner_module._host_matches_allowlist(host, allowed_hosts) is expected
 
 
@@ -192,10 +201,13 @@ def test_host_matches_allowlist_variants(runner_module, host, allowed_hosts, exp
     ],
 )
 def test_is_disallowed_ip_variants(runner_module, ip_value, expected):
+    """Validate Is disallowed ip variants."""
     assert runner_module._is_disallowed_ip(ip_value) is expected
 
 
 def test_resolve_host_ips_collects_string_ips_only(monkeypatch, runner_module):
+    """Validate Resolve host ips collects string ips only."""
+
     def fake_getaddrinfo(*_args, **_kwargs):
         return [
             (0, 0, 0, "", ("93.184.216.34", 80)),
@@ -221,6 +233,7 @@ def test_resolve_host_ips_collects_string_ips_only(monkeypatch, runner_module):
     ],
 )
 def test_parse_and_validate_runner_url_errors(runner_module, url, detail):
+    """Validate Parse and validate runner url errors."""
     with pytest.raises(HTTPException) as exc:
         runner_module._parse_and_validate_runner_url(url)
 
@@ -229,12 +242,14 @@ def test_parse_and_validate_runner_url_errors(runner_module, url, detail):
 
 
 def test_parse_and_validate_runner_url_ok(runner_module):
+    """Validate Parse and validate runner url ok."""
     parsed = runner_module._parse_and_validate_runner_url("https://runner.example/")
     assert parsed.scheme == "https"
     assert parsed.netloc == "runner.example"
 
 
 def test_normalize_and_validate_runner_host_rejects_invalid(runner_module):
+    """Validate Normalize and validate runner host rejects invalid."""
     parsed = urlparse("http://:80")
 
     with pytest.raises(HTTPException) as exc:
@@ -245,11 +260,13 @@ def test_normalize_and_validate_runner_host_rejects_invalid(runner_module):
 
 
 def test_normalize_and_validate_runner_host_normalizes_case_and_trailing_dot(runner_module):
+    """Validate Normalize and validate runner host normalizes case and trailing dot."""
     parsed = urlparse("http://ExAmPle.Com./")
     assert runner_module._normalize_and_validate_runner_host(parsed) == "example.com"
 
 
 def test_validate_runner_host_allowlist_variants(monkeypatch, runner_module):
+    """Validate Validate runner host allowlist variants."""
     monkeypatch.setattr(runner_module.config, "RUNNER_URL_ALLOWED_HOSTS", [])
     runner_module._validate_runner_host_allowlist("runner.example")
 
@@ -264,6 +281,8 @@ def test_validate_runner_host_allowlist_variants(monkeypatch, runner_module):
 
 
 def test_resolve_host_ips_or_raise_variants(monkeypatch, runner_module):
+    """Validate Resolve host ips or raise variants."""
+
     def fake_raises(_host: str):
         raise OSError("dns error")
 
@@ -284,6 +303,7 @@ def test_resolve_host_ips_or_raise_variants(monkeypatch, runner_module):
 
 
 def test_validate_runner_network_policy_variants(monkeypatch, runner_module):
+    """Validate Validate runner network policy variants."""
     monkeypatch.setattr(runner_module.config, "RUNNER_URL_ALLOW_PRIVATE_NETWORKS", True)
     runner_module._validate_runner_network_policy("any.host")
 
@@ -306,6 +326,7 @@ def test_validate_runner_network_policy_variants(monkeypatch, runner_module):
 
 
 def test_extract_runner_port_variants(runner_module):
+    """Validate Extract runner port variants."""
     assert runner_module._extract_runner_port(urlparse("http://example.com")) is None
 
     with pytest.raises(HTTPException) as exc:
@@ -316,6 +337,7 @@ def test_extract_runner_port_variants(runner_module):
 
 
 def test_build_runner_origin_formats_ipv4_and_ipv6(runner_module):
+    """Validate Build runner origin formats ipv4 and ipv6."""
     assert (
         runner_module._build_runner_origin("https", "example.com", 443) == "https://example.com:443"
     )
@@ -326,6 +348,7 @@ def test_build_runner_origin_formats_ipv4_and_ipv6(runner_module):
 
 
 def test_validate_and_normalize_runner_url_ok_with_allowlist(monkeypatch, runner_module):
+    """Validate Validate and normalize runner url ok with allowlist."""
     monkeypatch.setattr(runner_module.config, "RUNNER_URL_ALLOWED_HOSTS", ["example.com"])
     monkeypatch.setattr(runner_module.config, "RUNNER_URL_ALLOW_PRIVATE_NETWORKS", True)
 

@@ -1,3 +1,5 @@
+"""Test scope: validates expected behavior and regression scenarios."""
+
 import builtins
 import sys
 from types import ModuleType
@@ -6,6 +8,7 @@ import pytest
 
 
 def test_parse_helpers_cover_edge_cases():
+    """Validate Parse helpers cover edge cases."""
     from app.core import config as cfg
 
     assert cfg._parse_bool(None, default=True) is True
@@ -39,6 +42,7 @@ def test_parse_helpers_cover_edge_cases():
 
 
 def test_clear_config_env_vars_removes_only_managed(monkeypatch):
+    """Validate Clear config env vars removes only managed."""
     from app.core import config as cfg
 
     monkeypatch.setenv("MANAGER_HOST", "example")
@@ -61,6 +65,7 @@ def test_clear_config_env_vars_removes_only_managed(monkeypatch):
 
 
 def test_load_environment_variables_override_and_default_paths(monkeypatch, capsys):
+    """Validate Load environment variables override and default paths."""
     from app.core import config as cfg
 
     monkeypatch.setenv("CONFIG_ENV_PATH", "/tmp/does-not-exist.env")
@@ -79,6 +84,7 @@ def test_load_environment_variables_override_and_default_paths(monkeypatch, caps
 
 
 def test_load_environment_variables_load_dotenv_success(monkeypatch, capsys):
+    """Validate Load environment variables load dotenv success."""
     from app.core import config as cfg
 
     calls = []
@@ -102,6 +108,7 @@ def test_load_environment_variables_load_dotenv_success(monkeypatch, capsys):
 
 
 def test_load_environment_variables_importerror_branch(monkeypatch, capsys):
+    """Validate Load environment variables importerror branch."""
     from app.core import config as cfg
 
     monkeypatch.setenv("CONFIG_ENV_PATH", "/tmp/fake.env")
@@ -123,6 +130,7 @@ def test_load_environment_variables_importerror_branch(monkeypatch, capsys):
 
 
 def test_get_config_only_loads_env_once(monkeypatch):
+    """Validate Get config only loads env once."""
     from app.core import config as cfg
 
     original_instance = cfg._CONFIG_INSTANCE
@@ -157,6 +165,7 @@ def test_get_config_only_loads_env_once(monkeypatch):
 
 
 def test_reload_config_env_updates_shared_object(monkeypatch):
+    """Validate Reload config env updates shared object."""
     from app.core import config as cfg
 
     original_instance = cfg._CONFIG_INSTANCE
@@ -206,6 +215,7 @@ def test_reload_config_env_updates_shared_object(monkeypatch):
 
 
 def test_config_reload_marker_publish_and_consume(monkeypatch, tmp_path):
+    """Validate Config reload marker publish and consume."""
     from app.core import config as cfg
 
     marker_path = tmp_path / ".config_reload"
@@ -235,6 +245,7 @@ def test_config_reload_marker_publish_and_consume(monkeypatch, tmp_path):
 
 
 def test_read_config_reload_marker_mtime_ns_handles_oserror(monkeypatch):
+    """Validate Read config reload marker mtime ns handles oserror."""
     from app.core import config as cfg
 
     class _PathWithStatError:
@@ -247,6 +258,7 @@ def test_read_config_reload_marker_mtime_ns_handles_oserror(monkeypatch):
 
 
 def test_read_config_reload_marker_mtime_ns_handles_filenotfound(monkeypatch):
+    """Validate Read config reload marker mtime ns handles filenotfound."""
     from app.core import config as cfg
 
     class _PathMissing:
@@ -259,6 +271,7 @@ def test_read_config_reload_marker_mtime_ns_handles_filenotfound(monkeypatch):
 
 
 def test_publish_config_reload_event_handles_oserror(monkeypatch, capsys):
+    """Validate Publish config reload event handles oserror."""
     from app.core import config as cfg
 
     class _BadParent:
@@ -281,6 +294,7 @@ def test_publish_config_reload_event_handles_oserror(monkeypatch, capsys):
 
 
 def test_validate_configuration_warns_when_missing_tokens_and_admin(capsys):
+    """Validate Validate configuration warns when missing tokens and admin."""
     from app.core.config import Config
 
     cfg = Config()
@@ -294,6 +308,7 @@ def test_validate_configuration_warns_when_missing_tokens_and_admin(capsys):
 
 
 def test_config_initialization_and_validation_branches(monkeypatch):
+    """Validate Config initialization and validation branches."""
     from app.core.config import Config
 
     monkeypatch.setenv("MANAGER_PROTOCOL", "https")
@@ -369,6 +384,7 @@ def test_config_initialization_and_validation_branches(monkeypatch):
 
 
 def test_validate_configuration_rejects_wildcard_origins_with_credentials(monkeypatch):
+    """Validate Validate configuration rejects wildcard origins with credentials."""
     from app.core.config import Config
 
     monkeypatch.setenv("CORS_ALLOW_ORIGINS", "*")

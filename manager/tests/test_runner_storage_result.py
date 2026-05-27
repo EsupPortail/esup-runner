@@ -1,3 +1,5 @@
+"""Test scope: validates expected behavior and regression scenarios."""
+
 import json
 from datetime import datetime
 
@@ -15,6 +17,7 @@ def _create_manifest(task_dir, task_id: str, files: list[str]) -> dict:
 def test_get_task_manifest_from_shared_storage_when_enabled(
     client, auth_headers, monkeypatch, tmp_path
 ):
+    """Validate Get task manifest from shared storage when enabled."""
     task_id = "test_task_shared_storage"
     task_dir = tmp_path / task_id
     output_dir = task_dir / "output"
@@ -59,6 +62,7 @@ def test_get_task_manifest_from_shared_storage_when_enabled(
 def test_get_task_manifest_from_shared_storage_turns_warning_to_completed(
     client, auth_headers, monkeypatch, tmp_path
 ):
+    """Validate Get task manifest from shared storage turns warning to completed."""
     task_id = "test_task_shared_storage_warning"
     task_dir = tmp_path / task_id
     output_dir = task_dir / "output"
@@ -102,6 +106,7 @@ def test_get_task_manifest_from_shared_storage_turns_warning_to_completed(
 def test_get_task_result_file_from_shared_storage_when_enabled(
     client, auth_headers, monkeypatch, tmp_path
 ):
+    """Validate Get task result file from shared storage when enabled."""
     task_id = "test_task_shared_storage_file"
     task_dir = tmp_path / task_id
     output_dir = task_dir / "output"

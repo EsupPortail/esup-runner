@@ -87,6 +87,7 @@ def _make_task(task_id: str, runner_id: str, *, status: str) -> Task:
 
 
 def test_api_version(api_client):
+    """Validate Api version."""
     resp = api_client.get("/api/version")
     assert resp.status_code == 200
 
@@ -100,6 +101,7 @@ def test_api_version(api_client):
 
 
 def test_api_tasks_returns_task_status(api_client, clean_state):
+    """Validate Api tasks returns task status."""
     runners["r1"] = _make_runner("r1", last_heartbeat=datetime.now())
     tasks["t1"] = _make_task("t1", "r1", status="running")
     tasks["t2"] = _make_task("t2", "r1", status="completed")
@@ -116,6 +118,7 @@ def test_api_tasks_returns_task_status(api_client, clean_state):
 
 
 def test_api_runners_includes_online_and_offline(api_client, clean_state):
+    """Validate Api runners includes online and offline."""
     now = datetime.now()
     runners["online"] = _make_runner("online", last_heartbeat=now - timedelta(seconds=5))
     runners["offline"] = _make_runner("offline", last_heartbeat=now - timedelta(seconds=120))

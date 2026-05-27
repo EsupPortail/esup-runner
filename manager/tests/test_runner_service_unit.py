@@ -36,6 +36,7 @@ def _runner(runner_id: str, *, last_heartbeat: datetime) -> Runner:
 
 @pytest.mark.asyncio
 async def test_check_runners_activity_removes_inactive_and_stops(clean_runners):
+    """Validate Check runners activity removes inactive and stops."""
     runners["old"] = _runner("old", last_heartbeat=datetime.now() - timedelta(minutes=2))
     stop_event = asyncio.Event()
 
@@ -51,6 +52,7 @@ async def test_check_runners_activity_removes_inactive_and_stops(clean_runners):
 
 @pytest.mark.asyncio
 async def test_check_runners_activity_handles_missing_runner_on_delete(monkeypatch, clean_runners):
+    """Validate Check runners activity handles missing runner on delete."""
     runners["old"] = _runner("old", last_heartbeat=datetime.now() - timedelta(minutes=2))
     stop_event = asyncio.Event()
 
@@ -68,6 +70,7 @@ async def test_check_runners_activity_handles_missing_runner_on_delete(monkeypat
 
 
 def test_get_online_runners_filters_by_heartbeat(clean_runners):
+    """Validate Get online runners filters by heartbeat."""
     now = datetime.now()
     runners["on"] = _runner("on", last_heartbeat=now)
     runners["off"] = _runner("off", last_heartbeat=now - timedelta(minutes=2))
@@ -77,6 +80,7 @@ def test_get_online_runners_filters_by_heartbeat(clean_runners):
 
 
 def test_verify_runner_token_and_update_heartbeat(clean_runners):
+    """Validate Verify runner token and update heartbeat."""
     now = datetime.now() - timedelta(minutes=1)
     runners["r1"] = _runner("r1", last_heartbeat=now)
 

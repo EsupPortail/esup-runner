@@ -1,11 +1,14 @@
 """Unit tests for password hashing helpers."""
 
+"""Test scope: validates expected behavior and regression scenarios."""
+
 import pytest
 
 from app.core.passwords import BcryptPasswordContext
 
 
 def test_password_context_supports_bytes_for_hash_and_verify():
+    """Validate Password context supports bytes for hash and verify."""
     context = BcryptPasswordContext(rounds=4)
     hashed = context.hash(b"secret-password")
 
@@ -14,6 +17,7 @@ def test_password_context_supports_bytes_for_hash_and_verify():
 
 
 def test_password_context_hash_rejects_invalid_type():
+    """Validate Password context hash rejects invalid type."""
     context = BcryptPasswordContext()
 
     with pytest.raises(TypeError):
@@ -21,6 +25,7 @@ def test_password_context_hash_rejects_invalid_type():
 
 
 def test_password_context_verify_handles_invalid_inputs():
+    """Validate Password context verify handles invalid inputs."""
     context = BcryptPasswordContext(rounds=4)
     valid_hash = context.hash("secret-password")
 

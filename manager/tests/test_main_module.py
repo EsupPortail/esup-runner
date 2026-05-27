@@ -12,6 +12,8 @@ from app.core.config import config
 
 
 def test_register_sighup_reload_handles_failure(monkeypatch):
+    """Validate Register sighup reload handles failure."""
+
     def raise_value_error(*_args, **_kwargs):
         raise ValueError("fail")
 
@@ -20,6 +22,7 @@ def test_register_sighup_reload_handles_failure(monkeypatch):
 
 
 def test_lifespan_adds_protected_openapi_when_private(monkeypatch):
+    """Validate Lifespan adds protected openapi when private."""
     orig_visibility = config.API_DOCS_VISIBILITY
 
     # Force private docs so both openapi_config and lifespan branch run

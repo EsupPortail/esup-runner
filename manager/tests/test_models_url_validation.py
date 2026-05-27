@@ -1,3 +1,5 @@
+"""Test scope: validates expected behavior and regression scenarios."""
+
 import pytest
 
 from app.models.models import TaskRequest
@@ -5,6 +7,7 @@ from app.models.models import TaskRequest
 
 def test_task_request_allows_empty_urls_but_keeps_value():
     # _validate_safe_url returns early when the value is falsy.
+    """Validate Task request allows empty urls but keeps value."""
     req = TaskRequest(
         etab_name="UM",
         app_name="pod",
@@ -29,6 +32,7 @@ def test_task_request_allows_empty_urls_but_keeps_value():
     ),
 )
 def test_task_request_rejects_unsafe_urls(url: str, expected: str):
+    """Validate Task request rejects unsafe urls."""
     with pytest.raises(ValueError, match=expected):
         TaskRequest(
             etab_name="UM",

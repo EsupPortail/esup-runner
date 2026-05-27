@@ -1,5 +1,7 @@
 """Authentication and authorization regression tests."""
 
+"""Test scope: validates expected behavior and regression scenarios."""
+
 import base64
 import hashlib
 import hmac
@@ -75,12 +77,14 @@ def test_invalid_tokens_are_rejected(client, headers):
 
 @pytest.mark.asyncio
 async def test_verify_openapi_token_public_allows_without_token(monkeypatch):
+    """Validate Verify openapi token public allows without token."""
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "public")
     assert await verify_openapi_token(token_query=None, api_token=None, credentials=None) is None
 
 
 @pytest.mark.asyncio
 async def test_verify_openapi_token_private_missing_token_raises(monkeypatch):
+    """Validate Verify openapi token private missing token raises."""
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "private")
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"t": "tok"})
 
@@ -91,6 +95,7 @@ async def test_verify_openapi_token_private_missing_token_raises(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_openapi_token_private_query_has_priority(monkeypatch):
+    """Validate Verify openapi token private query has priority."""
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "private")
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"a": "tok-a", "b": "tok-b"})
     monkeypatch.setattr(config, "OPENAPI_ALLOW_QUERY_TOKEN", True)
@@ -103,6 +108,7 @@ async def test_verify_openapi_token_private_query_has_priority(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_openapi_token_private_query_works_when_enabled(monkeypatch):
+    """Validate Verify openapi token private query works when enabled."""
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "private")
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"b": "tok-b"})
     monkeypatch.setattr(config, "OPENAPI_ALLOW_QUERY_TOKEN", True)
@@ -113,6 +119,7 @@ async def test_verify_openapi_token_private_query_works_when_enabled(monkeypatch
 
 @pytest.mark.asyncio
 async def test_verify_openapi_token_private_cookie_works(monkeypatch):
+    """Validate Verify openapi token private cookie works."""
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "private")
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"b": "tok-b"})
     monkeypatch.setattr(config, "OPENAPI_ALLOW_QUERY_TOKEN", False)
@@ -132,6 +139,7 @@ async def test_verify_openapi_token_private_cookie_works(monkeypatch):
 
 
 def test_openapi_cookie_helpers_detect_tamper_and_expiry(monkeypatch):
+    """Validate Openapi cookie helpers detect tamper and expiry."""
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"a": "tok-a"})
     monkeypatch.setattr(config, "OPENAPI_COOKIE_MAX_AGE_SECONDS", 1)
     monkeypatch.setattr(config, "OPENAPI_COOKIE_SECRET", "unit-test-secret")
@@ -154,6 +162,7 @@ def test_openapi_cookie_helpers_detect_tamper_and_expiry(monkeypatch):
 
 
 def test_openapi_cookie_helper_internal_branches(monkeypatch):
+    """Validate Openapi cookie helper internal branches."""
     monkeypatch.setattr(config, "OPENAPI_COOKIE_SECRET", "")
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"b": "tok-b", "a": "tok-a"})
     monkeypatch.setattr(config, "ADMIN_USERS", {"z": "hash-z", "m": "hash-m"})
@@ -195,6 +204,7 @@ def test_openapi_cookie_helper_internal_branches(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_openapi_token_private_header_then_bearer(monkeypatch):
+    """Validate Verify openapi token private header then bearer."""
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "private")
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"a": "tok-a"})
 
@@ -210,6 +220,7 @@ async def test_verify_openapi_token_private_header_then_bearer(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_openapi_token_private_invalid_token_raises(monkeypatch):
+    """Validate Verify openapi token private invalid token raises."""
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "private")
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"a": "tok-a"})
 
@@ -222,6 +233,7 @@ async def test_verify_openapi_token_private_invalid_token_raises(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_token_missing_raises(monkeypatch):
+    """Validate Verify token missing raises."""
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"a": "tok-a"})
     with pytest.raises(HTTPException) as exc:
         await verify_token(api_token=None, credentials=None)
@@ -230,6 +242,7 @@ async def test_verify_token_missing_raises(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_token_api_key_header_has_priority(monkeypatch):
+    """Validate Verify token api key header has priority."""
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"a": "tok-a", "b": "tok-b"})
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="tok-b")
     out = await verify_token(api_token="tok-a", credentials=creds)
@@ -238,6 +251,7 @@ async def test_verify_token_api_key_header_has_priority(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_token_bearer_works(monkeypatch):
+    """Validate Verify token bearer works."""
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"a": "tok-a"})
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="tok-a")
     out = await verify_token(api_token=None, credentials=creds)
@@ -246,6 +260,7 @@ async def test_verify_token_bearer_works(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_token_invalid_raises(monkeypatch):
+    """Validate Verify token invalid raises."""
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"a": "tok-a"})
     with pytest.raises(HTTPException) as exc:
         await verify_token(api_token="bad", credentials=None)
@@ -254,6 +269,7 @@ async def test_verify_token_invalid_raises(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_token_triggers_config_refresh(monkeypatch):
+    """Validate Verify token triggers config refresh."""
     calls = {"count": 0}
 
     def _refresh():
@@ -270,6 +286,7 @@ async def test_verify_token_triggers_config_refresh(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_admin_username_missing_raises(monkeypatch):
+    """Validate Verify admin username missing raises."""
     monkeypatch.setattr(config, "ADMIN_USERS", {"admin": "hash"})
     with pytest.raises(HTTPException) as exc:
         await verify_admin(HTTPBasicCredentials(username="nope", password="x"))
@@ -278,6 +295,7 @@ async def test_verify_admin_username_missing_raises(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_admin_triggers_config_refresh(monkeypatch):
+    """Validate Verify admin triggers config refresh."""
     calls = {"count": 0}
 
     def _refresh():
@@ -294,6 +312,7 @@ async def test_verify_admin_triggers_config_refresh(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_admin_incorrect_password_raises(monkeypatch):
+    """Validate Verify admin incorrect password raises."""
     monkeypatch.setattr(config, "ADMIN_USERS", {"admin": "hash"})
     monkeypatch.setattr(config.pwd_context, "verify", lambda *_a, **_k: False)
     with pytest.raises(HTTPException) as exc:
@@ -303,6 +322,7 @@ async def test_verify_admin_incorrect_password_raises(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_admin_ok(monkeypatch):
+    """Validate Verify admin ok."""
     monkeypatch.setattr(config, "ADMIN_USERS", {"admin": "hash"})
     monkeypatch.setattr(config.pwd_context, "verify", lambda *_a, **_k: True)
     assert await verify_admin(HTTPBasicCredentials(username="admin", password="ok")) is True
@@ -310,6 +330,7 @@ async def test_verify_admin_ok(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_runner_version_missing_header_raises():
+    """Validate Verify runner version missing header raises."""
     with pytest.raises(HTTPException) as exc:
         await verify_runner_version(runner_version=None)
     assert exc.value.status_code == 400
@@ -317,6 +338,7 @@ async def test_verify_runner_version_missing_header_raises():
 
 @pytest.mark.asyncio
 async def test_verify_runner_version_major_mismatch_raises(monkeypatch):
+    """Validate Verify runner version major mismatch raises."""
     major = __version__.split(".")[0]
     other_major = str((int(major) + 1) if major.isdigit() else 999)
     with pytest.raises(HTTPException) as exc:
@@ -326,6 +348,7 @@ async def test_verify_runner_version_major_mismatch_raises(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_runner_version_minor_mismatch_raises():
+    """Validate Verify runner version minor mismatch raises."""
     parts = __version__.split(".")
     major = parts[0]
     minor = parts[1] if len(parts) > 1 else "0"
@@ -338,6 +361,7 @@ async def test_verify_runner_version_minor_mismatch_raises():
 
 @pytest.mark.asyncio
 async def test_verify_runner_version_major_minor_match_ok():
+    """Validate Verify runner version major minor match ok."""
     parts = __version__.split(".")
     major = parts[0]
     minor = parts[1] if len(parts) > 1 else "0"
@@ -347,6 +371,7 @@ async def test_verify_runner_version_major_minor_match_ok():
 
 @pytest.mark.asyncio
 async def test_verify_runner_version_invalid_format_raises():
+    """Validate Verify runner version invalid format raises."""
     with pytest.raises(HTTPException) as exc:
         await verify_runner_version(runner_version="not-a-version")
     assert exc.value.status_code == 400
@@ -354,6 +379,7 @@ async def test_verify_runner_version_invalid_format_raises():
 
 @pytest.mark.asyncio
 async def test_verify_runner_version_invalid_manager_version_raises(monkeypatch):
+    """Validate Verify runner version invalid manager version raises."""
     monkeypatch.setattr(auth_module, "MANAGER_VERSION", "not-a-version")
 
     with pytest.raises(HTTPException) as exc:
@@ -362,6 +388,7 @@ async def test_verify_runner_version_invalid_manager_version_raises(monkeypatch)
 
 
 def test_mask_token_handles_empty_and_short_values():
+    """Validate Mask token handles empty and short values."""
     assert _mask_token(None) == "<empty>"
     assert _mask_token("") == "<empty>"
     # length <= 2 returns obscured placeholder
@@ -370,15 +397,18 @@ def test_mask_token_handles_empty_and_short_values():
 
 
 def test_mask_token_obscures_small_tokens():
+    """Validate Mask token obscures small tokens."""
     assert _mask_token("abcd") == "a***d"
     assert _mask_token("abcdefgh") == "a***h"
 
 
 def test_mask_token_obscures_long_tokens():
+    """Validate Mask token obscures long tokens."""
     assert _mask_token("abcdefghijklmnop") == "abcd...mnop"
 
 
 def test_refresh_config_if_needed_logs_warning_on_error(monkeypatch):
+    """Validate Refresh config if needed logs warning on error."""
     messages = []
 
     def _raise_refresh_error():

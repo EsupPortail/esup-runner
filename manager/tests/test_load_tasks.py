@@ -1,5 +1,7 @@
 """Tests for SafeDailyJSONPersistence.load_tasks."""
 
+"""Test scope: validates expected behavior and regression scenarios."""
+
 import json
 from datetime import date, timedelta
 
@@ -13,6 +15,7 @@ def _write_task_file(directory, task_id, data):
 
 
 def test_load_tasks_from_specific_date(tmp_path):
+    """Validate Load tasks from specific date."""
     persistence = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=1)
 
     target_date = date(2024, 1, 2)
@@ -25,6 +28,7 @@ def test_load_tasks_from_specific_date(tmp_path):
 
 
 def test_load_tasks_prefers_newest_copy(tmp_path):
+    """Validate Load tasks prefers newest copy."""
     persistence = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=1)
 
     newest_date = date.today()

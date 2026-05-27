@@ -1,3 +1,5 @@
+"""Test scope: validates expected behavior and regression scenarios."""
+
 from types import SimpleNamespace
 
 import httpx
@@ -6,6 +8,7 @@ import scripts.check_runtime as runtime
 
 
 def test_mask_secret_and_first_token_helpers():
+    """Validate Mask secret and first token helpers."""
     cfg = SimpleNamespace(AUTHORIZED_TOKENS={"a": "   ", "b": "token-12345"})
 
     assert runtime._mask_secret("short") == "***"
@@ -15,6 +18,8 @@ def test_mask_secret_and_first_token_helpers():
 
 
 def test_request_status_returns_zero_on_network_error():
+    """Validate Request status returns zero on network error."""
+
     class _FailingClient:
         def get(self, *_args, **_kwargs):
             req = httpx.Request("GET", "http://manager.example.org")
@@ -26,6 +31,7 @@ def test_request_status_returns_zero_on_network_error():
 
 
 def test_run_checks_success_with_token_and_runners(monkeypatch):
+    """Validate Run checks success with token and runners."""
     cfg = SimpleNamespace(
         MANAGER_URL="http://manager.example.org:8081",
         MANAGER_HOST="manager.example.org",
@@ -76,6 +82,7 @@ def test_run_checks_success_with_token_and_runners(monkeypatch):
 
 
 def test_run_checks_without_token_skips_authenticated_endpoints(monkeypatch):
+    """Validate Run checks without token skips authenticated endpoints."""
     cfg = SimpleNamespace(
         MANAGER_URL="http://127.0.0.1:8081",
         MANAGER_HOST="127.0.0.1",
@@ -113,6 +120,7 @@ def test_run_checks_without_token_skips_authenticated_endpoints(monkeypatch):
 
 
 def test_run_checks_missing_manager_url_short_circuit(monkeypatch):
+    """Validate Run checks missing manager url short circuit."""
     cfg = SimpleNamespace(
         MANAGER_URL="",
         MANAGER_HOST="0.0.0.0",
@@ -132,6 +140,7 @@ def test_run_checks_missing_manager_url_short_circuit(monkeypatch):
 
 
 def test_main_exit_codes(monkeypatch):
+    """Validate Main exit codes."""
     monkeypatch.setattr(runtime, "print_report", lambda *_args, **_kwargs: None)
 
     monkeypatch.setattr(

@@ -45,6 +45,7 @@ def restore_log_paths(logs_module):
 
 
 def test_logparser_parse_matches_pattern(logs_module):
+    """Validate Logparser parse matches pattern."""
     line = (
         "2025-10-22 15:43:34 - runner - INFO - [encoding_handler:execute_task:134] - "
         "Encoding task completed successfully\n"
@@ -59,6 +60,7 @@ def test_logparser_parse_matches_pattern(logs_module):
 
 
 def test_logparser_parse_fallback(logs_module):
+    """Validate Logparser parse fallback."""
     parsed = logs_module.LogParser.parse_log_line("not matching")
     assert parsed["module"] == "UNKNOWN"
     assert parsed["level"] == "UNKNOWN"
@@ -66,6 +68,7 @@ def test_logparser_parse_fallback(logs_module):
 
 
 def test_logmanager_read_logs_filters_and_sorts(tmp_path: Path, logs_module):
+    """Validate Logmanager read logs filters and sorts."""
     log_file = tmp_path / "manager.log"
     log_file.write_text(
         "2026-01-01 00:00:01 - manager - INFO - [x] - hello\n"
@@ -97,6 +100,7 @@ def test_logmanager_read_logs_filters_and_sorts(tmp_path: Path, logs_module):
 
 
 def test_logmanager_groups_multiline_payloads(tmp_path: Path, logs_module):
+    """Validate Logmanager groups multiline payloads."""
     log_file = tmp_path / "manager.log"
     log_file.write_text(
         "2026-02-12 13:56:01 - manager - WARNING - [task:_send_notify_callback:263] - "
@@ -123,6 +127,7 @@ def test_logmanager_groups_multiline_payloads(tmp_path: Path, logs_module):
 
 
 def test_logmanager_keeps_leading_unknown_and_skips_blank_lines(tmp_path: Path, logs_module):
+    """Validate Logmanager keeps leading unknown and skips blank lines."""
     log_file = tmp_path / "manager.log"
     log_file.write_text(
         "\n"
@@ -142,6 +147,7 @@ def test_logmanager_keeps_leading_unknown_and_skips_blank_lines(tmp_path: Path, 
 
 
 def test_logmanager_skips_missing_file(tmp_path: Path, logs_module):
+    """Validate Logmanager skips missing file."""
     missing = tmp_path / "missing.log"
     manager = logs_module.LogManager([str(missing)])
 
@@ -150,6 +156,7 @@ def test_logmanager_skips_missing_file(tmp_path: Path, logs_module):
 
 
 def test_logmanager_continues_on_read_error(tmp_path: Path, logs_module, monkeypatch):
+    """Validate Logmanager continues on read error."""
     bad_file = tmp_path / "bad.log"
     ok_file = tmp_path / "ok.log"
 
@@ -173,6 +180,7 @@ def test_logmanager_continues_on_read_error(tmp_path: Path, logs_module, monkeyp
 
 
 def test_get_logs_statistics_counts_unknown(logs_module):
+    """Validate Get logs statistics counts unknown."""
     manager = logs_module.LogManager([])
     stats = manager.get_logs_statistics(
         [
@@ -188,6 +196,7 @@ def test_get_logs_statistics_counts_unknown(logs_module):
 
 
 def test_tail_logs_success(tmp_path: Path, logs_module):
+    """Validate Tail logs success."""
     f = tmp_path / "t.log"
     f.write_text("a\n" * 5 + "b\n" * 5, encoding="utf-8")
 
@@ -196,11 +205,13 @@ def test_tail_logs_success(tmp_path: Path, logs_module):
 
 
 def test_tail_logs_error_returns_empty(logs_module, tmp_path: Path):
+    """Validate Tail logs error returns empty."""
     missing = tmp_path / "missing.log"
     assert logs_module.tail_logs(str(missing), n=10) == []
 
 
 def test_view_logs_ok(admin_client, logs_module, restore_log_paths, tmp_path: Path):
+    """Validate View logs ok."""
     log_file = tmp_path / "manager.log"
     log_file.write_text(
         "2026-01-01 00:00:01 - manager - INFO - [x] - hello\n",
@@ -216,6 +227,7 @@ def test_view_logs_ok(admin_client, logs_module, restore_log_paths, tmp_path: Pa
 
 
 def test_view_logs_raises_500_on_error(admin_client, logs_module, monkeypatch):
+    """Validate View logs raises 500 on error."""
     monkeypatch.setattr(
         logs_module.log_manager, "read_logs", lambda *a, **k: (_ for _ in ()).throw(Exception("x"))
     )
@@ -226,6 +238,7 @@ def test_view_logs_raises_500_on_error(admin_client, logs_module, monkeypatch):
 
 
 def test_stream_logs_ok(admin_client, logs_module, restore_log_paths, tmp_path: Path):
+    """Validate Stream logs ok."""
     log_file = tmp_path / "manager.log"
     log_file.write_text(
         "2026-01-01 00:00:01 - manager - INFO - [x] - hello\n",
@@ -239,6 +252,7 @@ def test_stream_logs_ok(admin_client, logs_module, restore_log_paths, tmp_path: 
 
 
 def test_stream_logs_returns_html_error_on_exception(admin_client, logs_module, monkeypatch):
+    """Validate Stream logs returns html error on exception."""
     monkeypatch.setattr(
         logs_module.log_manager, "read_logs", lambda *a, **k: (_ for _ in ()).throw(Exception("x"))
     )
@@ -249,6 +263,7 @@ def test_stream_logs_returns_html_error_on_exception(admin_client, logs_module, 
 
 
 def test_search_logs_ok(admin_client, logs_module, restore_log_paths, tmp_path: Path):
+    """Validate Search logs ok."""
     log_file = tmp_path / "manager.log"
     log_file.write_text(
         "2026-01-01 00:00:01 - manager - INFO - [x] - needle\n",
@@ -262,6 +277,7 @@ def test_search_logs_ok(admin_client, logs_module, restore_log_paths, tmp_path: 
 
 
 def test_search_logs_raises_500_on_error(admin_client, logs_module, monkeypatch):
+    """Validate Search logs raises 500 on error."""
     monkeypatch.setattr(
         logs_module.log_manager, "read_logs", lambda *a, **k: (_ for _ in ()).throw(Exception("x"))
     )
@@ -272,6 +288,7 @@ def test_search_logs_raises_500_on_error(admin_client, logs_module, monkeypatch)
 
 
 def test_logs_stats_ok(admin_client, logs_module, restore_log_paths, tmp_path: Path):
+    """Validate Logs stats ok."""
     log_file = tmp_path / "manager.log"
     log_file.write_text(
         "2026-01-01 00:00:01 - manager - INFO - [x] - hello\n"
@@ -291,6 +308,7 @@ def test_logs_stats_ok(admin_client, logs_module, restore_log_paths, tmp_path: P
 
 
 def test_logs_stats_raises_500_on_error(admin_client, logs_module, monkeypatch):
+    """Validate Logs stats raises 500 on error."""
     monkeypatch.setattr(
         logs_module.log_manager, "read_logs", lambda *a, **k: (_ for _ in ()).throw(Exception("x"))
     )

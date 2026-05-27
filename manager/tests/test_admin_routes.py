@@ -96,6 +96,7 @@ def _make_task(
 
 
 def test_format_datetime_without_milliseconds_formats_iso_values():
+    """Validate Format datetime without milliseconds formats iso values."""
     assert (
         admin_routes._format_datetime_without_milliseconds("2026-01-02T03:04:05.123456")
         == "2026-01-02 03:04:05"
@@ -107,6 +108,7 @@ def test_format_datetime_without_milliseconds_formats_iso_values():
 
 
 def test_format_datetime_without_milliseconds_handles_empty_and_invalid_values():
+    """Validate Format datetime without milliseconds handles empty and invalid values."""
     assert admin_routes._format_datetime_without_milliseconds(None) == ""
     assert admin_routes._format_datetime_without_milliseconds("") == ""
     assert (
@@ -116,6 +118,7 @@ def test_format_datetime_without_milliseconds_handles_empty_and_invalid_values()
 
 
 def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
+    """Validate Admin dashboard renders and orders tasks."""
     runners["r1"] = _make_runner("r1", seconds_ago=10)
 
     tasks["t_old"] = _make_task("t_old", "r1", created_at="2026-01-01T00:00:00")
@@ -140,11 +143,13 @@ def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
 
 
 def test_task_detail_not_found(admin_client, clean_state):
+    """Validate Task detail not found."""
     resp = admin_client.get("/admin/task/does-not-exist")
     assert resp.status_code == 404
 
 
 def test_task_detail_ok(admin_client, clean_state):
+    """Validate Task detail ok."""
     runners["r1"] = _make_runner("r1")
     tasks["t1"] = _make_task(
         "t1",
@@ -166,11 +171,13 @@ def test_task_detail_ok(admin_client, clean_state):
 
 
 def test_runner_detail_not_found(admin_client, clean_state):
+    """Validate Runner detail not found."""
     resp = admin_client.get("/admin/runner/does-not-exist")
     assert resp.status_code == 404
 
 
 def test_runner_detail_ok(admin_client, clean_state):
+    """Validate Runner detail ok."""
     runners["r1"] = _make_runner("r1")
 
     resp = admin_client.get("/admin/runner/r1")
@@ -179,6 +186,7 @@ def test_runner_detail_ok(admin_client, clean_state):
 
 
 def test_admin_tasks_page_renders(admin_client, clean_state):
+    """Validate Admin tasks page renders."""
     runners["r1"] = _make_runner("r1")
     tasks["t1"] = _make_task("t1", "r1", created_at="2026-01-01T00:00:00", status="running")
     tasks["t2"] = _make_task("t2", "r1", created_at="2026-01-01T00:00:01", status="failed")
@@ -192,6 +200,7 @@ def test_admin_tasks_page_renders(admin_client, clean_state):
 
 def test_toggle_theme_redirects_and_sets_cookie(admin_client):
     # With current=dark -> new=light
+    """Validate Toggle theme redirects and sets cookie."""
     admin_client.cookies.set("theme", "dark")
     resp1 = admin_client.post("/admin/toggle-theme", follow_redirects=False)
     assert resp1.status_code == 303
@@ -205,6 +214,7 @@ def test_toggle_theme_redirects_and_sets_cookie(admin_client):
 
 
 def test_credentials_page_renders_token_previews(admin_client, monkeypatch):
+    """Validate Credentials page renders token previews."""
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "private")
     monkeypatch.setattr(
         config,
@@ -228,6 +238,7 @@ def test_credentials_page_renders_token_previews(admin_client, monkeypatch):
 
 
 def test_reload_config_endpoint_returns_expected_payload(admin_client, monkeypatch):
+    """Validate Reload config endpoint returns expected payload."""
     fake = SimpleNamespace(
         API_DOCS_VISIBILITY="public",
         AUTHORIZED_TOKENS={"x": "y", "z": "w"},
@@ -258,6 +269,7 @@ def test_reload_config_endpoint_returns_expected_payload(admin_client, monkeypat
 def test_documentation_page_uses_cookie_without_query_token(  # noqa: D401
     admin_client, monkeypatch, visibility: str, expected_cookie_set: bool
 ):
+    """Validate Documentation page uses cookie without query token."""
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", visibility)
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"t": "sekret"})
     monkeypatch.setattr(config, "OPENAPI_COOKIE_SECRET", "unit-test-secret")
@@ -277,6 +289,7 @@ def test_documentation_page_uses_cookie_without_query_token(  # noqa: D401
 
 
 def test_documentation_page_deletes_cookie_when_builder_returns_none(admin_client, monkeypatch):
+    """Validate Documentation page deletes cookie when builder returns none."""
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "private")
     monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"t": "sekret"})
     monkeypatch.setattr(admin_routes, "build_openapi_cookie_value", lambda _token: None)
@@ -290,6 +303,7 @@ def test_documentation_page_deletes_cookie_when_builder_returns_none(admin_clien
 
 
 def test_admin_dashboard_logs_csv_errors(admin_client, clean_state, monkeypatch, tmp_path):
+    """Validate Admin dashboard logs csv errors."""
     csv_dir = tmp_path / "data"
     csv_dir.mkdir()
     (csv_dir / "task_stats.csv").write_text("task_id,date\n1,2026-02-03\n")
@@ -307,6 +321,7 @@ def test_admin_dashboard_logs_csv_errors(admin_client, clean_state, monkeypatch,
 
 
 def test_statistics_helpers_cover_branches(tmp_path, monkeypatch):
+    """Validate Statistics helpers cover branches."""
     missing = tmp_path / "missing.csv"
     assert statistics_routes._load_task_stats_csv(missing) == []
 
@@ -344,6 +359,7 @@ def test_statistics_helpers_cover_branches(tmp_path, monkeypatch):
 
 
 def test_statistics_dashboard_renders_with_data(admin_client, monkeypatch, tmp_path):
+    """Validate Statistics dashboard renders with data."""
     csv_dir = tmp_path / "data"
     csv_dir.mkdir()
     (csv_dir / "task_stats.csv").write_text(
@@ -362,6 +378,7 @@ def test_statistics_dashboard_renders_with_data(admin_client, monkeypatch, tmp_p
 
 
 def test_statistics_dashboard_filters_by_date_range(admin_client, monkeypatch, tmp_path):
+    """Validate Statistics dashboard filters by date range."""
     csv_dir = tmp_path / "data"
     csv_dir.mkdir()
     (csv_dir / "task_stats.csv").write_text(
@@ -395,6 +412,7 @@ def test_statistics_dashboard_filters_by_date_range(admin_client, monkeypatch, t
 
 
 def test_statistics_csv_download_returns_attachment(admin_client, monkeypatch, tmp_path):
+    """Validate Statistics csv download returns attachment."""
     csv_dir = tmp_path / "data"
     csv_dir.mkdir()
     csv_content = "task_id,date,task_type,etab_name\n1,2026-02-01,encode,UM\n"
@@ -412,6 +430,7 @@ def test_statistics_csv_download_returns_attachment(admin_client, monkeypatch, t
 
 
 def test_statistics_csv_download_returns_404_when_missing(admin_client, monkeypatch, tmp_path):
+    """Validate Statistics csv download returns 404 when missing."""
     csv_dir = tmp_path / "data"
     csv_dir.mkdir()
 

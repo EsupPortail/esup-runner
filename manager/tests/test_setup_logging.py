@@ -29,6 +29,7 @@ from app.core.setup_logging import (
 
 
 def test_json_formatter_includes_custom_fields():
+    """Validate Json formatter includes custom fields."""
     formatter = JSONFormatter()
     record = logging.makeLogRecord(
         {
@@ -48,6 +49,7 @@ def test_json_formatter_includes_custom_fields():
 
 
 def test_json_formatter_aliases_uvicorn_error_logger_name():
+    """Validate Json formatter aliases uvicorn error logger name."""
     formatter = JSONFormatter()
     record = logging.makeLogRecord(
         {
@@ -65,6 +67,7 @@ def test_json_formatter_aliases_uvicorn_error_logger_name():
 
 
 def test_json_formatter_handles_exception():
+    """Validate Json formatter handles exception."""
     formatter = JSONFormatter()
     try:
         raise ValueError("boom")
@@ -86,6 +89,7 @@ def test_json_formatter_handles_exception():
 
 
 def test_logger_display_name_filter_aliases_uvicorn_error():
+    """Validate Logger display name filter aliases uvicorn error."""
     filt = LoggerDisplayNameFilter()
     record = logging.makeLogRecord({"name": "uvicorn.error", "msg": "x", "level": logging.INFO})
     assert filt.filter(record) is True
@@ -93,11 +97,13 @@ def test_logger_display_name_filter_aliases_uvicorn_error():
 
 
 def test_coerce_log_level_accepts_str_and_int():
+    """Validate Coerce log level accepts str and int."""
     assert _coerce_log_level("debug") == logging.DEBUG
     assert _coerce_log_level(logging.WARNING) == logging.WARNING
 
 
 def test_setup_logging_uses_tmp_dir_during_tests(tmp_path, monkeypatch):
+    """Validate Setup logging uses tmp dir during tests."""
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
     monkeypatch.setenv("PYTEST_LOG_DIR", str(tmp_path))
     logger = setup_logging("Sample", json_format=True, log_level=logging.DEBUG)
@@ -106,6 +112,8 @@ def test_setup_logging_uses_tmp_dir_during_tests(tmp_path, monkeypatch):
 
 
 def test_setup_logging_raises_on_makedirs_failure(monkeypatch):
+    """Validate Setup logging raises on makedirs failure."""
+
     def fail_makedirs(*_args, **_kwargs):
         raise OSError("nope")
 
@@ -115,6 +123,7 @@ def test_setup_logging_raises_on_makedirs_failure(monkeypatch):
 
 
 def test_add_file_handler_permission_error(monkeypatch, tmp_path):
+    """Validate Add file handler permission error."""
     logger = logging.getLogger("file-handler-test")
     logger.handlers.clear()
     formatter = _create_formatter(False)
@@ -130,6 +139,7 @@ def test_add_file_handler_permission_error(monkeypatch, tmp_path):
 
 
 def test_syslog_handler_exception(monkeypatch):
+    """Validate Syslog handler exception."""
     logger = logging.getLogger("syslog-test")
     logger.handlers.clear()
 
@@ -146,6 +156,7 @@ def test_syslog_handler_exception(monkeypatch):
 
 
 def test_log_context_injects_fields_and_restores_factory():
+    """Validate Log context injects fields and restores factory."""
     logger = logging.getLogger("context-test")
     logger.handlers.clear()
     logger.setLevel(logging.INFO)
@@ -165,17 +176,21 @@ def test_log_context_injects_fields_and_restores_factory():
 
 
 def test_setup_default_logging_with_string_level(monkeypatch):
+    """Validate Setup default logging with string level."""
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
     logger = setup_default_logging(log_level="INFO")
     assert logger.level == logging.INFO
 
 
 def test_get_logger_returns_named_logger():
+    """Validate Get logger returns named logger."""
     logger = logging_module.get_logger("custom")
     assert isinstance(logger, logging.Logger)
 
 
 def test_setup_uvicorn_logging_handles_permission_error(monkeypatch):
+    """Validate Setup uvicorn logging handles permission error."""
+
     class FailingHandler(RotatingFileHandler):
         def __init__(self, *_args, **_kwargs):
             raise PermissionError("fail")
@@ -191,6 +206,7 @@ def test_setup_uvicorn_logging_handles_permission_error(monkeypatch):
 
 
 def test_setup_uvicorn_logging_adds_file_handler(monkeypatch, tmp_path):
+    """Validate Setup uvicorn logging adds file handler."""
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.setattr(logging_module.config, "LOG_DIRECTORY", f"{tmp_path}/")
     for name in ["uvicorn", "uvicorn.error", "uvicorn.access"]:
@@ -202,6 +218,7 @@ def test_setup_uvicorn_logging_adds_file_handler(monkeypatch, tmp_path):
 
 
 def test_setup_uvicorn_logging_clears_existing_handlers(monkeypatch, tmp_path):
+    """Validate Setup uvicorn logging clears existing handlers."""
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.setattr(logging_module.config, "LOG_DIRECTORY", f"{tmp_path}/")
 
@@ -215,6 +232,7 @@ def test_setup_uvicorn_logging_clears_existing_handlers(monkeypatch, tmp_path):
 
 
 def test_get_uvicorn_log_config_json_format():
+    """Validate Get uvicorn log config json format."""
     cfg = get_uvicorn_log_config(json_format=True)
     assert cfg["formatters"]["json"]["()"] is JSONFormatter
     assert "display_name" in cfg["filters"]
@@ -288,6 +306,7 @@ def test_setup_logging_non_test_run_branch(monkeypatch, tmp_path):
 
 
 def test_add_syslog_handler_skips_when_no_socket(monkeypatch):
+    """Validate Add syslog handler skips when no socket."""
     logger = logging.getLogger("syslog-skip")
     logger.handlers.clear()
 
@@ -303,6 +322,7 @@ def test_add_syslog_handler_skips_when_no_socket(monkeypatch):
 
 
 def test_resolve_syslog_address_uses_fallback_candidates(monkeypatch):
+    """Validate Resolve syslog address uses fallback candidates."""
     monkeypatch.setattr(
         logging_module, "_DEFAULT_SYSLOG_ADDRESSES", ("/dev/log", "/var/run/syslog")
     )
@@ -311,11 +331,13 @@ def test_resolve_syslog_address_uses_fallback_candidates(monkeypatch):
 
 
 def test_resolve_syslog_address_requested_socket(monkeypatch):
+    """Validate Resolve syslog address requested socket."""
     monkeypatch.setattr(logging_module, "_is_unix_socket", lambda path: path == "/dev/log")
     assert _resolve_syslog_address("/dev/log") == "/dev/log"
 
 
 def test_resolve_syslog_address_returns_none_when_no_candidate(monkeypatch):
+    """Validate Resolve syslog address returns none when no candidate."""
     monkeypatch.setattr(
         logging_module, "_DEFAULT_SYSLOG_ADDRESSES", ("/dev/log", "/var/run/syslog")
     )
@@ -324,6 +346,8 @@ def test_resolve_syslog_address_returns_none_when_no_candidate(monkeypatch):
 
 
 def test_is_unix_socket_true(monkeypatch):
+    """Validate Is unix socket true."""
+
     class _StatResult:
         st_mode = stat.S_IFSOCK
 
@@ -332,6 +356,8 @@ def test_is_unix_socket_true(monkeypatch):
 
 
 def test_is_unix_socket_handles_oserror(monkeypatch):
+    """Validate Is unix socket handles oserror."""
+
     def _raise_oserror(_path):
         raise OSError("missing")
 

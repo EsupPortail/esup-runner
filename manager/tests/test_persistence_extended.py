@@ -36,6 +36,7 @@ def _task(task_id: str = "t1", status: str = "pending", created: datetime | None
 
 
 def test_save_tasks_writes_and_deletes(tmp_path):
+    """Validate Save tasks writes and deletes."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     today_dir = tmp_path / datetime.now().strftime("%Y-%m-%d")
 
@@ -51,6 +52,7 @@ def test_save_tasks_writes_and_deletes(tmp_path):
 
 
 def test_save_tasks_uses_dict_when_model_dump_missing(tmp_path):
+    """Validate Save tasks uses dict when model dump missing."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
 
     class LegacyTask:
@@ -65,6 +67,7 @@ def test_save_tasks_uses_dict_when_model_dump_missing(tmp_path):
 
 
 def test_save_tasks_handles_timeout_and_error(monkeypatch, tmp_path):
+    """Validate Save tasks handles timeout and error."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
 
     def raise_timeout():
@@ -81,6 +84,7 @@ def test_save_tasks_handles_timeout_and_error(monkeypatch, tmp_path):
 
 
 def test_read_task_file_metadata_and_json_error(tmp_path):
+    """Validate Read task file metadata and json error."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     task_file = tmp_path / "with_meta.json"
     task_file.write_text(
@@ -99,6 +103,7 @@ def test_read_task_file_metadata_and_json_error(tmp_path):
 
 
 def test_load_tasks_from_all_dates_handles_empty_and_duplicates(tmp_path):
+    """Validate Load tasks from all dates handles empty and duplicates."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     assert persistence._load_tasks_from_all_dates() == {}
 
@@ -125,6 +130,7 @@ def test_load_tasks_from_all_dates_handles_empty_and_duplicates(tmp_path):
 
 
 def test_merge_tasks_handles_timeout(monkeypatch, tmp_path):
+    """Validate Merge tasks handles timeout."""
     calls = {"count": 0}
 
     class FailingLock:
@@ -144,6 +150,7 @@ def test_merge_tasks_handles_timeout(monkeypatch, tmp_path):
 
 
 def test_merge_tasks_skips_invalid_files(tmp_path):
+    """Validate Merge tasks skips invalid files."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     today = datetime.now().date()
     day_dir = tmp_path / today.strftime("%Y-%m-%d")
@@ -156,6 +163,7 @@ def test_merge_tasks_skips_invalid_files(tmp_path):
 
 
 def test_load_single_date_tasks_paths(tmp_path, monkeypatch):
+    """Validate Load single date tasks paths."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     missing = persistence._load_single_date_tasks(date(2020, 1, 1))
     assert missing == {}
@@ -190,6 +198,7 @@ def test_load_single_date_tasks_paths(tmp_path, monkeypatch):
 
 
 def test_load_single_date_tasks_read_failure(monkeypatch, tmp_path):
+    """Validate Load single date tasks read failure."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     day_dir = tmp_path / date.today().strftime("%Y-%m-%d")
     day_dir.mkdir(parents=True)
@@ -203,6 +212,7 @@ def test_load_single_date_tasks_read_failure(monkeypatch, tmp_path):
 
 
 def test_load_historical_tasks_and_available_dates(tmp_path):
+    """Validate Load historical tasks and available dates."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
 
     for offset in range(2):
@@ -228,6 +238,7 @@ def test_load_historical_tasks_and_available_dates(tmp_path):
 
 
 def test_delete_task_marks_tombstone_and_hides_all_copies(tmp_path):
+    """Validate Delete task marks tombstone and hides all copies."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     today = date.today()
     older = today - timedelta(days=1)
@@ -263,6 +274,7 @@ def test_delete_task_marks_tombstone_and_hides_all_copies(tmp_path):
 
 
 def test_upsert_tasks_skips_tombstoned_tasks(tmp_path):
+    """Validate Upsert tasks skips tombstoned tasks."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     deleted_dir = tmp_path / ".deleted"
     deleted_dir.mkdir(parents=True)
@@ -279,6 +291,7 @@ def test_upsert_tasks_skips_tombstoned_tasks(tmp_path):
 
 
 def test_cleanup_old_files_and_storage_info(tmp_path):
+    """Validate Cleanup old files and storage info."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     old_day = date.today() - timedelta(days=2)
     keep_day = date.today()
@@ -302,6 +315,7 @@ def test_cleanup_old_files_and_storage_info(tmp_path):
 
 
 def test_save_tasks_deletion_error(monkeypatch, tmp_path):
+    """Validate Save tasks deletion error."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     persistence.save_tasks({"t1": _task("t1")})
 
@@ -313,12 +327,14 @@ def test_save_tasks_deletion_error(monkeypatch, tmp_path):
 
 
 def test_read_task_file_missing_file(tmp_path):
+    """Validate Read task file missing file."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     missing = tmp_path / "does_not_exist.json"
     assert persistence._read_task_file(missing) is None
 
 
 def test_read_task_file_invalid_root_type(tmp_path):
+    """Validate Read task file invalid root type."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     task_file = tmp_path / "invalid_root.json"
     task_file.write_text(json.dumps(["not-an-object"]), encoding="utf-8")
@@ -326,6 +342,8 @@ def test_read_task_file_invalid_root_type(tmp_path):
 
 
 def test_merge_tasks_generic_error(monkeypatch, tmp_path):
+    """Validate Merge tasks generic error."""
+
     def failing_glob(self, *_args, **_kwargs):
         raise RuntimeError("fail")
 
@@ -335,6 +353,7 @@ def test_merge_tasks_generic_error(monkeypatch, tmp_path):
 
 
 def test_cleanup_old_files_handles_unlink_error(monkeypatch, tmp_path):
+    """Validate Cleanup old files handles unlink error."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     old_day = date.today() - timedelta(days=2)
     old_dir = tmp_path / old_day.strftime("%Y-%m-%d")
@@ -351,6 +370,7 @@ def test_cleanup_old_files_handles_unlink_error(monkeypatch, tmp_path):
 
 
 def test_backup_corrupted_file_handles_copy_error(monkeypatch, tmp_path):
+    """Validate Backup corrupted file handles copy error."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     file_path = tmp_path / "corrupt.json"
     file_path.write_text("{}", encoding="utf-8")
@@ -363,6 +383,7 @@ def test_backup_corrupted_file_handles_copy_error(monkeypatch, tmp_path):
 
 
 def test_upsert_tasks_branches(monkeypatch, tmp_path):
+    """Validate Upsert tasks branches."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
 
     assert persistence.upsert_tasks({}) is True
@@ -389,6 +410,7 @@ def test_upsert_tasks_branches(monkeypatch, tmp_path):
 
 
 def test_load_task_branches(monkeypatch, tmp_path):
+    """Validate Load task branches."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
 
     # No directory for today -> continue and return None.
@@ -426,6 +448,7 @@ def test_load_task_branches(monkeypatch, tmp_path):
 
 
 def test_safe_persistence_zero_retries(tmp_path):
+    """Validate Safe persistence zero retries."""
     safe = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=0)
     assert safe.save_tasks({"t": _task("t")}) is False
     assert safe.load_tasks() == {}
@@ -434,6 +457,7 @@ def test_safe_persistence_zero_retries(tmp_path):
 
 
 def test_safe_persistence_retries_save_and_load(monkeypatch, tmp_path):
+    """Validate Safe persistence retries save and load."""
     calls = {"save": 0, "load": 0}
 
     def flaky_save(self, tasks):
@@ -476,6 +500,7 @@ def test_safe_persistence_retries_save_and_load(monkeypatch, tmp_path):
 
 
 def test_safe_persistence_retries_upsert_and_load_task(monkeypatch, tmp_path):
+    """Validate Safe persistence retries upsert and load task."""
     calls = {"upsert": 0, "load_task": 0}
 
     def flaky_upsert(self, _tasks):
@@ -516,6 +541,7 @@ def test_safe_persistence_retries_upsert_and_load_task(monkeypatch, tmp_path):
 
 
 def test_get_deleted_task_ids_handles_non_dict_invalid_and_timeout(monkeypatch, tmp_path):
+    """Validate Get deleted task ids handles non dict invalid and timeout."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     deleted_dir = tmp_path / ".deleted"
     deleted_dir.mkdir(parents=True)
@@ -540,6 +566,7 @@ def test_get_deleted_task_ids_handles_non_dict_invalid_and_timeout(monkeypatch, 
 
 
 def test_is_task_deleted_timeout_fallback(tmp_path, monkeypatch):
+    """Validate Is task deleted timeout fallback."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     tombstone = persistence._get_deleted_task_file_path("ghost")
     tombstone.parent.mkdir(parents=True, exist_ok=True)
@@ -557,6 +584,7 @@ def test_is_task_deleted_timeout_fallback(tmp_path, monkeypatch):
 
 
 def test_delete_current_date_files_for_deleted_tasks_handles_oserror(monkeypatch, tmp_path):
+    """Validate Delete current date files for deleted tasks handles oserror."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     persistence.save_tasks({"t1": _task("t1")})
 
@@ -570,6 +598,7 @@ def test_delete_current_date_files_for_deleted_tasks_handles_oserror(monkeypatch
 
 
 def test_delete_task_handles_tombstone_write_failures(monkeypatch, tmp_path):
+    """Validate Delete task handles tombstone write failures."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
 
     class TimeoutLock:
@@ -592,6 +621,7 @@ def test_delete_task_handles_tombstone_write_failures(monkeypatch, tmp_path):
 
 
 def test_delete_task_handles_timeout_oserror_and_generic_during_file_cleanup(monkeypatch, tmp_path):
+    """Validate Delete task handles timeout oserror and generic during file cleanup."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     original_filelock = persistence_module.FileLock
 
@@ -650,6 +680,7 @@ def test_delete_task_handles_timeout_oserror_and_generic_during_file_cleanup(mon
 
 
 def test_load_task_success_and_deleted_filters(tmp_path):
+    """Validate Load task success and deleted filters."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     today_dir = tmp_path / date.today().strftime("%Y-%m-%d")
     today_dir.mkdir(parents=True)
@@ -679,6 +710,7 @@ def test_load_task_success_and_deleted_filters(tmp_path):
 
 
 def test_safe_persistence_retries_delete_task(monkeypatch, tmp_path):
+    """Validate Safe persistence retries delete task."""
     calls = {"delete": 0}
 
     def flaky_delete(self, _task_id):
@@ -700,6 +732,7 @@ def test_safe_persistence_retries_delete_task(monkeypatch, tmp_path):
 
 
 def test_delete_current_date_files_for_deleted_tasks_deletes_existing_file(tmp_path):
+    """Validate Delete current date files for deleted tasks deletes existing file."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     persistence.save_tasks({"t1": _task("t1")})
 
@@ -711,6 +744,7 @@ def test_delete_current_date_files_for_deleted_tasks_deletes_existing_file(tmp_p
 
 
 def test_load_task_continues_when_target_file_missing(tmp_path):
+    """Validate Load task continues when target file missing."""
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     today_dir = tmp_path / date.today().strftime("%Y-%m-%d")
     today_dir.mkdir(parents=True, exist_ok=True)
@@ -720,6 +754,7 @@ def test_load_task_continues_when_target_file_missing(tmp_path):
 
 
 def test_safe_persistence_delete_task_returns_false_when_super_returns_false(monkeypatch, tmp_path):
+    """Validate Safe persistence delete task returns false when super returns false."""
     monkeypatch.setattr(DailyJSONPersistence, "delete_task", lambda self, _task_id: False)
     safe = SafeDailyJSONPersistence(data_directory=tmp_path, lock_timeout=1, max_retries=2)
     assert safe.delete_task("x") is False

@@ -51,6 +51,7 @@ def clean_state(monkeypatch):
 
 
 def test_manager_health_includes_counts(client, clean_state):
+    """Validate Manager health includes counts."""
     runners["r1"] = Runner(
         id="r1",
         url="http://r1.example",

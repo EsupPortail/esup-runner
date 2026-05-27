@@ -43,6 +43,54 @@ def _task_request(
     )
 
 
+class _DownloadRetryExtensionResponse:
+    def __init__(self, payload: bytes):
+        self.status_code = 200
+        self.headers = {
+            "Content-Length": "0" if not payload else str(len(payload)),
+            "Content-Type": "text/html; charset=utf-8" if not payload else "audio/mpeg",
+            "Last-Modified": "Tue, 03 Mar 2026 08:02:13 GMT",
+        }
+        self._payload = payload
+
+    def iter_content(self, chunk_size: int = 8192):
+        stream = io.BytesIO(self._payload)
+        while True:
+            chunk = stream.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+class _SessionSourceReadyOnSecondTry:
+    def __init__(self):
+        self.calls = 0
+
+    def get(self, *_args, **_kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            return _DownloadRetryExtensionResponse(b"")
+        return _DownloadRetryExtensionResponse(b"payload")
+
+
+class _LoggerCapture:
+    def __init__(self):
+        self.info_messages: list[str] = []
+
+    def info(self, message, *args):
+        self.info_messages.append(message % args if args else str(message))
+
+    @staticmethod
+    def warning(*_args, **_kwargs):
+        return None
+
+
 def test_task_handler_manager_handles_import_error_and_empty_accessors(monkeypatch, capsys):
     """Validate Task handler manager handles import error and empty accessors."""
     monkeypatch.setattr(
@@ -307,6 +355,129 @@ def test_base_handler_download_source_file_retries_then_succeeds(monkeypatch, tm
     assert session.calls == 2
     assert sleep_delays == [0.5]
     assert dest_file.read_bytes() == b"payload"
+
+
+def test_base_handler_download_source_file_caps_retry_delay(monkeypatch, tmp_path):
+    """Validate Base handler download source file applies retry delay cap."""
+    handler = _ConcreteBaseHandler()
+    dest_file = tmp_path / "download.bin"
+
+    class _Response:
+        status_code = 200
+        headers = {
+            "Content-Length": "7",
+            "Content-Type": "audio/mpeg",
+            "Last-Modified": "Wed, 27 May 2026 11:13:17 GMT",
+        }
+
+        @staticmethod
+        def iter_content(chunk_size: int = 8192):
+            _ = chunk_size
+            return iter(())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _AlwaysEmptySession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, *_args, **_kwargs):
+            self.calls += 1
+            return _Response()
+
+    session = _AlwaysEmptySession()
+    monkeypatch.setattr(base_handler_module.requests, "Session", lambda: session)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_MAX_ATTEMPTS", 6)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_RETRY_DELAY_SECONDS", 2.0)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_RETRY_BACKOFF_FACTOR", 3.0)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_RETRY_MAX_DELAY_SECONDS", 5.0)
+
+    sleep_delays: list[float] = []
+    monkeypatch.setattr(base_handler_module.time, "sleep", sleep_delays.append)
+
+    result = handler.download_source_file("https://example.org/a.mp4", str(dest_file))
+
+    assert result["success"] is False
+    assert session.calls == 6
+    assert sleep_delays == [2.0, 5.0, 5.0, 5.0, 5.0]
+
+
+def test_base_handler_download_source_file_extends_attempts_for_empty_html(monkeypatch, tmp_path):
+    """Validate empty HTML placeholders get an extended retry budget."""
+    handler = _ConcreteBaseHandler()
+    dest_file = tmp_path / "download.bin"
+
+    class _Response:
+        status_code = 200
+        headers = {
+            "Content-Length": "0",
+            "Content-Type": "text/html; charset=utf-8",
+            "Last-Modified": "Tue, 03 Mar 2026 08:02:13 GMT",
+        }
+
+        @staticmethod
+        def iter_content(chunk_size: int = 8192):
+            _ = chunk_size
+            return iter(())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _PlaceholderSession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, *_args, **_kwargs):
+            self.calls += 1
+            return _Response()
+
+    session = _PlaceholderSession()
+    monkeypatch.setattr(base_handler_module.requests, "Session", lambda: session)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_MAX_ATTEMPTS_WHEN_SOURCE_NOT_READY", 5)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_RETRY_DELAY_SECONDS", 1.0)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_RETRY_BACKOFF_FACTOR", 2.0)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_RETRY_MAX_DELAY_SECONDS", 10.0)
+
+    sleep_delays: list[float] = []
+    monkeypatch.setattr(base_handler_module.time, "sleep", sleep_delays.append)
+
+    result = handler.download_source_file("https://example.org/a.mp3", str(dest_file))
+
+    assert result["success"] is False
+    assert session.calls == 5
+    assert sleep_delays == [1.0, 2.0, 4.0, 8.0]
+    assert "Downloaded file is empty" in result["error"]
+
+
+def test_base_handler_download_source_file_logs_retry_extension(monkeypatch, tmp_path):
+    """Validate retry-budget extension emits an explicit info log entry."""
+    handler = _ConcreteBaseHandler()
+    dest_file = tmp_path / "download.bin"
+
+    session = _SessionSourceReadyOnSecondTry()
+    logger_capture = _LoggerCapture()
+
+    monkeypatch.setattr(base_handler_module.requests, "Session", lambda: session)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_MAX_ATTEMPTS", 1)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_MAX_ATTEMPTS_WHEN_SOURCE_NOT_READY", 2)
+    monkeypatch.setattr(base_handler_module.time, "sleep", lambda *_args, **_kwargs: None)
+    handler.logger = logger_capture
+
+    result = handler.download_source_file("https://example.org/a.mp3", str(dest_file))
+
+    assert result["success"] is True
+    assert dest_file.read_bytes() == b"payload"
+    assert len(logger_capture.info_messages) == 1
+    assert "at attempt 1/1" in logger_capture.info_messages[0]
+    assert "extending download retry budget from 1 to 2 attempts" in logger_capture.info_messages[0]
 
 
 def test_base_handler_download_source_file_retries_and_fails_on_truncated_payload(

@@ -79,7 +79,7 @@ make ci
 `make ci` is local and runs `make fmt`, `make lint`, `make test`, and `make coverage` in order.
 
 ## What the runner is
-- A FastAPI service that receives tasks from the Manager, downloads required media, executes processing scripts, and pushes results back.
+- A FastAPI service that receives tasks from the Manager, downloads required media, executes task entrypoints, and pushes results back.
 - Each runtime process is an "instance"; multi-instance mode lets you spread different task types across processes.
 - Instances auto-register themselves with the Manager on startup and expose a small health/ping API.
 
@@ -89,6 +89,14 @@ make ci
 3) The Manager POSTs tasks to the runner. The runner picks the right handler for the task type.
 4) The handler downloads inputs into an isolated workspace, runs the appropriate script, stores outputs and logs, and writes metadata for the task.
 5) Completion status is reported back to the Manager; background services keep storage tidy and can monitor instances.
+
+## Handler layout (refactor)
+- Each task type now follows the same runtime layout under [app/task_handlers](../app/task_handlers):
+    - a handler class (`*_handler.py`) used by the FastAPI runtime;
+    - a stable CLI entrypoint (`encoding.py`, `studio.py`, `transcription.py`);
+    - a sibling `core/` package containing the modular runtime implementation.
+- The CLI entrypoints remain stable wrappers exposing `main` / `parse_args`, while orchestration lives in `core/`.
+- Legacy compatibility wrappers under `app/task_handlers/*/scripts/` were removed.
 
 ## Configuring instances and task types
 - Configuration is driven by environment variables parsed in [app/core/config.py](../app/core/config.py).
@@ -112,19 +120,25 @@ The runner ships with three handlers (see [app/task_handlers](../app/task_handle
 
 ### Encoding (`encoding`)
 - Handler: [app/task_handlers/encoding/encoding_handler.py](../app/task_handlers/encoding/encoding_handler.py)
+- Entrypoint: [app/task_handlers/encoding/encoding.py](../app/task_handlers/encoding/encoding.py)
+- Core runtime package: [app/task_handlers/encoding/core](../app/task_handlers/encoding/core)
 - Purpose: download a media file, then invoke the FFmpeg-based encoding script to produce renditions, thumbnails, audio tracks, and metadata.
 - Inputs: media URL plus optional parameters such as `rendition`, `cut`, `dressing`, and tracking metadata (`video_id`, `video_slug`, `video_title`). Cut JSON format is documented in [docs/TYPE_ENCODING.md](TYPE_ENCODING.md).
 - CPU/GPU: honors `ENCODING_TYPE` and GPU-specific env vars for hwaccel.
 
 ### Studio (`studio`)
 - Handler: [app/task_handlers/studio/studio_handler.py](../app/task_handlers/studio/studio_handler.py)
+- Entrypoint: [app/task_handlers/studio/studio.py](../app/task_handlers/studio/studio.py)
+- Core runtime package: [app/task_handlers/studio/core](../app/task_handlers/studio/core)
 - Purpose: two-stage workflow. First, generate a base MP4 from a Mediapackage XML (with optional SMIL cut/layout) via the studio script; second, run the standard encoding pipeline on that base video.
 - Resilience: if GPU mode fails and `force_cpu` is not set, it retries generation on CPU before failing.
 - Parameters: accepts presenter/layout overrides, encoding parameters (`cut`, `rendition`, `dressing`) and tracking metadata (`video_id`, `video_slug`, `video_title`) passed through to the second stage.
 
 ### Transcription (`transcription`)
 - Handler: [app/task_handlers/transcription/transcription_handler.py](../app/task_handlers/transcription/transcription_handler.py)
-- Purpose: run the FFmpeg whisper filter to generate subtitles from audio/video, then package outputs (currently WebVTT) and metadata.
+- Entrypoint: [app/task_handlers/transcription/transcription.py](../app/task_handlers/transcription/transcription.py)
+- Core runtime package: [app/task_handlers/transcription/core](../app/task_handlers/transcription/core)
+- Purpose: run the Whisper-based subtitle pipeline (Python API, with CLI fallback) to generate WebVTT from media/audio, then finalize, validate, and package outputs with metadata.
 - Parameters: `language`, `format` (currently `vtt`), `model` (small|medium|large|turbo), `normalize` (audio pre-normalization toggle), plus tracking metadata (`video_id`, `video_slug`, `video_title`). GPU use follows `ENCODING_TYPE`.
 
 ## How tasks are processed

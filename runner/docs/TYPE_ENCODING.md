@@ -22,7 +22,8 @@ This page documents the **`encoding`** runner task type: what it does and which 
 ## What it does
 The `encoding` task downloads a media file from `source_url` into a per-task workspace and runs the FFmpeg pipeline implemented in:
 - [app/task_handlers/encoding/encoding_handler.py](../app/task_handlers/encoding/encoding_handler.py)
-- [app/task_handlers/encoding/scripts/encoding.py](../app/task_handlers/encoding/scripts/encoding.py)
+- [app/task_handlers/encoding/encoding.py](../app/task_handlers/encoding/encoding.py)
+- [app/task_handlers/encoding/core](../app/task_handlers/encoding/core) (modular runtime package used by `encoding.py`)
 
 Outputs typically include:
 - HLS playlists (`*.m3u8`) and/or MP4 renditions

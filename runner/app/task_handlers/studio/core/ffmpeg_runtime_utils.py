@@ -169,6 +169,69 @@ def probe_height(source: str, *, subprocess_module=subprocess) -> int:
     return 0
 
 
+def probe_duration(source: str, *, subprocess_module=subprocess) -> float | None:
+    """Probe media duration in seconds from container format metadata."""
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "json",
+        source,
+    ]
+    result = subprocess_module.run(
+        cmd, stdout=subprocess_module.PIPE, stderr=subprocess_module.STDOUT
+    )
+    try:
+        info = json.loads(result.stdout.decode("utf-8"))
+        duration_str = (info.get("format") or {}).get("duration")
+        if duration_str is None:
+            return None
+        duration = float(duration_str)
+        if duration > 0:
+            return duration
+    except Exception:
+        pass
+    return None
+
+
+def compute_target_duration(
+    pres_source: str | None,
+    pers_source: str | None,
+    clip_begin: float | None,
+    clip_end: float | None,
+    *,
+    probe_duration_fn: Callable[[str], float | None] = probe_duration,
+) -> float | None:
+    """Compute a safe target duration for studio output normalization."""
+    durations: list[float] = []
+    for source in (pres_source, pers_source):
+        if not source:
+            continue
+        duration = probe_duration_fn(source)
+        if duration is not None and duration > 0:
+            durations.append(duration)
+
+    if not durations:
+        return None
+
+    target = max(durations)
+    if clip_begin is not None and clip_begin > 0:
+        target = max(0.0, target - clip_begin)
+
+    if clip_end is not None and clip_end > 0:
+        if clip_begin is not None and clip_end > clip_begin:
+            target = min(target, clip_end - clip_begin)
+        elif clip_begin is None:
+            target = min(target, clip_end)
+
+    if target <= 0:
+        return None
+    return round(target, 3)
+
+
 def filter_available(name: str, *, subprocess_module=subprocess) -> bool:
     """Return whether FFmpeg exposes a given filter."""
     try:

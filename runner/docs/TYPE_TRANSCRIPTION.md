@@ -12,7 +12,20 @@ Behavior depends on the requested `language`:
 
 Implementation:
 - Handler: [app/task_handlers/transcription/transcription_handler.py](../app/task_handlers/transcription/transcription_handler.py)
-- Script: [app/task_handlers/transcription/scripts/transcription.py](../app/task_handlers/transcription/scripts/transcription.py)
+- Script: [app/task_handlers/transcription/transcription.py](../app/task_handlers/transcription/transcription.py)
+- Core runtime package: [app/task_handlers/transcription/core](../app/task_handlers/transcription/core)
+
+## Current execution workflow
+1. Validate input presence and media readability, then compute timeout from probed duration.
+2. Prepare source audio (reuse MP3, or extract MP3 with ffmpeg; optional normalization).
+3. Run source-language transcription in auto-detection mode (Whisper Python API first, then CLI fallback if needed).
+4. Finalize and post-process subtitles into the main `<stem>.vtt` output.
+5. Run non-blocking internal-gap repair as a best-effort quality pass.
+6. If requested and needed, translate subtitles:
+   - use local FR<->EN translation models when available;
+   - otherwise fallback to legacy Whisper multilingual behavior and keep a source sidecar `<stem>.source-<lang>.webvtt.txt`.
+7. Validate final VTT coverage and gap guardrails (internal-gap alerts remain non-blocking).
+8. Write `info_video.json` with detected/final language, translation backend/model, and gap-repair diagnostics.
 
 ## Installation profile (CPU vs GPU)
 - CPU-only server: `make sync-transcription-cpu` (installs a CPU-only torch profile on Linux x86_64 to avoid CUDA runtime packages).
@@ -23,7 +36,7 @@ Implementation:
   - macOS Intel (`x86_64`) is not supported for transcription with the current `torch` stack because upstream wheels are no longer published for that platform.
 
 Outputs typically include:
-- `subtitles.vtt` (WebVTT)
+- `<stem>.vtt` (WebVTT)
 - logs and task metadata in the task output directory
 
 ## Input

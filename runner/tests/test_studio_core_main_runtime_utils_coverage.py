@@ -141,11 +141,13 @@ def test_studio_core_main_runtime_utils_wiring(monkeypatch):
         presenter_layout,
         args,
         webm_input,
+        target_duration=None,
         *,
         prepare_full_gpu_inputs_fn,
         build_full_gpu_filtergraph_fn,
         build_nvenc_video_codec_fn,
     ):
+        del target_duration
         prepared = prepare_full_gpu_inputs_fn(
             pres_url=pres_url,
             pers_url=pers_url,
@@ -170,6 +172,7 @@ def test_studio_core_main_runtime_utils_wiring(monkeypatch):
         presenter_layout,
         args,
         webm_input,
+        target_duration=None,
         *,
         is_gpu_requested_fn,
         set_cuda_env_fn,
@@ -177,7 +180,7 @@ def test_studio_core_main_runtime_utils_wiring(monkeypatch):
         build_filter_fn,
         build_nvenc_video_codec_fn,
     ):
-        del is_gpu_requested_fn, set_cuda_env_fn
+        del is_gpu_requested_fn, set_cuda_env_fn, target_duration
         nvenc = nvenc_preflight_fn()
         filt = build_filter_fn(pres_h, pers_h, presenter_layout)
         codec = build_nvenc_video_codec_fn(webm_input)
@@ -280,6 +283,47 @@ def test_studio_core_main_runtime_utils_wiring(monkeypatch):
         lambda args, *, context: 123 if args == "parsed-args" and context == "ctx" else 0,
     )
     assert main_runtime_utils.main() == 123
+
+
+def test_studio_core_main_runtime_utils_compute_target_duration_wiring(monkeypatch):
+    """Validate _compute_target_duration delegates probe_duration with subprocess injection."""
+    calls = {}
+
+    def _fake_probe_duration(source, *, subprocess_module):
+        calls["probe"] = (source, subprocess_module is main_runtime_utils.subprocess)
+        return 7.89
+
+    def _fake_compute_target_duration(
+        pres_url,
+        pers_url,
+        clip_begin,
+        clip_end,
+        *,
+        probe_duration_fn,
+    ):
+        calls["compute"] = (
+            pres_url,
+            pers_url,
+            clip_begin,
+            clip_end,
+            probe_duration_fn("presentation.mp4"),
+        )
+        return 12.34
+
+    monkeypatch.setattr(
+        main_runtime_utils.ffmpeg_runtime_utils,
+        "probe_duration",
+        _fake_probe_duration,
+    )
+    monkeypatch.setattr(
+        main_runtime_utils.ffmpeg_runtime_utils,
+        "compute_target_duration",
+        _fake_compute_target_duration,
+    )
+
+    assert main_runtime_utils._compute_target_duration("pres.mp4", "pers.mp4", 1.0, 2.0) == 12.34
+    assert calls["probe"] == ("presentation.mp4", True)
+    assert calls["compute"] == ("pres.mp4", "pers.mp4", 1.0, 2.0, 7.89)
 
 
 def test_studio_core_runtime_args_parse_args():

@@ -48,6 +48,18 @@ logger = setup_default_logging()
 logger.info(f"Starting runner instance {runner_instance_id} on port {runner_instance_port}")
 
 
+def _include_api_routers(app: FastAPI) -> None:
+    """Include API routers once, even when several TestClient instances start."""
+    if getattr(app.state, "api_routers_included", False):
+        return
+
+    from app.api.routes import runner, task
+
+    app.include_router(task.router)
+    app.include_router(runner.router)
+    app.state.api_routers_included = True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -63,12 +75,9 @@ async def lifespan(app: FastAPI):
     # Startup logic
     logger.info(f"Runner instance {runner_instance_id} started successfully")
 
-    # Import routers inside lifespan to avoid circular imports at module level
-    from app.api.routes import runner, task
+    from app.api.routes import task
 
-    # Include routers
-    app.include_router(task.router)
-    app.include_router(runner.router)
+    _include_api_routers(app)
 
     # Ensure availability is already false when in-flight tasks were persisted,
     # before manager registration/ping happens.
@@ -95,6 +104,7 @@ async def lifespan(app: FastAPI):
 
 # FastAPI application configuration
 app = FastAPI(lifespan=lifespan, **OpenAPIConfig.get_fastapi_config())
+_include_api_routers(app)
 
 # Setup custom OpenAPI configuration
 setup_openapi_config(app)

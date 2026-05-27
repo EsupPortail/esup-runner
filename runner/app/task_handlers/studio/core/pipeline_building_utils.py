@@ -2,7 +2,97 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
+
+
+class BuildFullGpuFiltergraphFn(Protocol):
+    """Callable signature for full-GPU filtergraph builders."""
+
+    def __call__(
+        self,
+        *,
+        presenter_layout: str,
+        height: int,
+        pip_h: int,
+        overlay_pos: str,
+        target_duration: float | None = None,
+    ) -> str: ...
+
+
+class BuildFilterFn(Protocol):
+    """Callable signature for CPU/GPU mixed filter builders."""
+
+    def __call__(
+        self,
+        pres_h: int,
+        pers_h: int,
+        presenter: str,
+        target_duration: float | None = None,
+    ) -> str: ...
+
+
+class BuildCpuSingleSourceSubcmdFn(Protocol):
+    """Callable signature for single-source CPU subcommand builders."""
+
+    def __call__(
+        self,
+        *,
+        cpu_encoder: str,
+        cpu_is_libx264: bool,
+        target_h: int,
+        args: Any,
+        target_duration: float | None = None,
+    ) -> str: ...
+
+
+def _duration_filter_opts(target_duration: float | None) -> str:
+    """Build optional tpad/trim suffix used to normalize video duration."""
+    if target_duration is None or target_duration <= 0:
+        return ""
+    duration_str = f"{target_duration:.3f}"
+    return (
+        f",tpad=stop_mode=clone:stop_duration={duration_str},"
+        f"trim=duration={duration_str},setpts=PTS-STARTPTS"
+    )
+
+
+def _build_single_source_scale_subcmd(target_h: int, target_duration: float | None) -> str:
+    """Build scale filter command for single-source GPU encode-only fallback paths."""
+    duration_opts = _duration_filter_opts(target_duration)
+    return (
+        f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},'
+        f'format=yuv420p{duration_opts},setsar=1" '
+    )
+
+
+def _select_gpu_encode_only_single_source(
+    pres_url: str | None,
+    pers_url: str | None,
+    pres_h: int,
+    pers_h: int,
+) -> tuple[str, int] | None:
+    """Pick the best single-source fallback input and target height."""
+    if pres_url and pers_url:
+        if pres_h > 0:
+            print(
+                "Presenter source has no video stream; falling back to presentation-only pipeline"
+            )
+            return f'-i "{pres_url}" ', pres_h
+        if pers_h > 0:
+            print(
+                "Presentation source has no video stream; falling back to presenter-only pipeline"
+            )
+            return f'-i "{pers_url}" ', pers_h
+        print(
+            "Could not detect video dimensions for studio mix; falling back to presentation-only pipeline"
+        )
+        return f'-i "{pres_url}" ', 720
+
+    if pres_url:
+        return f'-i "{pres_url}" ', (pres_h or 720)
+    if pers_url:
+        return f'-i "{pers_url}" ', (pers_h or 720)
+    return None
 
 
 def build_input_args(
@@ -96,9 +186,10 @@ def build_full_gpu_pipeline(
     presenter_layout: str,
     args: Any,
     webm_input: bool,
+    target_duration: float | None = None,
     *,
     prepare_full_gpu_inputs_fn: Callable[..., tuple[str, int, int, str] | None],
-    build_full_gpu_filtergraph_fn: Callable[..., str],
+    build_full_gpu_filtergraph_fn: BuildFullGpuFiltergraphFn,
     build_nvenc_video_codec_fn: Callable[[bool], str],
 ) -> tuple[str, str, str, str] | None:
     """Build a pipeline using GPU decode (CUVID) + GPU encode (NVENC) when possible."""
@@ -118,6 +209,7 @@ def build_full_gpu_pipeline(
         height=height,
         pip_h=pip_h,
         overlay_pos=overlay_pos,
+        target_duration=target_duration,
     )
     map_opts = '-map "[vout]" -map 0:a? '
     return input_args, gpu_filter, build_nvenc_video_codec_fn(webm_input), map_opts
@@ -131,11 +223,12 @@ def build_gpu_encode_only_pipeline(
     presenter_layout: str,
     args: Any,
     webm_input: bool,
+    target_duration: float | None = None,
     *,
     is_gpu_requested_fn: Callable[[Any], bool],
     set_cuda_env_fn: Callable[[Any], None],
     nvenc_preflight_fn: Callable[[], tuple[bool, str]],
-    build_filter_fn: Callable[[int, int, str], str],
+    build_filter_fn: BuildFilterFn,
     build_nvenc_video_codec_fn: Callable[[bool], str],
 ) -> tuple[str, str, str, str] | None:
     """Build a CPU decode/filter + NVENC encode pipeline."""
@@ -149,44 +242,27 @@ def build_gpu_encode_only_pipeline(
             print(nvenc_details.strip())
         return None
 
-    input_args = ""
     map_opts = "-map 0:v -map 0:a? "
-    if pres_url and pers_url:
-        if pres_h > 0 and pers_h > 0:
-            input_args = f'-i "{pres_url}" -i "{pers_url}" '
-            subcmd = build_filter_fn(pres_h, pers_h, presenter_layout)
-            map_opts = '-map "[vout]" -map 0:a? '
-        elif pres_h > 0:
-            print(
-                "Presenter source has no video stream; falling back to presentation-only pipeline"
-            )
-            input_args = f'-i "{pres_url}" '
-            target_h = pres_h
-            subcmd = f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
-        elif pers_h > 0:
-            print(
-                "Presentation source has no video stream; falling back to presenter-only pipeline"
-            )
-            input_args = f'-i "{pers_url}" '
-            target_h = pers_h
-            subcmd = f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
-        else:
-            print(
-                "Could not detect video dimensions for studio mix; falling back to presentation-only pipeline"
-            )
-            input_args = f'-i "{pres_url}" '
-            target_h = 720
-            subcmd = f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
-    elif pres_url:
-        input_args = f'-i "{pres_url}" '
-        target_h = pres_h or 720
-        subcmd = f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
-    elif pers_url:
-        input_args = f'-i "{pers_url}" '
-        target_h = pers_h or 720
-        subcmd = f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
+    if pres_url and pers_url and pres_h > 0 and pers_h > 0:
+        input_args = f'-i "{pres_url}" -i "{pers_url}" '
+        subcmd = build_filter_fn(
+            pres_h,
+            pers_h,
+            presenter_layout,
+            target_duration=target_duration,
+        )
+        map_opts = '-map "[vout]" -map 0:a? '
     else:
-        return None
+        selected = _select_gpu_encode_only_single_source(
+            pres_url,
+            pers_url,
+            pres_h,
+            pers_h,
+        )
+        if selected is None:
+            return None
+        input_args, target_h = selected
+        subcmd = _build_single_source_scale_subcmd(target_h, target_duration)
 
     return input_args, subcmd, build_nvenc_video_codec_fn(webm_input), map_opts
 
@@ -238,13 +314,14 @@ def build_cpu_pipeline(
     pers_h: int,
     presenter_layout: str,
     args: Any,
+    target_duration: float | None = None,
     *,
     select_cpu_input_args_fn: Callable[..., tuple[str, str, str]],
     choose_h264_encoder_fn: Callable[[], tuple[str, str]],
-    build_filter_fn: Callable[[int, int, str], str],
+    build_filter_fn: BuildFilterFn,
     first_token_fn: Callable[[str | None, str], str],
     single_source_height_fn: Callable[[str, int, int], int],
-    build_cpu_single_source_subcmd_fn: Callable[..., str],
+    build_cpu_single_source_subcmd_fn: BuildCpuSingleSourceSubcmdFn,
 ) -> tuple[str, str, str, str]:
     """Build a full CPU pipeline (decode + filter + encode)."""
     input_args, map_opts, source_kind = select_cpu_input_args_fn(
@@ -260,7 +337,12 @@ def build_cpu_pipeline(
     cpu_is_libx264 = cpu_encoder == "libx264"
 
     if source_kind == "mixed":
-        subcmd = build_filter_fn(pres_h, pers_h, presenter_layout)
+        subcmd = build_filter_fn(
+            pres_h,
+            pers_h,
+            presenter_layout,
+            target_duration=target_duration,
+        )
         x264_preset = first_token_fn(args.studio_preset, "medium")
         x264_crf = first_token_fn(args.studio_crf, "23")
         if cpu_is_libx264:
@@ -275,6 +357,7 @@ def build_cpu_pipeline(
         cpu_is_libx264=cpu_is_libx264,
         target_h=target_h,
         args=args,
+        target_duration=target_duration,
     )
     return input_args, subcmd, "", map_opts
 
@@ -287,6 +370,7 @@ def build_pipeline(
     presenter_layout: str,
     args: Any,
     input_args: str,
+    target_duration: float | None = None,
     *,
     choose_h264_encoder_fn: Callable[[], tuple[str, str]],
     is_webm_input_source_fn: Callable[[str | None], bool],
@@ -302,20 +386,40 @@ def build_pipeline(
     webm_input = is_webm_input_source_fn(pres_url) or is_webm_input_source_fn(pers_url)
 
     full_gpu = build_full_gpu_pipeline_fn(
-        pres_url, pers_url, pres_h, pers_h, presenter_layout, args, webm_input=webm_input
+        pres_url,
+        pers_url,
+        pres_h,
+        pers_h,
+        presenter_layout,
+        args,
+        webm_input=webm_input,
+        target_duration=target_duration,
     )
     if full_gpu is not None:
         input_args2, subcmd, video_codec, map_opts = full_gpu
         return subcmd, video_codec, input_args2, cpu_encoder, map_opts
 
     gpu_enc = build_gpu_encode_only_pipeline_fn(
-        pres_url, pers_url, pres_h, pers_h, presenter_layout, args, webm_input=webm_input
+        pres_url,
+        pers_url,
+        pres_h,
+        pers_h,
+        presenter_layout,
+        args,
+        webm_input=webm_input,
+        target_duration=target_duration,
     )
     if gpu_enc is not None:
         input_args2, subcmd, video_codec, map_opts = gpu_enc
         return subcmd, video_codec, input_args2, cpu_encoder, map_opts
 
     input_args2, subcmd, video_codec, map_opts = build_cpu_pipeline_fn(
-        pres_url, pers_url, pres_h, pers_h, presenter_layout, args
+        pres_url,
+        pers_url,
+        pres_h,
+        pers_h,
+        presenter_layout,
+        args,
+        target_duration=target_duration,
     )
     return subcmd, video_codec, input_args2, cpu_encoder, map_opts

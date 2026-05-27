@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-05-27
+
 ### Added
 
 - Added `video_duration` in encoding metadata (`get_info_video()`), extracted from the first non-image video stream to preserve sub-second precision for thumbnail scheduling.

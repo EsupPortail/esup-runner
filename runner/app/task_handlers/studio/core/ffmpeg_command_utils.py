@@ -26,7 +26,7 @@ def build_filter(pres_h: int, pers_h: int, presenter: str) -> str:
             " -filter_complex "
             + f'"[0:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{height},setsar=1,format=yuv420p[pres];'
             + f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{sh},setsar=1,format=yuv420p[pip];"
-            + f"[pres][pip]overlay={overlay_pos}:shortest=1[tmp];"
+            + f"[pres][pip]overlay={overlay_pos}:eof_action=pass:shortest=0:repeatlast=0[tmp];"
             + "[tmp]format=yuv420p,setsar=1[vout]"
             + '" '
         )
@@ -90,7 +90,7 @@ def build_full_gpu_filtergraph(
     return (
         f' -filter_complex "[0:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{height}:format=nv12[pres];'
         f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{pip_h}:format=nv12[pip];"
-        f'[pres][pip]overlay_cuda={overlay_pos}:shortest=1,hwdownload,format=yuv420p,fps=30,setsar=1[vout]" '
+        f'[pres][pip]overlay_cuda={overlay_pos}:eof_action=pass:shortest=0:repeatlast=0,hwdownload,format=yuv420p,fps=30,setsar=1[vout]" '
     )
 
 

@@ -207,9 +207,19 @@ def probe_height(source: str) -> int:
     return ffmpeg_runtime_utils.probe_height(source, subprocess_module=subprocess)
 
 
-def build_filter(pres_h: int, pers_h: int, presenter: str) -> str:
+def build_filter(
+    pres_h: int,
+    pers_h: int,
+    presenter: str,
+    target_duration: float | None = None,
+) -> str:
     """Build the FFmpeg filter graph for the requested studio layout."""
-    return ffmpeg_command_utils.build_filter(pres_h, pers_h, presenter)
+    return ffmpeg_command_utils.build_filter(
+        pres_h,
+        pers_h,
+        presenter,
+        target_duration=target_duration,
+    )
 
 
 def filter_available(name: str) -> bool:
@@ -294,7 +304,12 @@ def _prepare_full_gpu_inputs(
 
 
 def _build_full_gpu_filtergraph(
-    *, presenter_layout: str, height: int, pip_h: int, overlay_pos: str
+    *,
+    presenter_layout: str,
+    height: int,
+    pip_h: int,
+    overlay_pos: str,
+    target_duration: float | None = None,
 ) -> str:
     """Build the filter graph used by the full GPU studio pipeline."""
     return ffmpeg_command_utils.build_full_gpu_filtergraph(
@@ -302,6 +317,7 @@ def _build_full_gpu_filtergraph(
         height=height,
         pip_h=pip_h,
         overlay_pos=overlay_pos,
+        target_duration=target_duration,
     )
 
 
@@ -313,6 +329,7 @@ def _build_full_gpu_pipeline(
     presenter_layout: str,
     args: argparse.Namespace,
     webm_input: bool,
+    target_duration: float | None = None,
 ) -> tuple[str, str, str, str] | None:
     """Build a pipeline that uses GPU decode (CUVID) + GPU encode (NVENC) when possible.
 
@@ -326,6 +343,7 @@ def _build_full_gpu_pipeline(
         presenter_layout,
         args,
         webm_input,
+        target_duration=target_duration,
         prepare_full_gpu_inputs_fn=_prepare_full_gpu_inputs,
         build_full_gpu_filtergraph_fn=_build_full_gpu_filtergraph,
         build_nvenc_video_codec_fn=lambda webm_input: _build_nvenc_video_codec(
@@ -343,6 +361,7 @@ def _build_gpu_encode_only_pipeline(
     presenter_layout: str,
     args: argparse.Namespace,
     webm_input: bool,
+    target_duration: float | None = None,
 ) -> tuple[str, str, str, str] | None:
     """Build a CPU decode/filter + NVENC encode pipeline.
 
@@ -356,6 +375,7 @@ def _build_gpu_encode_only_pipeline(
         presenter_layout,
         args,
         webm_input,
+        target_duration=target_duration,
         is_gpu_requested_fn=_is_gpu_requested,
         set_cuda_env_fn=_set_cuda_env,
         nvenc_preflight_fn=_nvenc_preflight,
@@ -398,7 +418,11 @@ def _single_source_height(source_kind: str, pres_h: int, pers_h: int) -> int:
 
 
 def _build_cpu_single_source_subcmd(
-    cpu_encoder: str, cpu_is_libx264: bool, target_h: int, args: argparse.Namespace
+    cpu_encoder: str,
+    cpu_is_libx264: bool,
+    target_h: int,
+    args: argparse.Namespace,
+    target_duration: float | None = None,
 ) -> str:
     """Build filter and codec options for a single-source CPU path."""
     return ffmpeg_command_utils.build_cpu_single_source_subcmd(
@@ -406,6 +430,7 @@ def _build_cpu_single_source_subcmd(
         cpu_is_libx264=cpu_is_libx264,
         target_h=target_h,
         args=args,
+        target_duration=target_duration,
     )
 
 
@@ -416,6 +441,7 @@ def _build_cpu_pipeline(
     pers_h: int,
     presenter_layout: str,
     args: argparse.Namespace,
+    target_duration: float | None = None,
 ) -> tuple[str, str, str, str]:
     """Build a full CPU pipeline (decode + filter + encode)."""
     return pipeline_building_utils.build_cpu_pipeline(
@@ -425,6 +451,7 @@ def _build_cpu_pipeline(
         pers_h,
         presenter_layout,
         args,
+        target_duration=target_duration,
         select_cpu_input_args_fn=_select_cpu_input_args,
         choose_h264_encoder_fn=_choose_h264_encoder,
         build_filter_fn=build_filter,
@@ -462,6 +489,7 @@ def _run_pipelines(
     audio_bitrate: str,
     output_opts: str,
     output_path: str,
+    target_duration: float | None = None,
 ) -> int:
     """Execute studio pipeline attempts in fallback order until one succeeds."""
     return pipeline_runtime_utils.run_pipelines(
@@ -477,6 +505,7 @@ def _run_pipelines(
         audio_bitrate=audio_bitrate,
         output_opts=output_opts,
         output_path=output_path,
+        target_duration=target_duration,
         build_full_gpu_pipeline_fn=_build_full_gpu_pipeline,
         build_gpu_encode_only_pipeline_fn=_build_gpu_encode_only_pipeline,
         build_cpu_pipeline_fn=_build_cpu_pipeline,

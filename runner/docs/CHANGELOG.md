@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Increased the internal source download retry window to better tolerate short publication/cache races on freshly generated media.
+- Source download retries now keep the default retry budget for regular failures, but automatically extend the retry budget when the endpoint returns an empty HTML placeholder response (`Content-Type` HTML with `Content-Length` absent/0 and zero bytes received).
+- Runner logs now include an explicit informational message (with attempt context and retry budget values) when this temporary-source condition is detected and the retry budget is extended.
 - Thumbnail scheduling now prefers `video_duration` (float) over container-level duration when available, improving timestamp selection on short-video/long-audio inputs.
 - Thumbnail job payloads now include expected output path and an optional timestamp-0 fallback command used when a first seek produces no image.
 - Studio PiP filtergraphs now use `eof_action=pass:shortest=0:repeatlast=0` (CPU `overlay` and GPU `overlay_cuda`) to avoid frozen trailing PiP frames and premature truncation.

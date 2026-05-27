@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Applied code-style formatting updates in `app/api/routes/task.py` and `scripts/check_pipeline_tasks.py` (line wrapping/readability only, with no functional runtime change).
+- Refactored `scripts/check_pipeline_tasks.py` orchestration into dedicated helpers (mode/timeout/source resolution and step execution) to keep behavior explicit and easier to maintain.
+- Added a short pacing delay before the `language=en` transcription translation check when `--with-transcription-translation` is enabled, reducing transient runner contention on single-transcription-runner deployments.
+- `scripts/check_pipeline_tasks.py` now retries with the next configured/default source URL candidate when a source download fails, instead of failing immediately on the first unreachable media URL.
+- Updated manager documentation (`docs/INSTALLATION.md`, `docs/DOCKER.md`, `docs/OPERATIONS.md`) to reflect `check_pipeline_tasks.py` auto-loading of `MANAGER_URL` / token from `.env` and the optional transcription+translation smoke mode.
+- Added `pytest-timeout` to dev dependencies and configured a default pytest timeout (`30s`, `thread` method) to avoid hanging test jobs.
+- Expanded manager regression coverage across API/auth/OpenAPI/persistence/runner flows and refreshed `manager/uv.lock` accordingly.
 
 ## [1.2.1] - 2026-04-30
 

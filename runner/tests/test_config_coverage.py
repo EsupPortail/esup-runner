@@ -256,6 +256,19 @@ def test_config_manager_url_strips_trailing_slash(monkeypatch):
     assert cfg.MANAGER_URL == "http://1.2.3.4:8000"
 
 
+def test_config_ignores_download_retry_env_settings(monkeypatch):
+    """Validate Config keeps download retry tuning internal to handlers."""
+    monkeypatch.setenv("DOWNLOAD_MAX_ATTEMPTS", "7")
+    monkeypatch.setenv("DOWNLOAD_RETRY_DELAY_SECONDS", "1.5")
+    monkeypatch.setenv("DOWNLOAD_RETRY_BACKOFF_FACTOR", "2.5")
+
+    cfg = config_module.Config()
+
+    assert not hasattr(cfg, "DOWNLOAD_MAX_ATTEMPTS")
+    assert not hasattr(cfg, "DOWNLOAD_RETRY_DELAY_SECONDS")
+    assert not hasattr(cfg, "DOWNLOAD_RETRY_BACKOFF_FACTOR")
+
+
 def test_config_runner_task_status_file_default_and_override(monkeypatch):
     """Validate Config runner task status file default and override."""
     monkeypatch.setenv("STORAGE_DIR", "/tmp/esup-runner-storage")

@@ -28,7 +28,7 @@ class TranscriptionHandler(BaseTaskHandler):
 
     Workflow:
     - Download and ffprobe-validate input media in a task workspace.
-    - Run `scripts/transcription.py`, which performs audio preparation, source-language
+    - Run `transcription.py`, which performs audio preparation, source-language
       transcription, VTT finalization, optional non-blocking internal-gap repair,
       optional translation, and final output validation.
     - Package script outputs and metadata for task result publication.
@@ -49,7 +49,7 @@ class TranscriptionHandler(BaseTaskHandler):
 
     def __init__(self):
         super().__init__()
-        self.scripts_dir = Path(__file__).parent / "scripts"
+        self.entrypoints_dir = Path(__file__).parent
 
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
         """
@@ -59,7 +59,8 @@ class TranscriptionHandler(BaseTaskHandler):
         - language: final subtitle language code or 'auto'
         - format: output subtitle format (currently `vtt` only)
         - model: logical whisper model (small|medium|large|turbo)
-        - duration/model_type: legacy compatibility metadata from manager payloads
+        - model_type/duration: compatibility metadata from manager payloads
+          (accepted but intentionally ignored by transcription runtime)
         - video_id/video_slug/video_title: optional tracking metadata
         """
         self.last_invalid_parameters = self.get_invalid_parameters(parameters)
@@ -110,7 +111,7 @@ class TranscriptionHandler(BaseTaskHandler):
                 raise Exception(input_validation_error)
 
             # Determine script path
-            script_path = self.scripts_dir / "transcription.py"
+            script_path = self.entrypoints_dir / "transcription.py"
             if not script_path.exists():
                 return {"success": False, "error": f"Script not found: {script_path}"}
 

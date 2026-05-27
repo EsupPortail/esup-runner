@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Increased the internal source download retry window to better tolerate short publication/cache races on freshly generated media.
+
+### Fixed
+
+- Improved empty-download diagnostics with response context (`Content-Length`, `Content-Type`, `Last-Modified`) and normalized the final error punctuation.
+
 ## [1.3.0] - 2026-05-27
 
 ### Added

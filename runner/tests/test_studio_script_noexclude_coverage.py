@@ -409,7 +409,9 @@ def test_studio_codec_probe_filter_and_core_builders(monkeypatch):
     )
     assert studio.probe_height("video.mp4") == 0
 
-    assert "overlay" in studio.build_filter(1080, 720, "piph")
+    pip_filter = studio.build_filter(1080, 720, "piph")
+    assert "overlay" in pip_filter
+    assert "eof_action=pass:shortest=0:repeatlast=0" in pip_filter
     assert "hstack" in studio.build_filter(1080, 720, "mid")
     assert studio.build_filter(0, 0, "unknown") == " "
 
@@ -560,12 +562,14 @@ def test_studio_pipeline_builders_and_run_flow(monkeypatch, tmp_path):
         pip_h=180,
         overlay_pos="W-w-10:10",
     )
-    assert "overlay_cuda" in studio._build_full_gpu_filtergraph(
+    full_gpu_filter = studio._build_full_gpu_filtergraph(
         presenter_layout="piph",
         height=720,
         pip_h=180,
         overlay_pos="W-w-10:10",
     )
+    assert "overlay_cuda" in full_gpu_filter
+    assert "eof_action=pass:shortest=0:repeatlast=0" in full_gpu_filter
 
     monkeypatch.setattr(studio, "_prepare_full_gpu_inputs", lambda **_k: None)
     assert (

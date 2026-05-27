@@ -330,6 +330,108 @@ def test_encoding_flow_utils_core_branches():
     assert "error generating overview" in orchestration_logs[-1]
 
 
+def test_launch_encode_uses_video_duration_for_thumbnail_timestamps():
+    """Validate thumbnail extraction uses primary video duration, not audio/container duration."""
+    flow = _load_encoding_core_module("encoding_flow_utils")
+
+    thumbnail_calls = []
+    overview_calls = []
+
+    def _encode_fn(typ, _fmt, _codec, _height, _file, duration=0, thumbnail_index=0):
+        if typ == "thumbnail":
+            thumbnail_calls.append((duration, thumbnail_index))
+        return True
+
+    result = flow.launch_encode(
+        {
+            "has_stream_video": True,
+            "has_stream_thumbnail": True,
+            "has_stream_audio": False,
+            "duration": 5,
+            "video_duration": 0.533333,
+        },
+        "studio_base.mp4",
+        encode_fn=_encode_fn,
+        launch_encode_video_fn=lambda *_a: (True, True),
+        launch_encode_audio_fn=lambda *_a: (True, ""),
+        generate_overview_fn=lambda _file, duration: (
+            overview_calls.append(duration) or (True, "overview-ok\n")
+        ),
+        add_info_video_fn=lambda *_a, **_k: None,
+        encode_log_fn=lambda _msg: None,
+    )
+
+    assert result is True
+    assert thumbnail_calls == [(0.533333, 0), (0.533333, 1), (0.533333, 2)]
+    assert overview_calls == [5]
+
+
+def test_encode_thumbnail_fails_when_ffmpeg_writes_no_png(tmp_path):
+    """Validate thumbnail encode does not report success without an actual PNG."""
+    flow = _load_encoding_core_module("encoding_flow_utils")
+
+    output_path = tmp_path / "studio_base_0.png"
+    logs = []
+
+    result = flow.encode(
+        "thumbnail",
+        "png",
+        "",
+        0,
+        "studio_base.mp4",
+        duration=5,
+        thumbnail_index=0,
+        sanitize_filename_fn=lambda value: value,
+        build_encode_video_job_fn=lambda **_k: ("", "", {}, False, {}),
+        build_encode_audio_job_fn=lambda **_k: ("", "", {}, False, {}),
+        build_encode_thumbnail_job_fn=lambda **_k: (
+            "ffmpeg thumb",
+            "encode_thumbnail",
+            {"filename": output_path.name},
+            True,
+            {"output_path": str(output_path)},
+        ),
+        launch_cmd_fn=lambda *_a: (True, "Output file is empty, nothing was encoded\n"),
+        add_info_video_fn=lambda *_a, **_k: None,
+        encode_log_fn=logs.append,
+    )
+
+    assert result is False
+    assert "Thumbnail output missing or empty" in logs[-1]
+
+
+def test_thumbnail_helpers_cover_fallback_and_file_errors(monkeypatch, tmp_path):
+    """Validate thumbnail fallback and file error guards."""
+    flow = _load_encoding_core_module("encoding_flow_utils")
+
+    output_path = tmp_path / "studio_base_0.png"
+    calls = []
+
+    def _launch(cmd, *_args):
+        calls.append(cmd)
+        if cmd == "fallback":
+            output_path.write_bytes(b"png")
+        return True, f"{cmd}\n"
+
+    ok, msg = flow._launch_thumbnail_job(
+        "primary",
+        "png",
+        extra={"output_path": str(output_path), "fallback_cmd": "fallback"},
+        launch_cmd_fn=_launch,
+    )
+
+    assert ok is True
+    assert calls == ["primary", "fallback"]
+    assert "retrying at timestamp 0" in msg
+
+    monkeypatch.setattr(flow.os.path, "getsize", lambda _path: (_ for _ in ()).throw(OSError))
+    assert flow._is_nonempty_file(str(output_path)) is False
+
+    monkeypatch.setattr(flow.os.path, "exists", lambda _path: True)
+    monkeypatch.setattr(flow.os, "unlink", lambda _path: (_ for _ in ()).throw(OSError))
+    flow._remove_file_if_exists(str(output_path))
+
+
 def test_ffmpeg_runtime_utils_launch_cmd_missing_branches():
     """Validate Ffmpeg runtime utils launch cmd missing branches."""
     ffmpeg_runtime = _load_encoding_core_module("ffmpeg_runtime_utils")

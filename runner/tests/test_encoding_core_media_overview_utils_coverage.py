@@ -24,6 +24,49 @@ def test_media_probe_utils_missing_lines_coverage():
 
     assert media_probe.extract_duration_from_probe("not-a-dict") == 0
     assert media_probe.extract_duration_from_probe({"streams": ["invalid-stream"]}) == 0
+    assert (
+        media_probe.extract_primary_video_duration_from_probe(
+            "not-a-dict",
+            image_codecs=["png"],
+        )
+        == 0.0
+    )
+    assert (
+        media_probe.extract_primary_video_duration_from_probe(
+            {"streams": "not-a-list"},
+            image_codecs=["png"],
+        )
+        == 0.0
+    )
+    assert (
+        media_probe.extract_primary_video_duration_from_probe(
+            {
+                "streams": [
+                    "invalid-stream",
+                    {"codec_type": "audio", "codec_name": "aac", "duration": "7"},
+                    {"codec_type": "video", "codec_name": "png", "duration": "7"},
+                ]
+            },
+            image_codecs=["png"],
+        )
+        == 0.0
+    )
+
+    probe_info = {
+        "format": {"duration": "5.604333"},
+        "streams": [
+            {"codec_type": "video", "codec_name": "h264", "duration": "0.533333"},
+            {"codec_type": "audio", "codec_name": "aac", "duration": "5.601333"},
+        ],
+    }
+    assert media_probe.extract_duration_from_probe(probe_info) == 5
+    assert (
+        media_probe.extract_primary_video_duration_from_probe(
+            probe_info,
+            image_codecs=["png", "mjpeg"],
+        )
+        == 0.533333
+    )
 
 
 def test_overview_utils_missing_lines_coverage(monkeypatch, tmp_path):

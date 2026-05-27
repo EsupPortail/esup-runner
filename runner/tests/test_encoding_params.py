@@ -439,6 +439,7 @@ def test_get_info_video_handles_missing_format_duration(tmp_path):
     info = enc.get_info_video("input.mp4")
 
     assert info["duration"] == 12
+    assert info["video_duration"] == 12.5
     assert info["codec"] == "h264"
     assert info["height"] == 720
     assert info["has_stream_video"] is True
@@ -659,7 +660,7 @@ def test_build_encode_thumbnail_job_limits_size_to_1280x720(tmp_path):
     enc._VIDEOS_DIR = str(tmp_path)
     enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
 
-    ffmpeg_cmd, title, content, append, _ = enc._build_encode_thumbnail_job(
+    ffmpeg_cmd, title, content, append, extra = enc._build_encode_thumbnail_job(
         file="input.mp4",
         filename="input",
         duration=120,
@@ -671,6 +672,26 @@ def test_build_encode_thumbnail_job_limits_size_to_1280x720(tmp_path):
     assert content["filename"] == "input_0.png"
     assert "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease" in ffmpeg_cmd
     assert "-vframes 1" in ffmpeg_cmd
+    assert extra["output_path"] == str(tmp_path / "input_0.png")
+
+
+def test_build_encode_thumbnail_job_uses_video_stream_duration_for_short_video(tmp_path):
+    """Validate thumbnail timestamps use sub-second video duration safely."""
+    enc = _load_encoding_script_module()
+
+    enc._VIDEOS_DIR = str(tmp_path)
+    enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
+
+    ffmpeg_cmd, _, content, _, extra = enc._build_encode_thumbnail_job(
+        file="input.mp4",
+        filename="input",
+        duration=0.533333,
+        thumbnail_index=2,
+    )
+
+    assert "-ss 0 " in ffmpeg_cmd
+    assert content["timestamp"] == 0
+    assert extra["fallback_cmd"] == ""
 
 
 def test_parse_rendition_config_deep_merges_existing_entries_and_adds_2160():

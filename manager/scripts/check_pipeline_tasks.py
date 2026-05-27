@@ -23,7 +23,8 @@ What this script does
 2) By default, runs one `encoding` task.
 3) With `--with-transcription-translation`, additionally runs:
    - one `transcription` task in French (`language=fr`)
-   - one `transcription` task targeting English subtitles (`language=en`)
+    - one `transcription` task targeting English subtitles (`language=en`)
+      after a short delay to avoid transient runner contention.
 4) For each task, polls `GET /task/status/{task_id}` until terminal state,
    then fetches `GET /task/result/{task_id}`.
 
@@ -113,6 +114,10 @@ POLL_SECONDS = 2
 
 # Safety timeout so the script doesn't run forever.
 DEFAULT_MAX_WAIT_SECONDS = 300
+
+# Delay before submitting translation after the French transcription step.
+# This helps when only one transcription runner is available.
+TRANSCRIPTION_TRANSLATION_DELAY_SECONDS = 5
 
 # Optional: automatically download the first file listed in the manifest.
 DOWNLOAD_FIRST_FILE = True
@@ -396,6 +401,7 @@ def _build_task_plan(with_transcription_translation: bool, source_url: str) -> l
                     {"language": "en", "format": "vtt"},
                 ),
                 "download_first_file": True,
+                "sleep_before_seconds": TRANSCRIPTION_TRANSLATION_DELAY_SECONDS,
             }
         )
 
@@ -668,12 +674,127 @@ async def run_one_task_check(
         print(format_status("Auto-download disabled for this check", level="warning"))
 
 
+def _resolve_check_mode(with_transcription_translation: bool) -> str:
+    """Return a human-readable label for the selected check mode."""
+    if with_transcription_translation:
+        return "encoding + transcription/translation"
+    return "encoding only"
+
+
+def _resolve_max_wait_seconds(args: argparse.Namespace) -> int:
+    """Resolve per-task timeout from CLI args and mode."""
+    if args.max_wait_seconds is not None:
+        return max(1, int(args.max_wait_seconds))
+    if args.with_transcription_translation:
+        return 1200
+    return DEFAULT_MAX_WAIT_SECONDS
+
+
+def _resolve_run_settings(args: argparse.Namespace) -> tuple[str, int, list[str]]:
+    """Resolve mode, timeout and source candidates."""
+    mode = _resolve_check_mode(args.with_transcription_translation)
+    max_wait_seconds = _resolve_max_wait_seconds(args)
+    source_candidates = _resolve_source_urls()
+    if not source_candidates:
+        raise SystemExit(
+            "No source URL configured. Set RUNNER_SOURCE_URL (or SOURCE_FILE) to a public media URL."
+        )
+    return mode, max_wait_seconds, source_candidates
+
+
+def _print_run_settings(mode: str, max_wait_seconds: int, source_candidates: list[str]) -> None:
+    """Print a short execution summary before starting checks."""
+    print(f"Check mode: {mode}")
+    print(f"Per-task timeout: {max_wait_seconds}s")
+    if len(source_candidates) > 1:
+        print(
+            format_status(
+                f"Source candidates: {len(source_candidates)} (automatic fallback enabled)",
+                level="info",
+            )
+        )
+
+
+async def _run_plan_steps(
+    client: httpx.AsyncClient,
+    base_url: str,
+    token: str,
+    plan: list[dict[str, Any]],
+    max_wait_seconds: int,
+) -> None:
+    """Run all planned checks for one source URL."""
+    for step in plan:
+        sleep_before_seconds = int(step.get("sleep_before_seconds", 0) or 0)
+        if sleep_before_seconds > 0:
+            print(
+                format_status(
+                    (
+                        f"Waiting {sleep_before_seconds}s before "
+                        f"{step['label']} to avoid runner contention..."
+                    ),
+                    level="info",
+                )
+            )
+            await asyncio.sleep(sleep_before_seconds)
+
+        await run_one_task_check(
+            client,
+            base_url,
+            token,
+            str(step["label"]),
+            dict(step["request"]),
+            download_first_file=bool(step["download_first_file"]),
+            max_wait_seconds=max_wait_seconds,
+        )
+
+
+async def _run_checks_with_source_fallback(
+    client: httpx.AsyncClient,
+    base_url: str,
+    token: str,
+    source_candidates: list[str],
+    with_transcription_translation: bool,
+    max_wait_seconds: int,
+) -> None:
+    """Run checks and fallback to next source URL on download-related failures."""
+    total_sources = len(source_candidates)
+    for index, source_url in enumerate(source_candidates, start=1):
+        print()
+        print(
+            format_status(
+                f"Using source candidate {index}/{total_sources}: {source_url}",
+                level="info",
+            )
+        )
+        plan = _build_task_plan(with_transcription_translation, source_url=source_url)
+        try:
+            await _run_plan_steps(
+                client,
+                base_url,
+                token,
+                plan,
+                max_wait_seconds=max_wait_seconds,
+            )
+            print(format_status("Pipeline checks passed.", level="info"))
+            return
+        except SourceDownloadError as exc:
+            if index < total_sources:
+                print(format_status(str(exc), level="warning"))
+                print(format_status("Trying next source candidate…", level="warning"))
+                continue
+            raise SystemExit(
+                f"{exc}\nAll source candidates failed. "
+                "Set RUNNER_SOURCE_URL to a media URL reachable by runner instances."
+            )
+
+
 async def main(args: argparse.Namespace):
     manager_url, token = _load_runtime_settings()
     if _is_placeholder_token(token):
         raise SystemExit("Please set a non-empty token in manager/.env or RUNNER_API_TOKEN.")
 
     base_url = _normalize_base_url(manager_url)
+    mode, max_wait_seconds, source_candidates = _resolve_run_settings(args)
 
     # One shared async HTTP client for all calls.
     # Keep timeouts modest: this script is for quick interactive tests.
@@ -682,63 +803,15 @@ async def main(args: argparse.Namespace):
         # 1) Sanity check: auth + manager reachability.
         version_payload = await check_auth(client, base_url, token)
         print(format_status(f"Manager OK. Version: {version_payload.get('version')}", level="info"))
-        mode = (
-            "encoding + transcription/translation"
-            if args.with_transcription_translation
-            else "encoding only"
+        _print_run_settings(mode, max_wait_seconds, source_candidates)
+        await _run_checks_with_source_fallback(
+            client,
+            base_url,
+            token,
+            source_candidates,
+            args.with_transcription_translation,
+            max_wait_seconds,
         )
-        if args.max_wait_seconds is not None:
-            max_wait_seconds = max(1, int(args.max_wait_seconds))
-        else:
-            max_wait_seconds = (
-                1200 if args.with_transcription_translation else DEFAULT_MAX_WAIT_SECONDS
-            )
-        source_candidates = _resolve_source_urls()
-        if not source_candidates:
-            raise SystemExit(
-                "No source URL configured. Set RUNNER_SOURCE_URL (or SOURCE_FILE) to a public media URL."
-            )
-        print(f"Check mode: {mode}")
-        print(f"Per-task timeout: {max_wait_seconds}s")
-        if len(source_candidates) > 1:
-            print(
-                format_status(
-                    f"Source candidates: {len(source_candidates)} (automatic fallback enabled)",
-                    level="info",
-                )
-            )
-
-        for index, source_url in enumerate(source_candidates, start=1):
-            print()
-            print(
-                format_status(
-                    f"Using source candidate {index}/{len(source_candidates)}: {source_url}",
-                    level="info",
-                )
-            )
-            plan = _build_task_plan(args.with_transcription_translation, source_url=source_url)
-            try:
-                for step in plan:
-                    await run_one_task_check(
-                        client,
-                        base_url,
-                        token,
-                        str(step["label"]),
-                        dict(step["request"]),
-                        download_first_file=bool(step["download_first_file"]),
-                        max_wait_seconds=max_wait_seconds,
-                    )
-                print(format_status("Pipeline checks passed.", level="info"))
-                return
-            except SourceDownloadError as exc:
-                if index < len(source_candidates):
-                    print(format_status(str(exc), level="warning"))
-                    print(format_status("Trying next source candidate…", level="warning"))
-                    continue
-                raise SystemExit(
-                    f"{exc}\nAll source candidates failed. "
-                    "Set RUNNER_SOURCE_URL to a media URL reachable by runner instances."
-                )
 
 
 if __name__ == "__main__":

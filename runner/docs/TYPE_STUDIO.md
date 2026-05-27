@@ -6,9 +6,11 @@ This page documents the **`studio`** runner task type: what it does and which **
 The `studio` task is a **two-stage pipeline**:
 
 1) **Studio generation stage**: build a single base MP4 (`studio_base.mp4`) from an OpenCast Mediapackage XML.
-   - Script: [app/task_handlers/studio/scripts/studio.py](../app/task_handlers/studio/scripts/studio.py)
+   Script: [app/task_handlers/studio/studio.py](../app/task_handlers/studio/studio.py)
+   Core runtime package: [app/task_handlers/studio/core](../app/task_handlers/studio/core)
 2) **Encoding stage**: run the standard encoding pipeline on the generated MP4 (renditions, thumbnails, overview, audio, metadata).
-   - Script: [app/task_handlers/encoding/scripts/encoding.py](../app/task_handlers/encoding/scripts/encoding.py)
+   Script: [app/task_handlers/encoding/encoding.py](../app/task_handlers/encoding/encoding.py)
+   Core runtime package: [app/task_handlers/encoding/core](../app/task_handlers/encoding/core)
 
 Orchestration is implemented in:
 - [app/task_handlers/studio/studio_handler.py](../app/task_handlers/studio/studio_handler.py)

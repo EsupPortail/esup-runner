@@ -24,6 +24,7 @@ def run_pipelines(
     build_cpu_pipeline_fn: Callable[..., tuple[str, str, str, str]],
     shlex_split_fn: Callable[[str], list[str]],
     subprocess_run_fn: Callable[[list[str]], Any],
+    target_duration: float | None = None,
 ) -> int:
     """Execute studio pipeline attempts in fallback order until one succeeds."""
 
@@ -69,6 +70,7 @@ def run_pipelines(
         presenter_layout,
         args,
         webm_input,
+        target_duration=target_duration,
     )
     if full_gpu is not None:
         ia, sc, vc, mo = full_gpu
@@ -85,6 +87,7 @@ def run_pipelines(
         presenter_layout,
         args,
         webm_input,
+        target_duration=target_duration,
     )
     if gpu_enc is not None:
         ia, sc, vc, mo = gpu_enc
@@ -100,5 +103,6 @@ def run_pipelines(
         pers_h,
         presenter_layout,
         args,
+        target_duration=target_duration,
     )
     return run_attempt("CPU", ia, sc, vc, mo)

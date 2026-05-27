@@ -443,6 +443,34 @@ read_first_authorized_token() {
   ' "${env_file}"
 }
 
+read_component_version() {
+  # Read a component version from <component>/VERSION for notifications.
+  local component_dir="$1"
+  local version_file="${component_dir}/VERSION"
+  local version_value=""
+
+  if [[ ! -f "${version_file}" ]]; then
+    printf '%s\n' "unknown"
+    return 0
+  fi
+
+  version_value="$(awk '
+    NR == 1 {
+      gsub(/\r/, "", $0)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0)
+      print
+      exit
+    }
+  ' "${version_file}" 2>/dev/null || true)"
+
+  if [[ -z "${version_value}" ]]; then
+    printf '%s\n' "unknown"
+    return 0
+  fi
+
+  printf '%s\n' "${version_value}"
+}
+
 mask_secret() {
   # Keep only the first/last 4 chars when logging secrets in dry-run mode.
   local value="${1:-}"
@@ -936,25 +964,88 @@ send_update_email_if_configured() {
   if [[ "${#updated_parts[@]}" -eq 0 ]]; then
     updated_label="none"
   else
-    updated_label="$(IFS=','; printf '%s' "${updated_parts[*]}")"
+    updated_label="$(printf '%s, ' "${updated_parts[@]}")"
+    updated_label="${updated_label%, }"
   fi
 
-  local git_revision hostname_value date_value subject body
+  local manager_version=""
+  local runner_version=""
+  local version_lines=""
+  local subject_versions=()
+
+  if [[ "${UPDATED_MANAGER}" -eq 1 ]]; then
+    manager_version="$(read_component_version "${MANAGER_DIR}")"
+    version_lines="${version_lines}
+- Manager version      : ${manager_version}"
+    subject_versions+=("manager ${manager_version}")
+  fi
+
+  if [[ "${UPDATED_RUNNER}" -eq 1 ]]; then
+    runner_version="$(read_component_version "${RUNNER_DIR}")"
+    version_lines="${version_lines}
+- Runner version       : ${runner_version}"
+    subject_versions+=("runner ${runner_version}")
+  fi
+
+  local versions_label
+  if [[ "${#subject_versions[@]}" -eq 0 ]]; then
+    versions_label="no-component-version"
+  else
+    versions_label="$(printf '%s, ' "${subject_versions[@]}")"
+    versions_label="${versions_label%, }"
+  fi
+
+  local git_revision hostname_value date_value subject body overall_status test_status_label
   git_revision="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
   hostname_value="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "unknown-host")"
   date_value="$(date -Is 2>/dev/null || date)"
-  subject="[esup-runner] Update completed (${updated_label})"
+
+  if [[ "${EXIT_CODE}" -eq 0 ]]; then
+    overall_status="SUCCESS"
+  else
+    overall_status="COMPLETED WITH WARNINGS"
+  fi
+
+  case "${TEST_STATUS}" in
+    ok)
+      test_status_label="OK"
+      ;;
+    failed)
+      test_status_label="FAILED"
+      ;;
+    dry-run)
+      test_status_label="DRY-RUN"
+      ;;
+    disabled)
+      test_status_label="DISABLED"
+      ;;
+    skipped)
+      test_status_label="SKIPPED"
+      ;;
+    *)
+      test_status_label="${TEST_STATUS}"
+      ;;
+  esac
+
+  subject="[esup-runner] ${overall_status} - ${versions_label}"
   body="Hello,
 
-The automatic ESUP Runner update is complete.
+The automatic ESUP-Runner update has completed.
 
-Updated components: ${updated_label}
-Git revision: ${git_revision}
-Date: ${date_value}
-Host: ${hostname_value}
-Post-update test: ${TEST_STATUS}
+========================================================================
+ESUP-RUNNER UPDATE REPORT
+========================================================================
+Overall status:
+- Workflow result      : ${overall_status}
+- Updated components   : ${updated_label}${version_lines}
 
-Best regards,"
+Execution details:
+- Git revision         : ${git_revision}
+- Date                 : ${date_value}
+- Host                 : ${hostname_value}
+- Post-update test     : ${test_status_label}
+
+This message was generated automatically by update-stack.sh."
 
   log_action "Sending update email to ${manager_email}"
   if [[ "${DRY_RUN}" -eq 1 ]]; then

@@ -587,7 +587,7 @@ restart_service_if_present() {
     if [[ -n "${service_home}" && -f "${user_unit_path}" ]]; then
       warn "Found ${user_unit_path} but could not reach systemd --user manager for ${service_user}."
       warn "Hint: enable lingering once with: sudo loginctl enable-linger ${service_user}"
-      return 0
+      warn "Falling back to system service scope for ${service_name}.service when available."
     fi
   fi
 

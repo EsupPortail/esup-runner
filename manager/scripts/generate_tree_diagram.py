@@ -22,6 +22,8 @@ from typing import List, Sequence
 from PIL import Image, ImageDraw, ImageFont
 
 DEFAULT_IGNORES = [
+    ".agents",
+    ".codex",
     ".git",
     ".mypy_cache",
     ".pytest_cache",

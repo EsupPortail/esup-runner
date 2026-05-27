@@ -6,6 +6,7 @@ Task dispatching service for routing tasks to appropriate handlers.
 import asyncio
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict
 
@@ -82,7 +83,10 @@ class TaskDispatcher:
 
             # Execute task (run in thread pool since it might be CPU-intensive)
             loop = asyncio.get_event_loop()
-            results = await loop.run_in_executor(None, handler.execute_task, task_id, task_request)
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                results = await loop.run_in_executor(
+                    executor, handler.execute_task, task_id, task_request
+                )
 
             # Package results if task was successful
             if results.get("success"):

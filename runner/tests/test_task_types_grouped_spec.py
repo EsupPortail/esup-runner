@@ -1,9 +1,12 @@
+"""Validates parsing of grouped task type specifications with multiplier syntax."""
+
 import pytest
 
 from app.core.config import _parse_grouped_task_types_spec
 
 
 def test_grouped_spec_is_detected_and_expanded():
+    """Validate Grouped spec is detected and expanded."""
     spec = "[2x(encoding,studio,transcription),1x(encoding,studio),1x(transcription)]"
     expanded = _parse_grouped_task_types_spec(spec)
 
@@ -17,6 +20,7 @@ def test_grouped_spec_is_detected_and_expanded():
 
 
 def test_grouped_spec_allows_whitespace_and_no_brackets():
+    """Validate Grouped spec allows whitespace and no brackets."""
     spec = " 2x(encoding, studio,transcription) , 1x(encoding,studio) ,1x(transcription) "
     expanded = _parse_grouped_task_types_spec(spec)
 
@@ -25,9 +29,11 @@ def test_grouped_spec_allows_whitespace_and_no_brackets():
 
 
 def test_legacy_spec_returns_none():
+    """Validate Legacy spec returns none."""
     assert _parse_grouped_task_types_spec("encoding,studio,transcription") is None
 
 
 def test_invalid_grouped_spec_raises():
+    """Validate Invalid grouped spec raises."""
     with pytest.raises(ValueError):
         _parse_grouped_task_types_spec("[2x(encoding,studio),oops]")

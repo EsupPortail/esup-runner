@@ -3,6 +3,8 @@ Integration tests for the Runner (configuration, state management, internal logi
 Network interactions and background services are stubbed for deterministic runs.
 """
 
+"""Validates runner configuration, state management, and core API endpoint functionality."""
+
 import pytest
 from fastapi.testclient import TestClient
 

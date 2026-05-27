@@ -1,3 +1,6 @@
+"""Validates encoding script argument building and parameter validation with metadata support."""
+
+import importlib
 import importlib.util
 from pathlib import Path
 from unittest.mock import Mock
@@ -8,10 +11,24 @@ from app.task_handlers.encoding.encoding_handler import VideoEncodingHandler
 
 
 def _load_encoding_script_module():
-    """Load encoding.py as a module without requiring scripts/ to be a package."""
+    """Load the encoding runtime implementation module."""
+    module = importlib.import_module("app.task_handlers.encoding.core.runtime_flow_utils")
+    return importlib.reload(module)
+
+
+def _load_encoding_main_runtime_module():
+    """Load the thin main runtime wiring module."""
+    module = importlib.import_module("app.task_handlers.encoding.core.main_runtime_utils")
+    return importlib.reload(module)
+
+
+def _load_encoding_args_module():
+    """Load encoding runtime argument parsing helpers."""
     repo_root = Path(__file__).resolve().parents[1]
-    script_path = repo_root / "app" / "task_handlers" / "encoding" / "scripts" / "encoding.py"
-    spec = importlib.util.spec_from_file_location("encoding_script", script_path)
+    script_path = (
+        repo_root / "app" / "task_handlers" / "encoding" / "core" / "runtime_args_utils.py"
+    )
+    spec = importlib.util.spec_from_file_location("encoding_core_runtime_args_utils", script_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load module spec from {script_path}")
     module = importlib.util.module_from_spec(spec)
@@ -19,7 +36,29 @@ def _load_encoding_script_module():
     return module
 
 
+def _load_encoding_entrypoint_module():
+    """Load the stable encoding.py wrapper."""
+    repo_root = Path(__file__).resolve().parents[1]
+    script_path = repo_root / "app" / "task_handlers" / "encoding" / "encoding.py"
+    spec = importlib.util.spec_from_file_location("encoding_entrypoint", script_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module spec from {script_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_encoding_entrypoint_reexports_stable_core_entrypoints():
+    """Validate Encoding entrypoint reexports stable core entrypoints."""
+    enc = _load_encoding_entrypoint_module()
+
+    assert callable(enc.main)
+    assert callable(enc.parse_args)
+    assert enc.__all__ == ["main", "parse_args"]
+
+
 def test_build_script_arguments_includes_cut_dressing_and_video_identification():
+    """Validate Build script arguments includes cut dressing and video identification."""
     handler = VideoEncodingHandler()
 
     params = {
@@ -51,6 +90,7 @@ def test_build_script_arguments_includes_cut_dressing_and_video_identification()
 
 
 def test_validate_parameters_accepts_video_identification_fields():
+    """Validate Validate parameters accepts video identification fields."""
     handler = VideoEncodingHandler()
 
     assert (
@@ -71,8 +111,9 @@ def test_validate_parameters_accepts_video_identification_fields():
 
 
 def test_encoding_script_parser_accepts_video_identification_flags():
-    enc = _load_encoding_script_module()
-    parser = enc._build_arg_parser()
+    """Validate Encoding script parser accepts video identification flags."""
+    args_utils = _load_encoding_args_module()
+    parser = args_utils._build_arg_parser()
 
     args = parser.parse_args(
         [
@@ -99,6 +140,7 @@ def test_encoding_script_parser_accepts_video_identification_flags():
 
 
 def test_apply_dressing_watermark_only_switches_input(tmp_path):
+    """Validate Apply dressing watermark only switches input."""
     enc = _load_encoding_script_module()
 
     # Arrange workspace
@@ -125,6 +167,7 @@ def test_apply_dressing_watermark_only_switches_input(tmp_path):
 
 
 def test_apply_dressing_with_opening_and_cut_resets_global_cut(tmp_path):
+    """Validate Apply dressing with opening and cut resets global cut."""
     enc = _load_encoding_script_module()
 
     # Arrange workspace
@@ -163,6 +206,7 @@ def test_apply_dressing_with_opening_and_cut_resets_global_cut(tmp_path):
 
 
 def test_apply_dressing_with_opening_and_ending_calls_concat(tmp_path):
+    """Validate Apply dressing with opening and ending calls concat."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -197,6 +241,7 @@ def test_apply_dressing_with_opening_and_ending_calls_concat(tmp_path):
 
 
 def test_apply_dressing_watermark_plus_credits_watermark_only_on_main(tmp_path):
+    """Validate Apply dressing watermark plus credits watermark only on main."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -252,6 +297,7 @@ def test_apply_dressing_watermark_plus_credits_watermark_only_on_main(tmp_path):
 
 
 def test_generate_overview_thumbnails_returns_actual_generated_count(tmp_path):
+    """Validate Generate overview thumbnails returns actual generated count."""
     enc = _load_encoding_script_module()
 
     video_dir = tmp_path / "videos"
@@ -282,6 +328,7 @@ def test_generate_overview_thumbnails_returns_actual_generated_count(tmp_path):
 
 
 def test_generate_overview_thumbnails_adjusts_interval_for_single_row_capacity(tmp_path):
+    """Validate Generate overview thumbnails adjusts interval for single row capacity."""
     enc = _load_encoding_script_module()
 
     video_dir = tmp_path / "videos"
@@ -319,6 +366,7 @@ def test_generate_overview_thumbnails_adjusts_interval_for_single_row_capacity(t
 
 
 def test_create_overview_sprite_uses_single_row_layout(tmp_path):
+    """Validate Create overview sprite uses single row layout."""
     enc = _load_encoding_script_module()
 
     output_dir = tmp_path / "out"
@@ -347,6 +395,7 @@ def test_create_overview_sprite_uses_single_row_layout(tmp_path):
 
 
 def test_generate_overview_vtt_uses_single_row_coordinates(tmp_path):
+    """Validate Generate overview vtt uses single row coordinates."""
     enc = _load_encoding_script_module()
 
     output_dir = tmp_path / "out"
@@ -365,6 +414,7 @@ def test_generate_overview_vtt_uses_single_row_coordinates(tmp_path):
 
 
 def test_get_info_video_handles_missing_format_duration(tmp_path):
+    """Validate Get info video handles missing format duration."""
     enc = _load_encoding_script_module()
 
     enc._DEBUG = False
@@ -396,6 +446,7 @@ def test_get_info_video_handles_missing_format_duration(tmp_path):
 
 
 def test_get_cmd_gpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
+    """Validate Get cmd gpu uses primary stream mapping and probe options."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -409,6 +460,7 @@ def test_get_cmd_gpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
 
 
 def test_get_cmd_gpu_uses_webm_specific_cfr_and_nvenc_rate_control(tmp_path):
+    """Validate Get cmd gpu uses webm specific cfr and nvenc rate control."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -423,6 +475,7 @@ def test_get_cmd_gpu_uses_webm_specific_cfr_and_nvenc_rate_control(tmp_path):
 
 
 def test_get_cmd_gpu_keeps_passthrough_for_non_webm_sources(tmp_path):
+    """Validate Get cmd gpu keeps passthrough for non webm sources."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -435,6 +488,7 @@ def test_get_cmd_gpu_keeps_passthrough_for_non_webm_sources(tmp_path):
 
 
 def test_bitrate_helpers_cover_error_and_kilobit_formatting():
+    """Validate Bitrate helpers cover error and kilobit formatting."""
     enc = _load_encoding_script_module()
 
     with pytest.raises(ValueError, match="Bitrate must be a string"):
@@ -444,6 +498,7 @@ def test_bitrate_helpers_cover_error_and_kilobit_formatting():
 
 
 def test_infer_video_bitrate_falls_back_on_invalid_default_resolution():
+    """Validate Infer video bitrate falls back on invalid default resolution."""
     enc = _load_encoding_script_module()
 
     enc._DEFAULT_RENDITION_CONFIG = {
@@ -459,6 +514,7 @@ def test_infer_video_bitrate_falls_back_on_invalid_default_resolution():
 
 
 def test_infer_audio_bitrate_covers_invalid_and_matching_tiers():
+    """Validate Infer audio bitrate covers invalid and matching tiers."""
     enc = _load_encoding_script_module()
 
     enc._DEFAULT_RENDITION_CONFIG = {
@@ -475,6 +531,7 @@ def test_infer_audio_bitrate_covers_invalid_and_matching_tiers():
 
 
 def test_merge_rendition_config_covers_validation_and_null_removal():
+    """Validate Merge rendition config covers validation and null removal."""
     enc = _load_encoding_script_module()
 
     with pytest.raises(ValueError, match="must be a JSON object"):
@@ -496,6 +553,7 @@ def test_merge_rendition_config_covers_validation_and_null_removal():
 
 
 def test_rendition_validation_helpers_cover_error_branches():
+    """Validate Rendition validation helpers cover error branches."""
     enc = _load_encoding_script_module()
 
     with pytest.raises(ValueError, match="Invalid rendition key"):
@@ -527,6 +585,7 @@ def test_rendition_validation_helpers_cover_error_branches():
 
 
 def test_validate_and_normalize_config_rejects_invalid_containers():
+    """Validate Validate and normalize config rejects invalid containers."""
     enc = _load_encoding_script_module()
 
     with pytest.raises(ValueError, match="must be an object"):
@@ -537,6 +596,7 @@ def test_validate_and_normalize_config_rejects_invalid_containers():
 
 
 def test_rendition_selection_and_output_helpers_cover_mp4_and_metadata_paths():
+    """Validate Rendition selection and output helpers cover mp4 and metadata paths."""
     enc = _load_encoding_script_module()
 
     enc._RENDITION_CONFIG = enc._validate_and_normalize_rendition_config(
@@ -593,6 +653,7 @@ def test_rendition_selection_and_output_helpers_cover_mp4_and_metadata_paths():
 
 
 def test_build_encode_thumbnail_job_limits_size_to_1280x720(tmp_path):
+    """Validate Build encode thumbnail job limits size to 1280x720."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -613,6 +674,7 @@ def test_build_encode_thumbnail_job_limits_size_to_1280x720(tmp_path):
 
 
 def test_parse_rendition_config_deep_merges_existing_entries_and_adds_2160():
+    """Validate Parse rendition config deep merges existing entries and adds 2160."""
     enc = _load_encoding_script_module()
 
     args = Mock(
@@ -635,6 +697,7 @@ def test_parse_rendition_config_deep_merges_existing_entries_and_adds_2160():
 
 
 def test_parse_rendition_config_allows_missing_bitrates_for_new_rendition():
+    """Validate Parse rendition config allows missing bitrates for new rendition."""
     enc = _load_encoding_script_module()
 
     args = Mock(rendition=('{"2160":{"resolution":"3840x2160","encode_mp4":false}}'))
@@ -649,6 +712,7 @@ def test_parse_rendition_config_allows_missing_bitrates_for_new_rendition():
 
 
 def test_parse_rendition_config_rejects_invalid_bitrate_and_restores_defaults():
+    """Validate Parse rendition config rejects invalid bitrate and restores defaults."""
     enc = _load_encoding_script_module()
 
     args = Mock(
@@ -664,6 +728,7 @@ def test_parse_rendition_config_rejects_invalid_bitrate_and_restores_defaults():
 
 
 def test_get_cmd_cpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
+    """Validate Get cmd cpu uses primary stream mapping and probe options."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -677,6 +742,7 @@ def test_get_cmd_cpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
 
 
 def test_get_cmd_cpu_uses_cfr_for_webm_sources_only(tmp_path):
+    """Validate Get cmd cpu uses cfr for webm sources only."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -693,6 +759,7 @@ def test_get_cmd_cpu_uses_cfr_for_webm_sources_only(tmp_path):
 
 
 def test_get_cmd_cpu_webm_cfr_uses_estimated_source_fps_when_available(tmp_path):
+    """Validate Get cmd cpu webm cfr uses estimated source fps when available."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -706,6 +773,7 @@ def test_get_cmd_cpu_webm_cfr_uses_estimated_source_fps_when_available(tmp_path)
 
 
 def test_get_cmd_cpu_uses_1080_rate_ladder_for_hls(tmp_path):
+    """Validate Get cmd cpu uses 1080 rate ladder for hls."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -719,6 +787,7 @@ def test_get_cmd_cpu_uses_1080_rate_ladder_for_hls(tmp_path):
 
 
 def test_get_cmd_cpu_includes_2160_only_when_explicitly_configured(tmp_path):
+    """Validate Get cmd cpu includes 2160 only when explicitly configured."""
     enc = _load_encoding_script_module()
 
     enc._VIDEOS_DIR = str(tmp_path)
@@ -747,6 +816,7 @@ def test_get_cmd_cpu_includes_2160_only_when_explicitly_configured(tmp_path):
 
 
 def test_get_info_video_keeps_first_non_image_video_stream_as_primary(tmp_path):
+    """Validate Get info video keeps first non image video stream as primary."""
     enc = _load_encoding_script_module()
 
     enc._DEBUG = False
@@ -774,6 +844,7 @@ def test_get_info_video_keeps_first_non_image_video_stream_as_primary(tmp_path):
 
 
 def test_parse_fps_value_covers_valid_and_invalid_inputs():
+    """Validate Parse fps value covers valid and invalid inputs."""
     enc = _load_encoding_script_module()
 
     assert enc._parse_fps_value(None) == 0.0
@@ -788,6 +859,7 @@ def test_parse_fps_value_covers_valid_and_invalid_inputs():
 
 
 def test_probe_packet_based_fps_covers_zero_duration_success_and_failure():
+    """Validate Probe packet based fps covers zero duration success and failure."""
     enc = _load_encoding_script_module()
 
     assert enc._probe_packet_based_fps("/tmp/input.webm", 0) == 0.0
@@ -810,6 +882,7 @@ def test_probe_packet_based_fps_covers_zero_duration_success_and_failure():
 
 
 def test_analyze_streams_covers_non_list_non_dict_and_image_video_cases():
+    """Validate Analyze streams covers non list non dict and image video cases."""
     enc = _load_encoding_script_module()
 
     flags = enc._analyze_streams(streams=None)
@@ -835,6 +908,7 @@ def test_analyze_streams_covers_non_list_non_dict_and_image_video_cases():
 
 
 def test_refine_source_fps_covers_no_codec_webm_and_non_webm_paths(tmp_path):
+    """Validate Refine source fps covers no codec webm and non webm paths."""
     enc = _load_encoding_script_module()
     enc._VIDEOS_DIR = str(tmp_path)
 
@@ -874,6 +948,7 @@ def test_refine_source_fps_covers_no_codec_webm_and_non_webm_paths(tmp_path):
 
 
 def test_process_encoding_rejects_zero_second_input(tmp_path):
+    """Validate Process encoding rejects zero second input."""
     enc = _load_encoding_script_module()
 
     output_dir = tmp_path / "out"
@@ -903,6 +978,7 @@ def test_process_encoding_rejects_zero_second_input(tmp_path):
 
 
 def test_prepare_input_file_rejects_missing_or_empty_input(tmp_path):
+    """Validate Prepare input file rejects missing or empty input."""
     enc = _load_encoding_script_module()
     enc._VIDEOS_DIR = str(tmp_path)
 
@@ -913,6 +989,7 @@ def test_prepare_input_file_rejects_missing_or_empty_input(tmp_path):
 
 
 def test_process_encoding_rejects_invalid_source_video_file(tmp_path):
+    """Validate Process encoding rejects invalid source video file."""
     enc = _load_encoding_script_module()
 
     output_dir = tmp_path / "out"
@@ -934,6 +1011,7 @@ def test_process_encoding_rejects_invalid_source_video_file(tmp_path):
 
 
 def test_process_encoding_rejects_zero_second_effective_duration_after_cut(tmp_path):
+    """Validate Process encoding rejects zero second effective duration after cut."""
     enc = _load_encoding_script_module()
 
     output_dir = tmp_path / "out"
@@ -966,18 +1044,18 @@ def test_process_encoding_rejects_zero_second_effective_duration_after_cut(tmp_p
 
 
 def test_main_writes_invalid_input_error_to_stderr_and_exits_non_zero(capsys):
-    enc = _load_encoding_script_module()
+    """Validate Main writes invalid input error to stderr and exits non zero."""
+    enc = _load_encoding_main_runtime_module()
 
-    parser = Mock()
-    parser.parse_args.return_value = Mock()
-
-    enc._build_arg_parser = Mock(return_value=parser)
-    enc._apply_cli_config = Mock(return_value="")
-    enc._process_encoding = Mock(
-        side_effect=enc.EncodingValidationError("Invalid file or path: /tmp/input.mp4")
+    enc.parse_args = Mock(return_value=Mock())
+    enc.runtime_flow_utils._apply_cli_config = Mock(return_value="")
+    enc.runtime_flow_utils._process_encoding = Mock(
+        side_effect=enc.runtime_flow_utils.EncodingValidationError(
+            "Invalid file or path: /tmp/input.mp4"
+        )
     )
-    enc.encode_log = Mock()
-    enc.add_info_video = Mock()
+    enc.runtime_flow_utils.encode_log = Mock()
+    enc.runtime_flow_utils.add_info_video = Mock()
 
     with pytest.raises(SystemExit) as exc:
         enc.main()
@@ -985,4 +1063,6 @@ def test_main_writes_invalid_input_error_to_stderr_and_exits_non_zero(capsys):
     captured = capsys.readouterr()
     assert exc.value.code == 1
     assert "Invalid file or path: /tmp/input.mp4" in captured.err
-    enc.add_info_video.assert_called_once_with("error", "Invalid file or path: /tmp/input.mp4")
+    enc.runtime_flow_utils.add_info_video.assert_called_once_with(
+        "error", "Invalid file or path: /tmp/input.mp4"
+    )

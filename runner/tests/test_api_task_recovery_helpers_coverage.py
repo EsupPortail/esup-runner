@@ -1,3 +1,5 @@
+"""Validates task recovery helper functions for process monitoring and log collection."""
+
 import builtins
 import json
 
@@ -19,6 +21,7 @@ def clear_recovery_monitors(tmp_path, monkeypatch):
 
 
 def test_task_helpers_parse_pid_and_is_process_alive_branches(monkeypatch):
+    """Validate Task helpers parse pid and is process alive branches."""
     assert task_module._parse_process_pid({}) is None
     assert task_module._parse_process_pid({"process_pid": "oops"}) is None
     assert task_module._parse_process_pid({"process_pid": 0}) is None
@@ -48,6 +51,7 @@ def test_task_helpers_parse_pid_and_is_process_alive_branches(monkeypatch):
 def test_task_collect_recovery_script_output_truncates_and_ignores_blank_paths(
     monkeypatch, tmp_path
 ):
+    """Validate Task collect recovery script output truncates and ignores blank paths."""
     monkeypatch.setattr(task_module, "_resolve_task_root_if_exists", lambda _task_id: None)
 
     short_log = tmp_path / "stderr-short.log"
@@ -78,6 +82,7 @@ def test_task_collect_recovery_script_output_truncates_and_ignores_blank_paths(
 
 
 def test_task_resolve_output_dir_and_has_useful_output_branches(monkeypatch, tmp_path):
+    """Validate Task resolve output dir and has useful output branches."""
     task_root = tmp_path / "task"
     task_root.mkdir(parents=True)
     output_dir = task_root / "output"
@@ -109,6 +114,7 @@ def test_task_resolve_output_dir_and_has_useful_output_branches(monkeypatch, tmp
 
 
 def test_task_read_recovery_task_results_error_branches(monkeypatch, tmp_path):
+    """Validate Task read recovery task results error branches."""
     output_dir = tmp_path / "output"
     output_dir.mkdir(parents=True)
     metadata_path = output_dir / "task_metadata.json"
@@ -146,6 +152,7 @@ def test_task_read_recovery_task_results_error_branches(monkeypatch, tmp_path):
 
 
 def test_task_ensure_recovery_manifest_error_branches(monkeypatch, tmp_path):
+    """Validate Task ensure recovery manifest error branches."""
     monkeypatch.setattr(
         task_module,
         "_resolve_task_manifest_path",
@@ -181,6 +188,7 @@ def test_task_ensure_recovery_manifest_error_branches(monkeypatch, tmp_path):
 def test_task_infer_workspace_terminal_status_returns_none_when_manifest_creation_fails(
     monkeypatch,
 ):
+    """Validate Task infer workspace terminal status returns none when manifest creation fails."""
     monkeypatch.setattr(
         task_module,
         "_read_recovery_task_results",
@@ -195,6 +203,7 @@ def test_task_infer_workspace_terminal_status_returns_none_when_manifest_creatio
 
 
 def test_task_get_owned_statuses_and_restart_attempts_branches(monkeypatch):
+    """Validate Task get owned statuses and restart attempts branches."""
     monkeypatch.setattr(task_module, "get_runner_id", lambda: "runner-a")
     monkeypatch.setattr(task_module, "get_runner_state", lambda: {"task_statuses": []})
     assert task_module._get_owned_task_statuses({"running"}) == {}
@@ -217,6 +226,7 @@ def test_task_get_owned_statuses_and_restart_attempts_branches(monkeypatch):
 
 
 def test_task_load_recovery_task_request_branches(monkeypatch):
+    """Validate Task load recovery task request branches."""
     assert task_module._load_recovery_task_request("task-a", {"task_request": "{"}) is None
 
     request = task_module._load_recovery_task_request(
@@ -262,12 +272,14 @@ def test_task_load_recovery_task_request_branches(monkeypatch):
 
 
 def test_task_schedule_failed_task_restart_when_attempt_limit_reached():
+    """Validate Task schedule failed task restart when attempt limit reached."""
     payload = {"recovery_restart_attempts": task_module._RECOVERY_AUTO_RESTART_MAX_ATTEMPTS}
     assert task_module._schedule_failed_task_restart("task-max", payload) is False
 
 
 @pytest.mark.asyncio
 async def test_task_reconcile_recovered_task_non_404_is_raised(monkeypatch):
+    """Validate Task reconcile recovered task non 404 is raised."""
     monkeypatch.setattr(
         task_module,
         "_resolve_task_manifest_path",
@@ -280,6 +292,7 @@ async def test_task_reconcile_recovered_task_non_404_is_raised(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_task_reconcile_recovered_task_fallback_failure_path(monkeypatch):
+    """Validate Task reconcile recovered task fallback failure path."""
     captured = {}
 
     monkeypatch.setattr(
@@ -314,6 +327,7 @@ async def test_task_reconcile_recovered_task_fallback_failure_path(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_task_monitor_recovered_task_exception_and_finally(monkeypatch):
+    """Validate Task monitor recovered task exception and finally."""
     errors: list[str] = []
 
     async def _noop_sleep(_seconds):
@@ -339,6 +353,8 @@ async def test_task_monitor_recovered_task_exception_and_finally(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_task_monitor_recovered_task_returns_when_payload_missing(monkeypatch):
+    """Validate Task monitor recovered task returns when payload missing."""
+
     async def _noop_sleep(_seconds):
         return None
 
@@ -359,6 +375,8 @@ async def test_task_monitor_recovered_task_returns_when_payload_missing(monkeypa
 
 @pytest.mark.asyncio
 async def test_task_monitor_recovered_task_returns_when_status_not_running(monkeypatch):
+    """Validate Task monitor recovered task returns when status not running."""
+
     async def _noop_sleep(_seconds):
         return None
 
@@ -379,6 +397,7 @@ async def test_task_monitor_recovered_task_returns_when_status_not_running(monke
 
 @pytest.mark.asyncio
 async def test_task_monitor_recovered_task_refreshes_on_terminal_state(monkeypatch):
+    """Validate Task monitor recovered task refreshes on terminal state."""
     refreshed = {"called": 0}
 
     async def _noop_sleep(_seconds):
@@ -405,6 +424,8 @@ async def test_task_monitor_recovered_task_refreshes_on_terminal_state(monkeypat
 
 
 def test_task_schedule_recovery_monitor_skips_existing_and_creates_new(monkeypatch):
+    """Validate Task schedule recovery monitor skips existing and creates new."""
+
     class _ExistingTask:
         def done(self):
             return False
@@ -438,6 +459,8 @@ def test_task_schedule_recovery_monitor_skips_existing_and_creates_new(monkeypat
 
 @pytest.mark.asyncio
 async def test_task_recover_owned_running_and_failed_tasks_handle_exceptions(monkeypatch):
+    """Validate Task recover owned running and failed tasks handle exceptions."""
+
     async def _raise_running(*_args, **_kwargs):
         raise RuntimeError("running recovery failed")
 
@@ -454,6 +477,7 @@ async def test_task_recover_owned_running_and_failed_tasks_handle_exceptions(mon
 
 @pytest.mark.asyncio
 async def test_task_recover_owned_running_tasks_returns_early_when_empty(monkeypatch):
+    """Validate Task recover owned running tasks returns early when empty."""
     monkeypatch.setattr(
         task_module.logger,
         "info",

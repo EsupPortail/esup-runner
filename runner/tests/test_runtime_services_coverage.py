@@ -1,3 +1,5 @@
+"""Validates GPU instance environment setup and uvicorn runtime process management."""
+
 import asyncio
 import os
 import signal
@@ -62,11 +64,13 @@ class FakeProcess:
 
 
 def test_select_gpu_for_instance_handles_empty_and_round_robin():
+    """Validate Select gpu for instance handles empty and round robin."""
     assert process_manager_module._select_gpu_for_instance(1, "") == ""
     assert process_manager_module._select_gpu_for_instance(3, "0,1") == "1"
 
 
 def test_run_uvicorn_instance_in_gpu_mode_sets_environment(monkeypatch):
+    """Validate Run uvicorn instance in gpu mode sets environment."""
     captured = {}
 
     fake_config = types.SimpleNamespace(
@@ -112,6 +116,7 @@ def test_run_uvicorn_instance_in_gpu_mode_sets_environment(monkeypatch):
 
 
 def test_find_available_port_skips_busy_ports(monkeypatch):
+    """Validate Find available port skips busy ports."""
     attempts = {"count": 0}
 
     class FakeSocket:
@@ -132,6 +137,7 @@ def test_find_available_port_skips_busy_ports(monkeypatch):
 
 
 def test_process_manager_lifecycle_methods(monkeypatch):
+    """Validate Process manager lifecycle methods."""
     monkeypatch.setattr(process_manager_module, "Process", FakeProcess)
     monkeypatch.setattr(process_manager_module.time, "sleep", lambda *_args, **_kwargs: None)
 
@@ -157,6 +163,7 @@ def test_process_manager_lifecycle_methods(monkeypatch):
 
 
 def test_restart_instance_status_monitor_and_wait(monkeypatch):
+    """Validate Restart instance status monitor and wait."""
     monkeypatch.setattr(process_manager_module, "Process", FakeProcess)
     manager = process_manager_module.UvicornProcessManager(base_port=9400, instances=2)
     manager.processes = [FakeProcess(), FakeProcess()]
@@ -223,6 +230,7 @@ def test_restart_instance_status_monitor_and_wait(monkeypatch):
 
 
 def test_wait_for_termination_handles_keyboard_interrupt(monkeypatch):
+    """Validate Wait for termination handles keyboard interrupt."""
     manager = process_manager_module.UvicornProcessManager(base_port=9500, instances=1)
 
     class InterruptingProcess:
@@ -240,6 +248,7 @@ def test_wait_for_termination_handles_keyboard_interrupt(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_storage_cleanup_loop_disabled(monkeypatch):
+    """Validate Storage cleanup loop disabled."""
     monkeypatch.setattr(service_manager_module.config, "MAX_FILE_AGE_DAYS", 0)
     monkeypatch.setattr(service_manager_module.config, "CLEANUP_INTERVAL_HOURS", 1)
 
@@ -248,6 +257,7 @@ async def test_storage_cleanup_loop_disabled(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_storage_cleanup_loop_runs_initial_periodic_and_cancel(monkeypatch):
+    """Validate Storage cleanup loop runs initial periodic and cancel."""
     monkeypatch.setattr(service_manager_module.config, "MAX_FILE_AGE_DAYS", 3)
     monkeypatch.setattr(service_manager_module.config, "CLEANUP_INTERVAL_HOURS", 1)
 
@@ -274,6 +284,7 @@ async def test_storage_cleanup_loop_runs_initial_periodic_and_cancel(monkeypatch
 
 @pytest.mark.asyncio
 async def test_storage_cleanup_loop_handles_initial_and_periodic_errors(monkeypatch):
+    """Validate Storage cleanup loop handles initial and periodic errors."""
     monkeypatch.setattr(service_manager_module.config, "MAX_FILE_AGE_DAYS", 5)
     monkeypatch.setattr(service_manager_module.config, "CLEANUP_INTERVAL_HOURS", 1)
 
@@ -300,6 +311,8 @@ async def test_storage_cleanup_loop_handles_initial_and_periodic_errors(monkeypa
 
 @pytest.mark.asyncio
 async def test_background_service_manager_start_stop_and_status(monkeypatch):
+    """Validate Background service manager start stop and status."""
+
     async def sleeper():
         await asyncio.sleep(10)
 
@@ -323,6 +336,7 @@ async def test_background_service_manager_start_stop_and_status(monkeypatch):
 
 
 def test_background_service_manager_status_handles_objects_without_get_name():
+    """Validate Background service manager status handles objects without get name."""
     manager = service_manager_module.BackgroundServiceManager()
     manager.tasks = [types.SimpleNamespace(done=lambda: False, cancelled=lambda: False)]
     status = manager.get_service_status()
@@ -330,6 +344,7 @@ def test_background_service_manager_status_handles_objects_without_get_name():
 
 
 def test_email_helpers_and_composition(monkeypatch):
+    """Validate Email helpers and composition."""
     monkeypatch.setattr(email_service_module.config, "SMTP_SENDER", "sender@example.org")
     assert email_service_module._build_sender_address() == "sender@example.org"
 
@@ -360,6 +375,7 @@ def test_email_helpers_and_composition(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_task_failure_email_skip_success_and_failure(monkeypatch):
+    """Validate Send task failure email skip success and failure."""
     monkeypatch.setattr(email_service_module.config, "SMTP_SERVER", "")
     monkeypatch.setattr(email_service_module.config, "MANAGER_EMAIL", "")
     assert (

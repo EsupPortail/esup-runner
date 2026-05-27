@@ -1,3 +1,5 @@
+"""Validates external script timeout configuration and handler enforcement behavior."""
+
 from pathlib import Path
 from typing import Any, Dict
 
@@ -21,24 +23,28 @@ def _make_task_request(task_type: str, source_url: str, parameters: Dict[str, An
 
 
 def test_external_script_timeout_default(monkeypatch):
+    """Validate External script timeout default."""
     monkeypatch.delenv("EXTERNAL_SCRIPT_TIMEOUT_SECONDS", raising=False)
     cfg = Config()
     assert cfg.EXTERNAL_SCRIPT_TIMEOUT_SECONDS == 18000
 
 
 def test_external_script_timeout_env_override(monkeypatch):
+    """Validate External script timeout env override."""
     monkeypatch.setenv("EXTERNAL_SCRIPT_TIMEOUT_SECONDS", "3600")
     cfg = Config()
     assert cfg.EXTERNAL_SCRIPT_TIMEOUT_SECONDS == 3600
 
 
 def test_external_script_timeout_non_positive_uses_default(monkeypatch):
+    """Validate External script timeout non positive uses default."""
     monkeypatch.setenv("EXTERNAL_SCRIPT_TIMEOUT_SECONDS", "0")
     cfg = Config()
     assert cfg.EXTERNAL_SCRIPT_TIMEOUT_SECONDS == 18000
 
 
 def test_encoding_handler_uses_configured_external_script_timeout(monkeypatch):
+    """Validate Encoding handler uses configured external script timeout."""
     timeout_value = 1234
     monkeypatch.setattr(config, "EXTERNAL_SCRIPT_TIMEOUT_SECONDS", timeout_value)
 
@@ -65,6 +71,7 @@ def test_encoding_handler_uses_configured_external_script_timeout(monkeypatch):
 
 
 def test_transcription_handler_uses_configured_external_script_timeout(monkeypatch):
+    """Validate Transcription handler uses configured external script timeout."""
     timeout_value = 2345
     monkeypatch.setattr(config, "EXTERNAL_SCRIPT_TIMEOUT_SECONDS", timeout_value)
 
@@ -92,6 +99,7 @@ def test_transcription_handler_uses_configured_external_script_timeout(monkeypat
 
 
 def test_studio_handler_uses_configured_external_script_timeout(monkeypatch):
+    """Validate Studio handler uses configured external script timeout."""
     timeout_value = 3456
     monkeypatch.setattr(config, "EXTERNAL_SCRIPT_TIMEOUT_SECONDS", timeout_value)
 
@@ -119,6 +127,7 @@ def test_studio_handler_uses_configured_external_script_timeout(monkeypatch):
 
 
 def test_studio_retry_cpu_uses_configured_external_script_timeout(monkeypatch, tmp_path):
+    """Validate Studio retry cpu uses configured external script timeout."""
     timeout_value = 4567
     monkeypatch.setattr(config, "ENCODING_TYPE", "GPU")
     monkeypatch.setattr(config, "EXTERNAL_SCRIPT_TIMEOUT_SECONDS", timeout_value)
@@ -134,7 +143,7 @@ def test_studio_retry_cpu_uses_configured_external_script_timeout(monkeypatch, t
 
     request = _make_task_request("studio", "https://example.org/mediapackage.xml", {})
     retry_result = handler._retry_studio_cpu(
-        studio_script=handler.scripts_dir / "studio.py",
+        studio_script=handler.entrypoints_dir / "studio.py",
         task_request=request,
         workspace=tmp_path,
         work_dir="output",

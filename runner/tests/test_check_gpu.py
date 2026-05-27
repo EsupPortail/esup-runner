@@ -1,7 +1,11 @@
+"""Validates PyTorch runtime detection and NVIDIA GPU device capability probing."""
+
 from scripts import check_gpu as cgp
 
 
 def test_probe_torch_runtime_reports_cpu_only_build(monkeypatch):
+    """Validate Probe torch runtime reports cpu only build."""
+
     class _FakeTorchCpu:
         __version__ = "2.0.0+cpu"
 
@@ -30,6 +34,8 @@ def test_probe_torch_runtime_reports_cpu_only_build(monkeypatch):
 
 
 def test_probe_torch_runtime_reports_cuda_available(monkeypatch):
+    """Validate Probe torch runtime reports cuda available."""
+
     class _FakeTorchGpu:
         __version__ = "2.1.0"
 
@@ -62,6 +68,7 @@ def test_probe_torch_runtime_reports_cuda_available(monkeypatch):
 
 
 def test_probe_nvidia_smi_counts_detected_gpus(monkeypatch):
+    """Validate Probe nvidia smi counts detected gpus."""
     monkeypatch.setattr(
         cgp,
         "_run",

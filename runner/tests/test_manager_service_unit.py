@@ -1,3 +1,5 @@
+"""Validates runner registration, heartbeat communication, and manager service exception handling."""
+
 import pytest
 
 import app.services.manager_service as manager_service
@@ -32,6 +34,8 @@ class FakeAsyncClient:
 
 @pytest.mark.asyncio
 async def test_register_with_manager_success(monkeypatch):
+    """Validate Register with manager success."""
+
     async def responder():
         return FakeResponse(200)
 
@@ -45,6 +49,8 @@ async def test_register_with_manager_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_register_with_manager_failure(monkeypatch):
+    """Validate Register with manager failure."""
+
     async def responder():
         return FakeResponse(500, text="boom")
 
@@ -59,6 +65,7 @@ async def test_register_with_manager_failure(monkeypatch):
 @pytest.mark.asyncio
 async def test_send_heartbeat(monkeypatch):
     # Ensure is_registered() returns True
+    """Validate Send heartbeat."""
     monkeypatch.setattr(manager_service, "is_registered", lambda: True)
 
     async def responder():
@@ -74,6 +81,7 @@ async def test_send_heartbeat(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_heartbeat_failure_status(monkeypatch):
+    """Validate Send heartbeat failure status."""
     monkeypatch.setattr(manager_service, "is_registered", lambda: True)
 
     async def responder():
@@ -89,6 +97,7 @@ async def test_send_heartbeat_failure_status(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_heartbeat_exception(monkeypatch):
+    """Validate Send heartbeat exception."""
     monkeypatch.setattr(manager_service, "is_registered", lambda: True)
 
     async def responder():
@@ -104,6 +113,7 @@ async def test_send_heartbeat_exception(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_heartbeat_not_registered(monkeypatch):
+    """Validate Send heartbeat not registered."""
     monkeypatch.setattr(manager_service, "is_registered", lambda: False)
     ok = await manager_service.send_heartbeat()
     assert ok is False
@@ -111,6 +121,8 @@ async def test_send_heartbeat_not_registered(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_check_manager_health(monkeypatch):
+    """Validate Check manager health."""
+
     async def responder():
         return FakeResponse(200, json_data={"status": "healthy"})
 
@@ -124,6 +136,8 @@ async def test_check_manager_health(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_check_manager_health_failure_status(monkeypatch):
+    """Validate Check manager health failure status."""
+
     async def responder():
         return FakeResponse(500, json_data={"status": "down"})
 
@@ -137,6 +151,8 @@ async def test_check_manager_health_failure_status(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_register_with_manager_exception(monkeypatch):
+    """Validate Register with manager exception."""
+
     async def _responder():
         raise RuntimeError("boom")
 
@@ -150,6 +166,7 @@ async def test_register_with_manager_exception(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_register_with_manager_sends_busy_availability_when_runner_unavailable(monkeypatch):
+    """Validate Register with manager sends busy availability when runner unavailable."""
     captured = {}
 
     class CaptureAsyncClient:
@@ -174,6 +191,8 @@ async def test_register_with_manager_sends_busy_availability_when_runner_unavail
 
 @pytest.mark.asyncio
 async def test_check_manager_health_exception(monkeypatch):
+    """Validate Check manager health exception."""
+
     async def _responder():
         raise RuntimeError("boom")
 

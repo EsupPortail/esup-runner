@@ -1,3 +1,5 @@
+"""Validates task handler manager discovery, registration, and base handler abstract interface."""
+
 import io
 import shutil
 import subprocess
@@ -42,6 +44,7 @@ def _task_request(
 
 
 def test_task_handler_manager_handles_import_error_and_empty_accessors(monkeypatch, capsys):
+    """Validate Task handler manager handles import error and empty accessors."""
     monkeypatch.setattr(
         task_handlers_pkg.pkgutil,
         "iter_modules",
@@ -61,6 +64,8 @@ def test_task_handler_manager_handles_import_error_and_empty_accessors(monkeypat
 
 
 def test_task_handler_manager_registers_discovered_handler(monkeypatch):
+    """Validate Task handler manager registers discovered handler."""
+
     class DummyHandler:
         task_type = "dummy"
 
@@ -86,6 +91,7 @@ def test_task_handler_manager_registers_discovered_handler(monkeypatch):
 
 
 def test_base_handler_abstract_defaults_and_description():
+    """Validate Base handler abstract defaults and description."""
     handler = _ConcreteBaseHandler()
     request = _task_request("dummy", "https://example.org/video.mp4")
 
@@ -96,6 +102,7 @@ def test_base_handler_abstract_defaults_and_description():
 
 
 def test_ffmpeg_buildconf_text_handles_exception(monkeypatch):
+    """Validate Ffmpeg buildconf text handles exception."""
     _ffmpeg_buildconf_text.cache_clear()
 
     def _boom(*_args, **_kwargs):
@@ -107,6 +114,7 @@ def test_ffmpeg_buildconf_text_handles_exception(monkeypatch):
 
 
 def test_base_handler_cleanup_workspace_when_directory_exists(tmp_path):
+    """Validate Base handler cleanup workspace when directory exists."""
     handler = _ConcreteBaseHandler()
     handler.workspace_dir = tmp_path / "workspace"
     handler.workspace_dir.mkdir(parents=True)
@@ -118,6 +126,7 @@ def test_base_handler_cleanup_workspace_when_directory_exists(tmp_path):
 
 
 def test_base_handler_run_external_script_paths(monkeypatch, tmp_path):
+    """Validate Base handler run external script paths."""
     handler = _ConcreteBaseHandler()
     script_path = tmp_path / "script.py"
     script_path.write_text("print('ok')", encoding="utf-8")
@@ -153,6 +162,7 @@ def test_base_handler_run_external_script_paths(monkeypatch, tmp_path):
 
 
 def test_base_handler_log_ffmpeg_build_warnings(monkeypatch):
+    """Validate Base handler log ffmpeg build warnings."""
     handler = _ConcreteBaseHandler()
     warnings: list[str] = []
     monkeypatch.setattr(handler.logger, "warning", lambda msg: warnings.append(msg))
@@ -169,6 +179,7 @@ def test_base_handler_log_ffmpeg_build_warnings(monkeypatch):
 
 
 def test_base_handler_build_execution_env_applies_cuda_and_handles_errors(monkeypatch):
+    """Validate Base handler build execution env applies cuda and handles errors."""
     handler = _ConcreteBaseHandler()
     fake_cfg = SimpleNamespace(
         ENCODING_TYPE="GPU",
@@ -192,6 +203,7 @@ def test_base_handler_build_execution_env_applies_cuda_and_handles_errors(monkey
 
 
 def test_base_handler_download_source_file_error_paths(monkeypatch, tmp_path):
+    """Validate Base handler download source file error paths."""
     handler = _ConcreteBaseHandler()
     dest_file = tmp_path / "download.bin"
 
@@ -247,6 +259,7 @@ def test_base_handler_download_source_file_error_paths(monkeypatch, tmp_path):
 
 
 def test_base_handler_download_source_file_retries_then_succeeds(monkeypatch, tmp_path):
+    """Validate Base handler download source file retries then succeeds."""
     handler = _ConcreteBaseHandler()
     dest_file = tmp_path / "download.bin"
 
@@ -294,6 +307,7 @@ def test_base_handler_download_source_file_retries_then_succeeds(monkeypatch, tm
 def test_base_handler_download_source_file_retries_and_fails_on_truncated_payload(
     monkeypatch, tmp_path
 ):
+    """Validate Base handler download source file retries and fails on truncated payload."""
     handler = _ConcreteBaseHandler()
     dest_file = tmp_path / "download.bin"
 
@@ -338,6 +352,7 @@ def test_base_handler_download_source_file_retries_and_fails_on_truncated_payloa
 
 
 def test_base_handler_download_helpers_cover_remaining_branches(tmp_path):
+    """Validate Base handler download helpers cover remaining branches."""
     handler = _ConcreteBaseHandler()
 
     class _BrokenPath:
@@ -368,6 +383,7 @@ def test_base_handler_download_helpers_cover_remaining_branches(tmp_path):
 
 
 def test_base_handler_download_source_file_once_handles_non_404_status(tmp_path):
+    """Validate Base handler download source file once handles non 404 status."""
     handler = _ConcreteBaseHandler()
     part_path = tmp_path / "download.part"
 
@@ -397,6 +413,7 @@ def test_base_handler_download_source_file_once_handles_non_404_status(tmp_path)
 
 
 def test_encoding_handler_execute_task_error_paths(monkeypatch, tmp_path):
+    """Validate Encoding handler execute task error paths."""
     handler = VideoEncodingHandler()
 
     missing_name = _task_request("encoding", "https://example.org", {})
@@ -429,8 +446,8 @@ def test_encoding_handler_execute_task_error_paths(monkeypatch, tmp_path):
         "download_source_file",
         lambda source_url, dest_file: {"success": True, "file_path": dest_file},
     )
-    handler.scripts_dir = tmp_path / "missing-scripts"
-    handler.scripts_dir.mkdir(parents=True, exist_ok=True)
+    handler.entrypoints_dir = tmp_path / "missing-scripts"
+    handler.entrypoints_dir.mkdir(parents=True, exist_ok=True)
     mp4_req = _task_request("encoding", "https://example.org/video.mp4", {})
     res_missing_script = handler.execute_task("encoding-missing-script", mp4_req)
     assert res_missing_script["success"] is False
@@ -447,6 +464,7 @@ def test_encoding_handler_execute_task_error_paths(monkeypatch, tmp_path):
 def test_encoding_handler_fills_stdout_from_encoding_log_when_streams_are_empty(
     monkeypatch, tmp_path
 ):
+    """Validate Encoding handler fills stdout from encoding log when streams are empty."""
     handler = VideoEncodingHandler()
     task_id = "encoding-log-fallback"
 
@@ -454,10 +472,10 @@ def test_encoding_handler_fills_stdout_from_encoding_log_when_streams_are_empty(
         "app.task_handlers.encoding.encoding_handler.storage_manager.base_path", str(tmp_path)
     )
 
-    scripts_dir = tmp_path / "scripts"
-    scripts_dir.mkdir(parents=True, exist_ok=True)
-    (scripts_dir / "encoding.py").write_text("print('unused')\n", encoding="utf-8")
-    handler.scripts_dir = scripts_dir
+    entrypoints_dir = tmp_path / "scripts"
+    entrypoints_dir.mkdir(parents=True, exist_ok=True)
+    (entrypoints_dir / "encoding.py").write_text("print('unused')\n", encoding="utf-8")
+    handler.entrypoints_dir = entrypoints_dir
 
     workspace = tmp_path / task_id
     output_dir = workspace / "output"
@@ -487,6 +505,7 @@ def test_encoding_handler_fills_stdout_from_encoding_log_when_streams_are_empty(
 
 
 def test_encoding_handler_fill_empty_streams_from_encoding_log_fallback_branches(tmp_path):
+    """Validate Encoding handler fill empty streams from encoding log fallback branches."""
     handler = VideoEncodingHandler()
     output_dir = tmp_path / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -511,6 +530,7 @@ def test_encoding_handler_fill_empty_streams_from_encoding_log_fallback_branches
 
 
 def test_encoding_handler_build_script_arguments_gpu_and_error_extractors(monkeypatch):
+    """Validate Encoding handler build script arguments gpu and error extractors."""
     handler = VideoEncodingHandler()
     monkeypatch.setattr(config, "ENCODING_TYPE", "GPU")
     monkeypatch.setattr(config, "GPU_HWACCEL_DEVICE", 2)
@@ -546,6 +566,7 @@ def test_encoding_handler_build_script_arguments_gpu_and_error_extractors(monkey
 
 
 def test_transcription_handler_execute_task_error_paths(monkeypatch, tmp_path):
+    """Validate Transcription handler execute task error paths."""
     handler = TranscriptionHandler()
 
     missing_name = _task_request("transcription", "https://example.org", {})
@@ -583,8 +604,8 @@ def test_transcription_handler_execute_task_error_paths(monkeypatch, tmp_path):
     assert "Input media pre-check failed" in res_invalid_input["error"]
 
     monkeypatch.setattr(handler, "_validate_input_media_with_ffprobe", lambda _input_path: None)
-    handler.scripts_dir = tmp_path / "missing-scripts"
-    handler.scripts_dir.mkdir(parents=True, exist_ok=True)
+    handler.entrypoints_dir = tmp_path / "missing-scripts"
+    handler.entrypoints_dir.mkdir(parents=True, exist_ok=True)
     res_missing_script = handler.execute_task("transcription-missing-script", mp4_req)
     assert res_missing_script["success"] is False
     assert "Script not found" in res_missing_script["error"]
@@ -600,6 +621,7 @@ def test_transcription_handler_execute_task_error_paths(monkeypatch, tmp_path):
 
 
 def test_transcription_handler_reclassifies_loading_weights_from_stderr():
+    """Validate Transcription handler reclassifies loading weights from stderr."""
     handler = TranscriptionHandler()
 
     script_result = {
@@ -623,6 +645,7 @@ def test_transcription_handler_reclassifies_loading_weights_from_stderr():
 
 
 def test_transcription_handler_validate_input_media_with_ffprobe_paths(monkeypatch, tmp_path):
+    """Validate Transcription handler validate input media with ffprobe paths."""
     handler = TranscriptionHandler()
     input_path = tmp_path / "input.mp3"
     input_path.write_bytes(b"fake")
@@ -674,6 +697,7 @@ def test_transcription_handler_validate_input_media_with_ffprobe_paths(monkeypat
 
 
 def test_transcription_handler_reclassify_keeps_non_loading_stderr_unchanged():
+    """Validate Transcription handler reclassify keeps non loading stderr unchanged."""
     handler = TranscriptionHandler()
     script_result = {
         "success": True,
@@ -690,6 +714,7 @@ def test_transcription_handler_reclassify_keeps_non_loading_stderr_unchanged():
 
 
 def test_transcription_handler_reclassify_moves_loading_weights_when_stdout_empty():
+    """Validate Transcription handler reclassify moves loading weights when stdout empty."""
     handler = TranscriptionHandler()
     script_result = {
         "success": True,
@@ -705,6 +730,7 @@ def test_transcription_handler_reclassify_moves_loading_weights_when_stdout_empt
 
 
 def test_studio_handler_execute_task_error_paths(monkeypatch, tmp_path):
+    """Validate Studio handler execute task error paths."""
     handler = StudioEncodingHandler()
     request = _task_request("studio", "https://example.org/mediapackage.xml", {})
 
@@ -745,6 +771,7 @@ def test_studio_handler_execute_task_error_paths(monkeypatch, tmp_path):
 
 
 def test_studio_handler_generation_retry_and_logging_paths(monkeypatch, tmp_path):
+    """Validate Studio handler generation retry and logging paths."""
     handler = StudioEncodingHandler()
     request = _task_request("studio", "https://example.org/mediapackage.xml", {})
     workspace = tmp_path / "workspace"
@@ -800,7 +827,7 @@ def test_studio_handler_generation_retry_and_logging_paths(monkeypatch, tmp_path
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("log failed")),
     )
     failed_retry = handler_retry_failure._retry_studio_cpu(
-        studio_script=handler_retry_failure.scripts_dir / "studio.py",
+        studio_script=handler_retry_failure.entrypoints_dir / "studio.py",
         task_request=request,
         workspace=workspace,
         work_dir="output",
@@ -814,6 +841,7 @@ def test_studio_handler_generation_retry_and_logging_paths(monkeypatch, tmp_path
 
 
 def test_studio_handler_helpers_cover_remaining_branches(monkeypatch, tmp_path):
+    """Validate Studio handler helpers cover remaining branches."""
     handler = StudioEncodingHandler()
 
     log_path = tmp_path / "output" / "encoding.log"

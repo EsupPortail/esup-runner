@@ -1,3 +1,5 @@
+"""Validates OpenAPI schema generation and storage manager error path handling."""
+
 import errno
 import os
 import threading
@@ -13,12 +15,14 @@ from app.managers.storage_manager import StorageServiceManager
 
 
 def test_openapi_enhance_schemas_creates_components_when_missing():
+    """Validate Openapi enhance schemas creates components when missing."""
     schema = {}
     openapi_module._enhance_schemas_with_examples(schema)
     assert schema["components"]["schemas"] == {}
 
 
 def test_storage_manager_error_paths(monkeypatch, tmp_path):
+    """Validate Storage manager error paths."""
     monkeypatch.setattr(
         os,
         "makedirs",
@@ -37,6 +41,7 @@ def test_storage_manager_error_paths(monkeypatch, tmp_path):
 
 
 def test_storage_manager_file_operation_error_paths(monkeypatch, tmp_path):
+    """Validate Storage manager file operation error paths."""
     storage = StorageServiceManager(base_path=str(tmp_path))
 
     monkeypatch.setattr(
@@ -113,6 +118,7 @@ def test_storage_manager_file_operation_error_paths(monkeypatch, tmp_path):
 
 
 def test_storage_manager_cleanup_and_stats_error_paths(monkeypatch, tmp_path):
+    """Validate Storage manager cleanup and stats error paths."""
     storage = StorageServiceManager(base_path=str(tmp_path / "missing"))
     original_exists = os.path.exists
     monkeypatch.setattr(
@@ -182,6 +188,7 @@ def test_storage_manager_cleanup_and_stats_error_paths(monkeypatch, tmp_path):
 
 
 def test_storage_manager_delayed_cleanup_and_old_file_helpers(monkeypatch, tmp_path):
+    """Validate Storage manager delayed cleanup and old file helpers."""
     storage = StorageServiceManager(base_path=str(tmp_path))
     messages = {"cleanup": [], "started": 0}
 
@@ -241,6 +248,7 @@ def test_storage_manager_delayed_cleanup_and_old_file_helpers(monkeypatch, tmp_p
 
 
 def test_storage_manager_cleanup_old_files_misc_paths(monkeypatch, tmp_path):
+    """Validate Storage manager cleanup old files misc paths."""
     storage = StorageServiceManager(base_path=str(tmp_path))
     assert storage.cleanup_old_files(0) == 0
 
@@ -269,6 +277,7 @@ def test_storage_manager_cleanup_old_files_misc_paths(monkeypatch, tmp_path):
 
 
 def test_task_result_path_validation_error_branches():
+    """Validate Task result path validation error branches."""
     with pytest.raises(HTTPException) as empty_path_error:
         task_module._validate_result_relative_path("   ")
     assert empty_path_error.value.status_code == 404
@@ -287,6 +296,7 @@ def test_task_result_path_validation_error_branches():
 
 
 def test_task_path_helpers_additional_branches(monkeypatch, tmp_path):
+    """Validate Task path helpers additional branches."""
     task_module.storage_manager.base_path = str(tmp_path)
     base_path = Path(task_module.storage_manager.base_path).resolve()
 
@@ -377,6 +387,7 @@ def test_task_path_helpers_additional_branches(monkeypatch, tmp_path):
 
 
 def test_task_root_resolution_rejects_symlink_escape(tmp_path):
+    """Validate Task root resolution rejects symlink escape."""
     task_module.storage_manager.base_path = str(tmp_path)
     outside_dir = tmp_path.parent / f"{tmp_path.name}-outside"
     outside_dir.mkdir()
@@ -388,6 +399,7 @@ def test_task_root_resolution_rejects_symlink_escape(tmp_path):
 
 
 def test_task_manifest_resolution_rejects_symlink_manifest(tmp_path):
+    """Validate Task manifest resolution rejects symlink manifest."""
     task_module.storage_manager.base_path = str(tmp_path)
     task_dir = tmp_path / "task-manifest"
     task_dir.mkdir(parents=True)
@@ -405,6 +417,7 @@ def test_task_manifest_resolution_rejects_symlink_manifest(tmp_path):
 
 
 def test_task_manifest_resolution_rejects_nested_manifest_symlink(tmp_path):
+    """Validate Task manifest resolution rejects nested manifest symlink."""
     task_module.storage_manager.base_path = str(tmp_path)
 
     task_dir = tmp_path / "task-manifest-nested"
@@ -422,6 +435,7 @@ def test_task_manifest_resolution_rejects_nested_manifest_symlink(tmp_path):
 
 
 def test_task_manifest_resolution_rejects_manifest_directory(tmp_path):
+    """Validate Task manifest resolution rejects manifest directory."""
     task_module.storage_manager.base_path = str(tmp_path)
 
     task_dir = tmp_path / "task-manifest-dir"
@@ -436,6 +450,7 @@ def test_task_manifest_resolution_rejects_manifest_directory(tmp_path):
 
 @pytest.mark.asyncio
 async def test_task_route_additional_branches(monkeypatch, tmp_path):
+    """Validate Task route additional branches."""
     task_module.storage_manager.base_path = str(tmp_path)
 
     with pytest.raises(HTTPException) as traversal_error:
@@ -514,6 +529,7 @@ async def test_task_route_additional_branches(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_task_result_file_rejects_symlink_escape(tmp_path):
+    """Validate Task result file rejects symlink escape."""
     task_module.storage_manager.base_path = str(tmp_path)
 
     task_id = "task-symlink"
@@ -539,6 +555,7 @@ async def test_task_result_file_rejects_symlink_escape(tmp_path):
 
 @pytest.mark.asyncio
 async def test_task_result_file_rejects_output_path_when_not_a_directory(tmp_path):
+    """Validate Task result file rejects output path when not a directory."""
     task_module.storage_manager.base_path = str(tmp_path)
 
     task_id = "task-with-output-file"
@@ -558,6 +575,7 @@ async def test_task_result_file_rejects_output_path_when_not_a_directory(tmp_pat
 
 @pytest.mark.asyncio
 async def test_task_result_file_rejects_missing_output_directory(tmp_path):
+    """Validate Task result file rejects missing output directory."""
     task_module.storage_manager.base_path = str(tmp_path)
 
     task_id = "task-no-output"
@@ -576,6 +594,7 @@ async def test_task_result_file_rejects_missing_output_directory(tmp_path):
 
 @pytest.mark.asyncio
 async def test_task_result_file_rejects_directory_target(tmp_path):
+    """Validate Task result file rejects directory target."""
     task_module.storage_manager.base_path = str(tmp_path)
 
     task_id = "task-dir-target"

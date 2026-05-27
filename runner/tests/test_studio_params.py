@@ -1,7 +1,10 @@
+"""Validates Studio parameter validation and encoding argument building with metadata."""
+
 from app.task_handlers.studio.studio_handler import StudioEncodingHandler
 
 
 def test_validate_parameters_accepts_studio_encoding_and_tracking_fields():
+    """Validate Validate parameters accepts studio encoding and tracking fields."""
     handler = StudioEncodingHandler()
 
     assert (
@@ -26,6 +29,7 @@ def test_validate_parameters_accepts_studio_encoding_and_tracking_fields():
 
 
 def test_validate_parameters_rejects_unknown_studio_fields_with_invalid_list():
+    """Validate Validate parameters rejects unknown studio fields with invalid list."""
     handler = StudioEncodingHandler()
 
     assert handler.validate_parameters({"unknown": "value", "other": "x"}) is False
@@ -36,6 +40,7 @@ def test_validate_parameters_rejects_unknown_studio_fields_with_invalid_list():
 
 
 def test_build_encoding_args_includes_tracking_and_dressing_flags():
+    """Validate Build encoding args includes tracking and dressing flags."""
     handler = StudioEncodingHandler()
 
     params = {

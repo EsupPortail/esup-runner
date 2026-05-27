@@ -3,6 +3,8 @@ Resilience tests for the Runner (registration, heartbeat, reconnection, status).
 Network calls to the manager are stubbed to keep tests fast and deterministic.
 """
 
+"""Validates runner registration, heartbeat communication, and automatic reconnection logic."""
+
 import pytest
 from fastapi.testclient import TestClient
 

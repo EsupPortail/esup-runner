@@ -1,5 +1,7 @@
 """Unit tests for syslog handling in app.core.setup_logging."""
 
+"""Validates JSON formatting, syslog handlers, and logger configuration for uvicorn integration."""
+
 import json
 import logging
 
@@ -15,6 +17,7 @@ from app.core.setup_logging import (
 
 
 def test_json_formatter_aliases_uvicorn_error_logger_name():
+    """Validate Json formatter aliases uvicorn error logger name."""
     formatter = JSONFormatter()
     record = logging.makeLogRecord(
         {
@@ -32,6 +35,7 @@ def test_json_formatter_aliases_uvicorn_error_logger_name():
 
 
 def test_logger_display_name_filter_aliases_uvicorn_error():
+    """Validate Logger display name filter aliases uvicorn error."""
     filt = LoggerDisplayNameFilter()
     record = logging.makeLogRecord({"name": "uvicorn.error", "msg": "x", "level": logging.INFO})
     assert filt.filter(record) is True
@@ -39,16 +43,19 @@ def test_logger_display_name_filter_aliases_uvicorn_error():
 
 
 def test_resolve_syslog_address_returns_explicit_socket(monkeypatch):
+    """Validate Resolve syslog address returns explicit socket."""
     monkeypatch.setattr(logging_module, "_is_unix_socket", lambda path: path == "/custom/syslog")
     assert _resolve_syslog_address("/custom/syslog") == "/custom/syslog"
 
 
 def test_resolve_syslog_address_returns_none_for_invalid_explicit(monkeypatch):
+    """Validate Resolve syslog address returns none for invalid explicit."""
     monkeypatch.setattr(logging_module, "_is_unix_socket", lambda _path: False)
     assert _resolve_syslog_address("/custom/syslog") is None
 
 
 def test_resolve_syslog_address_uses_fallback_candidates(monkeypatch):
+    """Validate Resolve syslog address uses fallback candidates."""
     monkeypatch.setattr(
         logging_module, "_DEFAULT_SYSLOG_ADDRESSES", ("/dev/log", "/var/run/syslog")
     )
@@ -57,6 +64,7 @@ def test_resolve_syslog_address_uses_fallback_candidates(monkeypatch):
 
 
 def test_add_syslog_handler_skips_when_no_socket(monkeypatch):
+    """Validate Add syslog handler skips when no socket."""
     logger = logging.getLogger("runner-syslog-skip")
     logger.handlers.clear()
 
@@ -72,6 +80,7 @@ def test_add_syslog_handler_skips_when_no_socket(monkeypatch):
 
 
 def test_add_syslog_handler_adds_handler_when_available(monkeypatch):
+    """Validate Add syslog handler adds handler when available."""
     logger = logging.getLogger("runner-syslog-ok")
     logger.handlers.clear()
 
@@ -98,6 +107,7 @@ def test_add_syslog_handler_adds_handler_when_available(monkeypatch):
 
 
 def test_add_syslog_handler_ignores_oserror(monkeypatch):
+    """Validate Add syslog handler ignores oserror."""
     logger = logging.getLogger("runner-syslog-error")
     logger.handlers.clear()
 
@@ -115,6 +125,7 @@ def test_add_syslog_handler_ignores_oserror(monkeypatch):
 
 
 def test_get_uvicorn_log_config_uses_display_name_filter():
+    """Validate Get uvicorn log config uses display name filter."""
     cfg = get_uvicorn_log_config(runner_instance_id=1, json_format=True)
     assert "display_name" in cfg["filters"]
     assert cfg["handlers"]["default"]["filters"] == ["display_name"]

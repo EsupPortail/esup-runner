@@ -1,3 +1,5 @@
+"""Validates grouped task type specification application across multiple runner instances."""
+
 import importlib
 import os
 import sys
@@ -8,6 +10,7 @@ import app.managers.process_manager as process_manager_module
 
 
 def test_run_uvicorn_instance_applies_grouped_task_types_per_instance(monkeypatch):
+    """Validate Run uvicorn instance applies grouped task types per instance."""
     cfg = importlib.reload(config_module)
     pm = importlib.reload(process_manager_module)
 

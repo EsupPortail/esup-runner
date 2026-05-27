@@ -1,3 +1,5 @@
+"""Validates directory collection from environment variables and configuration file handling."""
+
 import importlib.util
 from pathlib import Path
 
@@ -14,6 +16,7 @@ def _load_init_script_module():
 
 
 def test_collect_directories_uses_defaults_when_env_file_key_is_missing(monkeypatch):
+    """Validate Collect directories uses defaults when env file key is missing."""
     init_script = _load_init_script_module()
 
     for key in init_script.ENV_KEYS:
@@ -32,6 +35,7 @@ def test_collect_directories_uses_defaults_when_env_file_key_is_missing(monkeypa
 
 
 def test_collect_directories_prefers_process_environment_over_defaults(monkeypatch, tmp_path):
+    """Validate Collect directories prefers process environment over defaults."""
     init_script = _load_init_script_module()
 
     custom_dir = tmp_path / "cache-root"
@@ -49,6 +53,7 @@ def test_collect_directories_prefers_process_environment_over_defaults(monkeypat
 
 
 def test_collect_directories_uses_env_file_value_before_default(monkeypatch, tmp_path):
+    """Validate Collect directories uses env file value before default."""
     init_script = _load_init_script_module()
 
     custom_dir = tmp_path / "cache-root-from-env-file"
@@ -66,6 +71,7 @@ def test_collect_directories_uses_env_file_value_before_default(monkeypatch, tmp
 
 
 def test_collect_directories_supports_legacy_log_directory_alias(monkeypatch, tmp_path):
+    """Validate Collect directories supports legacy log directory alias."""
     init_script = _load_init_script_module()
 
     legacy_log_dir = tmp_path / "legacy-logs"

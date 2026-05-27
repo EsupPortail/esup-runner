@@ -1,3 +1,5 @@
+"""Validates base handler process registration, termination, and timeout error handling."""
+
 import builtins
 import subprocess
 from typing import Any
@@ -20,6 +22,7 @@ class _ConcreteBaseHandler(BaseTaskHandler):
 
 
 def test_base_handler_register_script_process_covers_empty_task_and_import_error(monkeypatch):
+    """Validate Base handler register script process covers empty task and import error."""
     handler = _ConcreteBaseHandler()
 
     handler._register_script_process(None, 1111)
@@ -36,6 +39,7 @@ def test_base_handler_register_script_process_covers_empty_task_and_import_error
 
 
 def test_base_handler_terminate_external_process_covers_fallback_and_wait_error(monkeypatch):
+    """Validate Base handler terminate external process covers fallback and wait error."""
     handler = _ConcreteBaseHandler()
 
     class _Process:
@@ -62,6 +66,7 @@ def test_base_handler_terminate_external_process_covers_fallback_and_wait_error(
 
 
 def test_base_handler_wait_external_process_timeout_calls_terminate(monkeypatch):
+    """Validate Base handler wait external process timeout calls terminate."""
     handler = _ConcreteBaseHandler()
     terminated = {"called": False}
 
@@ -82,6 +87,7 @@ def test_base_handler_wait_external_process_timeout_calls_terminate(monkeypatch)
 def test_base_handler_run_external_script_for_task_reraises_unrelated_type_error(
     monkeypatch, tmp_path
 ):
+    """Validate Base handler run external script for task reraises unrelated type error."""
     handler = _ConcreteBaseHandler()
     script_path = tmp_path / "script.py"
     script_path.write_text("print('ok')", encoding="utf-8")
@@ -96,6 +102,7 @@ def test_base_handler_run_external_script_for_task_reraises_unrelated_type_error
 
 
 def test_base_handler_run_external_script_task_id_paths(monkeypatch, tmp_path):
+    """Validate Base handler run external script task id paths."""
     handler = _ConcreteBaseHandler()
     script_path = tmp_path / "script.py"
     script_path.write_text("print('ok')", encoding="utf-8")
@@ -130,6 +137,7 @@ def test_base_handler_run_external_script_task_id_paths(monkeypatch, tmp_path):
 
 
 def test_base_handler_read_log_tail_missing_and_truncated(tmp_path):
+    """Validate Base handler read log tail missing and truncated."""
     handler = _ConcreteBaseHandler()
     assert handler._read_log_tail(tmp_path / "missing.log") == ""
 
@@ -139,6 +147,7 @@ def test_base_handler_read_log_tail_missing_and_truncated(tmp_path):
 
 
 def test_base_handler_reclassify_success_stderr_moves_non_error_lines(tmp_path):
+    """Validate Base handler reclassify success stderr moves non error lines."""
     handler = _ConcreteBaseHandler()
     stdout_log = tmp_path / "info_script.log"
     stderr_log = tmp_path / "error_script.log"
@@ -162,6 +171,7 @@ def test_base_handler_reclassify_success_stderr_moves_non_error_lines(tmp_path):
 
 
 def test_base_handler_reclassify_success_stderr_keeps_stderr_on_failure(tmp_path):
+    """Validate Base handler reclassify success stderr keeps stderr on failure."""
     handler = _ConcreteBaseHandler()
     stdout_log = tmp_path / "info_script.log"
     stderr_log = tmp_path / "error_script.log"
@@ -176,12 +186,14 @@ def test_base_handler_reclassify_success_stderr_keeps_stderr_on_failure(tmp_path
 
 
 def test_base_handler_probable_error_stderr_line_empty_and_traceback():
+    """Validate Base handler probable error stderr line empty and traceback."""
     handler = _ConcreteBaseHandler()
     assert handler._is_probable_error_stderr_line("") is False
     assert handler._is_probable_error_stderr_line(" Traceback (most recent call last):") is True
 
 
 def test_base_handler_reclassify_success_stderr_returns_on_empty_or_all_error_lines(tmp_path):
+    """Validate Base handler reclassify success stderr returns on empty or all error lines."""
     handler = _ConcreteBaseHandler()
     stdout_log = tmp_path / "info_script.log"
     missing_stderr_log = tmp_path / "missing_error_script.log"
@@ -202,6 +214,7 @@ def test_base_handler_reclassify_success_stderr_returns_on_empty_or_all_error_li
 
 
 def test_base_handler_reclassify_success_stderr_swallows_rewrite_errors(monkeypatch, tmp_path):
+    """Validate Base handler reclassify success stderr swallows rewrite errors."""
     handler = _ConcreteBaseHandler()
     stdout_log = tmp_path / "info_script.log"
     stderr_log = tmp_path / "error_script.log"
@@ -221,5 +234,6 @@ def test_base_handler_reclassify_success_stderr_swallows_rewrite_errors(monkeypa
 
 
 def test_encoding_handler_extract_script_error_prefers_explicit_error():
+    """Validate Encoding handler extract script error prefers explicit error."""
     handler = VideoEncodingHandler()
     assert handler._extract_script_error({"error": " explicit failure "}) == "explicit failure"

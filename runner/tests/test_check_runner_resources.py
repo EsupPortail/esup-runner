@@ -1,3 +1,5 @@
+"""Validates memory reading, GPU VRAM requirements, and task configuration evaluation."""
+
 import builtins
 import io
 
@@ -11,6 +13,7 @@ def _task_sets(*, encoding: int, transcription: int):
 
 
 def test_read_meminfo_gb_from_linux_proc(monkeypatch):
+    """Validate Read meminfo gb from linux proc."""
     mem_kb = 32 * 1024 * 1024  # 32 GiB in kB
     fake_meminfo = f"MemTotal:       {mem_kb} kB\nMemFree:        1234 kB\n"
 
@@ -25,6 +28,8 @@ def test_read_meminfo_gb_from_linux_proc(monkeypatch):
 
 
 def test_read_meminfo_gb_uses_macos_sysctl_fallback(monkeypatch):
+    """Validate Read meminfo gb uses macos sysctl fallback."""
+
     def failing_open(*_args, **_kwargs):
         raise FileNotFoundError
 
@@ -35,6 +40,7 @@ def test_read_meminfo_gb_uses_macos_sysctl_fallback(monkeypatch):
 
 
 def test_gpu_known_models_ignore_vram_formula_and_use_model_caps():
+    """Validate Gpu known models ignore vram formula and use model caps."""
     resources = crr.ResourceInfo(
         vcpu=64,
         ram_gb=188.6,
@@ -65,6 +71,7 @@ def test_gpu_known_models_ignore_vram_formula_and_use_model_caps():
 
 
 def test_gpu_known_models_reject_over_model_cap_even_if_vram_is_enough():
+    """Validate Gpu known models reject over model cap even if vram is enough."""
     resources = crr.ResourceInfo(
         vcpu=64,
         ram_gb=188.6,
@@ -94,6 +101,7 @@ def test_gpu_known_models_reject_over_model_cap_even_if_vram_is_enough():
 
 
 def test_gpu_unknown_models_keep_vram_based_validation():
+    """Validate Gpu unknown models keep vram based validation."""
     resources = crr.ResourceInfo(
         vcpu=32,
         ram_gb=64.0,

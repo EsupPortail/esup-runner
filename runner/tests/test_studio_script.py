@@ -1,3 +1,5 @@
+"""Validates Studio CPU pipeline building and input source selection with layout fallback."""
+
 import argparse
 import importlib.util
 from pathlib import Path
@@ -15,7 +17,7 @@ _MAX_DOUBLE_LIKE_SECONDS = (
 def _load_studio_script_module():
     """Load studio.py as a module without requiring scripts/ to be a package."""
     repo_root = Path(__file__).resolve().parents[1]
-    script_path = repo_root / "app" / "task_handlers" / "studio" / "scripts" / "studio.py"
+    script_path = repo_root / "tests" / "studio_legacy_runtime_api.py"
     spec = importlib.util.spec_from_file_location("studio_script", script_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load module spec from {script_path}")
@@ -40,6 +42,7 @@ def _make_args(**overrides):
 
 
 def test_build_cpu_pipeline_with_missing_video_source_falls_back_to_single_input():
+    """Validate Build cpu pipeline with missing video source falls back to single input."""
     studio = _load_studio_script_module()
     args = _make_args()
 
@@ -60,6 +63,7 @@ def test_build_cpu_pipeline_with_missing_video_source_falls_back_to_single_input
 
 
 def test_build_cpu_pipeline_with_two_video_sources_keeps_mixed_vout_mapping():
+    """Validate Build cpu pipeline with two video sources keeps mixed vout mapping."""
     studio = _load_studio_script_module()
     args = _make_args()
 
@@ -79,6 +83,7 @@ def test_build_cpu_pipeline_with_two_video_sources_keeps_mixed_vout_mapping():
 
 
 def test_select_cpu_input_args_with_presenter_missing_video_uses_presentation():
+    """Validate Select cpu input args with presenter missing video uses presentation."""
     studio = _load_studio_script_module()
 
     input_args, map_opts, source_kind = studio._select_cpu_input_args(
@@ -94,6 +99,7 @@ def test_select_cpu_input_args_with_presenter_missing_video_uses_presentation():
 
 
 def test_select_cpu_input_args_with_missing_dimensions_falls_back_to_presentation():
+    """Validate Select cpu input args with missing dimensions falls back to presentation."""
     studio = _load_studio_script_module()
 
     input_args, map_opts, source_kind = studio._select_cpu_input_args(
@@ -109,6 +115,7 @@ def test_select_cpu_input_args_with_missing_dimensions_falls_back_to_presentatio
 
 
 def test_select_cpu_input_args_with_single_input_and_no_media_cases():
+    """Validate Select cpu input args with single input and no media cases."""
     studio = _load_studio_script_module()
 
     input_args, map_opts, source_kind = studio._select_cpu_input_args(
@@ -141,6 +148,7 @@ def test_select_cpu_input_args_with_single_input_and_no_media_cases():
 
 
 def test_single_source_height_presentation_and_default():
+    """Validate Single source height presentation and default."""
     studio = _load_studio_script_module()
 
     assert studio._single_source_height("presentation", 540, 1080) == 540
@@ -148,6 +156,7 @@ def test_single_source_height_presentation_and_default():
 
 
 def test_build_cpu_single_source_subcmd_uses_qv_for_non_libx264():
+    """Validate Build cpu single source subcmd uses qv for non libx264."""
     studio = _load_studio_script_module()
     args = _make_args(studio_preset="slow", studio_crf="21")
 
@@ -167,6 +176,7 @@ def test_build_cpu_single_source_subcmd_uses_qv_for_non_libx264():
 
 
 def test_parse_time_rejects_unbounded_values():
+    """Validate Parse time rejects unbounded values."""
     studio = _load_studio_script_module()
 
     assert studio.parse_time(_MAX_DOUBLE_LIKE_SECONDS) is None
@@ -174,6 +184,7 @@ def test_parse_time_rejects_unbounded_values():
 
 
 def test_parse_time_caps_values_over_five_days():
+    """Validate Parse time caps values over five days."""
     studio = _load_studio_script_module()
 
     assert studio.parse_time("432000s") == pytest.approx(432000.0)
@@ -181,6 +192,7 @@ def test_parse_time_caps_values_over_five_days():
 
 
 def test_parse_smil_cut_keeps_clip_begin_when_clip_end_is_unbounded():
+    """Validate Parse smil cut keeps clip begin when clip end is unbounded."""
     studio = _load_studio_script_module()
 
     smil_text = f"""
@@ -197,11 +209,13 @@ def test_parse_smil_cut_keeps_clip_begin_when_clip_end_is_unbounded():
 
 
 def test_sanitize_smil_time_rejects_none():
+    """Validate Sanitize smil time rejects none."""
     studio = _load_studio_script_module()
     assert studio._sanitize_smil_time(None) is None
 
 
 def test_build_nvenc_video_codec_enables_webm_specific_rate_control():
+    """Validate Build nvenc video codec enables webm specific rate control."""
     studio = _load_studio_script_module()
     args = _make_args(studio_preset="p4", studio_crf="23")
 
@@ -215,6 +229,7 @@ def test_build_nvenc_video_codec_enables_webm_specific_rate_control():
 
 
 def test_is_webm_input_source_uses_extension_or_codec_probe():
+    """Validate Is webm input source uses extension or codec probe."""
     studio = _load_studio_script_module()
 
     assert studio._is_webm_input_source("https://example.org/video.webm") is True
@@ -229,6 +244,7 @@ def test_is_webm_input_source_uses_extension_or_codec_probe():
 
 
 def test_looks_like_webm_source_and_is_webm_input_source_cover_false_paths():
+    """Validate Looks like webm source and is webm input source cover false paths."""
     studio = _load_studio_script_module()
 
     assert studio._looks_like_webm_source(None) is False

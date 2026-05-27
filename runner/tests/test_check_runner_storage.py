@@ -1,25 +1,32 @@
+"""Validates Whisper model cache sizing and disk usage rule evaluation for storage directories."""
+
 from scripts import check_runner_storage as crs
 
 
 def test_resolve_whisper_min_free_gb_known_model():
+    """Validate Resolve whisper min free gb known model."""
     min_free_gb, ref = crs._resolve_whisper_min_free_gb("small")
     assert min_free_gb == 1.5
     assert ref == "small"
 
 
 def test_resolve_whisper_min_free_gb_large_variant():
+    """Validate Resolve whisper min free gb large variant."""
     min_free_gb, ref = crs._resolve_whisper_min_free_gb("large-v2")
     assert min_free_gb == 5.0
     assert ref == "large"
 
 
 def test_resolve_whisper_min_free_gb_unknown_model():
+    """Validate Resolve whisper min free gb unknown model."""
     min_free_gb, ref = crs._resolve_whisper_min_free_gb("custom-model")
     assert min_free_gb == 3.0
     assert ref == "unknown"
 
 
 def test_build_rules_mentions_max_file_age_days():
+    """Validate Build rules mentions max file age days."""
+
     class DummyCfg:
         LOG_DIRECTORY = "/var/log/esup-runner"
         STORAGE_DIR = "/tmp/esup-runner"
@@ -38,6 +45,8 @@ def test_build_rules_mentions_max_file_age_days():
 
 
 def test_build_rules_keeps_unitary_checks_when_cache_paths_are_not_grouped():
+    """Validate Build rules keeps unitary checks when cache paths are not grouped."""
+
     class DummyCfg:
         LOG_DIRECTORY = "/var/log/esup-runner"
         STORAGE_DIR = "/tmp/esup-runner"
@@ -57,6 +66,7 @@ def test_build_rules_keeps_unitary_checks_when_cache_paths_are_not_grouped():
 
 
 def test_resolve_uv_cache_dir_defaults_to_cache_dir(monkeypatch):
+    """Validate Resolve uv cache dir defaults to cache dir."""
     monkeypatch.delenv("UV_CACHE_DIR", raising=False)
 
     assert crs._resolve_uv_cache_dir("/home/esup-runner/.cache/esup-runner") == (
@@ -65,12 +75,14 @@ def test_resolve_uv_cache_dir_defaults_to_cache_dir(monkeypatch):
 
 
 def test_resolve_uv_cache_dir_prefers_uv_cache_dir_env(monkeypatch):
+    """Validate Resolve uv cache dir prefers uv cache dir env."""
     monkeypatch.setenv("UV_CACHE_DIR", "/var/cache/custom-uv")
 
     assert crs._resolve_uv_cache_dir("/tmp/cache-root") == "/var/cache/custom-uv"
 
 
 def test_evaluate_rule_model_cache_uses_required_minus_used(monkeypatch):
+    """Validate Evaluate rule model cache uses required minus used."""
     rule = crs.DirectoryRule(
         env_key="WHISPER_MODELS_DIR",
         path="/tmp/whisper",
@@ -91,6 +103,7 @@ def test_evaluate_rule_model_cache_uses_required_minus_used(monkeypatch):
 
 
 def test_evaluate_rule_storage_dir_uses_required_minus_used(monkeypatch):
+    """Validate Evaluate rule storage dir uses required minus used."""
     rule = crs.DirectoryRule(
         env_key="STORAGE_DIR",
         path="/tmp/storage",
@@ -113,6 +126,7 @@ def test_evaluate_rule_storage_dir_uses_required_minus_used(monkeypatch):
 def test_evaluate_rule_storage_dir_not_ok_when_required_additional_exceeds_free(
     monkeypatch,
 ):
+    """Validate Evaluate rule storage dir not ok when required additional exceeds free."""
     rule = crs.DirectoryRule(
         env_key="STORAGE_DIR",
         path="/tmp/storage",
@@ -133,6 +147,7 @@ def test_evaluate_rule_storage_dir_not_ok_when_required_additional_exceeds_free(
 
 
 def test_evaluate_rule_storage_dir_not_ok_when_even_free_is_zero(monkeypatch):
+    """Validate Evaluate rule storage dir not ok when even free is zero."""
     rule = crs.DirectoryRule(
         env_key="STORAGE_DIR",
         path="/tmp/storage",
@@ -155,6 +170,7 @@ def test_evaluate_rule_storage_dir_not_ok_when_even_free_is_zero(monkeypatch):
 def test_evaluate_rule_uv_cache_missing_directory_is_ok_if_parent_writable_and_has_space(
     monkeypatch,
 ):
+    """Validate Evaluate rule uv cache missing directory is ok if parent writable and has space."""
     rule = crs.DirectoryRule(
         env_key="UV_CACHE_DIR",
         path="/home/esup-runner/.cache/esup-runner/uv",
@@ -189,6 +205,7 @@ def test_evaluate_rule_uv_cache_missing_directory_is_ok_if_parent_writable_and_h
 
 
 def test_evaluate_rule_uv_cache_not_ok_when_parent_free_space_is_too_low(monkeypatch):
+    """Validate Evaluate rule uv cache not ok when parent free space is too low."""
     rule = crs.DirectoryRule(
         env_key="UV_CACHE_DIR",
         path="/home/esup-runner/.cache/esup-runner/uv",
@@ -221,6 +238,7 @@ def test_evaluate_rule_uv_cache_not_ok_when_parent_free_space_is_too_low(monkeyp
 
 
 def test_evaluate_rule_cache_dir_uses_aggregate_used_space(monkeypatch):
+    """Validate Evaluate rule cache dir uses aggregate used space."""
     rule = crs.DirectoryRule(
         env_key="CACHE_DIR",
         path="/tmp/cache-root",

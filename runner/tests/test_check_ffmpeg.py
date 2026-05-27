@@ -1,7 +1,10 @@
+"""Validates ffmpeg filter parsing, build configuration, and GPU codec capability validation."""
+
 from scripts import check_ffmpeg as cff
 
 
 def test_parse_filters_accepts_three_and_four_flag_formats() -> None:
+    """Validate Parse filters accepts three and four flag formats."""
     text = """
 Filters:
   T.. = Timeline support
@@ -16,12 +19,14 @@ Filters:
 
 
 def test_parse_filters_ignores_ansi_sequences() -> None:
+    """Validate Parse filters ignores ansi sequences."""
     text = "\x1b[0;32m...\x1b[0m \x1b[0;36mscale_cuda\x1b[0m V->V GPU accelerated video resizer"
     parsed = cff._parse_filters(text)
     assert "scale_cuda" in parsed
 
 
 def test_collect_results_marks_scale_and_hwupload_ok_when_preflight_passes(monkeypatch) -> None:
+    """Validate Collect results marks scale and hwupload ok when preflight passes."""
     monkeypatch.setattr(
         cff,
         "check_binaries",

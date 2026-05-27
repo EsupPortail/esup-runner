@@ -1,3 +1,5 @@
+"""Validates JSON formatting with custom fields, file handlers, and syslog integration."""
+
 import json
 import logging
 import stat
@@ -45,6 +47,7 @@ def clear_test_loggers():
 
 
 def test_json_formatter_includes_custom_fields_and_exception_stack():
+    """Validate Json formatter includes custom fields and exception stack."""
     formatter = JSONFormatter()
 
     try:
@@ -78,6 +81,7 @@ def test_json_formatter_includes_custom_fields_and_exception_stack():
 
 
 def test_setup_logging_adds_file_and_syslog_handlers_outside_pytest(monkeypatch, tmp_path):
+    """Validate Setup logging adds file and syslog handlers outside pytest."""
     calls = {}
     fake_sys = types.SimpleNamespace(modules={}, argv=["python"])
 
@@ -117,6 +121,7 @@ def test_setup_logging_adds_file_and_syslog_handlers_outside_pytest(monkeypatch,
 
 
 def test_setup_logging_raises_when_log_directory_cannot_be_created(monkeypatch):
+    """Validate Setup logging raises when log directory cannot be created."""
     monkeypatch.setattr(
         logging_module.os,
         "makedirs",
@@ -128,11 +133,13 @@ def test_setup_logging_raises_when_log_directory_cannot_be_created(monkeypatch):
 
 
 def test_create_formatter_returns_json_and_text_variants():
+    """Validate Create formatter returns json and text variants."""
     assert isinstance(_create_formatter(True), JSONFormatter)
     assert isinstance(_create_formatter(False), logging.Formatter)
 
 
 def test_add_file_handler_success_and_permission_error(monkeypatch, tmp_path):
+    """Validate Add file handler success and permission error."""
     logger = logging.getLogger("runner-file-handler")
     logger.handlers.clear()
 
@@ -155,6 +162,7 @@ def test_add_file_handler_success_and_permission_error(monkeypatch, tmp_path):
 
 
 def test_resolve_syslog_address_returns_none_when_no_candidate(monkeypatch):
+    """Validate Resolve syslog address returns none when no candidate."""
     monkeypatch.setattr(
         logging_module, "_DEFAULT_SYSLOG_ADDRESSES", ("/dev/log", "/var/run/syslog")
     )
@@ -163,6 +171,7 @@ def test_resolve_syslog_address_returns_none_when_no_candidate(monkeypatch):
 
 
 def test_is_unix_socket_handles_success_and_oserror(monkeypatch):
+    """Validate Is unix socket handles success and oserror."""
     fake_stat = types.SimpleNamespace(st_mode=stat.S_IFSOCK)
     monkeypatch.setattr(logging_module.os, "stat", lambda _path: fake_stat)
     assert _is_unix_socket("/dev/log") is True
@@ -176,11 +185,13 @@ def test_is_unix_socket_handles_success_and_oserror(monkeypatch):
 
 
 def test_get_logger_returns_existing_logger():
+    """Validate Get logger returns existing logger."""
     logger = logging.getLogger("runner-existing")
     assert get_logger("runner-existing") is logger
 
 
 def test_log_context_injects_fields_and_restores_log_record_factory():
+    """Validate Log context injects fields and restores log record factory."""
     logger = logging.getLogger("runner-context")
     original_factory = logging.getLogRecordFactory()
 
@@ -202,12 +213,14 @@ def test_log_context_injects_fields_and_restores_log_record_factory():
 
 
 def test_setup_default_logging_delegates_to_setup_logging(monkeypatch):
+    """Validate Setup default logging delegates to setup logging."""
     sentinel = logging.getLogger("runner-default")
     monkeypatch.setattr(logging_module, "setup_logging", lambda **kwargs: sentinel)
     assert setup_default_logging(json_format=True) is sentinel
 
 
 def test_setup_uvicorn_logging_with_file_handler(monkeypatch, tmp_path):
+    """Validate Setup uvicorn logging with file handler."""
     monkeypatch.setattr(logging_module.config, "LOG_DIRECTORY", f"{tmp_path}/")
     monkeypatch.setattr(logging_module, "get_runner_instance_id", lambda: 3)
 
@@ -230,6 +243,7 @@ def test_setup_uvicorn_logging_with_file_handler(monkeypatch, tmp_path):
 
 
 def test_setup_uvicorn_logging_without_file_handler(monkeypatch, tmp_path):
+    """Validate Setup uvicorn logging without file handler."""
     monkeypatch.setattr(logging_module.config, "LOG_DIRECTORY", f"{tmp_path}/")
     monkeypatch.setattr(logging_module, "get_runner_instance_id", lambda: 7)
 

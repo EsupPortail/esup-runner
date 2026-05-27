@@ -1,3 +1,5 @@
+"""Validates task result retrieval, recovery monitoring, and task-related API endpoints."""
+
 import asyncio
 
 import pytest
@@ -35,6 +37,7 @@ def stub_lifespan(monkeypatch, request):
         "test_recover_running_tasks_restarts_failed_task_with_persisted_request",
         "test_recover_running_tasks_handles_runner_id_drift_with_instance_scoped_state",
         "test_stop_recovery_monitors_cancels_running_tasks",
+        "test_stop_recovery_monitors_returns_when_empty",
     }
 
     if request.node.name not in recovery_tests:
@@ -50,7 +53,10 @@ def auth_override():
     app.dependency_overrides = {}
     from app.core.auth import get_current_manager
 
-    app.dependency_overrides[get_current_manager] = lambda: "manager-token"
+    async def _current_manager():
+        return "manager-token"
+
+    app.dependency_overrides[get_current_manager] = _current_manager
     yield
     app.dependency_overrides.clear()
 
@@ -68,6 +74,7 @@ def clean_runner_task_statuses(tmp_path, monkeypatch):
 
 
 def test_get_task_result(tmp_path):
+    """Validate Get task result."""
     from app.api.routes import task as task_module
 
     task_id = "task-123"
@@ -84,6 +91,7 @@ def test_get_task_result(tmp_path):
 
 
 def test_get_task_result_does_not_fall_back_to_legacy_manifest(tmp_path):
+    """Validate Get task result does not fall back to legacy manifest."""
     from app.api.routes import task as task_module
 
     task_id = "task-legacy"
@@ -97,6 +105,7 @@ def test_get_task_result_does_not_fall_back_to_legacy_manifest(tmp_path):
 
 
 def test_get_task_result_not_found(tmp_path):
+    """Validate Get task result not found."""
     from app.api.routes import task as task_module
 
     task_module.storage_manager.base_path = str(tmp_path)
@@ -107,6 +116,7 @@ def test_get_task_result_not_found(tmp_path):
 
 
 def test_get_task_status_returns_tracked_status():
+    """Validate Get task status returns tracked status."""
     state.set_task_status("task-running", "running")
 
     with TestClient(app) as client:
@@ -116,6 +126,7 @@ def test_get_task_status_returns_tracked_status():
 
 
 def test_get_task_status_returns_completed_when_manifest_exists(tmp_path):
+    """Validate Get task status returns completed when manifest exists."""
     from app.api.routes import task as task_module
 
     task_id = "task-done"
@@ -131,6 +142,7 @@ def test_get_task_status_returns_completed_when_manifest_exists(tmp_path):
 
 
 def test_get_task_status_returns_not_found(tmp_path):
+    """Validate Get task status returns not found."""
     from app.api.routes import task as task_module
 
     task_module.storage_manager.base_path = str(tmp_path)
@@ -142,6 +154,7 @@ def test_get_task_status_returns_not_found(tmp_path):
 
 
 def test_get_task_status_reraises_non_404_manifest_errors(monkeypatch):
+    """Validate Get task status reraises non 404 manifest errors."""
     from app.api.routes import task as task_module
 
     def _raise_non_404(_task_id):
@@ -156,12 +169,14 @@ def test_get_task_status_reraises_non_404_manifest_errors(monkeypatch):
 
 
 def test_normalize_script_output_returns_input_string():
+    """Validate Normalize script output returns input string."""
     from app.api.routes import task as task_module
 
     assert task_module._normalize_script_output("plain-text") == "plain-text"
 
 
 def test_normalize_script_output_formats_stdout_and_stderr_as_log_sections():
+    """Validate Normalize script output formats stdout and stderr as log sections."""
     from app.api.routes import task as task_module
 
     normalized = task_module._normalize_script_output(
@@ -181,6 +196,7 @@ def test_normalize_script_output_formats_stdout_and_stderr_as_log_sections():
 
 
 def test_normalize_script_output_formats_nested_stream_payloads_with_context():
+    """Validate Normalize script output formats nested stream payloads with context."""
     from app.api.routes import task as task_module
 
     normalized = task_module._normalize_script_output(
@@ -198,6 +214,7 @@ def test_normalize_script_output_formats_nested_stream_payloads_with_context():
 
 
 def test_normalize_script_output_skips_empty_keys_and_handles_list_contexts():
+    """Validate Normalize script output skips empty keys and handles list contexts."""
     from app.api.routes import task as task_module
 
     normalized = task_module._normalize_script_output(
@@ -219,6 +236,7 @@ def test_normalize_script_output_skips_empty_keys_and_handles_list_contexts():
 
 
 def test_normalize_script_output_falls_back_to_str_on_type_error():
+    """Validate Normalize script output falls back to str on type error."""
     from app.api.routes import task as task_module
 
     class Unserializable:
@@ -229,6 +247,7 @@ def test_normalize_script_output_falls_back_to_str_on_type_error():
 
 
 def test_get_task_result_file(tmp_path):
+    """Validate Get task result file."""
     from app.api.routes import task as task_module
 
     task_id = "task-456"
@@ -247,6 +266,7 @@ def test_get_task_result_file(tmp_path):
 
 
 def test_get_task_result_file_not_found(tmp_path):
+    """Validate Get task result file not found."""
     from app.api.routes import task as task_module
 
     task_module.storage_manager.base_path = str(tmp_path)
@@ -257,6 +277,7 @@ def test_get_task_result_file_not_found(tmp_path):
 
 
 def test_get_task_result_file_traversal(tmp_path):
+    """Validate Get task result file traversal."""
     from app.api.routes import task as task_module
 
     task_id = "task-evil"
@@ -270,6 +291,7 @@ def test_get_task_result_file_traversal(tmp_path):
 
 
 def test_delete_task_result(tmp_path):
+    """Validate Delete task result."""
     from app.api.routes import task as task_module
 
     task_id = "abc"
@@ -286,6 +308,7 @@ def test_delete_task_result(tmp_path):
 
 @pytest.mark.asyncio
 async def test_process_task_success(monkeypatch):
+    """Validate Process task success."""
     from app.api.routes import task as task_module
     from app.models.models import TaskRequest
 
@@ -323,6 +346,7 @@ async def test_process_task_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_process_task_failure(monkeypatch):
+    """Validate Process task failure."""
     from app.api.routes import task as task_module
     from app.models.models import TaskRequest
 
@@ -366,6 +390,7 @@ async def test_process_task_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_process_task_exception(monkeypatch):
+    """Validate Process task exception."""
     from app.api.routes import task as task_module
     from app.models.models import TaskRequest
 
@@ -408,6 +433,7 @@ async def test_process_task_exception(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_process_task_keeps_runner_unavailable_when_other_task_is_running(monkeypatch):
+    """Validate Process task keeps runner unavailable when other task is running."""
     from app.api.routes import task as task_module
     from app.models.models import TaskRequest
 
@@ -440,6 +466,7 @@ async def test_process_task_keeps_runner_unavailable_when_other_task_is_running(
 
 @pytest.mark.asyncio
 async def test_notify_completion_success(monkeypatch):
+    """Validate Notify completion success."""
     from app.api.routes import task as task_module
 
     class FakeResponse:
@@ -469,6 +496,7 @@ async def test_notify_completion_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_notify_completion_retries_and_fails(monkeypatch):
+    """Validate Notify completion retries and fails."""
     from app.api.routes import task as task_module
 
     statuses = [500, 500]
@@ -507,6 +535,7 @@ async def test_notify_completion_retries_and_fails(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_notify_completion_exception(monkeypatch):
+    """Validate Notify completion exception."""
     from app.api.routes import task as task_module
 
     class FakeClient:
@@ -530,6 +559,7 @@ async def test_notify_completion_exception(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_task_background(monkeypatch):
+    """Validate Run task background."""
     from app.api.routes import task as task_module
 
     state.set_registered(True)
@@ -558,6 +588,7 @@ async def test_run_task_background(monkeypatch):
 
 
 def test_run_task_not_registered(monkeypatch):
+    """Validate Run task not registered."""
     state.set_registered(False)
 
     with TestClient(app) as client:
@@ -575,6 +606,7 @@ def test_run_task_not_registered(monkeypatch):
 
 
 def test_run_task_busy(monkeypatch):
+    """Validate Run task busy."""
     state.set_registered(True)
     state.set_available(False)
 
@@ -594,6 +626,7 @@ def test_run_task_busy(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_recover_running_tasks_marks_completed_and_notifies(monkeypatch, tmp_path):
+    """Validate Recover running tasks marks completed and notifies."""
     from app.api.routes import task as task_module
 
     task_id = "task-recover-completed"
@@ -638,6 +671,7 @@ async def test_recover_running_tasks_marks_completed_and_notifies(monkeypatch, t
 def test_initialize_startup_availability_marks_runner_unavailable_when_running_tasks_exist(
     monkeypatch,
 ):
+    """Validate Initialize startup availability marks runner unavailable when running tasks exist."""
     from app.api.routes import task as task_module
 
     state.set_available(True)
@@ -657,6 +691,7 @@ def test_initialize_startup_availability_marks_runner_unavailable_when_running_t
 def test_initialize_startup_availability_does_not_force_available_when_no_running_tasks(
     monkeypatch,
 ):
+    """Validate Initialize startup availability does not force available when no running tasks."""
     from app.api.routes import task as task_module
 
     state.set_available(False)
@@ -676,6 +711,7 @@ def test_initialize_startup_availability_does_not_force_available_when_no_runnin
 def test_initialize_startup_availability_marks_runner_unavailable_when_failed_tasks_exist(
     monkeypatch,
 ):
+    """Validate Initialize startup availability marks runner unavailable when failed tasks exist."""
     from app.api.routes import task as task_module
 
     state.set_available(True)
@@ -694,6 +730,7 @@ def test_initialize_startup_availability_marks_runner_unavailable_when_failed_ta
 
 @pytest.mark.asyncio
 async def test_recover_running_tasks_keeps_alive_tasks_running(monkeypatch, tmp_path):
+    """Validate Recover running tasks keeps alive tasks running."""
     from app.api.routes import task as task_module
 
     task_id = "task-recover-running"
@@ -733,6 +770,7 @@ async def test_recover_running_tasks_keeps_alive_tasks_running(monkeypatch, tmp_
 async def test_recover_running_tasks_uses_task_metadata_success_without_manifest(
     monkeypatch, tmp_path
 ):
+    """Validate Recover running tasks uses task metadata success without manifest."""
     from app.api.routes import task as task_module
 
     task_id = "task-recover-metadata-success"
@@ -782,6 +820,7 @@ async def test_recover_running_tasks_uses_task_metadata_success_without_manifest
 async def test_recover_running_tasks_uses_task_metadata_failure_without_manifest(
     monkeypatch, tmp_path
 ):
+    """Validate Recover running tasks uses task metadata failure without manifest."""
     from app.api.routes import task as task_module
 
     task_id = "task-recover-metadata-failure"
@@ -830,6 +869,7 @@ async def test_recover_running_tasks_uses_task_metadata_failure_without_manifest
 async def test_recover_running_tasks_restarts_task_transitioned_from_running_to_failed(
     monkeypatch, tmp_path
 ):
+    """Validate Recover running tasks restarts task transitioned from running to failed."""
     from app.api.routes import task as task_module
 
     task_id = "task-recover-running-to-failed-restart"
@@ -895,6 +935,7 @@ async def test_recover_running_tasks_restarts_task_transitioned_from_running_to_
 
 @pytest.mark.asyncio
 async def test_recover_running_tasks_uses_outputs_without_metadata(monkeypatch, tmp_path):
+    """Validate Recover running tasks uses outputs without metadata."""
     from app.api.routes import task as task_module
 
     task_id = "task-recover-outputs-success"
@@ -940,6 +981,7 @@ async def test_recover_running_tasks_uses_outputs_without_metadata(monkeypatch, 
 
 @pytest.mark.asyncio
 async def test_recover_running_tasks_skips_foreign_runner_tasks(monkeypatch, tmp_path):
+    """Validate Recover running tasks skips foreign runner tasks."""
     from app.api.routes import task as task_module
 
     task_id = "task-recover-foreign"
@@ -973,6 +1015,7 @@ async def test_recover_running_tasks_skips_foreign_runner_tasks(monkeypatch, tmp
 async def test_recover_running_tasks_handles_runner_id_drift_with_instance_scoped_state(
     monkeypatch, tmp_path
 ):
+    """Validate Recover running tasks handles runner id drift with instance scoped state."""
     from app.api.routes import task as task_module
 
     task_id = "task-recover-runner-id-drift"
@@ -1018,6 +1061,7 @@ async def test_recover_running_tasks_handles_runner_id_drift_with_instance_scope
 async def test_recover_running_tasks_marks_failed_task_completed_when_manifest_exists(
     monkeypatch, tmp_path
 ):
+    """Validate Recover running tasks marks failed task completed when manifest exists."""
     from app.api.routes import task as task_module
 
     task_id = "task-recover-failed-to-completed"
@@ -1076,6 +1120,7 @@ async def test_recover_running_tasks_marks_failed_task_completed_when_manifest_e
 async def test_recover_running_tasks_restarts_failed_task_with_persisted_request(
     monkeypatch, tmp_path
 ):
+    """Validate Recover running tasks restarts failed task with persisted request."""
     from app.api.routes import task as task_module
 
     task_id = "task-recover-restart-failed"
@@ -1133,6 +1178,7 @@ async def test_recover_running_tasks_restarts_failed_task_with_persisted_request
 
 @pytest.mark.asyncio
 async def test_stop_recovery_monitors_cancels_running_tasks():
+    """Validate Stop recovery monitors cancels running tasks."""
     from app.api.routes import task as task_module
 
     gate = asyncio.Event()
@@ -1147,3 +1193,15 @@ async def test_stop_recovery_monitors_cancels_running_tasks():
 
     assert task_module._RECOVERY_MONITORS == {}
     assert monitor.cancelled() or monitor.done()
+
+
+@pytest.mark.asyncio
+async def test_stop_recovery_monitors_returns_when_empty():
+    """Validate Stop recovery monitors returns when no monitor is registered."""
+    from app.api.routes import task as task_module
+
+    task_module._RECOVERY_MONITORS.clear()
+
+    await task_module.stop_recovery_monitors()
+
+    assert task_module._RECOVERY_MONITORS == {}

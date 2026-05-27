@@ -1,3 +1,5 @@
+"""Validates video encoding handler execution, error handling, and script output collection."""
+
 from unittest.mock import Mock, patch
 
 from app.models.models import TaskRequest
@@ -20,6 +22,8 @@ def make_task_request():
 @patch("requests.Session.get")
 def test_encoding_handler_success(mock_get, mock_run):
     # Mock HTTP download of the source video
+    """Validate Encoding handler success."""
+
     def _resp():
         payload = b"fake-video-bytes"
         r = Mock()
@@ -54,6 +58,7 @@ def test_encoding_handler_success(mock_get, mock_run):
 
 
 def test_encoding_handler_returns_explicit_script_error(monkeypatch):
+    """Validate Encoding handler returns explicit script error."""
     handler = VideoEncodingHandler()
 
     monkeypatch.setattr(

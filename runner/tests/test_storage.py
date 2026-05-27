@@ -3,6 +3,8 @@ Storage tests for the Runner (file operations, cleanup, statistics).
 All comments are in English for clarity.
 """
 
+"""Validates file storage operations including save, read, cleanup, and usage statistics."""
+
 import os
 import tempfile
 import time

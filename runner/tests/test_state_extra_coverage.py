@@ -1,3 +1,5 @@
+"""Validates task state persistence, file resolution, and state normalization helper functions."""
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,6 +9,7 @@ import app.core.state as state_module
 
 
 def test_state_normalization_helpers_cover_string_and_instance_scoping(monkeypatch):
+    """Validate State normalization helpers cover string and instance scoping."""
     assert state_module._normalize_task_request({"a": 1}) == {"a": 1}
     assert state_module._normalize_task_request("   ") is None
     assert state_module._normalize_task_request('{"a": 1}') == {"a": 1}
@@ -31,6 +34,7 @@ def test_state_normalization_helpers_cover_string_and_instance_scoping(monkeypat
 
 
 def test_state_sanitize_and_task_store_cover_invalid_inputs():
+    """Validate State sanitize and task store cover invalid inputs."""
     assert state_module._sanitize_task_payload_for_persistence("task", "bad") is None
     assert state_module._sanitize_task_payload_for_persistence("", {"status": "running"}) is None
 
@@ -46,6 +50,7 @@ def test_state_sanitize_and_task_store_cover_invalid_inputs():
 
 
 def test_state_resolve_task_status_file_covers_runtime_config_and_fallbacks(monkeypatch):
+    """Validate State resolve task status file covers runtime config and fallbacks."""
     monkeypatch.delenv("RUNNER_TASK_STATUS_FILE", raising=False)
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("RUNNER_INSTANCE_ID", raising=False)
@@ -84,7 +89,24 @@ def test_state_resolve_task_status_file_covers_runtime_config_and_fallbacks(monk
     )
 
 
+def test_state_load_task_statuses_from_disk_returns_when_missing(monkeypatch, tmp_path):
+    """Validate State load task statuses from disk returns when file is missing."""
+    monkeypatch.setenv("RUNNER_TASK_STATUS_FILE", str(tmp_path / "missing-status.json"))
+
+    snapshot = state_module._RUNNER_STATE.copy()
+    try:
+        state_module._RUNNER_STATE["task_statuses"] = {"existing": {"status": "running"}}
+
+        state_module._load_task_statuses_from_disk()
+
+        assert state_module._RUNNER_STATE["task_statuses"] == {"existing": {"status": "running"}}
+    finally:
+        state_module._RUNNER_STATE.clear()
+        state_module._RUNNER_STATE.update(snapshot)
+
+
 def test_state_persist_and_load_cover_error_branches(tmp_path, monkeypatch):
+    """Validate State persist and load cover error branches."""
     snapshot = state_module._RUNNER_STATE.copy()
     snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
     status_file = tmp_path / "runner_task_statuses.json"
@@ -136,6 +158,7 @@ def test_state_persist_and_load_cover_error_branches(tmp_path, monkeypatch):
 
 
 def test_state_set_task_metadata_and_running_status_cover_remaining_branches():
+    """Validate State set task metadata and running status cover remaining branches."""
     snapshot = state_module._RUNNER_STATE.copy()
     snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
 

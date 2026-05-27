@@ -1,3 +1,5 @@
+"""Validates Studio encoding handler execution with mocked HTTP requests and subprocess calls."""
+
 import json
 from unittest.mock import Mock, patch
 
@@ -41,6 +43,8 @@ def make_task_request():
 @patch("requests.get")
 def test_studio_handler_success(mock_get, mock_run):
     # Mock requests for XML and SMIL
+    """Validate Studio handler success."""
+
     def _resp(text):
         r = Mock()
         r.status_code = 200

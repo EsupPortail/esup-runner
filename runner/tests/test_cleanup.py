@@ -2,6 +2,8 @@
 Test script for automatic storage cleanup functionality.
 """
 
+"""Validates automatic cleanup of old storage files based on configured age threshold."""
+
 import os
 import tempfile
 import time

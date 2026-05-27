@@ -20,6 +20,11 @@ def stub_lifespan(monkeypatch):
     monkeypatch.setattr(background_manager, "start_all_services", _noop)
     monkeypatch.setattr(background_manager, "stop_all_services", _noop)
 
+    from app.api.routes import task as task_module
+
+    monkeypatch.setattr(task_module, "recover_running_tasks_after_restart", _noop)
+    monkeypatch.setattr(task_module, "stop_recovery_monitors", _noop)
+
 
 def test_runner_health_and_ping(monkeypatch):
     with TestClient(app) as client:

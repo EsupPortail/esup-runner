@@ -1,3 +1,5 @@
+"""Validates transcription handler execution with mocked file download and script operations."""
+
 from unittest.mock import Mock, patch
 
 from app.models.models import TaskRequest
@@ -24,6 +26,8 @@ def make_task_request():
 @patch("requests.Session.get")
 def test_transcription_handler_success(mock_get, mock_run):
     # Mock HTTP download of the source video
+    """Validate Transcription handler success."""
+
     def _resp():
         payload = b"fake-video-bytes"
         r = Mock()

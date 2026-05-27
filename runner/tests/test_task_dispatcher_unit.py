@@ -1,3 +1,5 @@
+"""Validates task dispatching, parameter validation, and result manifest generation."""
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -57,6 +59,7 @@ def dispatcher(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_dispatch_task_success(dispatcher, tmp_path):
+    """Validate Dispatch task success."""
     request = SimpleNamespace(task_id="t1", task_type="dummy", parameters={}, source_url="http://x")
 
     result = await dispatcher.dispatch_task(task_id="t1", task_request=request)
@@ -71,6 +74,7 @@ async def test_dispatch_task_success(dispatcher, tmp_path):
 
 @pytest.mark.asyncio
 async def test_dispatch_task_invalid_params(dispatcher):
+    """Validate Dispatch task invalid params."""
     request = SimpleNamespace(
         task_id="t2", task_type="dummy", parameters={"ok": False}, source_url="http://x"
     )
@@ -82,6 +86,8 @@ async def test_dispatch_task_invalid_params(dispatcher):
 
 @pytest.mark.asyncio
 async def test_dispatch_task_invalid_params_includes_field_names(dispatcher, monkeypatch):
+    """Validate Dispatch task invalid params includes field names."""
+
     class InvalidFieldsHandler(DummyHandler):
         def validate_parameters(self, parameters):
             return False
@@ -114,6 +120,8 @@ async def test_dispatch_task_invalid_params_includes_field_names(dispatcher, mon
 @pytest.mark.asyncio
 async def test_dispatch_task_missing_handler(dispatcher, monkeypatch):
     # Force manager to return None
+    """Validate Dispatch task missing handler."""
+
     class NoneManager:
         def get_handler(self, *_):
             return None
@@ -134,12 +142,15 @@ async def test_dispatch_task_missing_handler(dispatcher, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_list_handlers(dispatcher):
+    """Validate List handlers."""
     handlers = dispatcher.get_available_task_types()
     assert "dummy" in handlers
 
 
 @pytest.mark.asyncio
 async def test_dispatch_task_exception(dispatcher, monkeypatch):
+    """Validate Dispatch task exception."""
+
     class ExplodingHandler(DummyHandler):
         def execute_task(self, *_, **__):
             raise RuntimeError("boom")
@@ -163,6 +174,7 @@ async def test_dispatch_task_exception(dispatcher, monkeypatch):
 @pytest.mark.asyncio
 async def test_package_results_failure(dispatcher, monkeypatch, tmp_path):
     # Force atomic manifest write to fail
+    """Validate Package results failure."""
     monkeypatch.setattr(
         "app.services.task_dispatcher.os.fsync",
         lambda *_, **__: (_ for _ in ()).throw(RuntimeError("disk")),

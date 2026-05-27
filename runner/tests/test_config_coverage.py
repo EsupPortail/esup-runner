@@ -1,3 +1,5 @@
+"""Validates configuration parsing helpers, environment loading, and config singleton initialization."""
+
 import builtins
 import importlib.util
 import json
@@ -26,6 +28,7 @@ def restore_config_module_globals():
 
 
 def test_parse_helpers_cover_defaults_invalid_values_and_bounds(monkeypatch):
+    """Validate Parse helpers cover defaults invalid values and bounds."""
     assert config_module._parse_bool("true") is True
     assert config_module._parse_bool("off") is False
     assert config_module._parse_bool("maybe", default=True) is True
@@ -55,6 +58,7 @@ def test_parse_helpers_cover_defaults_invalid_values_and_bounds(monkeypatch):
 
 
 def test_get_config_loads_environment_only_once(monkeypatch):
+    """Validate Get config loads environment only once."""
     calls = {"load": 0, "init": 0}
 
     class FakeConfig:
@@ -79,6 +83,7 @@ def test_get_config_loads_environment_only_once(monkeypatch):
 
 
 def test_reload_config_from_env_initializes_when_no_cached_instance(monkeypatch):
+    """Validate Reload config from env initializes when no cached instance."""
     calls = {"load": 0}
 
     class FakeConfig:
@@ -102,6 +107,7 @@ def test_reload_config_from_env_initializes_when_no_cached_instance(monkeypatch)
 
 
 def test_reload_config_from_env_updates_existing_instance_in_place(monkeypatch):
+    """Validate Reload config from env updates existing instance in place."""
     existing = types.SimpleNamespace(old_value="stale")
 
     class FakeConfig:
@@ -120,6 +126,7 @@ def test_reload_config_from_env_updates_existing_instance_in_place(monkeypatch):
 
 
 def test_load_environment_variables_warns_when_dotenv_is_missing(monkeypatch, capsys):
+    """Validate Load environment variables warns when dotenv is missing."""
     original_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):
@@ -137,6 +144,7 @@ def test_load_environment_variables_warns_when_dotenv_is_missing(monkeypatch, ca
 
 
 def test_load_environment_variables_warns_when_env_file_is_missing(monkeypatch, capsys):
+    """Validate Load environment variables warns when env file is missing."""
     monkeypatch.setattr(config_module.os.path, "exists", lambda _path: False)
 
     config_module._load_environment_variables()
@@ -146,6 +154,7 @@ def test_load_environment_variables_warns_when_env_file_is_missing(monkeypatch, 
 
 
 def test_config_warns_when_grouped_task_types_override_runner_instances(monkeypatch):
+    """Validate Config warns when grouped task types override runner instances."""
     monkeypatch.setenv("RUNNER_TASK_TYPES", "[2x(encoding),1x(studio)]")
     monkeypatch.setenv("RUNNER_INSTANCES", "1")
 
@@ -158,6 +167,7 @@ def test_config_warns_when_grouped_task_types_override_runner_instances(monkeypa
 
 
 def test_config_warn_grouped_instances_override_ignores_missing_env():
+    """Validate Config warn grouped instances override ignores missing env."""
     cfg = object.__new__(config_module.Config)
 
     with warnings.catch_warnings(record=True) as caught:
@@ -170,6 +180,7 @@ def test_config_warn_grouped_instances_override_ignores_missing_env():
 def test_config_warns_when_grouped_task_types_ignore_invalid_runner_instances(
     monkeypatch,
 ):
+    """Validate Config warns when grouped task types ignore invalid runner instances."""
     monkeypatch.setenv("RUNNER_TASK_TYPES", "[1x(encoding)]")
     monkeypatch.setenv("RUNNER_INSTANCES", "invalid")
 
@@ -182,6 +193,7 @@ def test_config_warns_when_grouped_task_types_ignore_invalid_runner_instances(
 
 
 def test_config_raises_for_grouped_instance_out_of_range(monkeypatch):
+    """Validate Config raises for grouped instance out of range."""
     monkeypatch.setenv("RUNNER_TASK_TYPES", "[1x(encoding)]")
     monkeypatch.setenv("RUNNER_INSTANCES", "1")
     monkeypatch.setenv("RUNNER_INSTANCE_ID", "4")
@@ -191,6 +203,7 @@ def test_config_raises_for_grouped_instance_out_of_range(monkeypatch):
 
 
 def test_config_uses_legacy_task_type_distribution(monkeypatch):
+    """Validate Config uses legacy task type distribution."""
     monkeypatch.setenv("RUNNER_TASK_TYPES", "encoding,studio")
     monkeypatch.setenv("RUNNER_INSTANCES", "2")
     monkeypatch.delenv("RUNNER_INSTANCE_ID", raising=False)
@@ -206,6 +219,7 @@ def test_config_uses_legacy_task_type_distribution(monkeypatch):
 
 
 def test_config_validate_configuration_success(monkeypatch):
+    """Validate Config validate configuration success."""
     monkeypatch.setenv("RUNNER_TOKEN", "secure-token")
     monkeypatch.setenv("RUNNER_TASK_TYPES", "encoding")
     monkeypatch.setenv("RUNNER_INSTANCES", "1")
@@ -219,6 +233,7 @@ def test_config_validate_configuration_success(monkeypatch):
 
 
 def test_config_log_dir_prefers_new_name_and_keeps_legacy_alias(monkeypatch):
+    """Validate Config log dir prefers new name and keeps legacy alias."""
     monkeypatch.setenv("LOG_DIR", "/tmp/new-runner-logs")
     monkeypatch.setenv("LOG_DIRECTORY", "/tmp/legacy-runner-logs")
 
@@ -233,6 +248,7 @@ def test_config_log_dir_prefers_new_name_and_keeps_legacy_alias(monkeypatch):
 
 
 def test_config_manager_url_strips_trailing_slash(monkeypatch):
+    """Validate Config manager url strips trailing slash."""
     monkeypatch.setenv("MANAGER_URL", "http://1.2.3.4:8000/")
 
     cfg = config_module.Config()
@@ -241,6 +257,7 @@ def test_config_manager_url_strips_trailing_slash(monkeypatch):
 
 
 def test_config_runner_task_status_file_default_and_override(monkeypatch):
+    """Validate Config runner task status file default and override."""
     monkeypatch.setenv("STORAGE_DIR", "/tmp/esup-runner-storage")
     monkeypatch.delenv("RUNNER_TASK_STATUS_FILE", raising=False)
 
@@ -255,6 +272,7 @@ def test_config_runner_task_status_file_default_and_override(monkeypatch):
 
 
 def test_config_validate_instances_requires_at_least_one():
+    """Validate Config validate instances requires at least one."""
     cfg = object.__new__(config_module.Config)
     cfg.RUNNER_INSTANCES = 0
 
@@ -263,6 +281,7 @@ def test_config_validate_instances_requires_at_least_one():
 
 
 def test_config_validate_task_types_requires_non_empty_instances():
+    """Validate Config validate task types requires non empty instances."""
     cfg = object.__new__(config_module.Config)
 
     with pytest.raises(ValueError, match="define at least one instance"):
@@ -278,6 +297,7 @@ def test_config_validate_task_types_requires_non_empty_instances():
 
 
 def test_config_validate_ports_tokens_cors_and_gpu(monkeypatch):
+    """Validate Config validate ports tokens cors and gpu."""
     cfg = object.__new__(config_module.Config)
     cfg.RUNNER_BASE_PORT = 79
     with pytest.raises(ValueError, match="between 80 and 65535"):
@@ -303,6 +323,7 @@ def test_config_validate_ports_tokens_cors_and_gpu(monkeypatch):
 
 
 def test_grouped_task_type_parsing_helpers_cover_error_paths(monkeypatch):
+    """Validate Grouped task type parsing helpers cover error paths."""
     assert config_module._normalize_grouped_task_types_spec(None) is None
     assert config_module._normalize_grouped_task_types_spec("  ") is None
     assert config_module._normalize_grouped_task_types_spec("encoding,studio") is None
@@ -328,6 +349,7 @@ def test_grouped_task_type_parsing_helpers_cover_error_paths(monkeypatch):
 
 
 def test_config_module_auto_validates_outside_pytest(monkeypatch):
+    """Validate Config module auto validates outside pytest."""
     config_path = Path(config_module.__file__)
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.setenv("RUNNER_TOKEN", "secure-token")
@@ -349,6 +371,7 @@ def test_config_module_auto_validates_outside_pytest(monkeypatch):
 
 
 def test_state_helpers_cover_attempts_urls_heartbeat_and_uptime():
+    """Validate State helpers cover attempts urls heartbeat and uptime."""
     snapshot = state_module._RUNNER_STATE.copy()
     try:
         state_module._RUNNER_STATE["registration_attempts"] = 0
@@ -374,6 +397,7 @@ def test_state_helpers_cover_attempts_urls_heartbeat_and_uptime():
 
 
 def test_state_task_status_helpers_cover_early_returns_and_clear():
+    """Validate State task status helpers cover early returns and clear."""
     snapshot = state_module._RUNNER_STATE.copy()
     snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
     try:
@@ -409,6 +433,7 @@ def test_state_task_status_helpers_cover_early_returns_and_clear():
 
 
 def test_state_metadata_and_running_helpers(tmp_path, monkeypatch):
+    """Validate State metadata and running helpers."""
     snapshot = state_module._RUNNER_STATE.copy()
     snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
     state_file = tmp_path / "runner_task_statuses.json"
@@ -446,6 +471,7 @@ def test_state_metadata_and_running_helpers(tmp_path, monkeypatch):
 
 
 def test_state_persistence_keeps_only_recovery_fields(tmp_path, monkeypatch):
+    """Validate State persistence keeps only recovery fields."""
     snapshot = state_module._RUNNER_STATE.copy()
     snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
     state_file = tmp_path / "runner_task_statuses.json"
@@ -506,6 +532,7 @@ def test_state_persistence_keeps_only_recovery_fields(tmp_path, monkeypatch):
 
 
 def test_state_load_task_statuses_from_disk_supports_plain_dict(tmp_path, monkeypatch):
+    """Validate State load task statuses from disk supports plain dict."""
     snapshot = state_module._RUNNER_STATE.copy()
     snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
     state_file = tmp_path / "runner_task_statuses.json"
@@ -536,6 +563,7 @@ def test_state_load_task_statuses_from_disk_supports_plain_dict(tmp_path, monkey
 
 
 def test_state_reload_task_statuses_from_disk_resets_and_reloads(tmp_path, monkeypatch):
+    """Validate State reload task statuses from disk resets and reloads."""
     snapshot = state_module._RUNNER_STATE.copy()
     snapshot["task_statuses"] = dict(state_module._RUNNER_STATE.get("task_statuses", {}))
     state_file = tmp_path / "runner_task_statuses.json"

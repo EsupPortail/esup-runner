@@ -295,12 +295,17 @@ def test_base_handler_download_source_file_retries_then_succeeds(monkeypatch, tm
 
     session = _FlakySession()
     monkeypatch.setattr(base_handler_module.requests, "Session", lambda: session)
-    monkeypatch.setattr(base_handler_module.time, "sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_MAX_ATTEMPTS", 4)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_RETRY_DELAY_SECONDS", 0.5)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_RETRY_BACKOFF_FACTOR", 3.0)
+    sleep_delays: list[float] = []
+    monkeypatch.setattr(base_handler_module.time, "sleep", sleep_delays.append)
 
     result = handler.download_source_file("https://example.org/a.mp4", str(dest_file))
 
     assert result["success"] is True
     assert session.calls == 2
+    assert sleep_delays == [0.5]
     assert dest_file.read_bytes() == b"payload"
 
 
@@ -342,6 +347,7 @@ def test_base_handler_download_source_file_retries_and_fails_on_truncated_payloa
     session = _AlwaysTruncatedSession()
     monkeypatch.setattr(base_handler_module.requests, "Session", lambda: session)
     monkeypatch.setattr(base_handler_module.time, "sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_MAX_ATTEMPTS", 3)
 
     result = handler.download_source_file("https://example.org/a.mp4", str(dest_file))
 
@@ -349,6 +355,54 @@ def test_base_handler_download_source_file_retries_and_fails_on_truncated_payloa
     assert session.calls == 3
     assert "Incomplete download" in result["error"]
     assert not dest_file.exists()
+
+
+def test_base_handler_download_source_file_reports_empty_response_context(monkeypatch, tmp_path):
+    """Validate empty downloads include response context and normalized punctuation."""
+    handler = _ConcreteBaseHandler()
+    dest_file = tmp_path / "download.bin"
+
+    class _Response:
+        status_code = 200
+        headers = {
+            "Content-Length": "123",
+            "Content-Type": "audio/mpeg",
+            "Last-Modified": "Wed, 27 May 2026 11:13:17 GMT",
+        }
+
+        @staticmethod
+        def iter_content(chunk_size: int = 8192):
+            _ = chunk_size
+            return iter(())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _EmptySession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, *_args, **_kwargs):
+            self.calls += 1
+            return _Response()
+
+    session = _EmptySession()
+    monkeypatch.setattr(base_handler_module.requests, "Session", lambda: session)
+    monkeypatch.setattr(base_handler_module.time, "sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(base_handler_module, "_DOWNLOAD_MAX_ATTEMPTS", 2)
+
+    result = handler.download_source_file("https://example.org/a.mp3", str(dest_file))
+
+    assert result["success"] is False
+    assert session.calls == 2
+    assert "Downloaded file is empty" in result["error"]
+    assert "Content-Length=123" in result["error"]
+    assert "Content-Type=audio/mpeg" in result["error"]
+    assert "Last-Modified=Wed, 27 May 2026 11:13:17 GMT" in result["error"]
+    assert not result["error"].endswith("..")
 
 
 def test_base_handler_download_helpers_cover_remaining_branches(tmp_path):

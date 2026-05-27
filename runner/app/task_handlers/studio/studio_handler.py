@@ -33,7 +33,7 @@ class StudioEncodingHandler(BaseTaskHandler):
 
     def __init__(self):
         super().__init__()
-        self.scripts_dir = Path(__file__).parent / "scripts"
+        self.entrypoints_dir = Path(__file__).parent
 
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
         self.last_invalid_parameters = self.get_invalid_parameters(parameters)
@@ -108,7 +108,7 @@ class StudioEncodingHandler(BaseTaskHandler):
         *,
         task_id: str | None = None,
     ) -> tuple[Dict[str, Any], Path]:
-        studio_script = self.scripts_dir / "studio.py"
+        studio_script = self.entrypoints_dir / "studio.py"
         base_video_path = workspace / work_dir / output_file
 
         studio_args = self._build_studio_args(
@@ -314,7 +314,7 @@ class StudioEncodingHandler(BaseTaskHandler):
         self.logger.info(
             f"Base studio video generated at: {workspace / work_dir / base_video_name}. Proceeding to encoding."
         )
-        encoding_script = Path(__file__).parent.parent / "encoding" / "scripts" / "encoding.py"
+        encoding_script = Path(__file__).parent.parent / "encoding" / "encoding.py"
         enc_args = self._build_encoding_args(
             parameters=task_request.parameters,
             base_dir=str(workspace),

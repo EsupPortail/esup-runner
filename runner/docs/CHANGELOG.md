@@ -10,13 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added `source_fps` in encoding metadata (`get_info_video()`), estimated from ffprobe and refined for WebM when needed.
+- Added a flattened internal `core/` package under each task handler (`encoding`, `studio`, `transcription`) with stable wrapper entrypoints (`encoding.py`, `studio.py`, `transcription.py`) re-exporting `main` / `parse_args`.
+- Added targeted core-coverage tests for encoding/transcription and expanded regression coverage around the new modular runtime paths.
 
 ### Changed
 
 - `base_handler.py`: on successful script execution, non-error `stderr` lines are moved to `stdout` for cleaner logs.
-- `encoding.py` and `studio.py`: improved WebM handling with CFR output and safer NVENC/quality settings to stabilize bitrate/quality.
-- `studio.py`: hardened SMIL time parsing (reject invalid/unbounded values and cap SMIL clip timestamps to 5 days).
-- Expanded regression tests for these behaviors (`base_handler`, `encoding`, `studio`).
+- `encoding.py` and `studio.py`: improved WebM handling (CFR output + safer NVENC/quality settings), and `studio.py` now hardens SMIL time parsing (reject invalid/unbounded values, cap timestamps to 5 days).
+- `encoding.py`, `studio.py`, and `transcription.py` now delegate to sibling `core/` packages and evict mismatched preloaded `core` modules before import, preventing cross-handler collisions in shared interpreters.
+- `transcription_handler.py` now explicitly accepts manager compatibility fields (`model_type`, `duration`) while continuing to ignore them for runtime argument building.
+- `app/main.py` now includes API routers idempotently so repeated startup/test lifecycles do not duplicate route registration.
+- `app/services/task_dispatcher.py` now runs handler execution in a dedicated single-worker `ThreadPoolExecutor` for deterministic offloading.
+- `Makefile` now falls back to `/tmp/esup-runner-uv-cache` when the default `UV_CACHE_DIR` is not writable.
+- Added `pytest-timeout` to dev dependencies and configured a default pytest timeout (`30s`, `thread` method) to reduce hanging test jobs.
+- `.coveragerc` no longer relies on broad function-level exclusions; coverage now depends on targeted tests.
+- Added/standardized module headers and function pydoc strings across encoding/transcription core modules, and refreshed runner docs to match the refactored task-handler layout and transcription pipeline.
+
+### Removed
+
+- Removed legacy compatibility wrappers under `app/task_handlers/*/scripts/`, removed `scripts/*_core` import bridges, and removed legacy studio runtime compatibility module (`app/task_handlers/studio/core/legacy_runtime_api.py`).
 
 ### Fixed
 

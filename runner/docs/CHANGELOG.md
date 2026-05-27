@@ -7,13 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `video_duration` in encoding metadata (`get_info_video()`), extracted from the first non-image video stream to preserve sub-second precision for thumbnail scheduling.
+- Added focused regression tests for primary-video duration probing, thumbnail fallback/validation behavior, and studio overlay EOF handling.
+
 ### Changed
 
 - Increased the internal source download retry window to better tolerate short publication/cache races on freshly generated media.
+- Thumbnail scheduling now prefers `video_duration` (float) over container-level duration when available, improving timestamp selection on short-video/long-audio inputs.
+- Thumbnail job payloads now include expected output path and an optional timestamp-0 fallback command used when a first seek produces no image.
+- Studio PiP filtergraphs now use `eof_action=pass:shortest=0:repeatlast=0` (CPU `overlay` and GPU `overlay_cuda`) to avoid frozen trailing PiP frames and premature truncation.
 
 ### Fixed
 
 - Improved empty-download diagnostics with response context (`Content-Length`, `Content-Type`, `Last-Modified`) and normalized the final error punctuation.
+- Thumbnail extraction no longer reports success when FFmpeg does not produce a non-empty PNG: stale outputs are removed before execution, missing outputs trigger explicit failure, and extraction retries at timestamp `0` when needed.
 
 ## [1.3.0] - 2026-05-27
 

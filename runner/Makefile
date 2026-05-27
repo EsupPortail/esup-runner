@@ -44,6 +44,11 @@ PYTHON  ?= $(UV) run python
 UV_LINK_MODE ?= copy
 CACHE_DIR ?= /home/esup-runner/.cache/esup-runner
 UV_CACHE_DIR ?= $(CACHE_DIR)/uv
+# Fallback to a writable tmp cache when the default user cache is unavailable
+# (common in restricted/sandboxed environments).
+ifneq ($(shell sh -c 'mkdir -p "$(UV_CACHE_DIR)" >/dev/null 2>&1 && test -w "$(UV_CACHE_DIR)" && echo 1'),1)
+UV_CACHE_DIR := /tmp/esup-runner-uv-cache
+endif
 XDG_CONFIG_HOME ?= $(HOME)/.config
 SYSTEMD_USER_DIR ?= $(XDG_CONFIG_HOME)/systemd/user
 SYSTEMD_USER_UNIT ?= $(SYSTEMD_USER_DIR)/esup-runner-runner.service

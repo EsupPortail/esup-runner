@@ -55,3 +55,8 @@ runner/data/**
 # Locks (but keep uv.lock for reproducible builds)
 *.lock
 !uv.lock
+
+# Local assistant config/docs (do not publish)
+/.codex
+/AGENTS.md
+/RTK.md

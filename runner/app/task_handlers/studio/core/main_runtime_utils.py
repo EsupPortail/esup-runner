@@ -36,6 +36,24 @@ def _build_input_args(
     )
 
 
+def _compute_target_duration(
+    pres_url: str | None,
+    pers_url: str | None,
+    clip_begin: float | None,
+    clip_end: float | None,
+) -> float | None:
+    return ffmpeg_runtime_utils.compute_target_duration(
+        pres_url,
+        pers_url,
+        clip_begin,
+        clip_end,
+        probe_duration_fn=lambda src: ffmpeg_runtime_utils.probe_duration(
+            src,
+            subprocess_module=subprocess,
+        ),
+    )
+
+
 def _is_webm_input_source(source: str | None) -> bool:
     return source_utils.is_webm_input_source(
         source,
@@ -85,6 +103,7 @@ def _run_pipelines(**kwargs: Any) -> int:
         presenter_layout: str,
         args: Any,
         webm_input: bool,
+        target_duration: float | None = None,
     ) -> tuple[str, str, str, str] | None:
         return pipeline_building_utils.build_full_gpu_pipeline(
             pres_url,
@@ -94,6 +113,7 @@ def _run_pipelines(**kwargs: Any) -> int:
             presenter_layout,
             args,
             webm_input,
+            target_duration=target_duration,
             prepare_full_gpu_inputs_fn=lambda **prep_kwargs: pipeline_building_utils.prepare_full_gpu_inputs(
                 prep_kwargs["pres_url"],
                 prep_kwargs["pers_url"],
@@ -125,6 +145,7 @@ def _run_pipelines(**kwargs: Any) -> int:
         presenter_layout: str,
         args: Any,
         webm_input: bool,
+        target_duration: float | None = None,
     ) -> tuple[str, str, str, str] | None:
         return pipeline_building_utils.build_gpu_encode_only_pipeline(
             pres_url,
@@ -134,6 +155,7 @@ def _run_pipelines(**kwargs: Any) -> int:
             presenter_layout,
             args,
             webm_input,
+            target_duration=target_duration,
             is_gpu_requested_fn=pipeline_building_utils.is_gpu_requested,
             set_cuda_env_fn=_set_cuda_env,
             nvenc_preflight_fn=_nvenc_preflight,
@@ -151,6 +173,7 @@ def _run_pipelines(**kwargs: Any) -> int:
         pers_h: int,
         presenter_layout: str,
         args: Any,
+        target_duration: float | None = None,
     ) -> tuple[str, str, str, str]:
         return pipeline_building_utils.build_cpu_pipeline(
             pres_url,
@@ -159,6 +182,7 @@ def _run_pipelines(**kwargs: Any) -> int:
             pers_h,
             presenter_layout,
             args,
+            target_duration=target_duration,
             select_cpu_input_args_fn=pipeline_building_utils.select_cpu_input_args,
             choose_h264_encoder_fn=_choose_h264_encoder,
             build_filter_fn=ffmpeg_command_utils.build_filter,
@@ -186,6 +210,7 @@ def build_main_flow_context() -> main_orchestration_utils.MainFlowContext:
         is_webm_input_source_fn=_is_webm_input_source,
         build_input_args_fn=_build_input_args,
         build_subtime_fn=ffmpeg_command_utils.build_subtime,
+        compute_target_duration_fn=_compute_target_duration,
         run_pipelines_fn=_run_pipelines,
     )
 

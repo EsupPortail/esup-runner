@@ -64,7 +64,7 @@ def encode(
     codec: str,
     height: int,
     file: str,
-    duration: int = 0,
+    duration: float = 0,
     thumbnail_index: int = 0,
     *,
     sanitize_filename_fn,
@@ -120,7 +120,12 @@ def encode(
         return True
 
     if type == "thumbnail":
-        return_value, return_msg = launch_cmd_fn(ffmpeg_cmd, "thumbnail", format)
+        return_value, return_msg = _launch_thumbnail_job(
+            ffmpeg_cmd,
+            format,
+            extra=extra,
+            launch_cmd_fn=launch_cmd_fn,
+        )
     else:
         return_value, return_msg = launch_cmd_fn(ffmpeg_cmd, type, format)
 
@@ -132,6 +137,54 @@ def encode(
 
     encode_log_fn(msg + return_msg)
     return return_value
+
+
+def _launch_thumbnail_job(
+    ffmpeg_cmd: str,
+    format: str,
+    *,
+    extra: dict,
+    launch_cmd_fn: Callable[[str, str, str], tuple[bool, str]],
+) -> tuple[bool, str]:
+    """Run thumbnail extraction and validate that FFmpeg wrote a PNG."""
+    output_path = str(extra.get("output_path") or "")
+    if output_path:
+        _remove_file_if_exists(output_path)
+
+    return_value, return_msg = launch_cmd_fn(ffmpeg_cmd, "thumbnail", format)
+    if not return_value or not output_path or _is_nonempty_file(output_path):
+        return return_value, return_msg
+
+    fallback_cmd = str(extra.get("fallback_cmd") or "")
+    if fallback_cmd:
+        return_msg += (
+            "Thumbnail output missing after requested timestamp; " "retrying at timestamp 0\n"
+        )
+        return_value, fallback_msg = launch_cmd_fn(fallback_cmd, "thumbnail", format)
+        return_msg += fallback_msg
+
+    if return_value and not _is_nonempty_file(output_path):
+        return_msg += f"Thumbnail output missing or empty: {output_path}\n"
+        return_value = False
+
+    return return_value, return_msg
+
+
+def _is_nonempty_file(path: str) -> bool:
+    """Return True when an expected output file exists and contains bytes."""
+    try:
+        return os.path.isfile(path) and os.path.getsize(path) > 0
+    except OSError:
+        return False
+
+
+def _remove_file_if_exists(path: str) -> None:
+    """Remove stale output before validating FFmpeg thumbnail creation."""
+    try:
+        if os.path.exists(path):
+            os.unlink(path)
+    except OSError:
+        pass
 
 
 def launch_encode_video(
@@ -223,7 +276,7 @@ def launch_encode(
 
     encode_thumbnail = True
     if info_video.get("has_stream_thumbnail", False):
-        duration = info_video.get("duration", 0)
+        duration = info_video.get("video_duration") or info_video.get("duration", 0)
         for i in range(3):
             if encode_fn("thumbnail", "png", "", 0, file, duration, i):
                 msg += f"thumbnail {i} ok\n"

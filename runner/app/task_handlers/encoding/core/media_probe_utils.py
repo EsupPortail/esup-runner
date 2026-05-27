@@ -157,6 +157,39 @@ def extract_duration_from_probe(info: Dict[str, Any]) -> int:
     return int(max_duration) if max_duration > 0 else 0
 
 
+def extract_primary_video_duration_from_probe(
+    info: Dict[str, Any],
+    *,
+    image_codecs: list[str],
+) -> float:
+    """Extract the first non-image video stream duration from ffprobe JSON."""
+    if not isinstance(info, dict):
+        return 0.0
+
+    streams = info.get("streams")
+    if not isinstance(streams, list):
+        return 0.0
+
+    for stream in streams:
+        if not isinstance(stream, dict):
+            continue
+        if stream.get("codec_type") != "video":
+            continue
+        if is_image_codec_name(str(stream.get("codec_name", "")), image_codecs=image_codecs):
+            continue
+
+        candidates: list[DurationValue] = [stream.get("duration")]
+        tags = stream.get("tags")
+        if isinstance(tags, dict):
+            candidates.append(tags.get("DURATION"))
+            candidates.append(tags.get("duration"))
+
+        duration = max((duration_seconds_from_value(v) for v in candidates), default=0.0)
+        return duration if duration > 0 else 0.0
+
+    return 0.0
+
+
 def is_image_codec_name(codec_name: str, *, image_codecs: list[str]) -> bool:
     """Return whether a codec name should be treated as image-only."""
     codec_text = str(codec_name or "").lower()
@@ -270,6 +303,7 @@ def get_info_video(
     extract_duration_from_probe_fn,
     refine_source_fps_fn,
     probe_packet_based_fps_fn,
+    extract_primary_video_duration_from_probe_fn=extract_primary_video_duration_from_probe,
 ) -> dict:
     """Extract comprehensive stream/duration information for an input file."""
     if debug:
@@ -294,6 +328,10 @@ def get_info_video(
         return {}
 
     duration = extract_duration_from_probe_fn(info)
+    video_duration = extract_primary_video_duration_from_probe_fn(
+        info,
+        image_codecs=image_codecs,
+    )
     if duration <= 0:
         msg += "Warning: duration unavailable in ffprobe metadata; defaulting to 0\n"
 
@@ -329,5 +367,6 @@ def get_info_video(
         "codec": codec,
         "height": height,
         "duration": duration,
+        "video_duration": video_duration,
         "source_fps": source_fps,
     }

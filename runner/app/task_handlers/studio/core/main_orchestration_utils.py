@@ -18,6 +18,13 @@ class MainFlowContext:
     build_input_args_fn: Callable[..., tuple[str, int, int]]
     build_subtime_fn: Callable[[float | None, float | None], str]
     run_pipelines_fn: Callable[..., int]
+    compute_target_duration_fn: (
+        Callable[
+            [str | None, str | None, float | None, float | None],
+            float | None,
+        ]
+        | None
+    ) = None
     make_dirs_fn: Callable[..., None] = os.makedirs
     path_join_fn: Callable[..., str] = os.path.join
 
@@ -48,6 +55,17 @@ def run_main_flow(args: Any, *, context: MainFlowContext) -> int:
         return 1
 
     subtime = context.build_subtime_fn(clip_begin, clip_end)
+    target_duration = None
+    if context.compute_target_duration_fn is not None:
+        try:
+            target_duration = context.compute_target_duration_fn(
+                pres_url_local,
+                pers_url_local,
+                clip_begin,
+                clip_end,
+            )
+        except Exception:
+            target_duration = None
     output_path = context.path_join_fn(work_dir, args.output_file)
     audio_bitrate = args.studio_audio_bitrate or "192k"
     output_opts = "-movflags +faststart -f mp4 -fps_mode cfr -r 30 -max_muxing_queue_size 4000 "
@@ -65,5 +83,6 @@ def run_main_flow(args: Any, *, context: MainFlowContext) -> int:
             audio_bitrate=audio_bitrate,
             output_opts=output_opts,
             output_path=output_path,
+            target_duration=target_duration,
         )
     )

@@ -19,7 +19,7 @@ class VideoEncodingHandler(BaseTaskHandler):
     Handles video encoding tasks using FFmpeg.
 
     Supports multiple encoding parameters through
-    specialized scripts in the encoding/scripts directory.
+    the dedicated encoding entrypoint in this task handler directory.
     """
 
     task_type = "encoding"
@@ -35,7 +35,7 @@ class VideoEncodingHandler(BaseTaskHandler):
     def __init__(self):
         """Initialize video encoding handler."""
         super().__init__()
-        self.scripts_dir = Path(__file__).parent / "scripts"
+        self.entrypoints_dir = Path(__file__).parent
 
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
         """
@@ -120,7 +120,7 @@ class VideoEncodingHandler(BaseTaskHandler):
                 raise Exception(download_result.get("error", "Unknown download error"))
 
             # Determine which script to use
-            script_path = self.scripts_dir / "encoding.py"
+            script_path = self.entrypoints_dir / "encoding.py"
 
             if not script_path.exists():
                 return {"success": False, "error": f"No script available: {script_path}"}

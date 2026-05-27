@@ -43,6 +43,11 @@ _STDERR_ERROR_TOKENS = (
     "non-monotonous",
 )
 
+# Internal technical download retry policy (not exposed through .env)
+_DOWNLOAD_MAX_ATTEMPTS = 5
+_DOWNLOAD_RETRY_DELAY_SECONDS = 2.0
+_DOWNLOAD_RETRY_BACKOFF_FACTOR = 2.0
+
 
 @lru_cache(maxsize=1)
 def _ffmpeg_buildconf_text() -> str:
@@ -583,11 +588,23 @@ class BaseTaskHandler(ABC):
 
             bytes_written = self._stream_response_to_file(response, part_path, chunk_size)
             if bytes_written <= 0:
-                raise ValueError("Downloaded file is empty (0 bytes).")
+                declared_size = expected_size if expected_size is not None else "unknown"
+                content_type = response.headers.get("Content-Type") or "unknown"
+                last_modified = response.headers.get("Last-Modified") or "unknown"
+                raise ValueError(
+                    "Downloaded file is empty "
+                    f"(0 bytes; Content-Length={declared_size}; "
+                    f"Content-Type={content_type}; Last-Modified={last_modified})"
+                )
             if expected_size is not None and bytes_written != expected_size:
                 raise ValueError(f"Incomplete download ({bytes_written}/{expected_size} bytes).")
 
             return {"success": True}
+
+    def _download_failure_message(self, source_url: str, error: str) -> str:
+        """Build a normalized download failure message."""
+        normalized_error = str(error).rstrip(".")
+        return f"Impossible to download {source_url} file, with error: {normalized_error}."
 
     def download_source_file(self, source_url: str, dest_file: str) -> Dict[str, Any]:
         """Download source file.
@@ -599,8 +616,9 @@ class BaseTaskHandler(ABC):
         Returns:
             Dict containing download results
         """
-        max_attempts = 3
-        base_retry_delay_seconds = 1.0
+        max_attempts = _DOWNLOAD_MAX_ATTEMPTS
+        base_retry_delay_seconds = _DOWNLOAD_RETRY_DELAY_SECONDS
+        retry_backoff_factor = _DOWNLOAD_RETRY_BACKOFF_FACTOR
         chunk_size = 1024 * 1024
         destination = Path(dest_file)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -626,12 +644,23 @@ class BaseTaskHandler(ABC):
                 except Exception as e:
                     last_error = str(e)
                     if attempt < max_attempts:
-                        time.sleep(base_retry_delay_seconds * (2 ** (attempt - 1)))
+                        retry_delay = base_retry_delay_seconds * (
+                            retry_backoff_factor ** (attempt - 1)
+                        )
+                        self.logger.warning(
+                            "Download attempt %s/%s failed for %s: %s; retrying in %.1fs",
+                            attempt,
+                            max_attempts,
+                            source_url,
+                            last_error,
+                            retry_delay,
+                        )
+                        time.sleep(retry_delay)
 
             self._cleanup_partial_download_file(part_path)
             return {
                 "success": False,
-                "error": f"Impossible to download {source_url} file, with error: {last_error}.",
+                "error": self._download_failure_message(source_url, last_error),
             }
         finally:
             self._cleanup_partial_download_file(part_path)

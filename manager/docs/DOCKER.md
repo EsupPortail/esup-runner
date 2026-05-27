@@ -301,17 +301,18 @@ Manual end-to-end task test (from manager sources):
 
 ```bash
 cd /opt/esup-runner/manager
-RUNNER_API_TOKEN="<AUTHORIZED_TOKEN>" \
-RUNNER_MANAGER_URL="http://127.0.0.1:8081" \
 uv run scripts/check_pipeline_tasks.py
+# Optional: also validate transcription + translation path
+uv run scripts/check_pipeline_tasks.py --with-transcription-translation
 ```
 
 Before running this script:
 
-- Set `RUNNER_API_TOKEN` to one of your manager `AUTHORIZED_TOKENS__*` values.
-- Set `RUNNER_MANAGER_URL` to your published manager endpoint.
+- The script auto-loads `MANAGER_URL` and the first configured `AUTHORIZED_TOKENS__*` value from `manager/.env`.
+- Optional overrides remain available through `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL`.
 - If the script runs from another server, avoid `127.0.0.1`; use the real manager host/IP.
-- Ensure at least one runner is registered and supports `TASK_TYPE` (default script value: `encoding`).
+- Ensure at least one runner is registered and supports `encoding`.
+- `--with-transcription-translation` additionally requires runner support for `transcription`.
 
 Inspect mounted data paths (container must be running):
 

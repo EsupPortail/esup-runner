@@ -263,15 +263,17 @@ curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
 
 ```bash
 cd /opt/esup-runner/manager
-RUNNER_API_TOKEN="<AUTHORIZED_TOKEN>" \
-RUNNER_MANAGER_URL="http://127.0.0.1:<MANAGER_PORT>" \
 uv run scripts/check_pipeline_tasks.py
+# Optional: also validate transcription + translation path
+uv run scripts/check_pipeline_tasks.py --with-transcription-translation
 ```
 
-Replace:
+Notes:
 
-- `<AUTHORIZED_TOKEN>` with one of your `AUTHORIZED_TOKENS__*` (for example `AUTHORIZED_TOKENS__runners`) values from `.env`.
-- `<MANAGER_PORT>` with the value of `MANAGER_PORT` from `.env`.
+- The script auto-loads `MANAGER_URL` and the first configured `AUTHORIZED_TOKENS__*` value from `manager/.env`.
+- Optional overrides are still available with `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL`.
+- If the script runs from another server, avoid `127.0.0.1`; use the reachable manager host/IP.
+- Default smoke test validates `encoding`; `--with-transcription-translation` also validates `transcription` (`fr` then `en`).
 
 The expected result is as follows: `{"status":"healthy","timestamp":"XXXX","runners":0,"tasks":0}`.
 

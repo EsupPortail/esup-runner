@@ -5,6 +5,19 @@ from __future__ import annotations
 from typing import Any
 
 
+def _duration_tokens(target_duration: float | None) -> tuple[str, str]:
+    """Return (pad, trim) tokens to stabilize stream duration when available."""
+    if target_duration is None:
+        return "", ""
+    if target_duration <= 0:
+        return "", ""
+
+    duration = f"{target_duration:.3f}"
+    pad = f",tpad=stop_mode=clone:stop_duration={duration}"
+    trim = f",trim=duration={duration},setpts=PTS-STARTPTS"
+    return pad, trim
+
+
 def first_token(value: str | None, default: str) -> str:
     """Return the first whitespace-separated token or a default fallback."""
     if not value:
@@ -13,8 +26,14 @@ def first_token(value: str | None, default: str) -> str:
     return token or default
 
 
-def build_filter(pres_h: int, pers_h: int, presenter: str) -> str:
+def build_filter(
+    pres_h: int,
+    pers_h: int,
+    presenter: str,
+    target_duration: float | None = None,
+) -> str:
     """Build the FFmpeg filter graph for the requested studio layout."""
+    pad, trim = _duration_tokens(target_duration)
     if presenter not in {"mid", "piph", "pipb"}:
         presenter = "mid"
     if presenter in ("piph", "pipb") and pres_h > 0 and pers_h > 0:
@@ -24,10 +43,10 @@ def build_filter(pres_h: int, pers_h: int, presenter: str) -> str:
         overlay_pos = "W-w-10:H-h-10" if presenter == "pipb" else "W-w-10:10"
         return (
             " -filter_complex "
-            + f'"[0:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{height},setsar=1,format=yuv420p[pres];'
-            + f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{sh},setsar=1,format=yuv420p[pip];"
+            + f'"[0:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{height},setsar=1,format=yuv420p{pad}[pres];'
+            + f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{sh},setsar=1,format=yuv420p{pad}[pip];"
             + f"[pres][pip]overlay={overlay_pos}:eof_action=pass:shortest=0:repeatlast=0[tmp];"
-            + "[tmp]format=yuv420p,setsar=1[vout]"
+            + f"[tmp]format=yuv420p{trim},setsar=1[vout]"
             + '" '
         )
     if presenter == "mid" and pres_h > 0 and pers_h > 0:
@@ -35,10 +54,10 @@ def build_filter(pres_h: int, pers_h: int, presenter: str) -> str:
         height = min_h if (min_h % 2) == 0 else min_h + 1
         return (
             " -filter_complex "
-            + f'"[0:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{height},setsar=1,format=yuv420p[left];'
-            + f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{height},setsar=1,format=yuv420p[right];"
+            + f'"[0:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{height},setsar=1,format=yuv420p{pad}[left];'
+            + f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{height},setsar=1,format=yuv420p{pad}[right];"
             + "[left][right]hstack=inputs=2[tmp];"
-            + '[tmp]format=yuv420p,setsar=1[vout]" '
+            + f'[tmp]format=yuv420p{trim},setsar=1[vout]" '
         )
     return " "
 
@@ -79,18 +98,20 @@ def build_full_gpu_filtergraph(
     height: int,
     pip_h: int,
     overlay_pos: str,
+    target_duration: float | None = None,
 ) -> str:
     """Build the filter graph used by the full GPU studio pipeline."""
+    pad, trim = _duration_tokens(target_duration)
     if presenter_layout == "mid":
         return (
-            f' -filter_complex "[0:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{height}:format=nv12,hwdownload,format=yuv420p,fps=30[l];'
-            f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{height}:format=nv12,hwdownload,format=yuv420p,fps=30[r];"
-            f'[l][r]hstack=inputs=2,format=yuv420p,setsar=1[vout]" '
+            f' -filter_complex "[0:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{height}:format=nv12,hwdownload,format=yuv420p,fps=30{pad}[l];'
+            f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{height}:format=nv12,hwdownload,format=yuv420p,fps=30{pad}[r];"
+            f'[l][r]hstack=inputs=2,format=yuv420p{trim},setsar=1[vout]" '
         )
     return (
         f' -filter_complex "[0:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{height}:format=nv12[pres];'
         f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,scale_cuda=-2:{pip_h}:format=nv12[pip];"
-        f'[pres][pip]overlay_cuda={overlay_pos}:eof_action=pass:shortest=0:repeatlast=0,hwdownload,format=yuv420p,fps=30,setsar=1[vout]" '
+        f'[pres][pip]overlay_cuda={overlay_pos}:eof_action=pass:shortest=0:repeatlast=0,hwdownload,format=yuv420p,fps=30{pad}{trim},setsar=1[vout]" '
     )
 
 
@@ -99,12 +120,14 @@ def build_cpu_single_source_subcmd(
     cpu_is_libx264: bool,
     target_h: int,
     args: Any,
+    target_duration: float | None = None,
 ) -> str:
     """Build filter and codec options for a single-source CPU path."""
     x264_preset = first_token(args.studio_preset, "slow")
     x264_crf = first_token(args.studio_crf, "20")
+    pad, trim = _duration_tokens(target_duration)
     subcmd = (
-        f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p,setsar=1" '
+        f' -vf "settb=AVTB,setpts=PTS-STARTPTS,fps=30,scale=-2:{target_h},format=yuv420p{pad}{trim},setsar=1" '
         f"-c:v {cpu_encoder} "
     )
     if cpu_is_libx264:

@@ -56,6 +56,7 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
+    "pytest-timeout>=2.3.1",
 ]
 
 docs = [
@@ -121,6 +122,8 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 pythonpath = ["./app"]
 python_files = "test_*.py"
+timeout = 30
+timeout_method = "thread"
 filterwarnings = [
     "ignore::DeprecationWarning:crypt",
     "ignore:'crypt' is deprecated and slated for removal in Python 3.13:DeprecationWarning",

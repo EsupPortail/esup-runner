@@ -252,7 +252,7 @@ def build_encode_thumbnail_job(
     *,
     file: str,
     filename: str,
-    duration: int,
+    duration: float,
     thumbnail_index: int,
     videos_dir: str,
     videos_output_dir: str,
@@ -261,10 +261,19 @@ def build_encode_thumbnail_job(
     """Build FFmpeg command and metadata for thumbnail extraction."""
     percentages = [0.25, 0.50, 0.75]
     timestamp = int(duration * percentages[thumbnail_index]) if duration > 0 else 0
+    input_path = os.path.join(videos_dir, file)
+    output_path = os.path.join(videos_output_dir, f"{filename}_{thumbnail_index}.png")
     ffmpeg_cmd = thumbnail_templates[thumbnail_index].format(
         timestamp=timestamp,
         output_dir=videos_output_dir,
-        input=os.path.join(videos_dir, file),
+        input=input_path,
+        filename=filename,
+        ext="png",
+    )
+    fallback_cmd = thumbnail_templates[thumbnail_index].format(
+        timestamp=0,
+        output_dir=videos_output_dir,
+        input=input_path,
         filename=filename,
         ext="png",
     )
@@ -273,5 +282,10 @@ def build_encode_thumbnail_job(
         "timestamp": timestamp,
         "percentage": int(percentages[thumbnail_index] * 100),
     }
-    extra: Dict[str, Any] = {"templates": thumbnail_templates, "timestamp": timestamp}
+    extra: Dict[str, Any] = {
+        "templates": thumbnail_templates,
+        "timestamp": timestamp,
+        "output_path": output_path,
+        "fallback_cmd": fallback_cmd if timestamp > 0 else "",
+    }
     return ffmpeg_cmd, "encode_thumbnail", add_info_video_content, True, extra

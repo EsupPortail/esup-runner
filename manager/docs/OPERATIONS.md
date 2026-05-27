@@ -44,7 +44,12 @@ Optional local validation helpers:
 cd /opt/esup-runner/manager
 uv run scripts/check_runtime.py
 uv run scripts/check_version.py
+uv run scripts/check_pipeline_tasks.py
+# Optional: include transcription + translation smoke checks
+uv run scripts/check_pipeline_tasks.py --with-transcription-translation
 ```
+
+`check_pipeline_tasks.py` reads `MANAGER_URL` and manager tokens from `.env` by default; `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL` remain available as optional overrides.
 
 ## Admin UI runbook
 

@@ -9,7 +9,8 @@ import socket
 from datetime import datetime
 from urllib.parse import ParseResult, urlparse, urlunparse
 
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
+from pydantic import BaseModel
 
 from app.core.auth import verify_runner_version, verify_token
 from app.core.config import config
@@ -22,6 +23,12 @@ logger = setup_default_logging()
 
 # Create API router
 router = APIRouter(prefix="/runner", tags=["Runner"])
+
+
+class RunnerHeartbeatPayload(BaseModel):
+    """Optional runner heartbeat payload."""
+
+    availability: str | None = None
 
 # ======================================================
 # Utility Functions
@@ -235,6 +242,7 @@ async def register_runner(
 )
 async def runner_heartbeat(
     runner_id: str = Path(..., description="Runner identifier"),
+    payload: RunnerHeartbeatPayload | None = Body(default=None),
     current_token: str = Depends(verify_token),
     current_version: str = Depends(verify_runner_version),
 ) -> dict:
@@ -261,5 +269,10 @@ async def runner_heartbeat(
         )
 
     runner.last_heartbeat = datetime.now()
+    if payload is not None and payload.availability is not None:
+        normalized_availability = str(payload.availability).strip().lower()
+        if normalized_availability in {"available", "busy"}:
+            runner.availability = normalized_availability
+
     runners[runner_id] = runner
     return {"status": "ok"}

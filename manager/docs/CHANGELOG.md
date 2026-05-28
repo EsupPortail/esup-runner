@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Heartbeat now accepts runner availability (`available`/`busy`).
+
+### Changed
+
+- Runner state is updated from heartbeat availability when provided.
+
+### Fixed
+
+- Fixed stale `busy` status after runner restart/recovery.
+
 ## [1.3.1] - 2026-05-27
 
 ### Changed

@@ -87,6 +87,9 @@ async def send_heartbeat():
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.post(
                 f"{config.MANAGER_URL}/runner/heartbeat/{get_runner_id()}",
+                json={
+                    "availability": "available" if is_available() else "busy",
+                },
                 headers={
                     "Accept": "application/json",
                     "Authorization": f"Bearer {config.RUNNER_TOKEN}",

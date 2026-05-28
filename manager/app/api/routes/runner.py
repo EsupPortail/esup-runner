@@ -30,6 +30,7 @@ class RunnerHeartbeatPayload(BaseModel):
 
     availability: str | None = None
 
+
 # ======================================================
 # Utility Functions
 # ======================================================

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Heartbeat payload now includes runner availability (`available`/`busy`).
+
+### Changed
+
+- Manager heartbeat now accepts availability and updates stored runner state.
+
+### Fixed
+
+- Fixed stale `busy` status after restart/recovery.
+
 ## [1.3.1] - 2026-05-27
 
 ### Added

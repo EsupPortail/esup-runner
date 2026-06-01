@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from app.core.auth import verify_admin, verify_token
 from app.core.state import runners, tasks
 from app.main import app
-from app.models.models import Runner, Task, TaskCompletionNotification
+from app.models.models import Runner, Task, TaskCompletionNotification, TaskRequest
 from app.services import background_service
 
 
@@ -1092,6 +1092,241 @@ def test_execute_task_async_no_runners_available(monkeypatch, client, task_modul
 
     assert resp.status_code == 503
     assert resp.json()["detail"] == "No runners available"
+
+
+def test_execute_task_async_returns_existing_inflight_duplicate(
+    monkeypatch, client, task_module, clean_state
+):
+    """Validate Execute task async reuses an equivalent in-flight task."""
+    now = datetime.now().isoformat()
+    tasks["existing-task"] = Task(
+        task_id="existing-task",
+        runner_id="r1",
+        status="running",
+        etab_name="UM",
+        app_name="pod",
+        app_version="1.0",
+        task_type="encoding",
+        source_url="https://example.com/video.mp4",
+        affiliation=None,
+        parameters={"video_id": "vid-001"},
+        notify_url="https://example.com/notify",
+        completion_callback=None,
+        created_at=now,
+        updated_at=now,
+        error=None,
+        script_output=None,
+    )
+
+    scheduled: dict[str, bool] = {"called": False}
+
+    def fake_create_task(_coro):
+        scheduled["called"] = True
+        raise AssertionError("background scheduling should not happen for duplicates")
+
+    monkeypatch.setattr(task_module.asyncio, "create_task", fake_create_task)
+
+    resp = client.post(
+        "/task/execute",
+        json={
+            "etab_name": "UM",
+            "app_name": "pod",
+            "app_version": "1.0",
+            "task_type": "encoding",
+            "source_url": "https://example.com/video.mp4",
+            "affiliation": None,
+            "parameters": {"video_id": "vid-001"},
+            "notify_url": "https://example.com/notify",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["task_id"] == "existing-task"
+    assert resp.json()["status"] == "running"
+    assert len(tasks) == 1
+    assert scheduled["called"] is False
+
+
+def test_find_inflight_duplicate_ignores_non_inflight_statuses(task_module):
+    """Validate Find inflight duplicate ignores non inflight statuses."""
+    now = datetime.now().isoformat()
+    request = TaskRequest(
+        etab_name="UM",
+        app_name="pod",
+        app_version="1.0",
+        task_type="encoding",
+        source_url="https://example.com/video.mp4",
+        affiliation=None,
+        parameters={"video_id": "vid-001"},
+        notify_url="https://example.com/notify",
+    )
+
+    completed = Task(
+        task_id="t-completed",
+        runner_id="r1",
+        status="completed",
+        etab_name="UM",
+        app_name="pod",
+        app_version="1.0",
+        task_type="encoding",
+        source_url="https://example.com/video.mp4",
+        affiliation=None,
+        parameters={"video_id": "vid-001"},
+        notify_url="https://example.com/notify",
+        completion_callback=None,
+        created_at=now,
+        updated_at=now,
+        error=None,
+        script_output=None,
+    )
+    pending = completed.model_copy(update={"task_id": "t-pending", "status": "pending"})
+
+    duplicate_task_id = task_module._find_inflight_duplicate_task_id(
+        request,
+        {"t-completed": completed, "t-pending": pending},
+    )
+    assert duplicate_task_id == "t-pending"
+
+
+def test_try_reserve_runner_for_dispatch_fallback_without_store_method(task_module, monkeypatch):
+    """Validate Try reserve runner fallback when store has no try_reserve method."""
+    fallback_runners = {"r1": _runner("r1")}
+    monkeypatch.setattr(task_module, "runners", fallback_runners)
+
+    reserved = task_module._try_reserve_runner_for_dispatch("r1")
+    assert reserved is not None
+    assert reserved.availability == "busy"
+    assert fallback_runners["r1"].availability == "busy"
+    assert task_module._try_reserve_runner_for_dispatch("r1") is None
+    assert task_module._try_reserve_runner_for_dispatch("missing") is None
+
+
+def test_try_reuse_inflight_duplicate_with_fresh_snapshot_disabled(task_module, monkeypatch):
+    """Validate fresh-snapshot dedup returns None when disabled."""
+    request = TaskRequest(
+        etab_name="UM",
+        app_name="pod",
+        app_version="1.0",
+        task_type="encoding",
+        source_url="https://example.com/video.mp4",
+        affiliation=None,
+        parameters={},
+        notify_url="https://example.com/notify",
+    )
+
+    monkeypatch.setattr(
+        task_module,
+        "get_tasks_snapshot",
+        lambda: (_ for _ in ()).throw(AssertionError("snapshot should not be called")),
+    )
+
+    result = task_module._try_reuse_inflight_duplicate_with_fresh_snapshot(
+        request,
+        dedup_enabled=False,
+        log_message="unused",
+    )
+    assert result is None
+
+
+def test_execute_task_async_reservation_race_skips_runner(
+    monkeypatch, client, task_module, clean_state
+):
+    """Validate Execute task async skips runner when reservation fails."""
+    runners["r1"] = _runner("r1", url="http://r1.example")
+
+    class FakeResponse:
+        def json(self):
+            return {"available": True, "registered": True, "task_types": ["encoding"]}
+
+    class FakeAsyncClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(task_module, "_try_reserve_runner_for_dispatch", lambda _runner_id: None)
+
+    resp = client.post(
+        "/task/execute",
+        json={
+            "etab_name": "UM",
+            "app_name": "pod",
+            "app_version": "1.0",
+            "task_type": "encoding",
+            "source_url": "https://example.com/video.mp4",
+            "affiliation": None,
+            "parameters": {},
+            "notify_url": "https://example.com/notify",
+        },
+    )
+
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "No runners available"
+    assert tasks == {}
+
+
+def test_execute_task_async_reuses_duplicate_after_reservation_race(
+    monkeypatch, client, task_module, clean_state
+):
+    """Validate Execute task async reuses duplicate when it appears during reservation race."""
+    runners["r1"] = _runner("r1", url="http://r1.example")
+
+    class FakeResponse:
+        def json(self):
+            return {"available": True, "registered": True, "task_types": ["encoding"]}
+
+    class FakeAsyncClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    def fake_try_reserve(_runner_id: str):
+        if "existing-task" not in tasks:
+            tasks["existing-task"] = _task("existing-task", "r1", status="running")
+        return None
+
+    def fail_if_scheduled(coro):
+        coro.close()
+        raise AssertionError("No new background task should be scheduled in dedup fallback")
+
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(task_module, "_try_reserve_runner_for_dispatch", fake_try_reserve)
+    monkeypatch.setattr(task_module.asyncio, "create_task", fail_if_scheduled)
+
+    resp = client.post(
+        "/task/execute",
+        json={
+            "etab_name": "UM",
+            "app_name": "pod",
+            "app_version": "1.0",
+            "task_type": "encoding",
+            "source_url": "https://example.com/video.mp4",
+            "affiliation": None,
+            "parameters": {},
+            "notify_url": "https://example.com/notify",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["task_id"] == "existing-task"
+    assert resp.json()["status"] == "running"
+    assert len(tasks) == 1
 
 
 def test_execute_task_async_success_creates_task_and_schedules(

@@ -320,6 +320,23 @@ def test_admin_dashboard_logs_csv_errors(admin_client, clean_state, monkeypatch,
     assert resp.status_code == 200
 
 
+def test_admin_dashboard_counts_tasks_this_month_from_csv(
+    admin_client, clean_state, monkeypatch, tmp_path
+):
+    """Validate Admin dashboard counts tasks this month from csv."""
+    csv_dir = tmp_path / "data"
+    csv_dir.mkdir()
+    month_key = datetime.now().strftime("%Y-%m")
+    csv_content = "task_id,date\n" f"1,{month_key}-01\n" f"2,{month_key}-15\n" "3,1999-01-01\n"
+    (csv_dir / "task_stats.csv").write_text(csv_content, encoding="utf-8")
+
+    monkeypatch.setattr(admin_routes, "Path", lambda *_a, **_k: csv_dir)
+
+    resp = admin_client.get("/admin")
+    assert resp.status_code == 200
+    assert "2 tasks this month" in resp.text
+
+
 def test_statistics_helpers_cover_branches(tmp_path, monkeypatch):
     """Validate Statistics helpers cover branches."""
     missing = tmp_path / "missing.csv"

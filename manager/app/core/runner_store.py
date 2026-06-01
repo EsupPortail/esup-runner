@@ -287,3 +287,29 @@ class RunnerStore(MutableMapping[str, Runner]):
             return list(data.values())
 
         return self._with_lock(_operation)
+
+    def try_reserve(self, key: str) -> Optional[Runner]:
+        """Atomically reserve a runner by switching availability to ``busy``.
+
+        Returns the updated runner when reservation succeeds, otherwise ``None``
+        (runner missing or already busy).
+        """
+        if not self.shared_enabled:
+            runner = self._memory.get(key)
+            if runner is None or runner.availability != "available":
+                return None
+            runner.availability = "busy"
+            self._memory[key] = runner
+            return runner
+
+        def _operation() -> Optional[Runner]:
+            data = self._read_disk()
+            runner = data.get(key)
+            if runner is None or runner.availability != "available":
+                return None
+            runner.availability = "busy"
+            data[key] = runner
+            self._write_disk(data)
+            return runner
+
+        return self._with_lock(_operation)

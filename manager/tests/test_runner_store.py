@@ -215,6 +215,33 @@ def test_shared_store_keys_values_items_and_get(tmp_path):
     assert store.get("missing") is None
 
 
+def test_try_reserve_shared_store_is_atomic_on_availability(tmp_path):
+    """Validate Try reserve shared store updates availability atomically."""
+    state_path = tmp_path / "runners_state.json"
+    store = RunnerStore(shared_enabled=True, state_file=str(state_path), lock_timeout=1)
+
+    store["r1"] = _runner("r1")
+
+    reserved = store.try_reserve("r1")
+    assert reserved is not None
+    assert reserved.availability == "busy"
+    assert store["r1"].availability == "busy"
+    assert store.try_reserve("r1") is None
+
+
+def test_try_reserve_in_memory_store_handles_missing_and_busy(tmp_path):
+    """Validate Try reserve in memory store handles missing and busy."""
+    state_path = tmp_path / "runners_state.json"
+    store = RunnerStore(shared_enabled=False, state_file=str(state_path))
+
+    assert store.try_reserve("missing") is None
+
+    store["r1"] = _runner("r1")
+    assert store.try_reserve("r1") is not None
+    assert store["r1"].availability == "busy"
+    assert store.try_reserve("r1") is None
+
+
 def test_default_state_file_is_anchored_to_manager_root():
     """Validate Default state file is anchored to manager root."""
     store = RunnerStore(shared_enabled=False)

@@ -15,7 +15,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path as PathlibPath
-from typing import Dict, List
+from typing import Any, Callable, Dict, List, cast
 from urllib.parse import ParseResult, quote, urlparse
 
 import httpx
@@ -529,6 +529,8 @@ async def execute_task_async_background(
         tasks[task_id].status = "failed"
         tasks[task_id].error = str(e)
         tasks[task_id].updated_at = datetime.now().isoformat()
+        runner.availability = "available"
+        runners[runner.id] = runner
         logger.error(f"Error executing task {task_id}: {e}")
 
         # Save tasks state
@@ -729,6 +731,162 @@ def _http_exception_detail_to_text(detail: object) -> str:
     return str(detail)
 
 
+def _task_request_fingerprint(
+    *,
+    task_type: str,
+    source_url: str,
+    parameters: Dict[str, Any] | None,
+    notify_url: str | None,
+    app_name: str,
+    etab_name: str,
+) -> str:
+    """Build a stable fingerprint used to deduplicate in-flight requests."""
+    payload = {
+        "task_type": task_type,
+        "source_url": source_url,
+        "parameters": parameters or {},
+        "notify_url": notify_url or "",
+        "app_name": app_name,
+        "etab_name": etab_name,
+    }
+    return json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
+
+
+def _find_inflight_duplicate_task_id(
+    task_request: TaskRequest,
+    tasks_snapshot: Dict[str, Task],
+) -> str | None:
+    """Return an in-flight duplicate task ID when the same request is already running."""
+    target_fingerprint = _task_request_fingerprint(
+        task_type=task_request.task_type,
+        source_url=task_request.source_url,
+        parameters=task_request.parameters,
+        notify_url=task_request.notify_url,
+        app_name=task_request.app_name,
+        etab_name=task_request.etab_name,
+    )
+
+    matches: list[Task] = []
+    for task in tasks_snapshot.values():
+        if task.status not in {"pending", "running"}:
+            continue
+        if (
+            _task_request_fingerprint(
+                task_type=task.task_type,
+                source_url=task.source_url,
+                parameters=task.parameters,
+                notify_url=task.notify_url,
+                app_name=task.app_name,
+                etab_name=task.etab_name,
+            )
+            == target_fingerprint
+        ):
+            matches.append(task)
+
+    if not matches:
+        return None
+
+    matches.sort(key=lambda item: item.updated_at or "", reverse=True)
+    return matches[0].task_id
+
+
+def _build_inflight_dedup_response(
+    task_request: TaskRequest,
+    tasks_snapshot: Dict[str, Task],
+    *,
+    log_message: str,
+) -> dict | None:
+    """Build a response reusing an in-flight duplicate task when present."""
+    duplicate_task_id = _find_inflight_duplicate_task_id(task_request, tasks_snapshot)
+    if duplicate_task_id is None:
+        return None
+
+    duplicate_task = tasks_snapshot.get(duplicate_task_id)
+    logger.info("%s %s", log_message, duplicate_task_id)
+    return {
+        "task_id": duplicate_task_id,
+        "status": duplicate_task.status if duplicate_task else "running",
+    }
+
+
+def _try_reuse_inflight_duplicate(
+    task_request: TaskRequest,
+    tasks_snapshot: Dict[str, Task],
+    *,
+    dedup_enabled: bool,
+    log_message: str,
+) -> dict | None:
+    """Return a dedup response when enabled and an in-flight match exists."""
+    if not dedup_enabled:
+        return None
+    return _build_inflight_dedup_response(
+        task_request,
+        tasks_snapshot,
+        log_message=log_message,
+    )
+
+
+def _try_reuse_inflight_duplicate_with_fresh_snapshot(
+    task_request: TaskRequest,
+    *,
+    dedup_enabled: bool,
+    log_message: str,
+) -> dict | None:
+    """Re-check deduplication against a fresh task snapshot."""
+    if not dedup_enabled:
+        return None
+    latest_snapshot = get_tasks_snapshot()
+    return _build_inflight_dedup_response(
+        task_request,
+        latest_snapshot,
+        log_message=log_message,
+    )
+
+
+def _try_reserve_runner_for_dispatch(runner_id: str) -> Runner | None:
+    """Reserve a runner before task creation to avoid race-based double dispatch."""
+    reserve_method = getattr(runners, "try_reserve", None)
+    if callable(reserve_method):
+        typed_reserve = cast(Callable[[str], Runner | None], reserve_method)
+        return typed_reserve(runner_id)
+
+    # Fallback for tests/custom stores that do not expose atomic reservation.
+    runner = runners.get(runner_id)
+    if runner is None or runner.availability != "available":
+        return None
+    runner.availability = "busy"
+    runners[runner_id] = runner
+    return runner
+
+
+def _resolve_runner_for_dispatch(
+    runner_id: str,
+    runner: Runner,
+    *,
+    preferred_task_id: str | None,
+) -> Runner | None:
+    """Return the runner instance to use for dispatch.
+
+    For normal execute requests, reserve the runner atomically first.
+    For in-place restarts (preferred_task_id set), keep historical behavior
+    and do not reserve here to preserve admin batch restart semantics.
+    """
+    if preferred_task_id is not None:
+        return runner
+
+    reserved_runner = _try_reserve_runner_for_dispatch(runner_id)
+    if reserved_runner is None:
+        logger.info(
+            "Runner %s became busy before reservation; trying next runner",
+            runner_id,
+        )
+        return None
+
+    return reserved_runner
+
+
 async def _queue_task_execution(
     task_request: TaskRequest,
     client_token: str | None,
@@ -746,6 +904,16 @@ async def _queue_task_execution(
     """
     logger.info("Starting async task execution")
     tasks_snapshot = get_tasks_snapshot()
+    dedup_enabled = preferred_task_id is None
+
+    dedup_response = _try_reuse_inflight_duplicate(
+        task_request,
+        tasks_snapshot,
+        dedup_enabled=dedup_enabled,
+        log_message="Deduplicating task execute request: reusing in-flight task",
+    )
+    if dedup_response is not None:
+        return dedup_response
 
     if task_request.notify_url:
         await _validate_notify_url(task_request.notify_url)
@@ -776,6 +944,14 @@ async def _queue_task_execution(
                     and runner_payload.get("registered")
                     and task_request.task_type in runner_payload.get("task_types", [])
                 ):
+                    runner_for_dispatch = _resolve_runner_for_dispatch(
+                        runner_id,
+                        runner,
+                        preferred_task_id=preferred_task_id,
+                    )
+                    if runner_for_dispatch is None:
+                        continue
+
                     task_id = preferred_task_id or str(uuid.uuid4())
                     now_iso = datetime.now().isoformat()
 
@@ -802,12 +978,22 @@ async def _queue_task_execution(
 
                     save_tasks()
                     asyncio.create_task(
-                        execute_task_async_background(task_id, runner, task_request)
+                        execute_task_async_background(task_id, runner_for_dispatch, task_request)
                     )
                     return {"task_id": task_id, "status": "running"}
         except (httpx.RequestError, httpx.TimeoutException) as e:
             logger.warning(f"Runner {runner_id} unavailable: {e}")
             continue
+
+    # Last-chance deduplication: another concurrent request may have created
+    # the task while this request was probing/reserving runners.
+    dedup_response = _try_reuse_inflight_duplicate_with_fresh_snapshot(
+        task_request,
+        dedup_enabled=dedup_enabled,
+        log_message="Reusing in-flight task after runner exhaustion:",
+    )
+    if dedup_response is not None:
+        return dedup_response
 
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No runners available"

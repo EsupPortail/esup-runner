@@ -7,13 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Upgraded and constrained `starlette` to `>=1.3.1,<2.0.0`, `python-multipart` to `>=0.0.32`, and transcription `torch` to `>=2.12.1` (including the CPU lock profile), resolving Dependabot alerts for Starlette request URL/form parsing issues, python-multipart query/form parsing vulnerabilities, and the PyTorch `torch.jit.script` memory-corruption issue.
+
 ### Added
 
-- Heartbeat payload now includes runner availability (`available`/`busy`).
+- Heartbeat payload now supports runner availability (`available`/`busy`).
 
 ### Changed
 
-- Manager heartbeat now accepts availability and updates stored runner state.
+- Runner heartbeat now sends availability at each heartbeat so manager state stays aligned.
+- Added `httpx2` to dev dependencies so Starlette `TestClient` no longer emits the `httpx` deprecation warning during pytest.
 
 ### Fixed
 

@@ -7,23 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Upgraded and constrained `starlette` to `>=1.3.1,<2.0.0` and `python-multipart` to `>=0.0.32`, resolving Dependabot alerts for Starlette request URL/form parsing issues and python-multipart query/form parsing vulnerabilities.
+
 ### Added
 
-- Heartbeat now accepts runner availability (`available`/`busy`).
+- Heartbeat payload now supports runner availability (`available`/`busy`).
 - Added `RunnerStore.try_reserve()` for atomic runner reservation.
 
 ### Changed
 
-- Runner state is updated from heartbeat availability when provided.
+- Runner state is now updated from heartbeat availability when provided.
 - `/task/execute` now reuses an equivalent in-flight task ID (deduplication).
 - Dispatch fingerprint now includes `task_type`, `source_url`, `parameters`, `notify_url`, `app_name`, and `etab_name`.
 - `/tasks/restart-selected` keeps in-place restart behavior (`preferred_task_id` bypasses execute-time dedup/reservation).
+- Added `httpx2` to manager dev dependencies so Starlette `TestClient` no longer emits the `httpx` deprecation warning during pytest.
 
 ### Fixed
 
 - Fixed stale `busy` status after runner restart/recovery.
 - Fixed race on near-simultaneous `/task/execute` calls causing `Runner is busy`.
-- Fixed runner availability rollback on manager->runner dispatch exceptions.
+- Fixed runner availability rollback on manager -> runner dispatch exceptions.
 
 ## [1.3.1] - 2026-05-27
 

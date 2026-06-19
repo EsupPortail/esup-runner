@@ -132,6 +132,9 @@ def _sync_test_client_exit(
     self.close()
 
 
-TestClient.__init__ = _sync_test_client_init  # type: ignore[method-assign]
-TestClient.__enter__ = _sync_test_client_enter  # type: ignore[method-assign]
-TestClient.__exit__ = _sync_test_client_exit  # type: ignore[method-assign]
+# Keep compatibility with Starlette/FastAPI versions where TestClient no longer
+# subclasses httpx.Client directly.
+if issubclass(TestClient, httpx.Client):
+    TestClient.__init__ = _sync_test_client_init  # type: ignore[method-assign]
+    TestClient.__enter__ = _sync_test_client_enter  # type: ignore[method-assign]
+    TestClient.__exit__ = _sync_test_client_exit  # type: ignore[method-assign]

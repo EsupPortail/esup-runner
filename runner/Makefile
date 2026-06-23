@@ -158,7 +158,7 @@ lock-upgrade:
 # lock-upgrade-gpu-12
 # Generate a lockfile compatible with CUDA 12 on Linux x86_64.
 # Strategy:
-# - Temporarily inject torch==2.10.0 in base dependencies for this command only.
+# - Temporarily pin the GPU transcription torch dependency for this command only.
 # - Run lock upgrade with UV_NO_SOURCES=1 to avoid source-table side effects.
 # - Restore pyproject.toml even if the lock command fails.
 lock-upgrade-gpu-12:
@@ -167,7 +167,7 @@ lock-upgrade-gpu-12:
 	backup=$$(mktemp); \
 	cp pyproject.toml "$$backup"; \
 	trap 'cp "$$backup" pyproject.toml; rm -f "$$backup"' EXIT; \
-	perl -0777 -i -pe 's/dependencies = \[\n(.*?)\n\]/dependencies = [\n$$1\n    "torch==2.10.0 ; sys_platform == '\''linux'\'' and platform_machine == '\''x86_64'\''",\n]/s' pyproject.toml; \
+	perl -0777 -i -pe 's/(transcription-gpu = \[\n(?:[^\n]*\n)*?    ")torch[^"]*(",\n)/$${1}torch==2.10.0$${2}/s' pyproject.toml; \
 	if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
 		UV_NO_SOURCES=1 $(UV) lock --upgrade --extra dev --extra transcription-gpu; \
 	else \

@@ -106,7 +106,7 @@ If transcription logs contain `fatal error: Python.h: No such file or directory`
 ```bash
 sudo apt install -y build-essential python3-dev
 cd /opt/esup-runner/runner
-make sync-transcription-gpu
+make sync-transcription-gpu-cuda12
 ```
 
 Optional reboot:

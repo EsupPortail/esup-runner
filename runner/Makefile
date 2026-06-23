@@ -5,7 +5,7 @@
 #   local run, quality checks, and Docker image build.
 #
 # Supported extras:
-# - dev, transcription-gpu, transcription-cpu
+# - dev, transcription-gpu, transcription-gpu-cuda12, transcription-cpu
 #
 # Common workflows:
 # - Bootstrap environment:
@@ -17,6 +17,7 @@
 # - Update lock file:
 #   make lock
 #   make lock EXTRAS=dev,transcription-gpu
+#   make lock EXTRAS=dev,transcription-gpu-cuda12
 #   make lock-upgrade
 # - GPU lock profiles:
 #   make lock-upgrade-gpu-12
@@ -75,7 +76,7 @@ DOCKER_LOGS_PATH ?= /var/log/esup-runner
 DOCKER_STORAGE_PATH ?= /tmp/esup-runner
 DOCKER_CACHE_PATH ?= /home/esup-runner/.cache/esup-runner
 
-# Builds the --extra ... arguments from EXTRAS=dev,transcription-gpu,transcription-cpu
+# Builds the --extra ... arguments from EXTRAS=dev,transcription-gpu,transcription-gpu-cuda12,transcription-cpu
 comma := ,
 empty :=
 space := $(empty) $(empty)
@@ -85,9 +86,9 @@ EXTRA_ARGS := $(strip $(foreach e,$(subst $(comma),$(space),$(EXTRAS)),--extra $
 
 help:
 	@echo "Targets:"
-	@echo "  make sync [EXTRAS=dev,transcription-gpu,transcription-cpu]  -> uv sync (+ extras)"
-	@echo "  make lock [EXTRAS=dev,transcription-gpu,transcription-cpu]  -> uv lock (+ extras)"
-	@echo "  make lock-upgrade [EXTRAS=dev,transcription-gpu,transcription-cpu]  -> uv lock --upgrade (+ extras)"
+	@echo "  make sync [EXTRAS=dev,transcription-gpu,transcription-gpu-cuda12,transcription-cpu]  -> uv sync (+ extras)"
+	@echo "  make lock [EXTRAS=dev,transcription-gpu,transcription-gpu-cuda12,transcription-cpu]  -> uv lock (+ extras)"
+	@echo "  make lock-upgrade [EXTRAS=dev,transcription-gpu,transcription-gpu-cuda12,transcription-cpu]  -> uv lock --upgrade (+ extras)"
 	@echo "  make run  -> run the app launcher"
 	@echo "  make init  -> init directories from .env (sudo)"
 	@echo "  make create-service  -> install systemd user service (~/.config/systemd/user)"
@@ -98,8 +99,8 @@ help:
 	@echo "  make clean  -> remove .venv and caches"
 	@echo ""
 	@echo "Shortcuts:"
-	@echo "  make sync-dev | make sync-transcription-gpu | make sync-transcription-cpu | make sync-all"
-	@echo "  make lock-dev | make lock-transcription-gpu | make lock-transcription-cpu | make lock-all"
+	@echo "  make sync-dev | make sync-transcription-gpu | make sync-transcription-gpu-cuda12 | make sync-transcription-cpu | make sync-all"
+	@echo "  make lock-dev | make lock-transcription-gpu | make lock-transcription-gpu-cuda12 | make lock-transcription-cpu | make lock-all"
 	@echo "  make lock-upgrade-gpu-12  -> uv.lock upgrade with CUDA12-compatible torch"
 	@echo "  make lock-upgrade-gpu-latest  -> uv.lock upgrade with latest GPU torch stack"
 	@echo ""
@@ -109,6 +110,7 @@ help:
 	@echo "Examples:"
 	@echo "  make sync"
 	@echo "  make sync EXTRAS=transcription-gpu"
+	@echo "  make sync EXTRAS=transcription-gpu-cuda12"
 	@echo "  make sync EXTRAS=transcription-cpu"
 	@echo "  make lock EXTRAS=dev"
 	@echo "  make docker-build DOCKER_IMAGE=ghcr.io/<github-org>/esup-runner-runner DOCKER_TAG=v1.0.0 ESUP_RUNNER_UID=$$(id -u) ESUP_RUNNER_GID=$$(id -g)"
@@ -129,6 +131,9 @@ sync-all:
 
 sync-transcription-gpu:
 	@$(MAKE) sync EXTRAS=transcription-gpu
+
+sync-transcription-gpu-cuda12:
+	@$(MAKE) sync EXTRAS=transcription-gpu-cuda12
 
 sync-transcription-cpu:
 	@$(MAKE) sync EXTRAS=transcription-cpu
@@ -158,25 +163,11 @@ lock-upgrade:
 # lock-upgrade-gpu-12
 # Generate a lockfile compatible with CUDA 12 on Linux x86_64.
 # Strategy:
-# - Temporarily pin the GPU transcription torch dependency for this command only.
-# - Run lock upgrade with UV_NO_SOURCES=1 to avoid source-table side effects.
-# - Restore pyproject.toml even if the lock command fails.
+# - Use the persistent transcription-gpu-cuda12 extra.
+# - Resolve torch from the PyTorch cu128 index (torch 2.10.0+cu128).
 lock-upgrade-gpu-12:
-	@echo "==> uv lock --upgrade with dev + transcription-gpu (temporary torch==2.10.0 pin for CUDA12)"
-	@set -e; \
-	backup=$$(mktemp); \
-	cp pyproject.toml "$$backup"; \
-	trap 'cp "$$backup" pyproject.toml; rm -f "$$backup"' EXIT; \
-	perl -0777 -i -pe 's/(transcription-gpu = \[\n(?:[^\n]*\n)*?    ")torch[^"]*(",\n)/$${1}torch==2.10.0$${2}/s' pyproject.toml; \
-	if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
-		UV_NO_SOURCES=1 $(UV) lock --upgrade --extra dev --extra transcription-gpu; \
-	else \
-		echo "==> warning: this uv version ignores lock extras; running full lock upgrade"; \
-		UV_NO_SOURCES=1 $(UV) lock --upgrade; \
-	fi; \
-	cp "$$backup" pyproject.toml; \
-	rm -f "$$backup"; \
-	trap - EXIT
+	@echo "==> uv lock --upgrade with dev + transcription-gpu-cuda12 (torch 2.10.0+cu128)"
+	@$(MAKE) lock-upgrade EXTRAS=dev,transcription-gpu-cuda12
 
 # lock-upgrade-gpu-latest
 # Upgrade the lockfile against the latest available GPU torch stack.
@@ -198,6 +189,9 @@ lock-all:
 
 lock-transcription-gpu:
 	@$(MAKE) lock EXTRAS=transcription-gpu
+
+lock-transcription-gpu-cuda12:
+	@$(MAKE) lock EXTRAS=transcription-gpu-cuda12
 
 lock-transcription-cpu:
 	@$(MAKE) lock EXTRAS=transcription-cpu
@@ -337,8 +331,9 @@ docker-fix-perms:
 		sh -c "chown -R $(ESUP_RUNNER_UID):$(ESUP_RUNNER_GID) $(DOCKER_LOGS_PATH) $(DOCKER_STORAGE_PATH) $(DOCKER_CACHE_PATH)"
 
 .PHONY: help sync lock lock-upgrade run init clean \
-		sync-dev sync-all sync-transcription-gpu sync-transcription-cpu \
-		lock-dev lock-transcription-gpu lock-transcription-cpu lock-all lock-upgrade-gpu-12 lock-upgrade-gpu-latest \
-		release-dry-run docker-build docker-fix-perms \
-		check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
-		test coverage fmt fmt-check lint ci
+	sync-dev sync-all sync-transcription-gpu sync-transcription-gpu-cuda12 sync-transcription-cpu \
+	lock-dev lock-transcription-gpu lock-transcription-gpu-cuda12 lock-transcription-cpu lock-all \
+	lock-upgrade-gpu-12 lock-upgrade-gpu-latest \
+	release-dry-run docker-build docker-fix-perms \
+	check-fmt-deps check-test-deps check-coverage-deps check-lint-deps \
+	test coverage fmt fmt-check lint ci

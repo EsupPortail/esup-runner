@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fixed `make lock-upgrade-gpu-12` so the temporary CUDA 12 `torch==2.10.0` pin is applied to the `transcription-gpu` extra instead of base dependencies, avoiding an unsatisfiable conflict with the `torch>=2.12.1` transcription constraint while preserving the CPU transcription profile.
+- Fixed the CUDA 12 GPU lock/sync profile by adding a persistent `transcription-gpu-cuda12` extra pinned to `torch==2.10.0+cu128` from the PyTorch `cu128` index, and by making `update-stack.sh --gpu-lock-profile cuda12` sync that extra instead of relocking back to the default CUDA 13-capable `transcription-gpu` stack.
 
 ## [1.3.2] - 2026-06-19
 

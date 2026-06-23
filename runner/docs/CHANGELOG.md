@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed `make lock-upgrade-gpu-12` so the temporary CUDA 12 `torch==2.10.0` pin is applied to the `transcription-gpu` extra instead of base dependencies, avoiding an unsatisfiable conflict with the `torch>=2.12.1` transcription constraint while preserving the CPU transcription profile.
+
 ## [1.3.2] - 2026-06-19
 
 ### Security

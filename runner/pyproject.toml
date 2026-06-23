@@ -63,6 +63,13 @@ transcription-gpu = [
     "sentencepiece>=0.2.0,<1.0.0",
     "coverage>=7.2.0",
 ]
+transcription-gpu-cuda12 = [
+    "openai-whisper==20250625",
+    "torch==2.10.0+cu128 ; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "transformers>=5.0.0rc3,<6.0.0",
+    "sentencepiece>=0.2.0,<1.0.0",
+    "coverage>=7.2.0",
+]
 transcription-cpu = [
     "openai-whisper==20250625",
     "torch>=2.12.1",
@@ -76,20 +83,27 @@ conflicts = [
     [
         { extra = "transcription-cpu" },
         { extra = "transcription-gpu" },
+        { extra = "transcription-gpu-cuda12" },
     ],
 ]
 
 [tool.uv.sources]
-# transcription-cpu differs from transcription-gpu by torch index selection.
-# Keep CPU/GPU extras mutually exclusive so uv can resolve the proper torch
-# variant for each installation profile.
+# transcription-cpu and transcription-gpu-cuda12 differ from the default GPU
+# profile by torch index selection. Keep extras mutually exclusive so uv can
+# resolve the proper torch variant for each installation profile.
 torch = [
     { index = "pytorch-cpu", extra = "transcription-cpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pytorch-cu128", extra = "transcription-gpu-cuda12", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
 ]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [project.urls]

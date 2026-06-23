@@ -781,11 +781,13 @@ update_runner() {
       run_checked_in_dir "${RUNNER_DIR}" "Runner dependency sync (make sync-transcription-cpu)" make sync-transcription-cpu
       ;;
     transcription-gpu)
+      local gpu_sync_target="sync-transcription-gpu"
       case "${GPU_LOCK_PROFILE}" in
         cuda12)
           # Explicit GPU lock refresh: this updates runner/uv.lock for CUDA12.
           log "GPU lock profile: cuda12 (make lock-upgrade-gpu-12)"
           run_checked_in_dir "${RUNNER_DIR}" "Runner lock refresh for CUDA12" make lock-upgrade-gpu-12
+          gpu_sync_target="sync-transcription-gpu-cuda12"
           RUNNER_RESTART_REQUIRED=1
           ;;
         latest)
@@ -798,7 +800,7 @@ update_runner() {
           :
           ;;
       esac
-      run_checked_in_dir "${RUNNER_DIR}" "Runner dependency sync (make sync-transcription-gpu)" make sync-transcription-gpu
+      run_checked_in_dir "${RUNNER_DIR}" "Runner dependency sync (make ${gpu_sync_target})" make "${gpu_sync_target}"
       ;;
     *)
       die "Unsupported runner sync mode: ${mode}"

@@ -38,6 +38,7 @@ _ALLOWED_TASK_STATUSES = {"running", *_TERMINAL_TASK_STATUSES}
 _RUNNER_STATE_LOCK = threading.RLock()
 _RECOVERABLE_TASK_STATUSES = {"running", "failed", "timeout"}
 _PERSISTED_STRING_FIELDS = ("runner_id", "completion_callback", "error_message")
+_PERSISTED_POSITIVE_INT_FIELDS = ("process_pid", "process_pgid")
 
 
 def _normalize_positive_int(value: Any) -> Optional[int]:
@@ -75,6 +76,29 @@ def _normalize_task_request(value: Any) -> Optional[Dict[str, Any]]:
             return decoded_value
 
     return None
+
+
+def _copy_persisted_string_fields(
+    compact_payload: Dict[str, Any], task_payload: Dict[str, Any]
+) -> None:
+    """Copy whitelisted non-empty string fields into a compact task payload."""
+    for field_name in _PERSISTED_STRING_FIELDS:
+        value = task_payload.get(field_name)
+        if not isinstance(value, str):
+            continue
+        normalized_value = value.strip()
+        if normalized_value:
+            compact_payload[field_name] = normalized_value
+
+
+def _copy_persisted_positive_int_fields(
+    compact_payload: Dict[str, Any], task_payload: Dict[str, Any]
+) -> None:
+    """Copy whitelisted positive integer fields into a compact task payload."""
+    for field_name in _PERSISTED_POSITIVE_INT_FIELDS:
+        parsed_value = _normalize_positive_int(task_payload.get(field_name))
+        if parsed_value is not None:
+            compact_payload[field_name] = parsed_value
 
 
 def _instance_scoped_status_file(file_path: Path) -> Path:
@@ -116,17 +140,8 @@ def _sanitize_task_payload_for_persistence(
         "status": status,
     }
 
-    for field_name in _PERSISTED_STRING_FIELDS:
-        value = task_payload.get(field_name)
-        if not isinstance(value, str):
-            continue
-        normalized_value = value.strip()
-        if normalized_value:
-            compact_payload[field_name] = normalized_value
-
-    process_pid = _normalize_positive_int(task_payload.get("process_pid"))
-    if process_pid is not None:
-        compact_payload["process_pid"] = process_pid
+    _copy_persisted_string_fields(compact_payload, task_payload)
+    _copy_persisted_positive_int_fields(compact_payload, task_payload)
 
     restart_attempts = _normalize_non_negative_int(task_payload.get("recovery_restart_attempts"))
     if restart_attempts:

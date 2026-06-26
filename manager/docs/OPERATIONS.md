@@ -49,7 +49,7 @@ uv run scripts/check_pipeline_tasks.py
 uv run scripts/check_pipeline_tasks.py --with-transcription-translation
 ```
 
-`check_pipeline_tasks.py` reads `MANAGER_URL` and manager tokens from `.env` by default; `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL` remain available as optional overrides.
+`check_pipeline_tasks.py` reads `MANAGER_URL` and manager tokens from `.env` by default; `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL` remain available as optional overrides. The optional client callback is disabled by default; set `RUNNER_NOTIFY_URL` only when you want the smoke test to exercise a reachable `notify_url`.
 
 ## Admin UI runbook
 

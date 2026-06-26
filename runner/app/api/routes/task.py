@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import signal
 from pathlib import Path
 from typing import Optional
 
@@ -278,14 +279,24 @@ def _read_text_tail(file_path: Path, max_chars: int = _MAX_RECOVERY_LOG_CHARS) -
 
 def _parse_process_pid(payload: dict) -> int | None:
     """Extract persisted process PID from task payload."""
-    raw_pid = payload.get("process_pid")
-    if raw_pid is None:
+    return _parse_positive_int_field(payload, "process_pid")
+
+
+def _parse_process_pgid(payload: dict) -> int | None:
+    """Extract persisted process group ID from task payload."""
+    return _parse_positive_int_field(payload, "process_pgid")
+
+
+def _parse_positive_int_field(payload: dict, field_name: str) -> int | None:
+    """Extract a positive integer field from a task payload."""
+    raw_value = payload.get(field_name)
+    if raw_value is None:
         return None
     try:
-        pid = int(raw_pid)
+        parsed = int(raw_value)
     except (TypeError, ValueError):
         return None
-    return pid if pid > 0 else None
+    return parsed if parsed > 0 else None
 
 
 def _is_process_alive(pid: int) -> bool:
@@ -299,6 +310,110 @@ def _is_process_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def _read_proc_cmdline(pid: int, *, proc_root: Path = Path("/proc")) -> str:
+    """Read a process command line from procfs."""
+    try:
+        raw_cmdline = (proc_root / str(pid) / "cmdline").read_bytes()
+    except Exception:
+        return ""
+    return raw_cmdline.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
+
+
+def _iter_proc_pids(*, proc_root: Path = Path("/proc")) -> list[int]:
+    """Return numeric process IDs visible in procfs."""
+    try:
+        entries = list(proc_root.iterdir())
+    except Exception:
+        return []
+
+    pids: list[int] = []
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            pids.append(int(entry.name))
+        except ValueError:
+            continue
+    return pids
+
+
+def _find_task_process_pids(task_id: str, *, proc_root: Path = Path("/proc")) -> list[int]:
+    """Find live processes whose command line references this task workspace."""
+    task_root = _resolve_task_root_if_exists(task_id)
+    if task_root is None:
+        return []
+
+    marker = str(task_root)
+    pids: list[int] = []
+    for pid in _iter_proc_pids(proc_root=proc_root):
+        cmdline = _read_proc_cmdline(pid, proc_root=proc_root)
+        if marker in cmdline:
+            pids.append(pid)
+    return pids
+
+
+def _terminate_process_group(pgid: int) -> bool:
+    """Terminate one process group unless it is the current runner group."""
+    if pgid <= 0:
+        return False
+    try:
+        if pgid == os.getpgrp():
+            return False
+    except Exception:
+        pass
+
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        return False
+    except Exception as exc:
+        logger.warning("Failed to terminate process group %s: %s", pgid, exc)
+        return False
+    return True
+
+
+def _terminate_process_pid(pid: int) -> bool:
+    """Terminate one process by PID."""
+    if pid <= 0 or pid == os.getpid():
+        return False
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return False
+    except Exception as exc:
+        logger.warning("Failed to terminate process %s: %s", pid, exc)
+        return False
+    return True
+
+
+def _terminate_stale_task_processes(task_id: str, payload: dict) -> bool:
+    """Kill orphaned external processes still using a task workspace."""
+    matched_pids = _find_task_process_pids(task_id)
+    process_groups: set[int] = set()
+
+    payload_pgid = _parse_process_pgid(payload)
+    if payload_pgid is not None and matched_pids:
+        process_groups.add(payload_pgid)
+
+    for pid in matched_pids:
+        try:
+            process_groups.add(os.getpgid(pid))
+        except Exception:
+            continue
+
+    terminated = False
+    for pgid in sorted(process_groups):
+        terminated = _terminate_process_group(pgid) or terminated
+
+    for pid in matched_pids:
+        if _is_process_alive(pid):
+            terminated = _terminate_process_pid(pid) or terminated
+
+    if terminated:
+        logger.warning("Terminated stale process(es) for recovered task %s", task_id)
+    return terminated
 
 
 def _collect_recovery_script_output(task_id: str, payload: dict) -> Optional[str]:
@@ -599,6 +714,8 @@ def _schedule_failed_task_restart(task_id: str, payload: dict) -> bool:
         )
         return False
 
+    _terminate_stale_task_processes(task_id, payload)
+
     set_task_metadata(
         task_id,
         runner_id=get_runner_id(),
@@ -666,6 +783,8 @@ async def _reconcile_recovered_task(task_id: str, payload: dict) -> str:
     if pid is not None and _is_process_alive(pid):
         set_task_status(task_id, "running")
         return "running"
+
+    _terminate_stale_task_processes(task_id, payload)
 
     workspace_terminal_status = _infer_workspace_terminal_status(task_id, payload)
     if workspace_terminal_status is not None:

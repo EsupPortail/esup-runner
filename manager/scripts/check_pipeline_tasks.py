@@ -92,8 +92,7 @@ TASK_TYPE_TRANSCRIPTION = "transcription"
 # the preferred validation source for this deployment.
 UMONTPELLIER_TEST_SOURCE_URL = "https://video.umontpellier.fr/media/videos/test.mp4"
 WIKITONGUES_FRENCH_SOURCE_URL = (
-    "https://upload.wikimedia.org/wikipedia/commons/7/79/"
-    "WIKITONGUES-_Clara_speaking_French.webm"
+    "https://upload.wikimedia.org/wikipedia/commons/7/79/" "WIKITONGUES-_Clara_speaking_French.webm"
 )
 WIKITONGUES_FRENCH_TRANSCODED_SOURCE_URL = (
     "https://upload.wikimedia.org/wikipedia/commons/transcoded/7/79/"

@@ -204,8 +204,11 @@ def launch_encode_video(
     height = info_video.get("height", 0)
     mp4_renditions = select_renditions_for_encode_fn(source_height=height, output_format="mp4")
     should_encode_mp4 = bool(mp4_renditions)
+    gpu_decode_warning = _gpu_decode_warning(info_video)
 
     if encoding_type.upper() == "GPU" and codec in list_codec:
+        if gpu_decode_warning:
+            encode_log_fn(gpu_decode_warning)
         nvenc_ok, nvenc_details = nvenc_preflight_fn()
         if not nvenc_ok:
             encode_log_fn(
@@ -234,6 +237,26 @@ def launch_encode_video(
             "Set encode_mp4=true on at least one selected rendition to enable mp4 output.\n"
         )
     return encode_m3u8, encode_mp4
+
+
+def _gpu_decode_warning(info_video: dict) -> str:
+    """Return a warning for source formats that can vary by CUDA/FFmpeg generation."""
+    codec = str(info_video.get("codec") or "").strip().lower()
+    if codec != "h264":
+        return ""
+
+    profile = str(info_video.get("profile") or "").strip().lower()
+    pix_fmt = str(info_video.get("pix_fmt") or "").strip().lower()
+    if not any(
+        marker in profile or marker in pix_fmt for marker in ("4:2:2", "422", "4:4:4", "444")
+    ):
+        return ""
+
+    return (
+        "Source H.264 chroma format may depend on CUDA/FFmpeg support "
+        f"(profile={info_video.get('profile') or 'unknown'}, "
+        f"pix_fmt={info_video.get('pix_fmt') or 'unknown'}); continuing with GPU.\n"
+    )
 
 
 def launch_encode_audio(info_video: dict, file: str, *, encode_fn) -> tuple[bool, str]:

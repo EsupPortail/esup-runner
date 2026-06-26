@@ -310,6 +310,7 @@ Before running this script:
 
 - The script auto-loads `MANAGER_URL` and the first configured `AUTHORIZED_TOKENS__*` value from `manager/.env`.
 - Optional overrides remain available through `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL`.
+- The smoke test leaves `notify_url` empty by default so it does not depend on an external webhook service; set `RUNNER_NOTIFY_URL` to test a callback endpoint explicitly.
 - If the script runs from another server, avoid `127.0.0.1`; use the real manager host/IP.
 - Ensure at least one runner is registered and supports `encoding`.
 - `--with-transcription-translation` additionally requires runner support for `transcription`.

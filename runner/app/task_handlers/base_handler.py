@@ -203,7 +203,12 @@ class BaseTaskHandler(ABC):
         try:
             from app.core.state import set_task_metadata
 
-            set_task_metadata(task_id, process_pid=process_pid)
+            try:
+                process_pgid = os.getpgid(process_pid)
+            except Exception:
+                process_pgid = process_pid
+
+            set_task_metadata(task_id, process_pid=process_pid, process_pgid=process_pgid)
         except Exception:
             pass
 

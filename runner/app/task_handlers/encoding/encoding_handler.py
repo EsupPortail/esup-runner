@@ -4,6 +4,7 @@ Video encoding task handler using FFmpeg.
 Handles various video encoding tasks through specialized scripts.
 """
 
+import signal
 from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import unquote, urlparse
@@ -270,18 +271,55 @@ class VideoEncodingHandler(BaseTaskHandler):
         if error:
             return error
 
-        for stream_name in ("stderr", "stdout"):
-            text = str(script_result.get(stream_name) or "").strip()
-            if not text:
-                continue
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
+        stderr_text = str(script_result.get("stderr") or "").strip()
+        if stderr_text:
+            lines = [line.strip() for line in stderr_text.splitlines() if line.strip()]
             if lines:
                 return lines[-1]
 
+        stdout_error = self._extract_error_line_from_log(str(script_result.get("stdout") or ""))
+        if stdout_error:
+            return stdout_error
+
         returncode = script_result.get("returncode")
         if returncode not in (None, 0):
-            return f"Encoding failed (exit code {returncode})"
+            return self._format_returncode_error(returncode)
         return "Encoding failed"
+
+    def _extract_error_line_from_log(self, text: str) -> str:
+        """Return the most relevant error line from an encoding log tail."""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        for line in reversed(lines):
+            normalized = line.lower()
+            if normalized.startswith("error:"):
+                return line.split(":", 1)[1].strip() or line
+            if (
+                "error return code" in normalized
+                or "error encoding" in normalized
+                or normalized.startswith("runtime error:")
+                or normalized.startswith("os error:")
+                or normalized.startswith("unexpected error:")
+                or normalized.startswith("error ")
+            ):
+                return line
+        return ""
+
+    def _format_returncode_error(self, returncode: Any) -> str:
+        """Format script return codes, including signal-based terminations."""
+        try:
+            code = int(returncode)
+        except (TypeError, ValueError):
+            return f"Encoding failed (exit code {returncode})"
+
+        if code < 0:
+            signal_number = abs(code)
+            try:
+                signal_name = signal.Signals(signal_number).name
+            except ValueError:
+                signal_name = f"signal {signal_number}"
+            return f"Encoding process was terminated by {signal_name} (return code {code})"
+
+        return f"Encoding failed (exit code {code})"
 
     @classmethod
     def get_description(cls) -> str:

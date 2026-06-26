@@ -262,6 +262,28 @@ def analyze_streams(
     )
 
 
+def extract_primary_video_encoding_metadata(
+    streams: Any,
+    *,
+    image_codecs: list[str],
+) -> tuple[str, str]:
+    """Return ``(profile, pix_fmt)`` for the first non-image video stream."""
+    if not isinstance(streams, list):
+        return "", ""
+
+    for stream in streams:
+        if not isinstance(stream, dict):
+            continue
+        if stream.get("codec_type") != "video":
+            continue
+        codec_name = str(stream.get("codec_name", ""))
+        if is_image_codec_name(codec_name, image_codecs=image_codecs):
+            continue
+        return str(stream.get("profile") or ""), str(stream.get("pix_fmt") or "")
+
+    return "", ""
+
+
 def refine_source_fps(
     *,
     file: str,
@@ -345,6 +367,10 @@ def get_info_video(
         stream_log,
     ) = analyze_streams_fn(info.get("streams", []), image_codecs=image_codecs)
     msg += stream_log
+    video_profile, pix_fmt = extract_primary_video_encoding_metadata(
+        info.get("streams", []),
+        image_codecs=image_codecs,
+    )
 
     if has_stream_video:
         source_fps, fps_log = refine_source_fps_fn(
@@ -369,4 +395,6 @@ def get_info_video(
         "duration": duration,
         "video_duration": video_duration,
         "source_fps": source_fps,
+        "profile": video_profile,
+        "pix_fmt": pix_fmt,
     }

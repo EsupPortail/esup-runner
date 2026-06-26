@@ -38,6 +38,29 @@ def test_base_handler_register_script_process_covers_empty_task_and_import_error
     handler._register_script_process("task-1", 2222)
 
 
+def test_base_handler_register_script_process_falls_back_to_pid_for_pgid(monkeypatch):
+    """Validate Base handler register script process falls back to pid for pgid."""
+    handler = _ConcreteBaseHandler()
+    metadata: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "os.getpgid",
+        lambda _pid: (_ for _ in ()).throw(OSError("pgid unavailable")),
+    )
+
+    from app.core import state
+
+    monkeypatch.setattr(
+        state,
+        "set_task_metadata",
+        lambda task_id, **kwargs: metadata.update({"task_id": task_id, **kwargs}),
+    )
+
+    handler._register_script_process("task-pgid", 4321)
+
+    assert metadata == {"task_id": "task-pgid", "process_pid": 4321, "process_pgid": 4321}
+
+
 def test_base_handler_terminate_external_process_covers_fallback_and_wait_error(monkeypatch):
     """Validate Base handler terminate external process covers fallback and wait error."""
     handler = _ConcreteBaseHandler()

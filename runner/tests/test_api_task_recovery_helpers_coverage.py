@@ -25,6 +25,8 @@ def test_task_helpers_parse_pid_and_is_process_alive_branches(monkeypatch):
     assert task_module._parse_process_pid({}) is None
     assert task_module._parse_process_pid({"process_pid": "oops"}) is None
     assert task_module._parse_process_pid({"process_pid": 0}) is None
+    assert task_module._parse_process_pgid({}) is None
+    assert task_module._parse_process_pgid({"process_pgid": "2222"}) == 2222
 
     def _raise_lookup(_pid, _sig):
         raise ProcessLookupError()
@@ -46,6 +48,140 @@ def test_task_helpers_parse_pid_and_is_process_alive_branches(monkeypatch):
 
     monkeypatch.setattr(task_module.os, "kill", lambda *_args, **_kwargs: None)
     assert task_module._is_process_alive(1234) is True
+
+
+def test_task_find_and_terminate_stale_task_processes(monkeypatch, tmp_path):
+    """Validate Task find and terminate stale task processes."""
+    task_root = tmp_path / "task-stale"
+    task_root.mkdir(parents=True)
+
+    proc_root = tmp_path / "proc"
+    matching_proc = proc_root / "101"
+    non_matching_proc = proc_root / "202"
+    matching_proc.mkdir(parents=True)
+    non_matching_proc.mkdir(parents=True)
+    (matching_proc / "cmdline").write_bytes(
+        b"ffmpeg\x00-i\x00" + str(task_root / "input.mp4").encode("utf-8")
+    )
+    (non_matching_proc / "cmdline").write_bytes(b"ffmpeg\x00-i\x00/tmp/other/input.mp4")
+    (proc_root / "self").mkdir(parents=True)
+
+    monkeypatch.setattr(task_module, "_resolve_task_root_if_exists", lambda _task_id: task_root)
+
+    assert task_module._find_task_process_pids("task-stale", proc_root=proc_root) == [101]
+
+    killed_groups: list[int] = []
+    killed_pids: list[int] = []
+    alive_pids = {101}
+
+    monkeypatch.setattr(task_module.os, "getpgid", lambda pid: 300 if pid == 101 else pid)
+    monkeypatch.setattr(
+        task_module,
+        "_find_task_process_pids",
+        lambda _task_id: [101],
+    )
+    monkeypatch.setattr(
+        task_module,
+        "_terminate_process_group",
+        lambda pgid: killed_groups.append(pgid) or True,
+    )
+    monkeypatch.setattr(
+        task_module,
+        "_is_process_alive",
+        lambda pid: pid in alive_pids,
+    )
+    monkeypatch.setattr(
+        task_module, "_terminate_process_pid", lambda pid: killed_pids.append(pid) or True
+    )
+
+    assert task_module._terminate_stale_task_processes("task-stale", {"process_pgid": 301}) is True
+    assert killed_groups == [300, 301]
+    assert killed_pids == [101]
+
+
+def test_task_proc_and_termination_error_branches(monkeypatch, tmp_path):
+    """Validate Task proc parsing and termination error branches."""
+    missing_proc_root = tmp_path / "missing-proc"
+    assert task_module._read_proc_cmdline(404, proc_root=missing_proc_root) == ""
+    assert task_module._iter_proc_pids(proc_root=missing_proc_root) == []
+
+    class _BadName:
+        def isdigit(self):
+            return True
+
+        def __int__(self):
+            raise ValueError("bad pid")
+
+    class _BadEntry:
+        name = _BadName()
+
+    monkeypatch.setattr(task_module.Path, "iterdir", lambda _self: [_BadEntry()])
+    assert task_module._iter_proc_pids(proc_root=tmp_path) == []
+
+    assert task_module._terminate_process_group(0) is False
+    monkeypatch.setattr(task_module.os, "getpgrp", lambda: 42)
+    assert task_module._terminate_process_group(42) is False
+
+    monkeypatch.setattr(
+        task_module.os,
+        "getpgrp",
+        lambda: (_ for _ in ()).throw(OSError("no current pgid")),
+    )
+    monkeypatch.setattr(task_module.os, "killpg", lambda *_args, **_kwargs: None)
+    assert task_module._terminate_process_group(41) is True
+
+    monkeypatch.setattr(task_module.os, "getpgrp", lambda: 999)
+    monkeypatch.setattr(
+        task_module.os,
+        "killpg",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ProcessLookupError()),
+    )
+    assert task_module._terminate_process_group(43) is False
+
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        task_module.os,
+        "killpg",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("denied")),
+    )
+    monkeypatch.setattr(
+        task_module.logger, "warning", lambda *args, **_kwargs: warnings.append(str(args[0]))
+    )
+    assert task_module._terminate_process_group(44) is False
+    assert warnings
+
+    monkeypatch.setattr(task_module.os, "killpg", lambda *_args, **_kwargs: None)
+    assert task_module._terminate_process_group(45) is True
+
+    assert task_module._terminate_process_pid(0) is False
+    monkeypatch.setattr(task_module.os, "getpid", lambda: 55)
+    assert task_module._terminate_process_pid(55) is False
+
+    monkeypatch.setattr(
+        task_module.os,
+        "kill",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ProcessLookupError()),
+    )
+    assert task_module._terminate_process_pid(56) is False
+
+    monkeypatch.setattr(
+        task_module.os,
+        "kill",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("denied")),
+    )
+    assert task_module._terminate_process_pid(57) is False
+
+    monkeypatch.setattr(task_module.os, "kill", lambda *_args, **_kwargs: None)
+    assert task_module._terminate_process_pid(58) is True
+
+    monkeypatch.setattr(task_module, "_find_task_process_pids", lambda _task_id: [100])
+    monkeypatch.setattr(
+        task_module.os,
+        "getpgid",
+        lambda _pid: (_ for _ in ()).throw(OSError("gone")),
+    )
+    monkeypatch.setattr(task_module, "_is_process_alive", lambda _pid: False)
+    assert task_module._terminate_stale_task_processes("task-stale", {}) is False
 
 
 def test_task_collect_recovery_script_output_truncates_and_ignores_blank_paths(
@@ -275,6 +411,41 @@ def test_task_schedule_failed_task_restart_when_attempt_limit_reached():
     """Validate Task schedule failed task restart when attempt limit reached."""
     payload = {"recovery_restart_attempts": task_module._RECOVERY_AUTO_RESTART_MAX_ATTEMPTS}
     assert task_module._schedule_failed_task_restart("task-max", payload) is False
+
+
+def test_task_schedule_failed_task_restart_cleans_stale_processes(monkeypatch):
+    """Validate Task schedule failed task restart cleans stale processes."""
+    payload = {
+        "task_request": {
+            "task_id": "task-restart-clean",
+            "etab_name": "UM",
+            "app_name": "Pod",
+            "task_type": "encoding",
+            "source_url": "https://example.org/video.mp4",
+            "parameters": {},
+            "notify_url": "http://notify",
+        }
+    }
+    cleaned: list[str] = []
+    created: list[bool] = []
+
+    monkeypatch.setattr(
+        task_module,
+        "_terminate_stale_task_processes",
+        lambda task_id, _payload: cleaned.append(task_id) or True,
+    )
+
+    def _fake_create_task(coro):
+        created.append(True)
+        coro.close()
+        return object()
+
+    monkeypatch.setattr(task_module.asyncio, "create_task", _fake_create_task)
+    monkeypatch.setattr(task_module, "get_runner_id", lambda: "runner-a")
+
+    assert task_module._schedule_failed_task_restart("task-restart-clean", payload) is True
+    assert cleaned == ["task-restart-clean"]
+    assert created == [True]
 
 
 @pytest.mark.asyncio

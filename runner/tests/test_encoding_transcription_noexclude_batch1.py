@@ -234,6 +234,24 @@ def test_encoding_flow_utils_core_branches():
     no_gpu_calls.clear()
     yes_gpu_calls.clear()
     encode_m3u8, encode_mp4 = flow.launch_encode_video(
+        {"codec": "h264", "height": 1080, "profile": "High 4:2:2", "pix_fmt": "yuv422p"},
+        "video.mp4",
+        encoding_type="GPU",
+        list_codec=("h264",),
+        select_renditions_for_encode_fn=lambda **_k: [("720", {}, 720)],
+        nvenc_preflight_fn=lambda: (True, ""),
+        encode_with_gpu_fn=lambda fmt, *_a: yes_gpu_calls.append(fmt) or True,
+        encode_without_gpu_fn=lambda fmt, *_a: no_gpu_calls.append(fmt) or True,
+        encode_log_fn=launch_video_logs.append,
+    )
+    assert (encode_m3u8, encode_mp4) == (True, True)
+    assert yes_gpu_calls == ["m3u8", "mp4"]
+    assert no_gpu_calls == []
+    assert "continuing with GPU" in launch_video_logs[-1]
+
+    no_gpu_calls.clear()
+    yes_gpu_calls.clear()
+    encode_m3u8, encode_mp4 = flow.launch_encode_video(
         {"codec": "h264", "height": 360},
         "video.mp4",
         encoding_type="GPU",
@@ -666,6 +684,28 @@ def test_media_probe_utils_missing_noexclude_branches(monkeypatch, capsys, tmp_p
     )
     assert result["duration"] == 0
     assert "Warning: duration unavailable" in logs[-1]
+
+    profile, pix_fmt = media_probe.extract_primary_video_encoding_metadata(
+        [
+            {"codec_type": "video", "codec_name": "png", "profile": "ignored"},
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "profile": "High 4:2:2",
+                "pix_fmt": "yuv422p",
+            },
+        ],
+        image_codecs=["png"],
+    )
+    assert (profile, pix_fmt) == ("High 4:2:2", "yuv422p")
+    assert media_probe.extract_primary_video_encoding_metadata(
+        "not-streams",
+        image_codecs=["png"],
+    ) == ("", "")
+    assert media_probe.extract_primary_video_encoding_metadata(
+        ["not-a-dict", {"codec_type": "audio", "codec_name": "aac"}],
+        image_codecs=["png"],
+    ) == ("", "")
 
 
 def test_overview_utils_missing_noexclude_branches(monkeypatch, tmp_path):

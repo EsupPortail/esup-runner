@@ -510,6 +510,7 @@ def test_state_persistence_keeps_only_recovery_fields(tmp_path, monkeypatch):
                 "completion_callback": "http://manager.example.org/task/completion",
             },
             process_pid=4567,
+            process_pgid=4568,
             script_stdout_path="/tmp/stdout.log",
             script_stderr_path="/tmp/stderr.log",
             recovery_restart_attempts=1,
@@ -528,6 +529,7 @@ def test_state_persistence_keeps_only_recovery_fields(tmp_path, monkeypatch):
         assert compact_payload["runner_id"] == "runner-a"
         assert compact_payload["completion_callback"].startswith("http://manager")
         assert compact_payload["process_pid"] == 4567
+        assert compact_payload["process_pgid"] == 4568
         assert compact_payload["recovery_restart_attempts"] == 1
         assert "task_request" in compact_payload
 

@@ -786,6 +786,70 @@ def test_encoding_handler_build_script_arguments_gpu_and_error_extractors(monkey
         handler._extract_script_error({"stderr": "\nline1\nline2\n", "stdout": "", "returncode": 1})
         == "line2"
     )
+    assert (
+        handler._extract_script_error(
+            {
+                "stderr": "",
+                "stdout": "--> get_info_video\nstream fps estimate: 50.000\n",
+                "returncode": 1,
+            }
+        )
+        == "Encoding failed (exit code 1)"
+    )
+    assert (
+        handler._extract_script_error(
+            {
+                "stderr": "",
+                "stdout": "////////////////////\nERROR ENCODING m3u8 FOR FILE input.mp4\n",
+                "returncode": 1,
+            }
+        )
+        == "ERROR ENCODING m3u8 FOR FILE input.mp4"
+    )
+    assert (
+        handler._extract_script_error(
+            {
+                "stderr": "",
+                "stdout": "",
+                "returncode": "not-a-number",
+            }
+        )
+        == "Encoding failed (exit code not-a-number)"
+    )
+    assert (
+        handler._extract_script_error(
+            {
+                "stderr": "",
+                "stdout": "--> get_info_video\nstream fps estimate: 50.000\n",
+                "returncode": -9,
+            }
+        )
+        == "Encoding process was terminated by SIGKILL (return code -9)"
+    )
+    assert (
+        handler._extract_script_error(
+            {
+                "stderr": "",
+                "stdout": "",
+                "returncode": -999,
+            }
+        )
+        == "Encoding process was terminated by signal 999 (return code -999)"
+    )
+    assert (
+        handler._extract_script_error(
+            {
+                "stderr": "",
+                "stdout": (
+                    "--> get_info_video\n"
+                    "stream fps estimate: 50.000\n"
+                    "Error: Encoding aborted: input video duration is 0 seconds.\n"
+                ),
+                "returncode": 1,
+            }
+        )
+        == "Encoding aborted: input video duration is 0 seconds."
+    )
 
     assert VideoEncodingHandler.get_description() == "Video encoding handler"
 

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Encoding GPU runs now log H.264 4:2:2/4:4:4 source profile and pixel-format warnings without forcing a CPU fallback, allowing newer CUDA/FFmpeg stacks that support the source to continue on GPU.
+- Encoding GPU runs now warn on H.264 4:2:2/4:4:4 source profiles/pixel formats instead of forcing a CPU fallback.
 
 ### Fixed
 

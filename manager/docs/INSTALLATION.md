@@ -272,6 +272,7 @@ Notes:
 
 - The script auto-loads `MANAGER_URL` and the first configured `AUTHORIZED_TOKENS__*` value from `manager/.env`.
 - Optional overrides are still available with `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL`.
+- The smoke test disables the optional client callback by default; set `RUNNER_NOTIFY_URL` only if you also want to validate a reachable `notify_url` endpoint.
 - If the script runs from another server, avoid `127.0.0.1`; use the reachable manager host/IP.
 - Default smoke test validates `encoding`; `--with-transcription-translation` also validates `transcription` (`fr` then `en`).
 

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Improved `scripts/check_pipeline_tasks.py` failure output by printing bounded runner `script_output` diagnostics while keeping the Montpellier media source as the first default candidate.
+
+### Fixed
+
+- Fixed `scripts/check_pipeline_tasks.py` smoke checks to leave `notify_url` empty by default, avoiding false warnings from flaky public callback test services while still allowing explicit callback tests with `RUNNER_NOTIFY_URL`.
+
 ## [1.3.2] - 2026-06-19
 
 ### Security

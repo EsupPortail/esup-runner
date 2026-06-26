@@ -16,6 +16,7 @@ This script auto-loads:
 Optional overrides are still available through:
 - `RUNNER_API_TOKEN`
 - `RUNNER_MANAGER_URL`
+- `RUNNER_NOTIFY_URL` (only if you explicitly want to test a client callback)
 
 What this script does
 ---------------------
@@ -45,9 +46,9 @@ Notes
 - Auth header can be either:
     * `X-API-Token: <token>` (used in this script)
     * or `Authorization: Bearer <token>`
-- `notify_url` is required by the current API schema. We use a public endpoint
-  that returns HTTP 200 on POST to avoid leaving the task in a "warning" state
-  when the manager tries to call the callback.
+- `notify_url` is required by the current API schema, but an empty value is
+  accepted and disables the optional client callback. This keeps the smoke test
+  independent from public webhook test services.
 """
 
 import argparse
@@ -79,7 +80,7 @@ from app.core._check_output import format_status
 TASK_TYPE_ENCODING = "encoding"
 TASK_TYPE_TRANSCRIPTION = "transcription"
 
-# A small public media file with spoken French.
+# Public media files used by smoke checks.
 # Important: the manager validates URLs and will reject private/loopback hosts.
 #
 # Override for local environments:
@@ -87,15 +88,22 @@ TASK_TYPE_TRANSCRIPTION = "transcription"
 #   SOURCE_FILE=https://your-host/path/file.webm   (legacy alias)
 #
 # We keep multiple defaults to reduce brittleness when one remote URL is
-# temporarily unavailable.
+# temporarily unavailable. The local Montpellier media stays first because it is
+# the preferred validation source for this deployment.
+UMONTPELLIER_TEST_SOURCE_URL = "https://video.umontpellier.fr/media/videos/test.mp4"
+WIKITONGUES_FRENCH_SOURCE_URL = (
+    "https://upload.wikimedia.org/wikipedia/commons/7/79/"
+    "WIKITONGUES-_Clara_speaking_French.webm"
+)
+WIKITONGUES_FRENCH_TRANSCODED_SOURCE_URL = (
+    "https://upload.wikimedia.org/wikipedia/commons/transcoded/7/79/"
+    "WIKITONGUES-_Clara_speaking_French.webm/"
+    "WIKITONGUES-_Clara_speaking_French.webm.360p.vp9.webm"
+)
 DEFAULT_SOURCE_URLS = [
-    "https://video.umontpellier.fr/media/videos/test.mp4",
-    "https://upload.wikimedia.org/wikipedia/commons/7/79/WIKITONGUES-_Clara_speaking_French.webm",
-    (
-        "https://upload.wikimedia.org/wikipedia/commons/transcoded/7/79/"
-        "WIKITONGUES-_Clara_speaking_French.webm/"
-        "WIKITONGUES-_Clara_speaking_French.webm.360p.vp9.webm"
-    ),
+    UMONTPELLIER_TEST_SOURCE_URL,
+    WIKITONGUES_FRENCH_SOURCE_URL,
+    WIKITONGUES_FRENCH_TRANSCODED_SOURCE_URL,
 ]
 
 # For encoding/studio tasks, nested params such as `rendition` must be sent as JSON strings.
@@ -104,10 +112,11 @@ ENCODING_SMOKE_RENDITION = json.dumps(
     separators=(",", ":"),
 )
 
-# Required by the API schema.
-# The manager will POST to this URL when the task completes.
-# If the callback returns non-200, the task can temporarily go into "warning".
-NOTIFY_URL = "https://httpbin.org/status/200"
+# Required by the API schema, but intentionally empty by default.
+# Set RUNNER_NOTIFY_URL only when you explicitly want this script to exercise
+# a client callback endpoint. Public webhook test services are often flaky and
+# can otherwise leave an unrelated smoke-test task in "warning".
+DEFAULT_NOTIFY_URL = ""
 
 # Polling interval (seconds) for manual testing.
 POLL_SECONDS = 2
@@ -124,6 +133,9 @@ DOWNLOAD_FIRST_FILE = True
 
 # Where to save the downloaded file (default: current directory).
 OUTPUT_DIR = Path(".")
+
+# Keep failure logs useful but bounded for terminal output.
+SCRIPT_OUTPUT_EXCERPT_CHARS = 4000
 
 
 class SourceDownloadError(RuntimeError):
@@ -302,21 +314,68 @@ def _is_no_runners_available_error(message: str) -> bool:
     return "HTTP 503" in message and "No runners available" in message
 
 
-def _resolve_source_urls() -> list[str]:
-    """Resolve source URL candidates from env or defaults."""
-    override = (os.getenv("RUNNER_SOURCE_URL") or os.getenv("SOURCE_FILE") or "").strip()
-    if override:
-        return [override]
-
+def _dedupe_source_urls(source_urls: list[str]) -> list[str]:
+    """Return source URLs without blanks or duplicates, preserving order."""
     deduped: list[str] = []
     seen: set[str] = set()
-    for candidate in DEFAULT_SOURCE_URLS:
+    for candidate in source_urls:
         normalized = (candidate or "").strip()
         if not normalized or normalized in seen:
             continue
         seen.add(normalized)
         deduped.append(normalized)
     return deduped
+
+
+def _resolve_source_urls(*, with_transcription_translation: bool = False) -> list[str]:
+    """Resolve source URL candidates from env or defaults."""
+    del with_transcription_translation
+    override = (os.getenv("RUNNER_SOURCE_URL") or os.getenv("SOURCE_FILE") or "").strip()
+    if override:
+        return [override]
+
+    return _dedupe_source_urls(DEFAULT_SOURCE_URLS)
+
+
+def _resolve_notify_url() -> str:
+    """Resolve the optional client callback URL used by submitted tasks."""
+    return (os.getenv("RUNNER_NOTIFY_URL") or DEFAULT_NOTIFY_URL).strip()
+
+
+def _format_script_output_excerpt(script_output: Any) -> str:
+    """Return a bounded text excerpt from a status payload script output."""
+    if script_output is None:
+        return ""
+
+    if isinstance(script_output, str):
+        text = script_output
+    else:
+        try:
+            text = json.dumps(script_output, indent=2, ensure_ascii=False)
+        except TypeError:
+            text = str(script_output)
+
+    text = text.strip()
+    if not text:
+        return ""
+
+    if len(text) <= SCRIPT_OUTPUT_EXCERPT_CHARS:
+        return text
+
+    return (
+        f"[showing last {SCRIPT_OUTPUT_EXCERPT_CHARS} characters of script output]\n"
+        f"{text[-SCRIPT_OUTPUT_EXCERPT_CHARS:]}"
+    )
+
+
+def _print_failure_diagnostics(status_payload: dict[str, Any]) -> None:
+    """Print runner-side diagnostics when the manager has them."""
+    script_output = _format_script_output_excerpt(status_payload.get("script_output"))
+    if not script_output:
+        return
+
+    print(format_status("Script output from runner:", level="warning"))
+    print(script_output)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -359,7 +418,7 @@ def _build_task_request(
         "source_url": source_url,
         "affiliation": "manual-test",
         "parameters": parameters,
-        "notify_url": NOTIFY_URL,
+        "notify_url": _resolve_notify_url(),
     }
 
 
@@ -646,6 +705,7 @@ async def run_one_task_check(
         print(format_status(f"Error: {final_status.get('error')}", level="warning"))
 
     if status != "completed":
+        _print_failure_diagnostics(final_status)
         error_text = str(final_status.get("error") or "").strip()
         lowered = error_text.lower()
         if (
@@ -694,7 +754,9 @@ def _resolve_run_settings(args: argparse.Namespace) -> tuple[str, int, list[str]
     """Resolve mode, timeout and source candidates."""
     mode = _resolve_check_mode(args.with_transcription_translation)
     max_wait_seconds = _resolve_max_wait_seconds(args)
-    source_candidates = _resolve_source_urls()
+    source_candidates = _resolve_source_urls(
+        with_transcription_translation=args.with_transcription_translation
+    )
     if not source_candidates:
         raise SystemExit(
             "No source URL configured. Set RUNNER_SOURCE_URL (or SOURCE_FILE) to a public media URL."
@@ -706,6 +768,16 @@ def _print_run_settings(mode: str, max_wait_seconds: int, source_candidates: lis
     """Print a short execution summary before starting checks."""
     print(f"Check mode: {mode}")
     print(f"Per-task timeout: {max_wait_seconds}s")
+    notify_url = _resolve_notify_url()
+    if notify_url:
+        print(format_status(f"Notify callback enabled: {notify_url}", level="info"))
+    else:
+        print(
+            format_status(
+                "Notify callback disabled for smoke test (set RUNNER_NOTIFY_URL to enable it)",
+                level="info",
+            )
+        )
     if len(source_candidates) > 1:
         print(
             format_status(

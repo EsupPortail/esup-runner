@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Encoding GPU runs now log H.264 4:2:2/4:4:4 source profile and pixel-format warnings without forcing a CPU fallback, allowing newer CUDA/FFmpeg stacks that support the source to continue on GPU.
+
 ### Fixed
 
 - Fixed the CUDA 12 GPU lock/sync profile by adding a persistent `transcription-gpu-cuda12` extra pinned to `torch==2.10.0+cu128` from the PyTorch `cu128` index, and by making `update-stack.sh --gpu-lock-profile cuda12` sync that extra instead of relocking back to the default CUDA 13-capable `transcription-gpu` stack.
+- Fixed encoding task failure reporting so informational probe lines such as `stream fps estimate: 50.000` are no longer surfaced as the final task error.
+- Fixed recovered or automatically restarted tasks leaving duplicate stale FFmpeg processes behind by persisting process group IDs and terminating the previous task process group before relaunch.
+- Fixed runner API test instability in sandboxed environments by replacing FastAPI/Starlette `TestClient` with a thread-free ASGI test client in the runner test configuration.
 
 ## [1.3.2] - 2026-06-19
 

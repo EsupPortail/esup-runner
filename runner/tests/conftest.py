@@ -7,8 +7,9 @@ import threading
 from typing import Any
 
 import anyio.to_thread
+import fastapi.testclient as fastapi_testclient
 import httpx
-from fastapi.testclient import TestClient
+import starlette.testclient as starlette_testclient
 
 # Ensure the repository root (containing the `app` package) is on sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -83,58 +84,56 @@ class _SyncASGITransport(httpx.BaseTransport):
         _run_async_blocking(self._transport.aclose())
 
 
-def _sync_test_client_init(
-    self: TestClient,
-    app: Any,
-    base_url: str = "http://testserver",
-    raise_server_exceptions: bool = True,
-    root_path: str = "",
-    backend: str = "asyncio",
-    backend_options: dict[str, Any] | None = None,
-    cookies: httpx._types.CookieTypes | None = None,
-    headers: dict[str, str] | None = None,
-    follow_redirects: bool = True,
-    client: tuple[str, int] = ("testclient", 50000),
-) -> None:
-    del backend, backend_options
+class _SyncTestClient(httpx.Client):
+    """Thread-free ASGI test client for sandboxed CI environments."""
 
-    self.app = app
-    self.app_state = {}
-    if headers is None:
-        headers = {}
-    headers.setdefault("user-agent", "testclient")
+    __test__ = False
 
-    httpx.Client.__init__(
+    def __init__(
         self,
-        base_url=base_url,
-        headers=headers,
-        transport=_SyncASGITransport(
-            app,
-            raise_app_exceptions=raise_server_exceptions,
-            root_path=root_path,
-            client=client,
-        ),
-        follow_redirects=follow_redirects,
-        cookies=cookies,
-    )
+        app: Any,
+        base_url: str = "http://testserver",
+        raise_server_exceptions: bool = True,
+        root_path: str = "",
+        backend: str = "asyncio",
+        backend_options: dict[str, Any] | None = None,
+        cookies: httpx._types.CookieTypes | None = None,
+        headers: dict[str, str] | None = None,
+        follow_redirects: bool = True,
+        client: tuple[str, int] = ("testclient", 50000),
+    ) -> None:
+        del backend, backend_options
+
+        self.app = app
+        self.app_state: dict[str, Any] = {}
+        if headers is None:
+            headers = {}
+        headers.setdefault("user-agent", "testclient")
+
+        super().__init__(
+            base_url=base_url,
+            headers=headers,
+            transport=_SyncASGITransport(
+                app,
+                raise_app_exceptions=raise_server_exceptions,
+                root_path=root_path,
+                client=client,
+            ),
+            follow_redirects=follow_redirects,
+            cookies=cookies,
+        )
+
+    def __enter__(self) -> "_SyncTestClient":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: Any,
+    ) -> None:
+        self.close()
 
 
-def _sync_test_client_enter(self: TestClient) -> TestClient:
-    return self
-
-
-def _sync_test_client_exit(
-    self: TestClient,
-    exc_type: type[BaseException] | None,
-    exc: BaseException | None,
-    tb: Any,
-) -> None:
-    self.close()
-
-
-# Keep compatibility with Starlette/FastAPI versions where TestClient no longer
-# subclasses httpx.Client directly.
-if issubclass(TestClient, httpx.Client):
-    TestClient.__init__ = _sync_test_client_init  # type: ignore[method-assign]
-    TestClient.__enter__ = _sync_test_client_enter  # type: ignore[method-assign]
-    TestClient.__exit__ = _sync_test_client_exit  # type: ignore[method-assign]
+fastapi_testclient.TestClient = _SyncTestClient
+starlette_testclient.TestClient = _SyncTestClient

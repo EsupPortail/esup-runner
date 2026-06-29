@@ -153,7 +153,8 @@ def run_gap_window_rerun(
 ) -> tuple[bool, list[tuple[float, float, str]]]:
     """Transcribe one short audio window and return cues overlapping the target gap."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    clip_stem = f"{audio_src.stem}.gap_{int(start_sec * 1000):010d}_{int(duration_sec * 1000):07d}"
+    safe_audio_stem = audio_src.stem.replace(".", "_")
+    clip_stem = f"{safe_audio_stem}_gap_{int(start_sec * 1000):010d}_{int(duration_sec * 1000):07d}"
     clip_path = out_dir / f"{clip_stem}.mp3"
 
     rc = extract_audio_chunk_fn(
@@ -221,6 +222,74 @@ def run_gap_window_rerun(
             continue
         adjusted_cues.append((absolute_start, absolute_end, local_text))
     return True, adjusted_cues
+
+
+def write_repaired_vtt_from_cues(
+    *,
+    vtt_path: Path,
+    existing_cues: list[tuple[float, float, str]],
+    inserted_cues: list[tuple[float, float, str]],
+    max_line_width: int,
+    max_line_count: int,
+    debug: bool,
+    context: AttemptGapRepairContext,
+) -> Optional[str]:
+    """Write a candidate repaired VTT and return the previous content."""
+    if not inserted_cues:
+        return None
+
+    try:
+        original_vtt_content = vtt_path.read_text(encoding="utf-8")
+    except Exception:
+        original_vtt_content = None
+
+    merged_cues = context.dedupe_sorted_vtt_cues_fn(existing_cues + inserted_cues)
+    rendered_content = context.render_vtt_from_cues_fn(
+        merged_cues,
+        max_line_width=max_line_width,
+        max_line_count=max_line_count,
+    )
+    vtt_path.write_text(rendered_content, encoding="utf-8")
+    context.postprocess_vtt_file_fn(
+        vtt_path,
+        max_line_width=max_line_width,
+        max_line_count=max_line_count,
+        debug=debug,
+    )
+    return original_vtt_content
+
+
+def final_gap_repair_analysis_metadata(
+    *,
+    vtt_path: Path,
+    metadata: Dict[str, Any],
+    initial_analysis: Dict[str, Any],
+    final_analysis: Dict[str, Any],
+    inserted_cue_count: int,
+    original_vtt_content: Optional[str],
+) -> None:
+    """Finalize repair diagnostics, reverting candidate output when it got worse."""
+    final_gap_count = int(final_analysis.get("gap_count", 0))
+    final_largest_gap_sec = float(final_analysis.get("largest_gap_sec", 0.0))
+    repair_improved_or_equal = (
+        bool(final_analysis.get("read_ok", False))
+        and final_gap_count <= metadata["detected_before_count"]
+        and final_largest_gap_sec <= metadata["largest_gap_before_seconds"]
+    )
+
+    if inserted_cue_count > 0 and not repair_improved_or_equal and original_vtt_content is not None:
+        vtt_path.write_text(original_vtt_content, encoding="utf-8")
+        final_analysis = initial_analysis
+        final_gap_count = int(final_analysis.get("gap_count", 0))
+        final_largest_gap_sec = float(final_analysis.get("largest_gap_sec", 0.0))
+        metadata["repair_reverted"] = True
+        metadata["note"] = "repair_reverted_worse_gap_analysis"
+
+    metadata["detected_after_count"] = final_gap_count
+    metadata["largest_gap_after_seconds"] = final_largest_gap_sec
+    metadata["read_ok"] = bool(final_analysis.get("read_ok", False))
+    metadata["gaps_after"] = final_analysis.get("gaps", [])[:3]
+    metadata["repair_improved_or_equal"] = repair_improved_or_equal
 
 
 def attempt_best_effort_vtt_internal_gap_repair(
@@ -327,28 +396,24 @@ def attempt_best_effort_vtt_internal_gap_repair(
     metadata["rerun_successes"] = rerun_successes
     metadata["inserted_cue_count"] = len(inserted_cues)
 
-    if inserted_cues:
-        merged_cues = resolved_context.dedupe_sorted_vtt_cues_fn(existing_cues + inserted_cues)
-        rendered_content = resolved_context.render_vtt_from_cues_fn(
-            merged_cues,
-            max_line_width=max_line_width,
-            max_line_count=max_line_count,
-        )
-        vtt_path.write_text(rendered_content, encoding="utf-8")
-        resolved_context.postprocess_vtt_file_fn(
-            vtt_path,
-            max_line_width=max_line_width,
-            max_line_count=max_line_count,
-            debug=debug,
-        )
+    original_vtt_content = write_repaired_vtt_from_cues(
+        vtt_path=vtt_path,
+        existing_cues=existing_cues,
+        inserted_cues=inserted_cues,
+        max_line_width=max_line_width,
+        max_line_count=max_line_count,
+        debug=debug,
+        context=resolved_context,
+    )
 
     final_analysis = resolved_context.detect_vtt_internal_gaps_fn(vtt_path, max_internal_gap_sec)
-    metadata["detected_after_count"] = int(final_analysis.get("gap_count", 0))
-    metadata["largest_gap_after_seconds"] = float(final_analysis.get("largest_gap_sec", 0.0))
-    metadata["read_ok"] = bool(final_analysis.get("read_ok", False))
-    metadata["gaps_after"] = final_analysis.get("gaps", [])[:3]
-    metadata["repair_improved_or_equal"] = (
-        metadata["detected_after_count"] <= metadata["detected_before_count"]
+    final_gap_repair_analysis_metadata(
+        vtt_path=vtt_path,
+        metadata=metadata,
+        initial_analysis=initial_analysis,
+        final_analysis=final_analysis,
+        inserted_cue_count=len(inserted_cues),
+        original_vtt_content=original_vtt_content,
     )
     return metadata
 

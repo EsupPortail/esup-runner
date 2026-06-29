@@ -354,6 +354,12 @@ class Config:
         # Maximum video size in GB for processing (0 for unlimited)
         self.MAX_VIDEO_SIZE_GB: int = int(os.getenv("MAX_VIDEO_SIZE_GB", 0))
 
+        # Application-level denylist for media codecs rejected before FFmpeg/Whisper.
+        media_codec_denylist_raw = os.getenv("MEDIA_CODEC_DENYLIST", "magicyuv")
+        self.MEDIA_CODEC_DENYLIST = [
+            item.strip().lower() for item in media_codec_denylist_raw.split(",") if item.strip()
+        ]
+
         # Maximum age of files in storage in days (0 for unlimited)
         self.MAX_FILE_AGE_DAYS: int = int(os.getenv("MAX_FILE_AGE_DAYS", 0))
 

@@ -33,6 +33,7 @@ from app.core.state import (
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest, TaskResultResponse
 from app.services.email_service import send_task_failure_email
+from app.services.result_manifest import collect_manifest_output_files
 from app.services.task_dispatcher import task_dispatcher
 
 # Configure logging
@@ -484,13 +485,7 @@ def _has_useful_output_files(output_dir: Path) -> bool:
         "info_video.json",
         "encoding.log",
     }
-    for path in output_dir.rglob("*"):
-        if not path.is_file():
-            continue
-        if path.name.lower() in ignored_names:
-            continue
-        return True
-    return False
+    return bool(collect_manifest_output_files(output_dir, ignored_names=ignored_names))
 
 
 def _read_recovery_task_results(task_id: str) -> Optional[dict]:
@@ -542,9 +537,7 @@ def _ensure_recovery_manifest(task_id: str) -> bool:
     if not _has_useful_output_files(output_dir):
         return False
 
-    output_files = [
-        str(path.relative_to(output_dir)) for path in output_dir.rglob("*") if path.is_file()
-    ]
+    output_files = collect_manifest_output_files(output_dir)
     manifest = {
         "task_id": task_id,
         "files": output_files,

@@ -40,6 +40,13 @@ def run_main_flow(args: Any, *, context: MainFlowContext) -> int:
 
     pres_url_local = context.materialize_source_fn(pres_url, work_dir, "presentation")
     pers_url_local = context.materialize_source_fn(pers_url, work_dir, "presenter")
+    if pres_url and pres_url_local is None:
+        print("ERROR: Presentation media source was rejected or unavailable")
+        return 1
+    if pers_url and pers_url_local is None:
+        print("ERROR: Presenter media source was rejected or unavailable")
+        return 1
+
     webm_input = context.is_webm_input_source_fn(pres_url_local) or context.is_webm_input_source_fn(
         pers_url_local
     )

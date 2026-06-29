@@ -7,6 +7,9 @@ import urllib.parse
 import urllib.request
 from typing import Callable
 
+from app.core.config import config
+from app.core.media_denylist import MediaDeniedError, validate_media_against_denylist
+
 
 def download_allowed_hosts_from_env() -> list[str]:
     """Return the configured allowlist of download hosts."""
@@ -62,12 +65,24 @@ def host_resolves_to_public_ip(host: str) -> tuple[bool, str]:
     return True, ""
 
 
+def source_matches_media_denylist(path: str) -> bool:
+    """Return True when a local media source is rejected by the codec denylist."""
+    try:
+        validate_media_against_denylist(path, config.MEDIA_CODEC_DENYLIST)
+    except MediaDeniedError as exc:
+        print(str(exc))
+        return True
+    except OSError:
+        return False
+    return False
+
+
 def download_http_source(
     url: str,
     work_dir: str,
     label: str,
     parsed: urllib.parse.ParseResult,
-) -> str:
+) -> str | None:
     """Download an HTTP(S) source into the work directory."""
     os.makedirs(work_dir, exist_ok=True)
     base = os.path.basename(parsed.path) or f"{label}.mp4"
@@ -75,6 +90,8 @@ def download_http_source(
     local_path = os.path.join(work_dir, base)
 
     if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+        if source_matches_media_denylist(local_path):
+            return None
         return local_path
 
     try:
@@ -82,8 +99,12 @@ def download_http_source(
             data = resp.read()
         with open(local_path, "wb") as file_handle:
             file_handle.write(data)
+        validate_media_against_denylist(local_path, config.MEDIA_CODEC_DENYLIST)
         print(f"Downloaded remote source to {local_path}")
         return local_path
+    except MediaDeniedError as exc:
+        print(str(exc))
+        return None
     except Exception as exc:
         print(f"Failed to download remote source {url}: {exc}")
         return url
@@ -100,7 +121,7 @@ def materialize_source(
     ] = download_allow_private_networks_from_env,
     host_is_allowed_fn: Callable[[str, list[str]], bool] = host_is_allowed,
     host_resolves_to_public_ip_fn: Callable[[str], tuple[bool, str]] = host_resolves_to_public_ip,
-    download_http_source_fn: Callable[[str, str, str, urllib.parse.ParseResult], str] = (
+    download_http_source_fn: Callable[[str, str, str, urllib.parse.ParseResult], str | None] = (
         download_http_source
     ),
 ) -> str | None:
@@ -113,6 +134,8 @@ def materialize_source(
         print(f"Unsupported URL scheme for {label}: {scheme}")
         return None
     if scheme not in ("http", "https"):
+        if source_matches_media_denylist(url):
+            return None
         return url
 
     host = (parsed.hostname or "").strip().lower().rstrip(".")

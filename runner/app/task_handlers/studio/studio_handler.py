@@ -50,9 +50,6 @@ class StudioEncodingHandler(BaseTaskHandler):
         try:
             self.logger.info(f"Starting studio encoding task {task_id} {task_request}")
 
-            # Non-blocking diagnostic: Studio sources are frequently WebM (VP8/VP9/AV1).
-            self.log_ffmpeg_build_warnings(for_webm=True)
-
             self.workspace_dir = Path(storage_manager.base_path) / task_id
             workspace = self.prepare_workspace()
             work_dir = "output"

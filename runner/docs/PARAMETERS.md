@@ -16,6 +16,7 @@ STORAGE_DIR=/tmp/esup-runner
 EXTERNAL_SCRIPT_TIMEOUT_SECONDS=18000
 LOG_DIR=/var/log/esup-runner
 LOG_LEVEL=INFO
+MEDIA_CODEC_DENYLIST=magicyuv
 ENCODING_TYPE=CPU
 GPU_CUDA_PATH=/usr/local/cuda-13.2
 WHISPER_MODEL=turbo
@@ -41,6 +42,9 @@ WHISPER_LANGUAGE=auto
 - `MAX_FILE_AGE_DAYS` (int, default `0` = keep forever): Cleanup threshold.
 - `CLEANUP_INTERVAL_HOURS` (int, default `24`): Periodic cleanup interval.
 - `EXTERNAL_SCRIPT_TIMEOUT_SECONDS` (int, default `18000`): Timeout (in seconds) for external scripts run by `encoding`, `studio`, and `transcription` handlers.
+
+## Media safety
+- `MEDIA_CODEC_DENYLIST` (CSV, default `magicyuv`): Codec denylist checked with lightweight binary signatures immediately after download and before FFmpeg, ffprobe, or Whisper inspect the media. The built-in `magicyuv` rule rejects MagicYUV signatures because of CVE-2026-8461 / PixelSmash. Set this to an empty value only if you accept that risk.
 
 ## Encoding / hardware
 - `ENCODING_TYPE` (`CPU` | `GPU`, default `CPU`): Selects CPU or GPU path for encoding tasks.

@@ -218,6 +218,15 @@ def test_config_uses_legacy_task_type_distribution(monkeypatch):
     ]
 
 
+def test_config_parses_media_codec_denylist(monkeypatch):
+    """Validate Config parses media codec denylist."""
+    monkeypatch.setenv("MEDIA_CODEC_DENYLIST", " MagicYUV, future-codec ,, ")
+
+    cfg = config_module.Config()
+
+    assert cfg.MEDIA_CODEC_DENYLIST == ["magicyuv", "future-codec"]
+
+
 def test_config_validate_configuration_success(monkeypatch):
     """Validate Config validate configuration success."""
     monkeypatch.setenv("RUNNER_TOKEN", "secure-token")

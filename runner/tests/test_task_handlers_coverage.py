@@ -7,10 +7,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 import app.core.config as config_module
 import app.task_handlers as task_handlers_pkg
 import app.task_handlers.base_handler as base_handler_module
 from app.core.config import config
+from app.core.media_denylist import MediaDeniedError
 from app.models.models import TaskRequest
 from app.task_handlers import TaskHandlerManager
 from app.task_handlers.base_handler import BaseTaskHandler, _ffmpeg_buildconf_text
@@ -161,6 +164,18 @@ def test_ffmpeg_buildconf_text_handles_exception(monkeypatch):
     assert _ffmpeg_buildconf_text() == ""
 
 
+def test_ffmpeg_buildconf_text_returns_stdout(monkeypatch):
+    """Validate Ffmpeg buildconf text returns stdout."""
+    _ffmpeg_buildconf_text.cache_clear()
+
+    class _Result:
+        stdout = "--enable-libvpx"
+
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: _Result())
+
+    assert _ffmpeg_buildconf_text() == "--enable-libvpx"
+
+
 def test_base_handler_cleanup_workspace_when_directory_exists(tmp_path):
     """Validate Base handler cleanup workspace when directory exists."""
     handler = _ConcreteBaseHandler()
@@ -224,6 +239,21 @@ def test_base_handler_log_ffmpeg_build_warnings(monkeypatch):
 
     assert any("libvpx" in msg for msg in warnings)
     assert any("--disable-x86asm" in msg for msg in warnings)
+
+
+def test_base_handler_validate_downloaded_media_against_denylist(monkeypatch, tmp_path):
+    """Validate Base handler validate downloaded media against denylist."""
+    handler = _ConcreteBaseHandler()
+    media = tmp_path / "sample.avi"
+    media.write_bytes(b"RIFF" + b"\x40\x00\x00\x00" + b"AVI " + b"\x00" * 12 + b"MAGY")
+
+    monkeypatch.setattr(base_handler_module.config, "MEDIA_CODEC_DENYLIST", [])
+    handler.validate_downloaded_media_against_denylist(media)
+
+    monkeypatch.setattr(base_handler_module.config, "MEDIA_CODEC_DENYLIST", ["magicyuv"])
+
+    with pytest.raises(MediaDeniedError, match="MagicYUV codec"):
+        handler.validate_downloaded_media_against_denylist(media)
 
 
 def test_base_handler_build_execution_env_applies_cuda_and_handles_errors(monkeypatch):
@@ -664,7 +694,7 @@ def test_encoding_handler_execute_task_error_paths(monkeypatch, tmp_path):
     res_download_error = handler.execute_task("encoding-download-error", webm_req)
     assert res_download_error["success"] is False
     assert "download failed" in res_download_error["error"]
-    assert called == [True]
+    assert called == []
 
     monkeypatch.setattr(
         handler,
@@ -673,10 +703,24 @@ def test_encoding_handler_execute_task_error_paths(monkeypatch, tmp_path):
     )
     handler.entrypoints_dir = tmp_path / "missing-scripts"
     handler.entrypoints_dir.mkdir(parents=True, exist_ok=True)
+    res_webm_missing_script = handler.execute_task("encoding-webm-missing-script", webm_req)
+    assert res_webm_missing_script["success"] is False
+    assert "No script available" in res_webm_missing_script["error"]
+    assert called == [True]
+
     mp4_req = _task_request("encoding", "https://example.org/video.mp4", {})
     res_missing_script = handler.execute_task("encoding-missing-script", mp4_req)
     assert res_missing_script["success"] is False
     assert "No script available" in res_missing_script["error"]
+
+    monkeypatch.setattr(
+        handler,
+        "validate_downloaded_media_against_denylist",
+        lambda _input_path: (_ for _ in ()).throw(MediaDeniedError("Media rejected: denied")),
+    )
+    res_denied = handler.execute_task("encoding-denied", mp4_req)
+    assert res_denied["success"] is False
+    assert res_denied["error"] == "Media rejected: denied"
 
     monkeypatch.setattr(
         handler, "prepare_workspace", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
@@ -892,6 +936,23 @@ def test_transcription_handler_execute_task_error_paths(monkeypatch, tmp_path):
     assert res_invalid_input["success"] is False
     assert "Input media pre-check failed" in res_invalid_input["error"]
 
+    ffprobe_called = {"value": False}
+    monkeypatch.setattr(
+        handler,
+        "validate_downloaded_media_against_denylist",
+        lambda _input_path: (_ for _ in ()).throw(MediaDeniedError("Media rejected: denied")),
+    )
+    monkeypatch.setattr(
+        handler,
+        "_validate_input_media_with_ffprobe",
+        lambda _input_path: ffprobe_called.__setitem__("value", True),
+    )
+    res_denied = handler.execute_task("transcription-denied", mp4_req)
+    assert res_denied["success"] is False
+    assert res_denied["error"] == "Media rejected: denied"
+    assert ffprobe_called["value"] is False
+
+    monkeypatch.setattr(handler, "validate_downloaded_media_against_denylist", lambda _path: None)
     monkeypatch.setattr(handler, "_validate_input_media_with_ffprobe", lambda _input_path: None)
     handler.entrypoints_dir = tmp_path / "missing-scripts"
     handler.entrypoints_dir.mkdir(parents=True, exist_ok=True)

@@ -73,6 +73,25 @@ async def test_dispatch_task_success(dispatcher, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_package_task_results_excludes_gap_repair_files(dispatcher, tmp_path):
+    """Validate Package task results excludes internal gap repair files."""
+    output_dir = tmp_path / "task-gap" / "output"
+    output_dir.mkdir(parents=True)
+    (output_dir / "subtitle.vtt").write_text("WEBVTT\n", encoding="utf-8")
+    repair_dir = output_dir / "_gap_repairs"
+    repair_dir.mkdir()
+    (repair_dir / "subtitle.vtt").write_text("WEBVTT\n", encoding="utf-8")
+    (repair_dir / "window.mp3").write_text("audio", encoding="utf-8")
+
+    result = await dispatcher._package_task_results("task-gap", output_dir, {"success": True})
+
+    assert result["success"] is True
+    assert result["output_files"] == ["subtitle.vtt"]
+    manifest_content = json.loads((tmp_path / "task-gap" / "manifest.json").read_text())
+    assert manifest_content["files"] == ["subtitle.vtt"]
+
+
+@pytest.mark.asyncio
 async def test_dispatch_task_invalid_params(dispatcher):
     """Validate Dispatch task invalid params."""
     request = SimpleNamespace(

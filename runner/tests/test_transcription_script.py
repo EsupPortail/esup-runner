@@ -1916,6 +1916,51 @@ def test_run_gap_window_rerun_returns_false_when_transcribe_rc_is_non_zero(tmp_p
     assert cues == []
 
 
+def test_run_gap_window_rerun_uses_non_dotted_unique_clip_stem(tmp_path):
+    """Validate Run gap window rerun uses non dotted unique clip stem."""
+    captured = {}
+    generated_vtt = tmp_path / "out" / "audio_name_gap_0000010000_0008000.vtt"
+    generated_vtt.parent.mkdir(parents=True, exist_ok=True)
+    generated_vtt.write_text("WEBVTT\n\n", encoding="utf-8")
+
+    def fake_extract_audio_chunk(**kwargs):
+        captured["chunk_path"] = kwargs["chunk_path"]
+        return 0
+
+    def fake_find_generated_vtt(audio_path, _out_dir):
+        captured["audio_path"] = audio_path
+        return generated_vtt
+
+    ok, cues = _run_gap_window_rerun_with_core_utils(
+        audio_src=tmp_path / "audio.name.mp3",
+        out_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        transcription_language="auto",
+        start_sec=10.0,
+        duration_sec=8.0,
+        gap_start_sec=12.0,
+        gap_end_sec=14.0,
+        overlap_tolerance_sec=0.4,
+        debug=False,
+        extract_audio_chunk_fn=fake_extract_audio_chunk,
+        run_whisper_python_fn=lambda **kwargs: (0, None),
+        run_whisper_cli_fn=lambda **kwargs: (0, None),
+        find_generated_vtt_fn=fake_find_generated_vtt,
+        read_vtt_cues_fn=lambda _path: (True, [(2.0, 3.0, "inside")]),
+    )
+
+    assert ok is True
+    assert cues == [(12.0, 13.0, "inside")]
+    assert captured["chunk_path"].stem == "audio_name_gap_0000010000_0008000"
+    assert captured["audio_path"].stem == "audio_name_gap_0000010000_0008000"
+    assert "." not in captured["chunk_path"].stem
+
+
 def test_run_gap_window_rerun_uses_cli_fallback_and_filters_out_of_gap_cues(tmp_path):
     """Validate Run gap window rerun uses cli fallback and filters out of gap cues."""
     generated_vtt = tmp_path / "out" / "clip.vtt"
@@ -2347,6 +2392,110 @@ def test_attempt_best_effort_gap_repair_sets_repair_improved_or_equal_false_when
     )
 
     assert metadata["repair_improved_or_equal"] is False
+
+
+def test_attempt_best_effort_gap_repair_reverts_when_repair_worsens_analysis(tmp_path):
+    """Validate Attempt best effort gap repair reverts when repair worsens analysis."""
+    vtt_path = tmp_path / "subtitles.vtt"
+    original_content = "WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nIntro\n\n"
+    vtt_path.write_text(original_content, encoding="utf-8")
+
+    analyses = [
+        {
+            "read_ok": True,
+            "gap_count": 1,
+            "largest_gap_sec": 15.0,
+            "gaps": [
+                {
+                    "gap_sec": 15.0,
+                    "previous_end_sec": 5.0,
+                    "next_start_sec": 20.0,
+                    "line_number": 10,
+                }
+            ],
+        },
+        {
+            "read_ok": True,
+            "gap_count": 2,
+            "largest_gap_sec": 22.0,
+            "gaps": [],
+        },
+    ]
+    call_index = {"i": 0}
+
+    def fake_detect(_path, _threshold):
+        idx = min(call_index["i"], len(analyses) - 1)
+        call_index["i"] += 1
+        return analyses[idx]
+
+    metadata = _attempt_best_effort_gap_repair_with_core_utils(
+        vtt_path=vtt_path,
+        audio_src=tmp_path / "audio.mp3",
+        work_dir=tmp_path / "out",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        use_gpu=False,
+        gpu_device=0,
+        vad_filter=True,
+        timeout_sec=30,
+        detected_language="fr",
+        max_internal_gap_sec=15.0,
+        max_repair_attempts=2,
+        max_line_width=40,
+        max_line_count=2,
+        debug=False,
+        detect_vtt_internal_gaps_fn=fake_detect,
+        read_vtt_cues_fn=lambda _path: (True, [(0.0, 5.0, "Intro")]),
+        probe_duration_seconds_fn=lambda _path: 30.0,
+        run_gap_window_rerun_fn=lambda **kwargs: (True, [(6.0, 7.0, "Bad repair")]),
+        render_vtt_from_cues_fn=lambda cues, **kwargs: "WEBVTT\n\nworse\n",
+        postprocess_vtt_file_fn=lambda *args, **kwargs: None,
+    )
+
+    assert metadata["repair_improved_or_equal"] is False
+    assert metadata["repair_reverted"] is True
+    assert metadata["detected_after_count"] == 1
+    assert vtt_path.read_text(encoding="utf-8") == original_content
+
+
+def test_write_repaired_vtt_from_cues_continues_when_original_read_fails(monkeypatch, tmp_path):
+    """Validate Write repaired vtt from cues continues when original read fails."""
+    gap_utils = _load_transcription_core_module("gap_repair_utils")
+    vtt_path = tmp_path / "subtitles.vtt"
+
+    monkeypatch.setattr(
+        gap_utils.Path,
+        "read_text",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("read failed")),
+    )
+
+    context = gap_utils.AttemptGapRepairContext(
+        context_padding_seconds=1.0,
+        min_window_seconds=2.0,
+        overlap_tolerance_seconds=0.4,
+        detect_vtt_internal_gaps_fn=lambda _path, _threshold: {},
+        read_vtt_cues_fn=lambda _path: (True, []),
+        probe_duration_seconds_fn=lambda _path: 0.0,
+        normalize_language_fn=lambda language: language,
+        resolve_transcription_language_fn=lambda _requested: "auto",
+        run_gap_window_rerun_fn=lambda **_kwargs: (False, []),
+        dedupe_sorted_vtt_cues_fn=lambda cues: cues,
+        render_vtt_from_cues_fn=lambda _cues, **_kwargs: "WEBVTT\n\nrepaired\n",
+        postprocess_vtt_file_fn=lambda *_args, **_kwargs: None,
+    )
+
+    original_content = gap_utils.write_repaired_vtt_from_cues(
+        vtt_path=vtt_path,
+        existing_cues=[],
+        inserted_cues=[(0.0, 1.0, "repaired")],
+        max_line_width=40,
+        max_line_count=2,
+        debug=False,
+        context=context,
+    )
+
+    assert original_content is None
+    assert vtt_path.read_bytes() == b"WEBVTT\n\nrepaired\n"
 
 
 def test_validate_vtt_internal_gaps_returns_zero_when_threshold_is_disabled(tmp_path):

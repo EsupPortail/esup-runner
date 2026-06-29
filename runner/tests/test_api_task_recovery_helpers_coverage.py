@@ -249,6 +249,19 @@ def test_task_resolve_output_dir_and_has_useful_output_branches(monkeypatch, tmp
     assert task_module._has_useful_output_files(output_dir) is False
 
 
+def test_task_has_useful_output_files_ignores_gap_repairs(tmp_path):
+    """Validate Task has useful output files ignores internal gap repair artifacts."""
+    output_dir = tmp_path / "output"
+    repair_dir = output_dir / "_gap_repairs"
+    repair_dir.mkdir(parents=True)
+    (repair_dir / "subtitle.vtt").write_text("WEBVTT\n", encoding="utf-8")
+
+    assert task_module._has_useful_output_files(output_dir) is False
+
+    (output_dir / "subtitle.vtt").write_text("WEBVTT\n", encoding="utf-8")
+    assert task_module._has_useful_output_files(output_dir) is True
+
+
 def test_task_read_recovery_task_results_error_branches(monkeypatch, tmp_path):
     """Validate Task read recovery task results error branches."""
     output_dir = tmp_path / "output"
@@ -319,6 +332,24 @@ def test_task_ensure_recovery_manifest_error_branches(monkeypatch, tmp_path):
     monkeypatch.setattr(builtins, "open", _failing_open)
     assert task_module._ensure_recovery_manifest("task-c") is False
     monkeypatch.setattr(builtins, "open", original_open)
+
+
+def test_task_ensure_recovery_manifest_excludes_gap_repairs(tmp_path):
+    """Validate Task ensure recovery manifest excludes internal gap repair files."""
+    task_id = "task-recovery-gap"
+    task_module.storage_manager.base_path = str(tmp_path)
+    output_dir = tmp_path / task_id / "output"
+    output_dir.mkdir(parents=True)
+    (output_dir / "subtitle.vtt").write_text("WEBVTT\n", encoding="utf-8")
+    repair_dir = output_dir / "_gap_repairs"
+    repair_dir.mkdir()
+    (repair_dir / "subtitle.vtt").write_text("WEBVTT\n", encoding="utf-8")
+    (repair_dir / "window.mp3").write_text("audio", encoding="utf-8")
+
+    assert task_module._ensure_recovery_manifest(task_id) is True
+
+    manifest = json.loads((tmp_path / task_id / "manifest.json").read_text())
+    assert manifest["files"] == ["subtitle.vtt"]
 
 
 def test_task_infer_workspace_terminal_status_returns_none_when_manifest_creation_fails(

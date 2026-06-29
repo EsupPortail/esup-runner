@@ -106,6 +106,7 @@ class TranscriptionHandler(BaseTaskHandler):
             dl = self.download_source_file(task_request.source_url, str(input_path))
             if not dl.get("success"):
                 raise Exception(dl.get("error", "Unable to download input"))
+            self.validate_downloaded_media_against_denylist(input_path)
             input_validation_error = self._validate_input_media_with_ffprobe(input_path)
             if input_validation_error is not None:
                 raise Exception(input_validation_error)

@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-29
+
 ### Changed
 
 - Improved `scripts/check_pipeline_tasks.py` failure output by printing bounded runner `script_output` diagnostics while keeping the Montpellier media source as the first default candidate.
+- Refreshed the manager lockfile dependencies for the 1.4.0 release.
 
 ### Fixed
 

@@ -171,14 +171,17 @@ lock-upgrade-gpu-12:
 
 # lock-upgrade-gpu-latest
 # Upgrade the lockfile against the latest available GPU torch stack.
-# We also disable sources-table resolution to keep behavior predictable across uv versions.
+# When uv supports lock extras, disable sources-table resolution so the default
+# GPU stack resolves from the publishable metadata. Older uv versions lock every
+# split, so keep sources enabled there; otherwise the CUDA12 split cannot see its
+# explicit PyTorch index.
 lock-upgrade-gpu-latest:
 	@echo "==> uv lock --upgrade with dev + transcription-gpu (latest GPU torch stack)"
 	@if $(UV) lock --help | grep -Eq -- '--extra([[:space:]]|$$)'; then \
 		UV_NO_SOURCES=1 $(UV) lock --upgrade --extra dev --extra transcription-gpu -P torch; \
 	else \
-		echo "==> warning: this uv version ignores lock extras; running full lock upgrade without sources and with torch upgrade"; \
-		UV_NO_SOURCES=1 $(UV) lock --upgrade -P torch; \
+		echo "==> warning: this uv version ignores lock extras; running full lock upgrade with sources and torch upgrade"; \
+		$(UV) lock --upgrade -P torch; \
 	fi
 
 lock-dev:

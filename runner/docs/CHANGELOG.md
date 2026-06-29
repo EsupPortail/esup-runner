@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `make lock-upgrade-gpu-latest` with recent `uv` versions by keeping configured package sources active in the full-lock fallback, so the legacy CUDA12 split no longer blocks latest GPU lock refreshes.
 
 ## [1.4.0] - 2026-06-29
 

@@ -146,7 +146,7 @@ The runner ships with three handlers (see [app/task_handlers](../app/task_handle
 - Workspaces live under the storage manager base path; outputs and logs are written to an `output/` subfolder with a `task_metadata.json` summary.
 - Result manifests are written to `<STORAGE_DIR>/<task_id>/manifest.json`.
 - External scripts are executed with timeouts and inherit environment variables (CUDA hints are injected automatically when GPU mode is enabled). The timeout is controlled by `EXTERNAL_SCRIPT_TIMEOUT_SECONDS` (default `18000`).
-- The runner enforces basic safety checks: media extension validation, optional max file size, and non-blocking FFmpeg build warnings for missing codecs/features.
+- The runner enforces basic safety checks: media extension validation, optional max file size, `MEDIA_CODEC_DENYLIST` binary-signature rejection before FFmpeg/ffprobe/Whisper, and non-blocking FFmpeg build warnings for missing codecs/features.
 
 ## Minimal .env example
 ```properties
@@ -161,6 +161,7 @@ EXTERNAL_SCRIPT_TIMEOUT_SECONDS=18000
 ENCODING_TYPE=CPU
 LOG_DIR=/var/log/esup-runner
 LOG_LEVEL=INFO
+MEDIA_CODEC_DENYLIST=magicyuv
 ```
 
 Legacy alias for logs is still supported: `LOG_DIRECTORY`.

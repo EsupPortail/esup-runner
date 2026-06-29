@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 import requests  # type: ignore[import-untyped]
 
 from app.core.config import config
+from app.core.media_denylist import validate_media_against_denylist
 from app.core.setup_logging import setup_default_logging
 from app.models.models import TaskRequest
 
@@ -517,6 +518,15 @@ class BaseTaskHandler(ABC):
             "ts",
         )
         return filename.lower().endswith(video_allowed_extensions)
+
+    def validate_downloaded_media_against_denylist(self, media_path: Path) -> None:
+        """Reject downloaded media matching the configured binary-signature denylist."""
+        denylist = getattr(config, "MEDIA_CODEC_DENYLIST", [])
+        if not denylist:
+            return
+        if not media_path.exists():
+            return
+        validate_media_against_denylist(media_path, denylist)
 
     def get_extension(self, filename: str) -> str:
         """Get the file extension from a filename.

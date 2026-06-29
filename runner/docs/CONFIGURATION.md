@@ -101,6 +101,7 @@ MAX_VIDEO_SIZE_GB=0
 MAX_FILE_AGE_DAYS=7
 CLEANUP_INTERVAL_HOURS=24
 EXTERNAL_SCRIPT_TIMEOUT_SECONDS=18000
+MEDIA_CODEC_DENYLIST=magicyuv
 
 # Encoding type (CPU or GPU)
 ENCODING_TYPE=CPU
@@ -139,6 +140,14 @@ For `WHISPER_CHUNK_THRESHOLD_SECONDS`, the runner uses a hardware-aware default 
 - `1800` on GPU
 
 Set `WHISPER_CHUNK_THRESHOLD_SECONDS` only if you explicitly need to override that behavior.
+
+## Media denylist
+
+`MEDIA_CODEC_DENYLIST` is a comma-separated runner-level codec denylist. The default is `magicyuv`.
+
+When `magicyuv` is present, the runner performs a small binary-signature check immediately after a media file is downloaded and before any FFmpeg, ffprobe, or Whisper processing touches that file. Matching media is rejected with an explicit message asking the user to convert it to H.264/H.265/VP9/AV1 first.
+
+Set `MEDIA_CODEC_DENYLIST=` only if you deliberately want to disable this protection.
 
 ## Related docs
 - Full environment variable reference: [docs/PARAMETERS.md](PARAMETERS.md)

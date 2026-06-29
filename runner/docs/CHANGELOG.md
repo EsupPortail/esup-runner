@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.4.0] - 2026-06-29
+
 ### Security
 
 - Added a configurable runner-level `MEDIA_CODEC_DENYLIST` defaulting to `magicyuv`, with lightweight MagicYUV binary-signature rejection before FFmpeg, ffprobe, or Whisper process downloaded media.
@@ -14,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Encoding GPU runs now warn on H.264 4:2:2/4:4:4 source profiles/pixel formats instead of forcing a CPU fallback.
+- Refreshed the runner lockfile dependencies for the 1.4.0 release.
 
 ### Fixed
 

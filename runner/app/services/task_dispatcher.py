@@ -13,6 +13,7 @@ from typing import Any, Dict
 from app.core.setup_logging import setup_default_logging
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest
+from app.services.result_manifest import collect_manifest_output_files
 from app.task_handlers import task_handler_manager
 
 logger = setup_default_logging()
@@ -114,9 +115,7 @@ class TaskDispatcher:
             Dict containing packaged results
         """
         try:
-            output_files = [
-                str(p.relative_to(output_dir)) for p in output_dir.rglob("*") if p.is_file()
-            ]
+            output_files = collect_manifest_output_files(output_dir)
             manifest = {
                 "task_id": task_id,
                 "files": output_files,

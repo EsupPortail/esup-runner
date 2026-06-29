@@ -102,10 +102,6 @@ class VideoEncodingHandler(BaseTaskHandler):
                 f"Source URL points to a video file: {task_request.source_url} (ext: {extension})"
             )
 
-            # Non-blocking diagnostic: WebM inputs depend on libvpx for robust VP8/VP9 decode.
-            if extension == "webm":
-                self.log_ffmpeg_build_warnings(for_webm=True)
-
             # Use the actual source filename for the workspace input file
             filename = source_name
             input_path = workspace / filename
@@ -119,6 +115,12 @@ class VideoEncodingHandler(BaseTaskHandler):
                 self.logger.info(f"Downloaded source file to: {str(input_path)}")
             else:
                 raise Exception(download_result.get("error", "Unknown download error"))
+
+            self.validate_downloaded_media_against_denylist(input_path)
+
+            # Non-blocking diagnostic: WebM inputs depend on libvpx for robust VP8/VP9 decode.
+            if extension == "webm":
+                self.log_ffmpeg_build_warnings(for_webm=True)
 
             # Determine which script to use
             script_path = self.entrypoints_dir / "encoding.py"

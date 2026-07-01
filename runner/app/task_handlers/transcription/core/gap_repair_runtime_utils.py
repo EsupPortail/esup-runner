@@ -126,6 +126,7 @@ def render_vtt_from_cues(
             max_line_count=max_line_count,
             format_vtt_timestamp_fn=vtt_validation_utils.format_vtt_timestamp,
             wrap_vtt_cue_text_fn=vtt_postprocess_utils.wrap_vtt_cue_text,
+            split_vtt_cue_text_fn=vtt_postprocess_utils.split_vtt_cue_text,
         ),
     )
 

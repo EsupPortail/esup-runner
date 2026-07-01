@@ -139,7 +139,7 @@ The runner ships with three handlers (see [app/task_handlers](../app/task_handle
 - Entrypoint: [app/task_handlers/transcription/transcription.py](../app/task_handlers/transcription/transcription.py)
 - Core runtime package: [app/task_handlers/transcription/core](../app/task_handlers/transcription/core)
 - Purpose: run the Whisper-based subtitle pipeline (Python API, with CLI fallback) to generate WebVTT from media/audio, then finalize, validate, and package outputs with metadata.
-- Parameters: `language`, `format` (currently `vtt`), `model` (small|medium|large|turbo), `normalize` (audio pre-normalization toggle), plus tracking metadata (`video_id`, `video_slug`, `video_title`). GPU use follows `ENCODING_TYPE`.
+- Parameters: `language` (final subtitle language), `source_language` (optional spoken source language hint), `format` (currently `vtt`), `model` (small|medium|large|turbo), `normalize` (audio pre-normalization toggle), plus tracking metadata (`video_id`, `video_slug`, `video_title`). GPU use follows `ENCODING_TYPE`.
 
 ## How tasks are processed
 - Each handler inherits from [app/task_handlers/base_handler.py](../app/task_handlers/base_handler.py), which manages workspaces, downloads, input validation, and metadata writing.

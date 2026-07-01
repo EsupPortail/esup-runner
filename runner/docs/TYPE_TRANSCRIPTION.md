@@ -5,10 +5,11 @@ This page documents the **`transcription`** runner task type: what it does and w
 ## What it does
 The `transcription` task downloads a media file and generates subtitles using Whisper.
 
-Behavior depends on the requested `language`:
+Behavior depends on the requested final `language` and optional spoken `source_language`:
 - `language=auto`: subtitles stay in the detected spoken language
-- `language=<code>` and detected source language matches that code: normal transcription
-- `language=<code>` and detected source language differs: the runner transcribes in the source language first, then translates the VTT while preserving timestamps
+- `language=<code>` and detected/forced source language matches that code: normal transcription
+- `language=<code>` and detected/forced source language differs: the runner transcribes in the source language first, then translates the VTT while preserving timestamps
+- `source_language=<code>`: tells Whisper which language is spoken in the audio, avoiding fragile auto-detection when the caller already knows it
 
 Implementation:
 - Handler: [app/task_handlers/transcription/transcription_handler.py](../app/task_handlers/transcription/transcription_handler.py)
@@ -64,6 +65,19 @@ The sidecar intentionally does not use the `.vtt` extension, so client applicati
 The runner also records runtime metadata in `info_video.json`, including the detected source language, final subtitle language, and the translation model that was actually used.
 The local translation models used by this task are cached under `CACHE_DIR/huggingface`
 (or under `HUGGINGFACE_MODELS_DIR` when explicitly overridden).
+
+### `source_language`
+- Type: string
+- Default: `"auto"`
+- Examples: `"auto"`, `"fr"`, `"en"`
+
+Semantics:
+- `auto`: let Whisper detect the spoken language before optional translation
+- explicit code such as `fr` or `en`: force Whisper to transcribe the source audio in that language
+
+Use this when the Manager or caller already knows the language spoken in the media.
+For example, `source_language=fr` and `language=fr` produces direct French subtitles and skips the translation step.
+This is a task/request parameter only; it is not configured globally through the runner `.env`.
 
 ### `model`
 - Type: string
@@ -151,6 +165,7 @@ Notes:
   "notify_url": "https://manager.example.org/callback",
   "parameters": {
     "language": "auto",
+    "source_language": "auto",
     "duration": 17.0,
     "model": "turbo",
     "model_type": "WHISPER",
@@ -177,6 +192,7 @@ This example includes optional fields (`app_version`, `affiliation`, `completion
   "affiliation": "student",
   "parameters": {
     "language": "auto",
+    "source_language": "auto",
     "duration": 17.0,
     "model": "turbo",
     "model_type": "WHISPER",

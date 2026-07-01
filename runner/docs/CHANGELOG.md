@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added optional transcription `source_language` support so callers can force the spoken source language independently from the requested final subtitle `language`, preventing accidental translation after a bad Whisper auto-detection.
+
 ### Fixed
 
 - Fixed `make lock-upgrade-gpu-latest` with recent `uv` versions by keeping configured package sources active in the full-lock fallback, so the legacy CUDA12 split no longer blocks latest GPU lock refreshes.

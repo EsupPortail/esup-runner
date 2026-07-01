@@ -35,9 +35,15 @@ extract_audio_chunk = whisper_python_runtime_utils.extract_audio_chunk
 write_vtt_result = whisper_python_runtime_utils.write_vtt_result
 
 
-def resolve_transcription_language(_requested_language: str) -> str:
-    """Always let Whisper auto-detect the source language before optional translation."""
-    return "auto"
+def resolve_transcription_language(requested_source_language: str) -> str:
+    """Return the Whisper source language, defaulting to auto-detection."""
+    normalized_source_language = cast(
+        Optional[str],
+        language_utils.normalize_language_code(requested_source_language),
+    )
+    if not normalized_source_language or normalized_source_language == "auto":
+        return "auto"
+    return normalized_source_language
 
 
 def resolve_chunk_threshold_seconds(configured_value: object, use_gpu: bool) -> int:

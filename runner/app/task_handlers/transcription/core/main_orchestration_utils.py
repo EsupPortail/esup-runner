@@ -147,6 +147,7 @@ def run_main_flow(
     task_metadata.update(
         resolved_context.build_transcription_runtime_metadata_fn(
             requested_language=args.language,
+            source_language=getattr(args, "source_language", "auto"),
             detected_language=detected_language,
             final_language=final_subtitle_language,
             whisper_model=args.model,

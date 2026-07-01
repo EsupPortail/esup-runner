@@ -113,17 +113,20 @@ def build_transcription_runtime_metadata(
     translation: Dict[str, Any],
     normalize_language: Callable[[Optional[str]], Optional[str]],
     map_model_name: Callable[[str, str], str],
+    source_language: Optional[str] = "auto",
     vtt_internal_gaps: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build stable runtime metadata written to info_video.json."""
     normalized_detected_language = normalize_language(detected_language)
     normalized_requested_language = normalize_language(requested_language)
+    normalized_requested_source_language = normalize_language(source_language)
     normalized_final_language = normalize_language(final_language)
     metadata: Dict[str, Any] = {
         "transcription": {
             "whisper_model": map_model_name(whisper_model, "python"),
             "hardware_profile": translation_hardware_profile(use_gpu),
             "requested_subtitle_language": normalized_requested_language,
+            "requested_source_language": normalized_requested_source_language,
             "detected_source_language": normalized_detected_language,
             "final_subtitle_language": normalized_final_language,
             "translation": translation,

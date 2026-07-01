@@ -29,6 +29,7 @@ def build_transcription_runtime_metadata(
     whisper_model: str,
     use_gpu: bool,
     translation: Dict[str, Any],
+    source_language: Optional[str] = "auto",
     vtt_internal_gaps: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build stable runtime metadata written to info_video.json."""
@@ -43,6 +44,7 @@ def build_transcription_runtime_metadata(
             translation=translation,
             normalize_language=language_utils.normalize_language_code,
             map_model_name=runtime_cli_utils.map_model_name,
+            source_language=source_language,
             vtt_internal_gaps=vtt_internal_gaps,
         ),
     )

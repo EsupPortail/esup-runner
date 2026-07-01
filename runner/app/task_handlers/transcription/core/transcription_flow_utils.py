@@ -34,7 +34,10 @@ def run_transcription(
     """Run source-language transcription via Python API first, then CLI."""
     resolved_context = context
 
-    transcription_language = resolved_context.resolve_transcription_language_fn(args.language)
+    requested_source_language = getattr(args, "source_language", "auto")
+    transcription_language = resolved_context.resolve_transcription_language_fn(
+        requested_source_language
+    )
     chunk_threshold_sec = resolved_context.resolve_chunk_threshold_seconds_fn(
         configured_value=args.chunk_threshold_seconds,
         use_gpu=effective_use_gpu,
@@ -78,7 +81,13 @@ def run_transcription(
     if rc != 0:
         print(f"{backend_name} failed with return code {rc}")
 
-    return rc, resolved_context.normalize_language_code_fn(detected_lang)
+    normalized_detected_language = resolved_context.normalize_language_code_fn(detected_lang)
+    if rc == 0 and transcription_language and transcription_language.lower() != "auto":
+        normalized_detected_language = resolved_context.normalize_language_code_fn(
+            transcription_language
+        )
+
+    return rc, normalized_detected_language
 
 
 def build_whisper_fallback_options(

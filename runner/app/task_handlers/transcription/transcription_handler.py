@@ -1,10 +1,14 @@
 """
 Transcription task handler for Whisper-based subtitle generation.
 
-The public API keeps a single `language` parameter:
+The public API keeps `language` as the final subtitle language:
 - `auto` keeps subtitles in the detected spoken language
 - an explicit language requests subtitles in that final language, which may
   trigger a translation step after source-language transcription
+
+Callers that already know the spoken language can also send `source_language`
+to guide Whisper's source transcription while keeping `language` as the final
+subtitle language.
 
 When a translation happens, only the final deliverable keeps the `.vtt`
 extension. The preserved source-language sidecar is written with a non-`.vtt`
@@ -37,6 +41,7 @@ class TranscriptionHandler(BaseTaskHandler):
     task_type = "transcription"
     possible_params = {
         "language",
+        "source_language",
         "format",
         "model",
         "model_type",
@@ -57,6 +62,7 @@ class TranscriptionHandler(BaseTaskHandler):
 
         Optional supported parameters:
         - language: final subtitle language code or 'auto'
+        - source_language: spoken source language code or 'auto'
         - format: output subtitle format (currently `vtt` only)
         - model: logical whisper model (small|medium|large|turbo)
         - model_type/duration: compatibility metadata from manager payloads
@@ -236,6 +242,8 @@ class TranscriptionHandler(BaseTaskHandler):
         # when an explicit target language differs from the source language.
         language = str(parameters.get("language", config.WHISPER_LANGUAGE))
         args.extend(["--language", language])
+        source_language = str(parameters.get("source_language", "auto"))
+        args.extend(["--source-language", source_language])
 
         # Model selection: allow per-task override or fallback to config
         logical_model = str(parameters.get("model", config.WHISPER_MODEL)).lower()

@@ -107,6 +107,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Final subtitle language code or 'auto' to keep the detected spoken language",
     )
     parser.add_argument(
+        "--source-language",
+        default="auto",
+        help="Spoken source language code or 'auto' to let Whisper detect it",
+    )
+    parser.add_argument(
         "--format", default="vtt", choices=["vtt"], help="Output subtitle format (forced to vtt)"
     )
     parser.add_argument(

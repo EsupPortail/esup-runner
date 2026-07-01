@@ -114,17 +114,31 @@ def render_vtt_from_cues(
     max_line_count: int,
     format_vtt_timestamp_fn: Callable[[float], str],
     wrap_vtt_cue_text_fn: Callable[[str, int, int], list[str]],
+    split_vtt_cue_text_fn: Optional[Callable[[str, int, int], list[list[str]]]] = None,
 ) -> str:
     """Render a VTT document from normalized cues."""
     blocks: list[str] = ["WEBVTT"]
     for start_sec, end_sec, text in cues:
-        wrapped_lines = wrap_vtt_cue_text_fn(text, max_line_width, max_line_count)
-        if not wrapped_lines:
+        if split_vtt_cue_text_fn is None:
+            wrapped_lines = wrap_vtt_cue_text_fn(text, max_line_width, max_line_count)
+            chunk_size = max(1, int(max_line_count))
+            text_chunks = [
+                wrapped_lines[index : index + chunk_size]
+                for index in range(0, len(wrapped_lines), chunk_size)
+            ]
+        else:
+            text_chunks = split_vtt_cue_text_fn(text, max_line_width, max_line_count)
+        if not text_chunks:
             continue
-        timestamp_line = (
-            f"{format_vtt_timestamp_fn(start_sec)} --> {format_vtt_timestamp_fn(end_sec)}"
-        )
-        blocks.append("\n".join([timestamp_line] + wrapped_lines))
+        duration_sec = max(0.0, float(end_sec) - float(start_sec))
+        chunk_count = len(text_chunks)
+        for chunk_index, text_chunk in enumerate(text_chunks):
+            chunk_start = float(start_sec) + (duration_sec * chunk_index / chunk_count)
+            chunk_end = float(start_sec) + (duration_sec * (chunk_index + 1) / chunk_count)
+            timestamp_line = (
+                f"{format_vtt_timestamp_fn(chunk_start)} --> {format_vtt_timestamp_fn(chunk_end)}"
+            )
+            blocks.append("\n".join([timestamp_line] + text_chunk))
     return "\n\n".join(blocks).rstrip() + "\n"
 
 

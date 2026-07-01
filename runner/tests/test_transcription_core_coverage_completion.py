@@ -1835,7 +1835,8 @@ def test_vtt_postprocess_utils_extra_branches(monkeypatch, tmp_path, capsys):
         max_line_width=4,
         max_line_count=2,
     )
-    assert len(overflow) == 2
+    assert overflow
+    assert all(len(line) <= 4 for line in overflow)
 
     assert vtt_utils.parse_vtt_cue_time_range(
         "invalid", parse_vtt_timestamp_fn=lambda _raw: None
@@ -1912,6 +1913,34 @@ def test_vtt_postprocess_utils_extra_branches(monkeypatch, tmp_path, capsys):
         wrap_vtt_cue_text_fn=lambda *_a, **_k: [],
     )
     assert rendered == []
+
+    assert (
+        vtt_utils.format_vtt_cue_time_range(
+            "00:00:00.000 --> 00:00:04.000 line:90%",
+            0.0,
+            2.0,
+            format_vtt_timestamp_fn=lambda value: f"{value:.1f}",
+        )
+        == "0.0 --> 2.0 line:90%"
+    )
+    assert vtt_utils.split_vtt_cue_prefixes(
+        [],
+        2,
+        parse_vtt_timestamp_fn=lambda _raw: 0.0,
+        format_vtt_timestamp_fn=lambda value: f"{value:.1f}",
+    ) == [[], []]
+    assert vtt_utils.split_vtt_cue_prefixes(
+        ["00:00:00.000 --> 00:00:04.000"],
+        2,
+        parse_vtt_timestamp_fn=None,
+        format_vtt_timestamp_fn=lambda value: f"{value:.1f}",
+    ) == [["00:00:00.000 --> 00:00:04.000"], ["00:00:00.000 --> 00:00:04.000"]]
+    assert vtt_utils.split_vtt_cue_prefixes(
+        ["invalid"],
+        2,
+        parse_vtt_timestamp_fn=lambda _raw: None,
+        format_vtt_timestamp_fn=lambda value: f"{value:.1f}",
+    ) == [["invalid"], ["invalid"]]
 
     vtt_path = tmp_path / "a.vtt"
     vtt_path.write_text("WEBVTT\n", encoding="utf-8")
@@ -2739,8 +2768,12 @@ def test_remaining_vtt_postprocess_lines(monkeypatch):
         max_line_width=3,
         max_line_count=2,
     )
-    assert len(overflow) == 2
-    assert " " in overflow[-1]
+    assert overflow == ["one", "two", "six", "ten"]
+    assert vtt_utils.split_vtt_cue_text(
+        "one two six ten",
+        max_line_width=3,
+        max_line_count=2,
+    ) == [["one", "two"], ["six", "ten"]]
 
     blocks = [
         ([], "a"),
@@ -2751,6 +2784,22 @@ def test_remaining_vtt_postprocess_lines(monkeypatch):
         cue_gap_allows_apostrophe_transfer_fn=lambda *_a: False,
         repair_cross_cue_apostrophe_split_fn=lambda _a, _b: ("x", "y"),
     )
+
+
+def test_gap_repair_render_vtt_from_cues_uses_legacy_wrap_fallback():
+    """Validate Gap repair render vtt from cues uses legacy wrap fallback."""
+    gap_utils = _load_core_module("gap_repair_utils")
+
+    rendered = gap_utils.render_vtt_from_cues(
+        [(0.0, 6.0, "ignored")],
+        max_line_width=40,
+        max_line_count=2,
+        format_vtt_timestamp_fn=lambda value: f"{value:.1f}",
+        wrap_vtt_cue_text_fn=lambda *_args: ["one", "two", "three"],
+    )
+
+    assert "0.0 --> 3.0\none\ntwo" in rendered
+    assert "3.0 --> 6.0\nthree" in rendered
 
 
 def test_remaining_chunking_lines(monkeypatch, tmp_path):
@@ -2827,4 +2876,6 @@ def test_remaining_vtt_postprocess_overflow_merge_line(monkeypatch):
 
     monkeypatch.setattr(vtt_utils, "normalize_vtt_cue_text", lambda _text: SneakyText("unused"))
     wrapped = vtt_utils.wrap_vtt_cue_text("anything", max_line_width=3, max_line_count=2)
-    assert len(wrapped) == 2
+    assert wrapped
+    assert "one" in wrapped
+    assert "two" in wrapped

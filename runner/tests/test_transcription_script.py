@@ -83,6 +83,8 @@ def _postprocess_vtt_content_with_core_utils(
         max_line_width=max_line_width,
         max_line_count=max_line_count,
         wrap_vtt_cue_text_fn=vtt_utils.wrap_vtt_cue_text,
+        parse_vtt_timestamp_fn=validation_utils.parse_vtt_timestamp,
+        format_vtt_timestamp_fn=validation_utils.format_vtt_timestamp,
     )
 
     return vtt_utils.postprocess_vtt_content(
@@ -208,6 +210,8 @@ def _translate_vtt_content_with_core_utils(
         max_line_width=max_line_width,
         max_line_count=max_line_count,
         wrap_vtt_cue_text_fn=vtt_utils.wrap_vtt_cue_text,
+        parse_vtt_timestamp_fn=validation_utils.parse_vtt_timestamp,
+        format_vtt_timestamp_fn=validation_utils.format_vtt_timestamp,
     )
 
     return translation_utils.translate_vtt_content(
@@ -547,6 +551,7 @@ def _render_vtt_from_cues_with_core_utils(
         max_line_count=max_line_count,
         format_vtt_timestamp_fn=validation_utils.format_vtt_timestamp,
         wrap_vtt_cue_text_fn=vtt_utils.wrap_vtt_cue_text,
+        split_vtt_cue_text_fn=vtt_utils.split_vtt_cue_text,
     )
 
 
@@ -3025,6 +3030,33 @@ def test_postprocess_vtt_content_rewraps_cue_text_after_elision_fix():
     assert "s\n'" not in processed
     cue_lines = processed.strip().split("\n\n")[1].splitlines()[1:]
     assert len(cue_lines) <= 2
+
+
+def test_postprocess_vtt_content_splits_long_cues_to_two_lines_of_forty_chars():
+    """Validate Postprocess vtt content splits long cues to display-safe blocks."""
+    content = (
+        "WEBVTT\n\n"
+        "05:01.900 --> 05:07.220\n"
+        "quand même revenir en premier lieu sur\n"
+        "les questions de la recherche, puisque\n"
+        "l'Université\n"
+    )
+
+    processed = _postprocess_vtt_content_with_core_utils(
+        content,
+        max_line_width=40,
+        max_line_count=2,
+    )
+
+    cue_blocks = [
+        block for block in processed.strip().split("\n\n") if "-->" in block.splitlines()[0]
+    ]
+    assert len(cue_blocks) == 2
+    assert "l'Université" in processed
+    for cue_block in cue_blocks:
+        cue_lines = cue_block.splitlines()[1:]
+        assert 1 <= len(cue_lines) <= 2
+        assert all(len(line) <= 40 for line in cue_lines)
 
 
 def test_postprocess_vtt_content_repairs_french_apostrophe_split_across_cues():

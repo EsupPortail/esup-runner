@@ -941,6 +941,53 @@ def test_run_transcription_uses_auto_source_language_for_requested_target_langua
     assert captured["language"] == "auto"
 
 
+def test_run_transcription_uses_explicit_source_language_when_provided(tmp_path):
+    """Validate explicit source language guides Whisper without relying on auto-detect."""
+    flow_utils = _load_transcription_core_module("transcription_flow_utils")
+    args = types.SimpleNamespace(
+        language="fr",
+        source_language="fr",
+        chunk_threshold_seconds="",
+        model="turbo",
+        whisper_models_dir=str(tmp_path / "models"),
+        gpu_device=0,
+        vad_filter="true",
+        chunk_duration_seconds="300",
+        chunk_overlap_seconds="4",
+        vtt_highlight_words="false",
+        vtt_max_line_count="2",
+        vtt_max_line_width="40",
+    )
+
+    captured = {}
+
+    def fake_run_whisper_python(**kwargs):
+        captured["language"] = kwargs["language"]
+        return 0, "en"
+
+    context = flow_utils.TranscriptionFlowContext(
+        resolve_transcription_language_fn=lambda requested: requested,
+        resolve_chunk_threshold_seconds_fn=lambda **_kwargs: 777,
+        run_whisper_python_fn=fake_run_whisper_python,
+        run_whisper_cli_fn=lambda **_kwargs: (255, None),
+        normalize_language_code_fn=lambda language: language,
+    )
+
+    rc, detected_language = flow_utils.run_transcription(
+        args,
+        tmp_path / "audio.mp3",
+        tmp_path / "output",
+        60,
+        True,
+        False,
+        context=context,
+    )
+
+    assert rc == 0
+    assert captured["language"] == "fr"
+    assert detected_language == "fr"
+
+
 def test_runtime_media_compute_timeout_falls_back_to_defaults_on_invalid_args(tmp_path):
     """Validate Runtime media compute timeout falls back to defaults on invalid args."""
     runtime_media_utils = _load_transcription_core_module("runtime_media_utils")
@@ -3348,6 +3395,7 @@ def test_build_transcription_runtime_metadata_includes_translation_model():
     )
 
     assert metadata["transcription"]["whisper_model"] == "turbo"
+    assert metadata["transcription"]["requested_source_language"] == "auto"
     assert metadata["transcription"]["detected_source_language"] == "fr"
     assert metadata["transcription"]["final_subtitle_language"] == "en"
     assert metadata["transcription"]["translation"]["backend"] == "local_translation"

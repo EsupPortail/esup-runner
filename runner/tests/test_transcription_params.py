@@ -24,6 +24,7 @@ def test_build_script_arguments_includes_video_identification():
 
     params = {
         "language": "fr",
+        "source_language": "fr",
         "format": "vtt",
         "model": "turbo",
         "video_id": "12345",
@@ -44,6 +45,7 @@ def test_build_script_arguments_includes_video_identification():
     assert args[args.index("--video-id") + 1] == params["video_id"]
     assert args[args.index("--video-slug") + 1] == params["video_slug"]
     assert args[args.index("--video-title") + 1] == params["video_title"]
+    assert args[args.index("--source-language") + 1] == params["source_language"]
     assert "--whisper-models-dir" in args
     assert "--huggingface-models-dir" in args
 
@@ -56,6 +58,7 @@ def test_validate_parameters_accepts_video_identification_and_compatibility_fiel
         handler.validate_parameters(
             {
                 "language": "fr",
+                "source_language": "fr",
                 "format": "vtt",
                 "model": "small",
                 "model_type": "WHISPER",
@@ -97,6 +100,44 @@ def test_transcription_script_parser_accepts_video_identification_flags():
     assert args.video_id == "vid-001"
     assert args.video_slug == "sample-video"
     assert args.video_title == "Sample Video"
+
+
+def test_transcription_script_parser_accepts_source_language_flag():
+    """Validate Transcription script parser accepts source language flag."""
+    tr = _load_transcription_script_module()
+
+    args = tr.parse_args(
+        [
+            "--base-dir",
+            "/tmp/base",
+            "--input-file",
+            "input.mp4",
+            "--work-dir",
+            "output",
+            "--source-language",
+            "fr",
+        ]
+    )
+
+    assert args.source_language == "fr"
+
+
+def test_transcription_script_parser_defaults_source_language_to_auto():
+    """Validate source language defaults to auto when not provided."""
+    tr = _load_transcription_script_module()
+
+    args = tr.parse_args(
+        [
+            "--base-dir",
+            "/tmp/base",
+            "--input-file",
+            "input.mp4",
+            "--work-dir",
+            "output",
+        ]
+    )
+
+    assert args.source_language == "auto"
 
 
 def test_transcription_script_parser_accepts_huggingface_models_dir_flag():

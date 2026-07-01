@@ -47,6 +47,7 @@ def _make_args(base_dir: Path, **overrides: Any) -> types.SimpleNamespace:
         "work_dir": "work",
         "debug": "false",
         "language": "fr",
+        "source_language": "auto",
         "model": "small",
         "whisper_models_dir": "",
         "use_gpu": "false",
@@ -2659,7 +2660,8 @@ def test_remaining_main_orchestration_and_transcription_runtime_lines():
     assert built_context.max_vtt_internal_gap_seconds == 1.0
 
     transcription_runtime = _load_core_module("transcription_runtime_utils")
-    assert transcription_runtime.resolve_transcription_language("fr") == "auto"
+    assert transcription_runtime.resolve_transcription_language("auto") == "auto"
+    assert transcription_runtime.resolve_transcription_language("fr") == "fr"
 
 
 def test_remaining_runtime_cli_lines(monkeypatch, capsys):

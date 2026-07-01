@@ -127,13 +127,20 @@ def normalize_vtt_cue_text(text: str) -> str:
     return APOSTROPHE_JOIN_RE.sub(r"\1'", normalized)
 
 
+def split_overlong_vtt_word(word: str, max_line_width: int) -> list[str]:
+    """Split one overlong token so every emitted line can respect the width limit."""
+    if max_line_width <= 0 or len(word) <= max_line_width:
+        return [word]
+    return [word[index : index + max_line_width] for index in range(0, len(word), max_line_width)]
+
+
 def wrap_vtt_cue_text(text: str, max_line_width: int, max_line_count: int) -> list[str]:
-    """Wrap cue text while keeping the configured number of lines under control."""
+    """Wrap cue text into lines that respect the configured width."""
     normalized = normalize_vtt_cue_text(text)
     if not normalized:
         return []
 
-    if max_line_width <= 0 or max_line_count <= 1:
+    if max_line_width <= 0:
         return [normalized]
 
     words = normalized.split()
@@ -141,24 +148,33 @@ def wrap_vtt_cue_text(text: str, max_line_width: int, max_line_count: int) -> li
     current_line = ""
 
     for word in words:
-        candidate = word if not current_line else f"{current_line} {word}"
-        if (
-            current_line
-            and len(candidate) > max_line_width
-            and len(wrapped_lines) < max_line_count - 1
-        ):
-            wrapped_lines.append(current_line)
-            current_line = word
-        else:
-            current_line = candidate
+        for word_part in split_overlong_vtt_word(word, max_line_width):
+            candidate = word_part if not current_line else f"{current_line} {word_part}"
+            if current_line and len(candidate) > max_line_width:
+                wrapped_lines.append(current_line)
+                current_line = word_part
+            else:
+                current_line = candidate
 
     if current_line:
         wrapped_lines.append(current_line)
 
-    if len(wrapped_lines) <= max_line_count:
-        return wrapped_lines
+    return wrapped_lines
 
-    return wrapped_lines[: max_line_count - 1] + [" ".join(wrapped_lines[max_line_count - 1 :])]
+
+def chunk_vtt_cue_lines(lines: list[str], max_line_count: int) -> list[list[str]]:
+    """Group already wrapped lines into display-safe cue chunks."""
+    if not lines:
+        return []
+
+    chunk_size = max(1, int(max_line_count))
+    return [lines[index : index + chunk_size] for index in range(0, len(lines), chunk_size)]
+
+
+def split_vtt_cue_text(text: str, max_line_width: int, max_line_count: int) -> list[list[str]]:
+    """Split cue text into chunks of at most N lines, each wrapped to the max width."""
+    wrapped_lines = wrap_vtt_cue_text(text, max_line_width, max_line_count)
+    return chunk_vtt_cue_lines(wrapped_lines, max_line_count)
 
 
 def parse_vtt_cue_time_range(
@@ -178,6 +194,68 @@ def parse_vtt_cue_time_range(
         return None, None
 
     return parse_vtt_timestamp_fn(start_token), parse_vtt_timestamp_fn(end_token)
+
+
+def format_vtt_cue_time_range(
+    timestamp_line: str,
+    start_sec: float,
+    end_sec: float,
+    *,
+    format_vtt_timestamp_fn: Callable[[float], str],
+) -> str:
+    """Format a cue timestamp line while preserving WebVTT cue settings."""
+    settings = ""
+    if "-->" in timestamp_line:
+        _raw_start, raw_end = timestamp_line.split("-->", 1)
+        end_parts = raw_end.strip().split(maxsplit=1)
+        if len(end_parts) > 1:
+            settings = f" {end_parts[1]}"
+
+    return f"{format_vtt_timestamp_fn(start_sec)} --> {format_vtt_timestamp_fn(end_sec)}{settings}"
+
+
+def split_vtt_cue_prefixes(
+    cue_prefix: list[str],
+    chunk_count: int,
+    *,
+    parse_vtt_timestamp_fn: Optional[Callable[[str], Optional[float]]],
+    format_vtt_timestamp_fn: Optional[Callable[[float], str]],
+) -> list[list[str]]:
+    """Build one cue prefix per text chunk, splitting timing proportionally."""
+    if chunk_count <= 1:
+        return [cue_prefix]
+    if not cue_prefix:
+        return [[] for _index in range(chunk_count)]
+
+    timestamp_line = cue_prefix[-1]
+    fallback_prefixes = [cue_prefix] + [[timestamp_line] for _index in range(chunk_count - 1)]
+    if parse_vtt_timestamp_fn is None or format_vtt_timestamp_fn is None:
+        return fallback_prefixes
+
+    start_sec, end_sec = parse_vtt_cue_time_range(
+        timestamp_line,
+        parse_vtt_timestamp_fn=parse_vtt_timestamp_fn,
+    )
+    if start_sec is None or end_sec is None or end_sec <= start_sec:
+        return fallback_prefixes
+
+    duration_sec = float(end_sec) - float(start_sec)
+    split_prefixes: list[list[str]] = []
+    for chunk_index in range(chunk_count):
+        chunk_start = float(start_sec) + (duration_sec * chunk_index / chunk_count)
+        chunk_end = float(start_sec) + (duration_sec * (chunk_index + 1) / chunk_count)
+        split_timestamp_line = format_vtt_cue_time_range(
+            timestamp_line,
+            chunk_start,
+            chunk_end,
+            format_vtt_timestamp_fn=format_vtt_timestamp_fn,
+        )
+        if chunk_index == 0:
+            split_prefixes.append(cue_prefix[:-1] + [split_timestamp_line])
+        else:
+            split_prefixes.append([split_timestamp_line])
+
+    return split_prefixes
 
 
 def cue_gap_allows_apostrophe_transfer(
@@ -333,6 +411,8 @@ def render_postprocessed_vtt_blocks(
     max_line_width: int,
     max_line_count: int,
     wrap_vtt_cue_text_fn: Callable[[str, int, int], list[str]],
+    parse_vtt_timestamp_fn: Optional[Callable[[str], Optional[float]]] = None,
+    format_vtt_timestamp_fn: Optional[Callable[[float], str]] = None,
 ) -> list[str]:
     """Render parsed VTT blocks back to strings after readability cleanup."""
     rendered_blocks: list[str] = []
@@ -345,7 +425,15 @@ def render_postprocessed_vtt_blocks(
         wrapped_text_lines = wrap_vtt_cue_text_fn(cue_text, max_line_width, max_line_count)
         if not wrapped_text_lines:
             continue
-        rendered_blocks.append("\n".join(cue_prefix + wrapped_text_lines))
+        text_chunks = chunk_vtt_cue_lines(wrapped_text_lines, max_line_count)
+        cue_prefixes = split_vtt_cue_prefixes(
+            cue_prefix,
+            len(text_chunks),
+            parse_vtt_timestamp_fn=parse_vtt_timestamp_fn,
+            format_vtt_timestamp_fn=format_vtt_timestamp_fn,
+        )
+        for split_prefix, text_chunk in zip(cue_prefixes, text_chunks):
+            rendered_blocks.append("\n".join(split_prefix + text_chunk))
     return rendered_blocks
 
 
@@ -356,11 +444,14 @@ def render_postprocessed_vtt_blocks_with_defaults(
     max_line_count: int,
 ) -> list[str]:
     """Render parsed blocks using the default VTT text wrapper."""
+    validation_utils = _load_vtt_validation_utils_module()
     return render_postprocessed_vtt_blocks(
         blocks,
         max_line_width=max_line_width,
         max_line_count=max_line_count,
         wrap_vtt_cue_text_fn=wrap_vtt_cue_text,
+        parse_vtt_timestamp_fn=validation_utils.parse_vtt_timestamp,
+        format_vtt_timestamp_fn=validation_utils.format_vtt_timestamp,
     )
 
 

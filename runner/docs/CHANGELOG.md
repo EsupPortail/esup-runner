@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed `make lock-upgrade-gpu-latest` with recent `uv` versions by keeping configured package sources active in the full-lock fallback, so the legacy CUDA12 split no longer blocks latest GPU lock refreshes.
+- Fixed transcription VTT post-processing and gap-repair rendering so overlong cues are split into display-safe, time-sliced cues that respect the configured line width and line count while preserving WebVTT cue settings.
 
 ## [1.4.0] - 2026-06-29
 

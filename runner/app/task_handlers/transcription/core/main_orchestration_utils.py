@@ -72,7 +72,7 @@ def run_main_flow(
     )
     if rc != 0:
         return rc
-    print(f"Detected audio language: {detected_language or 'unknown'}")
+    print(f"Resolved source audio language: {detected_language or 'unknown'}")
 
     rc = resolved_context.finalize_vtt_fn(
         audio_src,

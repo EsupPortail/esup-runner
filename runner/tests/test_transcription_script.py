@@ -3712,7 +3712,7 @@ def test_main_orchestration_context_mode_runs_end_to_end(tmp_path, capsys):
     rc = main_utils.run_main_flow(args, context=context)
     output = capsys.readouterr().out
     assert rc == 0
-    assert "Detected audio language: fr" in output
+    assert "Resolved source audio language: fr" in output
     assert (
         "Subtitle processing mode: translation " "(source_language=fr, target_language=en)"
     ) in output

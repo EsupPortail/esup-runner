@@ -72,6 +72,7 @@ def run_main_flow(
     )
     if rc != 0:
         return rc
+    print(f"Detected audio language: {detected_language or 'unknown'}")
 
     rc = resolved_context.finalize_vtt_fn(
         audio_src,
@@ -120,6 +121,18 @@ def run_main_flow(
     )
     if rc != 0:
         return rc
+    processing_mode = (
+        "translation" if bool(translation_metadata.get("applied", False)) else "transcription"
+    )
+    source_language = translation_metadata.get("source_language") or detected_language or "unknown"
+    target_language = (
+        translation_metadata.get("target_language") or final_subtitle_language or source_language
+    )
+    print(
+        "Subtitle processing mode: "
+        f"{processing_mode} (source_language={source_language}, "
+        f"target_language={target_language})"
+    )
 
     rc, final_gap_analysis = resolved_context.validate_final_vtt_and_collect_gap_analysis_fn(
         expected_vtt=expected_vtt,

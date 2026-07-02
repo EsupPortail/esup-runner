@@ -3652,7 +3652,7 @@ def test_gap_repair_context_mode_returns_attempt_metadata(tmp_path):
     assert metadata["detected_after_count"] == 1
 
 
-def test_main_orchestration_context_mode_runs_end_to_end(tmp_path):
+def test_main_orchestration_context_mode_runs_end_to_end(tmp_path, capsys):
     """Validate Main orchestration context mode runs end to end."""
     main_utils = _load_transcription_core_module("main_orchestration_utils")
     base_dir = tmp_path / "base"
@@ -3671,7 +3671,7 @@ def test_main_orchestration_context_mode_runs_end_to_end(tmp_path):
         vtt_max_line_width="40",
         use_gpu="false",
         gpu_device="0",
-        language="auto",
+        language="en",
         huggingface_models_dir="",
         model="small",
     )
@@ -3691,8 +3691,13 @@ def test_main_orchestration_context_mode_runs_end_to_end(tmp_path):
         build_whisper_fallback_options_fn=lambda **_kwargs: {},
         maybe_translate_final_vtt_fn=lambda *_args, **_kwargs: (
             0,
-            {"applied": False, "backend": "none"},
-            "fr",
+            {
+                "applied": True,
+                "backend": "local_translation",
+                "source_language": "fr",
+                "target_language": "en",
+            },
+            "en",
         ),
         validate_final_vtt_and_collect_gap_analysis_fn=lambda **_kwargs: (
             0,
@@ -3705,4 +3710,9 @@ def test_main_orchestration_context_mode_runs_end_to_end(tmp_path):
     )
 
     rc = main_utils.run_main_flow(args, context=context)
+    output = capsys.readouterr().out
     assert rc == 0
+    assert "Detected audio language: fr" in output
+    assert (
+        "Subtitle processing mode: translation " "(source_language=fr, target_language=en)"
+    ) in output

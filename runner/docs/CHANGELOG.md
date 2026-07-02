@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-02
+
 ### Added
 
 - Added optional transcription `source_language` support so callers can force the spoken source language independently from the requested final subtitle `language`, preventing accidental translation after a bad Whisper auto-detection.

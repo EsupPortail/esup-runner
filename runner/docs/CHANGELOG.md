@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed encoding audio derivatives for cut videos so generated MP3/M4A files use the same `-ss`/`-to` window as video renditions, keeping downstream transcription subtitles aligned with the trimmed media.
+
 ## [1.5.0] - 2026-07-02
 
 ### Added

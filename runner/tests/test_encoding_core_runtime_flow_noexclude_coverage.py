@@ -366,14 +366,22 @@ def test_runtime_flow_encode_overview_media_and_metadata_wrappers(monkeypatch):
         == "cmd"
     )
 
+    audio_job_kwargs = {}
+
+    def _fake_build_encode_audio_job(**kwargs):
+        audio_job_kwargs.update(kwargs)
+        return "cmd", "encode_audio", {"filename": "a"}, False, {}
+
+    runtime_flow.SUBTIME = " -ss 00:01:34 -to 00:34:45 "
     monkeypatch.setattr(
         runtime_flow.ffmpeg_command_utils,
         "build_encode_audio_job",
-        lambda **_k: ("cmd", "encode_audio", {"filename": "a"}, False, {}),
+        _fake_build_encode_audio_job,
     )
     assert (
         runtime_flow._build_encode_audio_job(kind="mp3", file="in.mp4", filename="in")[0] == "cmd"
     )
+    assert audio_job_kwargs["subtime"] == " -ss 00:01:34 -to 00:34:45 "
 
     monkeypatch.setattr(
         runtime_flow.ffmpeg_command_utils,

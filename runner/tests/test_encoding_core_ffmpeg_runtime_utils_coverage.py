@@ -51,10 +51,12 @@ def test_ffmpeg_command_utils_job_builders_cover_branches(tmp_path):
         filename="sample",
         videos_dir=str(tmp_path),
         videos_output_dir=str(tmp_path / "out"),
-        mp3_template="ffmpeg -i {input} {output_dir}/audio_192k_{output}.mp3",
-        m4a_template="ffmpeg -i {input} {output_dir}/audio_192k_{output}.m4a",
+        mp3_template="ffmpeg -i {input} {subtime}{output_dir}/audio_192k_{output}.mp3",
+        m4a_template="ffmpeg -i {input} {subtime}{output_dir}/audio_192k_{output}.m4a",
+        subtime=" -ss 00:01:34 -to 00:34:45 ",
     )
     assert "audio_192k_sample.mp3" in mp3_job[0]
+    assert " -ss 00:01:34 -to 00:34:45 " in mp3_job[0]
     assert mp3_job[2]["encoding_format"] == "audio/mp3"
 
     m4a_job = ffmpeg_cmd.build_encode_audio_job(
@@ -63,10 +65,12 @@ def test_ffmpeg_command_utils_job_builders_cover_branches(tmp_path):
         filename="sample",
         videos_dir=str(tmp_path),
         videos_output_dir=str(tmp_path / "out"),
-        mp3_template="ffmpeg -i {input} {output_dir}/audio_192k_{output}.mp3",
-        m4a_template="ffmpeg -i {input} {output_dir}/audio_192k_{output}.m4a",
+        mp3_template="ffmpeg -i {input} {subtime}{output_dir}/audio_192k_{output}.mp3",
+        m4a_template="ffmpeg -i {input} {subtime}{output_dir}/audio_192k_{output}.m4a",
+        subtime=" -ss 00:01:34 -to 00:34:45 ",
     )
     assert "audio_192k_sample.m4a" in m4a_job[0]
+    assert " -ss 00:01:34 -to 00:34:45 " in m4a_job[0]
     assert m4a_job[2]["encoding_format"] == "video/mp4"
 
 

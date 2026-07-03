@@ -104,12 +104,12 @@ _STREAM_MAP_PRIMARY = "-map 0:v:0? -map 0:a?"
 
 # Audio encoding templates
 MP3 = (
-    "time ffmpeg -i {input} -hide_banner -y -c:a libmp3lame -q:a 2 "
+    "time ffmpeg -i {input} -hide_banner -y {subtime}-c:a libmp3lame -q:a 2 "
     '-ar 44100 -vn -threads 0 "{output_dir}/audio_192k_{output}.mp3"'
 )
 
 M4A = (
-    "time ffmpeg -i {input} -hide_banner -y -c:a aac -ar 44100 "
+    "time ffmpeg -i {input} -hide_banner -y {subtime}-c:a aac -ar 44100 "
     '-q:a 2 -vn -threads 0 "{output_dir}/audio_192k_{output}.m4a"'
 )
 
@@ -800,6 +800,7 @@ def _build_encode_audio_job(
         videos_output_dir=_VIDEOS_OUTPUT_DIR,
         mp3_template=MP3,
         m4a_template=M4A,
+        subtime=SUBTIME,
     )
 
 

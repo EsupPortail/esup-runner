@@ -223,13 +223,16 @@ def build_encode_audio_job(
     videos_output_dir: str,
     mp3_template: str,
     m4a_template: str,
+    subtime: str = " ",
 ) -> tuple[str, str, Dict[str, object], bool, Dict[str, Any]]:
     """Build FFmpeg command and metadata for an audio encode job."""
+    audio_subtime = subtime or " "
     if kind == "mp3":
         ffmpeg_cmd = mp3_template.format(
             input=os.path.join(videos_dir, file),
             output_dir=videos_output_dir,
             output=filename,
+            subtime=audio_subtime,
         )
         add_info_video_content: Dict[str, object] = {
             "encoding_format": "audio/mp3",
@@ -240,6 +243,7 @@ def build_encode_audio_job(
             input=os.path.join(videos_dir, file),
             output_dir=videos_output_dir,
             output=filename,
+            subtime=audio_subtime,
         )
         add_info_video_content = {
             "encoding_format": "video/mp4",

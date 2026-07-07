@@ -49,10 +49,104 @@
           <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
           Reload config
         </button>
-        <span id="reload-config-status" class="small text-subtle"></span>
+        <span
+          id="reload-config-status"
+          class="small text-subtle"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></span>
       </div>
     </div>
   </header>
+  {% if attention_count > 0 %}
+    <section class="mb-4" aria-labelledby="needsAttentionTitle" id="needs-attention">
+      <div class="card needs-attention-card">
+        <div class="card-body">
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+            <div>
+              <h2 class="h5 mb-1" id="needsAttentionTitle">
+                <i class="bi bi-exclamation-triangle-fill text-warning me-1" aria-hidden="true"></i>
+                Needs attention
+              </h2>
+              <p class="text-subtle mb-0">
+                {{ attention_count }} item{% if attention_count != 1 %}s{% endif %} to check
+              </p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              {% if offline_runners_count > 0 %}
+                <a href="#runners-list" class="btn btn-sm btn-outline-danger">
+                  <i class="bi bi-pc-display-horizontal" aria-hidden="true"></i>
+                  {{ offline_runners_count }} offline runner{% if offline_runners_count != 1 %}s{% endif %}
+                </a>
+              {% endif %}
+              {% for status, count in attention_task_status_counts.items() %}
+                {% if count > 0 %}
+                  <a href="/tasks?status={{ status }}" class="btn btn-sm btn-outline-secondary">
+                    <span class="badge badge-{{ status }} me-1">{{ count }}</span>
+                    {{ status }}
+                  </a>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="row g-3">
+            {% if offline_runners %}
+              <div class="col-12 col-lg-5">
+                <h3 class="h6 text-uppercase text-subtle mb-2">Offline runners</h3>
+                <div class="list-group list-group-flush">
+                  {% for runner in offline_runners %}
+                    <a href="/admin/runner/{{ runner.id }}" class="list-group-item list-group-item-action runner offline">
+                      <div class="d-flex justify-content-between align-items-center gap-2">
+                        <span class="fw-semibold text-truncate">{{ runner.id }}</span>
+                        <span class="badge bg-danger">offline</span>
+                      </div>
+                      <small class="text-subtle">
+                        Last heartbeat: {{ runner.last_heartbeat }} ({{ runner.age_seconds }} s)
+                      </small>
+                    </a>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+
+            {% if attention_tasks %}
+              <div class="col-12 {% if offline_runners %}col-lg-7{% endif %}">
+                <h3 class="h6 text-uppercase text-subtle mb-2">Task incidents</h3>
+                <div class="list-group list-group-flush">
+                  {% for task in attention_tasks %}
+                    <a href="/admin/task/{{ task.id }}" class="list-group-item list-group-item-action task {{ task.status }}">
+                      <div class="d-flex justify-content-between align-items-center gap-2">
+                        <span class="fw-semibold text-truncate">Task #{{ task.id }}</span>
+                        <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
+                      </div>
+                      {% if task.error_label %}
+                        <div class="attention-error-label mt-1">
+                          <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+                          {{ task.error_label }}
+                        </div>
+                      {% endif %}
+                      <small class="text-subtle">
+                        {{ task.task_type }}{% if task.video_id %} · Video: {{ task.video_id }}{% endif %} · Runner: {{ task.runner_id }} · Updated: {{ task.updated_at_display }}
+                      </small>
+                    </a>
+                  {% endfor %}
+                </div>
+                {% if attention_tasks_count > attention_tasks|length %}
+                  <div class="mt-2">
+                    <a href="/tasks?status=failed&status=warning&status=timeout" class="small text-decoration-none">
+                      View all task incidents
+                    </a>
+                  </div>
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </section>
+  {% endif %}
   <!-- STATISTICS -->
   <div class="row g-3 mb-4">
     <!-- Credentials -->
@@ -157,24 +251,24 @@
           <h2 class="h5 mb-3">Runners</h2>
           <div id="runners-list" class="list-group list-group-flush">
             {% for runner in runners | reverse %}
-              <div class="list-group-item runner {{ runner.status }}">
+              <a href="/admin/runner/{{ runner.id }}"
+                class="list-group-item list-group-item-action runner {{ runner.status }} text-decoration-none"
+                title="Open runner detail">
                 <div class="d-flex justify-content-between align-items-center">
                   <div>
                     <h3 class="h5 mb-1">
-                      <a href="/admin/runner/{{ runner.id }}" class="link-body-emphasis" title="Open runner detail"
-                        data-bs-toggle="tooltip">
-                        {{ runner.id }}
-                      </a>
+                      <span class="link-body-emphasis">{{ runner.id }}</span>
                       {% set runner_task_icons = {
-                      'encoding': {'icon': 'bi-explicit', 'title': 'This runner handles encoding tasks.'},
-                      'studio': {'icon': 'bi-record-btn', 'title': 'This runner handles studio tasks.'},
-                      'transcription': {'icon': 'bi-badge-cc', 'title': 'This runner handles transcription tasks.'},
+                      'encoding': {'label': 'Encoding', 'icon': 'bi-explicit', 'title': 'This runner handles encoding tasks.'},
+                      'studio': {'label': 'Studio', 'icon': 'bi-record-btn', 'title': 'This runner handles studio tasks.'},
+                      'transcription': {'label': 'Transcription', 'icon': 'bi-badge-cc', 'title': 'This runner handles transcription tasks.'},
                       } %}
                       {% for t in runner.task_types %}
                         {% if runner_task_icons.get(t) %}&nbsp;<i title="{{ runner_task_icons[t].title }}"
-                          class="bi {{ runner_task_icons[t].icon }}" data-bs-toggle="tooltip"></i>{% endif %}
+                          class="bi {{ runner_task_icons[t].icon }}" data-bs-toggle="tooltip" aria-hidden="true"></i><span
+                          class="visually-hidden"> {{ runner_task_icons[t].label }}</span>{% endif %}
                       {% endfor %}
-                    </h6>
+                    </h3>
                   </div>
                   <span class="badge {% if runner.status == 'online' %}bg-success{% else %}bg-danger{% endif %}">
                     {{ runner.status }}
@@ -187,7 +281,7 @@
                 <small class="text-subtle">
                   Last heartbeat: {{ runner.last_heartbeat }} ({{ runner.age_seconds }} s)
                 </small>
-              </div>
+              </a>
             {% endfor %}
           </div>
         </div>
@@ -201,7 +295,9 @@
           <h2 class="h5 mb-3">Tasks</h2>
           <div id="tasks-list" class="list-group list-group-flush">
             {% for task in tasks %}
-              <div class="list-group-item task {{ task.status }}">
+              <a href="/admin/task/{{ task.id }}"
+                class="list-group-item list-group-item-action task {{ task.status }} text-decoration-none"
+                title="Open task detail">
                 <div class="d-flex justify-content-between align-items-center">
                   <div>
                     <h3 class="h6 mb-1">
@@ -209,10 +305,7 @@
                         <i class="bi bi-list-task" aria-hidden="true"></i>
                       </span>
                       <span class="visually-hidden">Task ID:</span>
-                      <a href="/admin/task/{{ task.id }}" class="link-body-emphasis me-2" title="Open task detail"
-                        data-bs-toggle="tooltip">
-                        {{ task.id }}
-                      </a>
+                      <span class="link-body-emphasis me-2">{{ task.id }}</span>
                       {% if task.video_id %}
                         <span class="d-inline-flex align-items-center gap-1 ms-1 text-subtle">
                           <span title="Video ID" data-bs-toggle="tooltip" aria-label="Video ID">
@@ -223,12 +316,13 @@
                         </span>
                       {% endif %}
                       {% set task_icons = {
-                      'encoding': {'icon': 'bi-explicit', 'title': 'Encoding task.'},
-                      'studio': {'icon': 'bi-record-btn', 'title': 'Studio task.'},
-                      'transcription': {'icon': 'bi-badge-cc', 'title': 'Transcription task.'}
+                      'encoding': {'label': 'Encoding task', 'icon': 'bi-explicit', 'title': 'Encoding task.'},
+                      'studio': {'label': 'Studio task', 'icon': 'bi-record-btn', 'title': 'Studio task.'},
+                      'transcription': {'label': 'Transcription task', 'icon': 'bi-badge-cc', 'title': 'Transcription task.'}
                       } %}
                       {% if task_icons.get(task.task_type) %}&nbsp;<i title="{{ task_icons[task.task_type].title }}"
-                        class="bi {{ task_icons[task.task_type].icon }}" data-bs-toggle="tooltip"></i>{% endif %}
+                        class="bi {{ task_icons[task.task_type].icon }}" data-bs-toggle="tooltip" aria-hidden="true"></i><span
+                        class="visually-hidden"> {{ task_icons[task.task_type].label }}</span>{% endif %}
                     </h3>
                     <small class="d-block text-subtle">
                       Runner: {{ task.runner_id }} (<i>{{ task.created_at_display }}</i>)
@@ -245,7 +339,7 @@
                     {{ task.status }}
                   </span>
                 </div>
-              </div>
+              </a>
             {% endfor %}
           </div>
         </div>

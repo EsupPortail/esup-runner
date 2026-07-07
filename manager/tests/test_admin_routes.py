@@ -117,6 +117,18 @@ def test_format_datetime_without_milliseconds_handles_empty_and_invalid_values()
     )
 
 
+def test_format_attention_error_label_returns_short_first_line():
+    """Validate attention error label returns a compact first line."""
+    assert (
+        admin_routes._format_attention_error_label(
+            "\n  Encoding aborted: input video duration is 0 seconds.  \nTraceback..."
+        )
+        == "Encoding aborted: input video duration is 0 seconds."
+    )
+    assert admin_routes._format_attention_error_label(None) == ""
+    assert admin_routes._format_attention_error_label("abcdefghijk", limit=10) == "abcdefg..."
+
+
 def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
     """Validate Admin dashboard renders and orders tasks."""
     runners["r1"] = _make_runner("r1", seconds_ago=10)
@@ -140,6 +152,51 @@ def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
     assert "New Video" not in resp.text
     assert "2026-01-02 00:00:00" in resp.text
     assert "2026-01-02T00:00:00.123456" not in resp.text
+
+
+def test_build_attention_summary_collects_limited_items():
+    """Validate attention summary collects offline runners and task incidents."""
+    runners_data = [
+        {"id": "online_runner", "status": "online", "age_seconds": 10},
+        {"id": "old_offline_runner", "status": "offline", "age_seconds": 120},
+        {"id": "new_offline_runner", "status": "offline", "age_seconds": 90},
+    ]
+    tasks_data = [
+        {"id": "running_task", "status": "running"},
+        {
+            "id": "failed_task",
+            "status": "failed",
+            "error_label": "Encoding aborted: input video duration is 0 seconds.",
+            "video_id": "video-123",
+        },
+        {"id": "warning_task", "status": "warning"},
+        {"id": "timeout_task", "status": "timeout"},
+        {"id": "completed_task", "status": "completed"},
+    ]
+
+    summary = admin_routes._build_attention_summary(runners_data, tasks_data)
+
+    assert summary["attention_count"] == 5
+    assert summary["offline_runners_count"] == 2
+    assert [runner["id"] for runner in summary["offline_runners"]] == [
+        "old_offline_runner",
+        "new_offline_runner",
+    ]
+    assert summary["attention_task_status_counts"] == {
+        "failed": 1,
+        "warning": 1,
+        "timeout": 1,
+    }
+    assert [task["id"] for task in summary["attention_tasks"]] == [
+        "failed_task",
+        "warning_task",
+        "timeout_task",
+    ]
+    assert (
+        summary["attention_tasks"][0]["error_label"]
+        == "Encoding aborted: input video duration is 0 seconds."
+    )
+    assert summary["attention_tasks"][0]["video_id"] == "video-123"
 
 
 def test_task_detail_not_found(admin_client, clean_state):

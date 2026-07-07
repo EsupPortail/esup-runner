@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a `Needs attention` panel to the admin dashboard highlighting offline runners and task incidents (`failed`, `warning`, `timeout`) with direct links, compact error labels, and video IDs when available.
+
+### Changed
+
+- Improved admin dashboard runner/task list items so each row is fully clickable, visually aligned with incident links, and clearer for keyboard and screen-reader users.
+
 ## [1.5.0] - 2026-07-02
 
 ### Changed

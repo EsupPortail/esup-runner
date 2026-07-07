@@ -35,6 +35,10 @@ limiter = Limiter(key_func=get_remote_address)
 # Templates configuration
 templates = Jinja2Templates(directory="app/web/templates")
 
+_ATTENTION_TASK_STATUSES = ("failed", "warning", "timeout")
+_ATTENTION_ITEMS_LIMIT = 5
+_ATTENTION_ERROR_LABEL_LIMIT = 160
+
 # ======================================================
 # Endpoints
 # ======================================================
@@ -52,6 +56,50 @@ def _format_datetime_without_milliseconds(value: str | None) -> str:
     except ValueError:
         # Fallback for non-ISO inputs: strip fractional part when present.
         return raw.split(".", 1)[0].replace("T", " ")
+
+
+def _format_attention_error_label(value: Any, limit: int = _ATTENTION_ERROR_LABEL_LIMIT) -> str:
+    """Return a compact one-line error label for the dashboard."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+
+    for line in raw.splitlines():
+        label = " ".join(line.split())
+        if label:
+            break
+
+    if len(label) <= limit:
+        return label
+    return label[: limit - 3].rstrip() + "..."
+
+
+def _build_attention_summary(
+    runners_data: list[dict[str, Any]],
+    tasks_data_sorted: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build compact dashboard data for runners and tasks needing attention."""
+    offline_runners = sorted(
+        [runner for runner in runners_data if runner["status"] == "offline"],
+        key=lambda runner: runner["age_seconds"],
+        reverse=True,
+    )
+    attention_task_status_counts = {
+        status: len([task for task in tasks_data_sorted if task["status"] == status])
+        for status in _ATTENTION_TASK_STATUSES
+    }
+    attention_tasks = [
+        task for task in tasks_data_sorted if task["status"] in _ATTENTION_TASK_STATUSES
+    ]
+
+    return {
+        "attention_count": len(offline_runners) + len(attention_tasks),
+        "attention_task_status_counts": attention_task_status_counts,
+        "attention_tasks_count": len(attention_tasks),
+        "attention_tasks": attention_tasks[:_ATTENTION_ITEMS_LIMIT],
+        "offline_runners": offline_runners[:_ATTENTION_ITEMS_LIMIT],
+        "offline_runners_count": len(offline_runners),
+    }
 
 
 @router.get(
@@ -75,14 +123,14 @@ async def admin_dashboard(request: Request):
         TemplateResponse: Rendered admin dashboard
     """
     dark_mode = request.cookies.get("theme") == "dark"
+    now = datetime.now()
     tasks_snapshot = get_tasks_snapshot()
 
     # Prepare runner data for dashboard
     runners_data = []
     for runner_id, runner in runners.items():
-        status_value = (
-            "online" if (datetime.now() - runner.last_heartbeat).total_seconds() < 60 else "offline"
-        )
+        status_value = "online" if (now - runner.last_heartbeat).total_seconds() < 60 else "offline"
+        age_seconds = int((now - runner.last_heartbeat).total_seconds())
 
         runners_data.append(
             {
@@ -92,7 +140,7 @@ async def admin_dashboard(request: Request):
                 "availability": runner.availability,
                 "task_types": runner.task_types,
                 "last_heartbeat": runner.last_heartbeat.strftime("%Y-%m-%d %H:%M:%S"),
-                "age_seconds": int((datetime.now() - runner.last_heartbeat).total_seconds()),
+                "age_seconds": age_seconds,
             }
         )
 
@@ -107,6 +155,9 @@ async def admin_dashboard(request: Request):
                 "task_type": getattr(task, "task_type", None),
                 "created_at": task.created_at,
                 "created_at_display": _format_datetime_without_milliseconds(task.created_at),
+                "updated_at": task.updated_at,
+                "updated_at_display": _format_datetime_without_milliseconds(task.updated_at),
+                "error_label": _format_attention_error_label(getattr(task, "error", None)),
                 "video_id": params.get("video_id"),
             }
         )
@@ -117,8 +168,9 @@ async def admin_dashboard(request: Request):
         key=lambda x: str(x["created_at"] or ""),
         reverse=True,
     )
+    attention_summary = _build_attention_summary(runners_data, tasks_data_sorted)
 
-    month_key = datetime.now().strftime("%Y-%m")
+    month_key = now.strftime("%Y-%m")
     tasks_this_month = 0
     csv_path = Path("data") / "task_stats.csv"
     if csv_path.exists():
@@ -142,9 +194,10 @@ async def admin_dashboard(request: Request):
             "online_runners": len([r for r in runners_data if r["status"] == "online"]),
             "total_tasks": len(tasks_data_sorted),
             "tasks_this_month": tasks_this_month,
+            **attention_summary,
             "admin_count": len(config.ADMIN_USERS),
             "dark_mode_enabled": dark_mode,
-            "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "last_update": now.strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,
         },
     )

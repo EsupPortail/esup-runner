@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from jinja2 import Environment, FileSystemLoader
 
 from app.api.routes import admin as admin_routes
 from app.api.routes import statistics as statistics_routes
@@ -95,6 +96,35 @@ def _make_task(
     )
 
 
+def _render_task_detail_template(status: str) -> str:
+    task = SimpleNamespace(
+        task_id="detail-task",
+        runner_id="runner-1",
+        status=status,
+        task_type="encoding",
+        created_at="2026-01-01T00:00:00",
+        updated_at="2026-01-01T00:05:00",
+        etab_name="UM",
+        app_name="pod",
+        app_version="1.0",
+        affiliation=None,
+        parameters={"video_id": "video-123"},
+        source_url="https://example.com/video.mp4",
+        notify_url="https://example.com/notify",
+        error=None,
+        script_output=None,
+    )
+    env = Environment(loader=FileSystemLoader("app/web/templates"))
+    template = env.get_template("task_detail.html")
+    return template.render(
+        version="test",
+        dark_mode_enabled=False,
+        task=task,
+        task_actions=admin_routes._build_task_detail_actions(task),
+        last_update="2026-01-01 00:00:00",
+    )
+
+
 def test_format_datetime_without_milliseconds_formats_iso_values():
     """Validate Format datetime without milliseconds formats iso values."""
     assert (
@@ -127,6 +157,110 @@ def test_format_attention_error_label_returns_short_first_line():
     )
     assert admin_routes._format_attention_error_label(None) == ""
     assert admin_routes._format_attention_error_label("abcdefghijk", limit=10) == "abcdefg..."
+
+
+def test_admin_dashboard_datetime_helpers_support_stale_running_tasks():
+    """Validate dashboard datetime helpers support stale running task labels."""
+    assert admin_routes._parse_datetime(None) is None
+    assert admin_routes._parse_datetime("not-a-date") is None
+    assert admin_routes._parse_datetime("2026-01-01T10:00:00") == datetime(2026, 1, 1, 10, 0, 0)
+    assert admin_routes._parse_datetime("2026-01-01T10:00:00Z") is not None
+
+    assert admin_routes._format_duration_label(300) == "5m"
+    assert admin_routes._format_duration_label(7200) == "2h"
+    assert admin_routes._format_duration_label(7260) == "2h 1m"
+    assert admin_routes._format_duration_label(24 * 3600) == "1d"
+    assert admin_routes._format_duration_label((24 + 3) * 3600) == "1d 3h"
+    assert admin_routes._format_duration_label(146 * 3600) == "6d 2h"
+
+
+def test_admin_dashboard_builds_task_age_metadata():
+    """Validate dashboard task age metadata uses compact labels."""
+    now = datetime(2026, 1, 1, 12, 0, 0)
+
+    assert admin_routes._build_task_age_metadata(
+        "running",
+        "2026-01-01T11:18:00",
+        "2026-01-01T11:59:00",
+        now=now,
+    ) == {"label": "Started 42m ago", "is_warning": False}
+    assert admin_routes._build_task_age_metadata(
+        "pending",
+        "2026-01-01T07:59:00",
+        "2026-01-01T07:59:00",
+        now=now,
+    ) == {"label": "Waiting 4h 1m", "is_warning": True}
+    assert admin_routes._build_task_age_metadata(
+        "failed",
+        "2026-01-01T09:00:00",
+        "2026-01-01T10:00:00",
+        now=now,
+    ) == {"label": "Failed 2h ago", "is_warning": False}
+    assert admin_routes._build_task_age_metadata(
+        "unknown",
+        "2026-01-01T09:00:00",
+        "2026-01-01T10:00:00",
+        now=now,
+    ) == {"label": "", "is_warning": False}
+    assert admin_routes._build_task_age_metadata(
+        "running",
+        "not-a-date",
+        "2026-01-01T10:00:00",
+        now=now,
+    ) == {"label": "", "is_warning": False}
+
+
+def test_admin_task_detail_actions_respect_api_constraints():
+    """Validate task detail action state mirrors task API constraints."""
+    completed_task = SimpleNamespace(status="completed")
+    pending_task = SimpleNamespace(status="pending")
+    running_task = SimpleNamespace(status="running")
+
+    assert admin_routes._build_task_detail_actions(completed_task) == {
+        "can_delete": True,
+        "can_restart": True,
+        "delete_disabled_reason": "",
+        "restart_disabled_reason": "",
+    }
+    assert admin_routes._build_task_detail_actions(pending_task) == {
+        "can_delete": False,
+        "can_restart": False,
+        "delete_disabled_reason": "Task status 'pending' cannot be deleted",
+        "restart_disabled_reason": "Task status 'pending' cannot be restarted",
+    }
+    assert admin_routes._build_task_detail_actions(running_task) == {
+        "can_delete": False,
+        "can_restart": False,
+        "delete_disabled_reason": "Task status 'running' cannot be deleted",
+        "restart_disabled_reason": "Task status 'running' cannot be restarted",
+    }
+
+
+def test_task_detail_template_renders_delete_and_restart_actions():
+    """Validate task detail template renders task actions without TestClient."""
+    html = _render_task_detail_template("failed")
+
+    assert 'id="taskActionFeedback"' in html
+    assert 'id="deleteTaskBtn"' in html
+    assert 'id="restartTaskBtn"' in html
+    assert 'data-task-action="delete"' in html
+    assert 'data-task-action="restart"' in html
+    assert "/tasks/delete-selected" in html
+    assert "/tasks/restart-selected" in html
+    assert "redirectUrl: '/admin'" in html
+    assert "Delete this task? This cannot be undone." in html
+    assert "Restart this task?" in html
+    assert "This failed task cannot be deleted or restarted." not in html
+
+
+def test_task_detail_template_disables_actions_for_pending_task():
+    """Validate protected task statuses disable detail actions."""
+    html = _render_task_detail_template("pending")
+
+    assert "This pending task cannot be deleted or restarted." in html
+    assert "Task status 'pending' cannot be deleted" in html
+    assert "Task status 'pending' cannot be restarted" in html
+    assert html.count('disabled aria-disabled="true"') == 2
 
 
 def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
@@ -197,6 +331,140 @@ def test_build_attention_summary_collects_limited_items():
         == "Encoding aborted: input video duration is 0 seconds."
     )
     assert summary["attention_tasks"][0]["video_id"] == "video-123"
+
+
+def test_build_attention_summary_flags_stale_running_tasks():
+    """Validate attention summary includes running tasks stale for at least 300 minutes."""
+    now = datetime(2026, 1, 1, 12, 0, 0)
+    tasks_data = [
+        {
+            "id": "stale_running_task",
+            "status": "running",
+            "updated_at": "2026-01-01T06:59:00",
+        },
+        {
+            "id": "fresh_running_task",
+            "status": "running",
+            "updated_at": "2026-01-01T07:01:00",
+        },
+        {"id": "invalid_running_task", "status": "running", "updated_at": "not-a-date"},
+    ]
+
+    summary = admin_routes._build_attention_summary([], tasks_data, now=now)
+
+    assert summary["attention_count"] == 1
+    assert summary["stale_running_tasks_count"] == 1
+    assert summary["attention_tasks_count"] == 1
+    assert summary["attention_tasks"][0]["id"] == "stale_running_task"
+    assert (
+        summary["attention_tasks"][0]["stale_running_label"] == "Running without update for 5h 1m."
+    )
+
+
+def test_admin_template_renders_copy_task_id_controls():
+    """Validate admin template exposes task ID copy controls."""
+    env = Environment(loader=FileSystemLoader("app/web/templates"))
+    template = env.get_template("admin.html")
+
+    html = template.render(
+        version="test",
+        dark_mode_enabled=False,
+        admin_count=1,
+        online_runners=1,
+        total_tasks=2,
+        tasks_this_month=2,
+        attention_count=3,
+        offline_runners_count=1,
+        attention_task_status_counts={"failed": 1, "warning": 0, "timeout": 0},
+        stale_running_tasks_count=1,
+        attention_tasks_count=2,
+        offline_runners=[
+            {
+                "id": "offline-runner",
+                "last_heartbeat": "2026-01-01 00:00:00",
+                "age_seconds": 120,
+            }
+        ],
+        attention_tasks=[
+            {
+                "id": "attention-task",
+                "status": "failed",
+                "task_type": "encoding",
+                "runner_id": "runner-1",
+                "updated_at_display": "2026-01-01 00:00:30",
+                "error_label": "Encoding aborted.",
+                "stale_running_label": "",
+                "video_id": "video-123",
+            },
+            {
+                "id": "stale-running-task",
+                "status": "running",
+                "task_type": "encoding",
+                "runner_id": "runner-2",
+                "updated_at_display": "2026-01-01 00:00:30",
+                "error_label": "",
+                "stale_running_label": "Running without update for 5h.",
+                "video_id": "video-789",
+            },
+        ],
+        runners=[],
+        tasks=[
+            {
+                "id": "dashboard-task",
+                "status": "running",
+                "task_type": "encoding",
+                "runner_id": "runner-1",
+                "created_at_display": "2026-01-01 00:00:00",
+                "age_label": "Started 4h 1m ago",
+                "age_is_warning": True,
+                "video_id": "video-456",
+            }
+        ],
+        last_update="2026-01-01 00:00:00",
+    )
+
+    assert 'id="copy-task-feedback"' in html
+    assert 'id="auto-refresh-status"' in html
+    assert 'id="auto-refresh-toggle"' in html
+    assert 'id="auto-refresh-feedback"' in html
+    assert 'title="Reload manager config"' in html
+    assert "AUTO_REFRESH_INTERVAL_SECONDS = 15" in html
+    assert "AUTO_REFRESH_STORAGE_KEY" in html
+    assert "localStorage" in html
+    assert "window.location.reload()" in html
+    assert 'http-equiv="refresh"' not in html
+    assert 'data-copy-task-id="attention-task"' in html
+    assert 'aria-label="Copy task ID attention-task"' in html
+    assert 'data-copy-task-id="dashboard-task"' in html
+    assert 'aria-label="Copy task ID dashboard-task"' in html
+    assert 'data-task-detail-url="/admin/task/attention-task"' in html
+    assert 'data-task-detail-url="/admin/task/dashboard-task"' in html
+    assert 'title="Open task detail"' in html
+    assert 'title="Copy task ID"' in html
+    assert 'data-attention-filter="all"' in html
+    assert 'data-attention-filter="offline-runner"' in html
+    assert 'data-attention-filter="task-incident"' in html
+    assert 'data-attention-filter="stale-running"' in html
+    assert 'class="btn btn-sm btn-outline-primary active"' in html
+    assert 'class="btn btn-sm btn-outline-danger"' in html
+    assert "text-bg-primary" in html
+    assert "text-bg-danger" in html
+    assert 'data-attention-kind="offline-runner"' in html
+    assert 'data-attention-kind="task-incident"' in html
+    assert 'data-attention-kind="stale-running"' in html
+    assert 'id="attention-filter-empty"' in html
+    assert "setAttentionFilter" in html
+    assert "attentionFilterButtons" in html
+    assert "Started 4h 1m ago" in html
+    assert "task-age-label-warning" in html
+    assert "bi-clock-history" in html
+    assert "task-list-title" in html
+    assert "task-id-link" in html
+    assert "task-list-status-badge" in html
+    assert "task-meta-line" in html
+    assert "copyTaskButtons" in html
+    assert "taskRows" in html
+    assert "stretched-link" not in html
 
 
 def test_task_detail_not_found(admin_client, clean_state):

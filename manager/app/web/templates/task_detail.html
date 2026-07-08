@@ -35,19 +35,41 @@
               <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
               Refresh
             </button>
-            {% if task.status == 'pending' %}
-              <button class="btn btn-warning">
-                <i class="bi bi-pause-fill" aria-hidden="true"></i>
-                Suspend
-              </button>
-              <button class="btn btn-danger">
-                <i class="bi bi-x-circle" aria-hidden="true"></i>
-                Cancel
-              </button>
-            {% endif %}
+            <button
+              id="restartTaskBtn"
+              type="button"
+              class="btn btn-outline-primary"
+              data-task-id="{{ task.task_id }}"
+              data-task-action="restart"
+              {% if not task_actions.can_restart %}disabled aria-disabled="true" title="{{ task_actions.restart_disabled_reason }}"{% endif %}>
+              <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+              Restart
+            </button>
+            <button
+              id="deleteTaskBtn"
+              type="button"
+              class="btn btn-outline-danger"
+              data-task-id="{{ task.task_id }}"
+              data-task-action="delete"
+              {% if not task_actions.can_delete %}disabled aria-disabled="true" title="{{ task_actions.delete_disabled_reason }}"{% endif %}>
+              <i class="bi bi-trash" aria-hidden="true"></i>
+              Delete
+            </button>
           </div>
+          {% if not task_actions.can_delete or not task_actions.can_restart %}
+            <small class="d-block mt-2 text-subtle">
+              {% if not task_actions.can_delete and not task_actions.can_restart %}
+                This {{ task.status }} task cannot be deleted or restarted.
+              {% elif not task_actions.can_delete %}
+                {{ task_actions.delete_disabled_reason }}.
+              {% else %}
+                {{ task_actions.restart_disabled_reason }}.
+              {% endif %}
+            </small>
+          {% endif %}
         </div>
       </div>
+      <div id="taskActionFeedback" class="alert mt-3 mb-0 d-none" role="alert"></div>
     </div>
   </header>
 
@@ -225,5 +247,119 @@
     <small>Runner Manager v{{ version }} / Last update: {{ last_update }}</small>
   </footer>
 
+  <script>
+    const taskActionFeedback = document.getElementById('taskActionFeedback');
+    const deleteTaskBtn = document.getElementById('deleteTaskBtn');
+    const restartTaskBtn = document.getElementById('restartTaskBtn');
+
+    function setTaskActionFeedback(level, message) {
+      if (!taskActionFeedback) {
+        return;
+      }
+
+      taskActionFeedback.className = `alert mt-3 mb-0 alert-${level}`;
+      taskActionFeedback.textContent = message;
+    }
+
+    function setTaskActionButtonsDisabled(disabled) {
+      [deleteTaskBtn, restartTaskBtn].forEach(button => {
+        if (button && !button.hasAttribute('aria-disabled')) {
+          button.disabled = disabled;
+        }
+      });
+    }
+
+    async function runTaskDetailAction(button, options) {
+      const taskId = button.dataset.taskId;
+      if (!taskId) {
+        return;
+      }
+
+      const confirmed = window.confirm(options.confirmMessage);
+      if (!confirmed) {
+        return;
+      }
+
+      const initialButtonHtml = button.innerHTML;
+      setTaskActionButtonsDisabled(true);
+      button.innerHTML = (
+        `<span class="spinner-border spinner-border-sm me-1" role="status"></span>${options.progressLabel}`
+      );
+      setTaskActionFeedback('info', options.progressMessage);
+
+      try {
+        const response = await fetch(options.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ task_ids: [taskId] }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || options.failureMessage);
+        }
+
+        const successCount = (payload[options.successKey] || []).length;
+        const skippedCount = (payload.skipped || []).length;
+        const failedCount = (payload.failed || []).length;
+        const level = failedCount > 0 || skippedCount > 0 ? 'warning' : 'success';
+        setTaskActionFeedback(
+          level,
+          `${options.doneLabel}: ${successCount} ${options.successText}, ${skippedCount} skipped, ${failedCount} failed.`
+        );
+
+        if (successCount > 0) {
+          window.setTimeout(() => {
+            window.location.href = options.redirectUrl;
+          }, 1200);
+          return;
+        }
+
+        button.innerHTML = initialButtonHtml;
+        setTaskActionButtonsDisabled(false);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setTaskActionFeedback('danger', `${options.errorLabel}: ${message}`);
+        button.innerHTML = initialButtonHtml;
+        setTaskActionButtonsDisabled(false);
+      }
+    }
+
+    if (deleteTaskBtn) {
+      deleteTaskBtn.addEventListener('click', () => {
+        runTaskDetailAction(deleteTaskBtn, {
+          endpoint: '/tasks/delete-selected',
+          successKey: 'deleted',
+          confirmMessage: 'Delete this task? This cannot be undone.',
+          progressLabel: 'Deleting…',
+          progressMessage: 'Deletion in progress…',
+          doneLabel: 'Deletion done',
+          successText: 'deleted',
+          failureMessage: 'Failed to delete task',
+          errorLabel: 'Deletion failed',
+          redirectUrl: '/admin',
+        });
+      });
+    }
+
+    if (restartTaskBtn) {
+      restartTaskBtn.addEventListener('click', () => {
+        runTaskDetailAction(restartTaskBtn, {
+          endpoint: '/tasks/restart-selected',
+          successKey: 'restarted',
+          confirmMessage: 'Restart this task?',
+          progressLabel: 'Restarting…',
+          progressMessage: 'Restart in progress…',
+          doneLabel: 'Restart done',
+          successText: 'restarted',
+          failureMessage: 'Failed to restart task',
+          errorLabel: 'Restart failed',
+          redirectUrl: `/admin/task/${encodeURIComponent(restartTaskBtn.dataset.taskId || '')}`,
+        });
+      });
+    }
+  </script>
 </body>
 </html>

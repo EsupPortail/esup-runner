@@ -9,10 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added a `Needs attention` panel to the admin dashboard highlighting offline runners and task incidents (`failed`, `warning`, `timeout`) with direct links, compact error labels, and video IDs when available.
+- Added a `Needs attention` panel to the admin dashboard highlighting offline runners, task incidents (`failed`, `warning`, `timeout`), and `running` tasks without updates for at least 300 minutes, with direct links, compact labels, and video IDs when available.
+- Added copy-to-clipboard controls for task IDs on the admin dashboard task lists.
+- Added an admin dashboard auto-refresh control with countdown, pause/resume action, and browser-local preference persistence.
+- Added compact task age labels to the admin dashboard task list, with a stronger visual cue when pending/running tasks approach the attention threshold.
+- Added quick filters to the admin dashboard `Needs attention` panel to isolate offline runners, task incidents, and stale running tasks.
+- Added delete and restart actions to the admin task detail page, reusing the existing task action constraints for protected statuses.
 
 ### Changed
 
+- Changed admin dashboard task age labels to use day-based durations for long-running tasks and keep task list items to two visual lines.
 - Improved admin dashboard runner/task list items so each row is fully clickable, visually aligned with incident links, and clearer for keyboard and screen-reader users.
 
 ## [1.5.0] - 2026-07-02

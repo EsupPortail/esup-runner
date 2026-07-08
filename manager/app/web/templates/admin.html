@@ -4,7 +4,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="refresh" content="15">
   <title>Runners Monitoring</title>
   <link rel="icon" type="image/png" href="/static/favicon.png?version={{ version }}">
 
@@ -45,13 +44,49 @@
       </div>
       <!-- Reload config button -->
       <div class="d-flex align-items-center gap-2">
-        <button id="reload-config-btn" type="button" class="btn btn-outline-primary btn-sm">
+        <span
+          id="auto-refresh-status"
+          class="small text-subtle auto-refresh-status"
+          aria-hidden="true"
+        >
+          Refresh in 15s
+        </span>
+        <button
+          id="auto-refresh-toggle"
+          type="button"
+          class="btn btn-outline-secondary btn-sm auto-refresh-control"
+          aria-pressed="false"
+          title="Pause auto-refresh"
+          data-bs-toggle="tooltip">
+          <i class="bi bi-pause-fill" aria-hidden="true"></i>
+          <span id="auto-refresh-toggle-label">Pause refresh</span>
+        </button>
+        <button
+          id="reload-config-btn"
+          type="button"
+          class="btn btn-outline-primary btn-sm"
+          title="Reload manager config"
+          data-bs-toggle="tooltip">
           <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
           Reload config
         </button>
         <span
           id="reload-config-status"
           class="small text-subtle"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></span>
+        <span
+          id="copy-task-feedback"
+          class="visually-hidden"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></span>
+        <span
+          id="auto-refresh-feedback"
+          class="visually-hidden"
           role="status"
           aria-live="polite"
           aria-atomic="true"
@@ -88,16 +123,63 @@
                   </a>
                 {% endif %}
               {% endfor %}
+              {% if stale_running_tasks_count > 0 %}
+                <a href="/tasks?status=running" class="btn btn-sm btn-outline-secondary">
+                  <span class="badge badge-running me-1">{{ stale_running_tasks_count }}</span>
+                  stale running
+                </a>
+              {% endif %}
             </div>
+          </div>
+
+          {% set task_incidents_filter_count = attention_tasks_count - stale_running_tasks_count %}
+          <div class="attention-filter-toolbar d-flex flex-wrap gap-2 mb-3" role="group" aria-label="Needs attention filters">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary active"
+              data-attention-filter="all"
+              aria-pressed="true">
+              All <span class="badge text-bg-primary ms-1">{{ attention_count }}</span>
+            </button>
+            {% if offline_runners_count > 0 %}
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                data-attention-filter="offline-runner"
+                aria-pressed="false">
+                Offline runners <span class="badge text-bg-danger ms-1">{{ offline_runners_count }}</span>
+              </button>
+            {% endif %}
+            {% if task_incidents_filter_count > 0 %}
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-danger"
+                data-attention-filter="task-incident"
+                aria-pressed="false">
+                Task incidents <span class="badge text-bg-danger ms-1">{{ task_incidents_filter_count }}</span>
+              </button>
+            {% endif %}
+            {% if stale_running_tasks_count > 0 %}
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                data-attention-filter="stale-running"
+                aria-pressed="false">
+                Stale running <span class="badge badge-running ms-1">{{ stale_running_tasks_count }}</span>
+              </button>
+            {% endif %}
           </div>
 
           <div class="row g-3">
             {% if offline_runners %}
-              <div class="col-12 col-lg-5">
+              <div class="col-12 col-lg-5" data-attention-panel>
                 <h3 class="h6 text-uppercase text-subtle mb-2">Offline runners</h3>
                 <div class="list-group list-group-flush">
                   {% for runner in offline_runners %}
-                    <a href="/admin/runner/{{ runner.id }}" class="list-group-item list-group-item-action runner offline">
+                    <a
+                      href="/admin/runner/{{ runner.id }}"
+                      class="list-group-item list-group-item-action runner offline"
+                      data-attention-kind="offline-runner">
                       <div class="d-flex justify-content-between align-items-center gap-2">
                         <span class="fw-semibold text-truncate">{{ runner.id }}</span>
                         <span class="badge bg-danger">offline</span>
@@ -112,13 +194,32 @@
             {% endif %}
 
             {% if attention_tasks %}
-              <div class="col-12 {% if offline_runners %}col-lg-7{% endif %}">
+              <div class="col-12 {% if offline_runners %}col-lg-7{% endif %}" data-attention-panel>
                 <h3 class="h6 text-uppercase text-subtle mb-2">Task incidents</h3>
                 <div class="list-group list-group-flush">
                   {% for task in attention_tasks %}
-                    <a href="/admin/task/{{ task.id }}" class="list-group-item list-group-item-action task {{ task.status }}">
+                    <div
+                      class="list-group-item list-group-item-action task {{ task.status }} position-relative task-row-action"
+                      data-task-detail-url="/admin/task/{{ task.id }}"
+                      data-attention-kind="{% if task.stale_running_label %}stale-running{% else %}task-incident{% endif %}">
                       <div class="d-flex justify-content-between align-items-center gap-2">
-                        <span class="fw-semibold text-truncate">Task #{{ task.id }}</span>
+                        <div class="d-flex align-items-center gap-2 min-w-0">
+                          <a href="/admin/task/{{ task.id }}"
+                            class="fw-semibold text-truncate link-body-emphasis text-decoration-none"
+                            title="Open task detail"
+                            data-bs-toggle="tooltip">
+                            Task #{{ task.id }}
+                          </a>
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary copy-task-id-btn"
+                            data-copy-task-id="{{ task.id }}"
+                            aria-label="Copy task ID {{ task.id }}"
+                            title="Copy task ID"
+                            data-bs-toggle="tooltip">
+                            <i class="bi bi-clipboard" aria-hidden="true"></i>
+                          </button>
+                        </div>
                         <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
                       </div>
                       {% if task.error_label %}
@@ -127,15 +228,21 @@
                           {{ task.error_label }}
                         </div>
                       {% endif %}
+                      {% if task.stale_running_label %}
+                        <div class="attention-error-label mt-1">
+                          <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+                          {{ task.stale_running_label }}
+                        </div>
+                      {% endif %}
                       <small class="text-subtle">
                         {{ task.task_type }}{% if task.video_id %} · Video: {{ task.video_id }}{% endif %} · Runner: {{ task.runner_id }} · Updated: {{ task.updated_at_display }}
                       </small>
-                    </a>
+                    </div>
                   {% endfor %}
                 </div>
                 {% if attention_tasks_count > attention_tasks|length %}
                   <div class="mt-2">
-                    <a href="/tasks?status=failed&status=warning&status=timeout" class="small text-decoration-none">
+                    <a href="/tasks?status=failed&status=warning&status=timeout&status=running" class="small text-decoration-none">
                       View all task incidents
                     </a>
                   </div>
@@ -143,6 +250,9 @@
               </div>
             {% endif %}
           </div>
+          <p id="attention-filter-empty" class="text-subtle mb-0 d-none">
+            No item for this filter.
+          </p>
         </div>
       </div>
     </section>
@@ -295,20 +405,34 @@
           <h2 class="h5 mb-3">Tasks</h2>
           <div id="tasks-list" class="list-group list-group-flush">
             {% for task in tasks %}
-              <a href="/admin/task/{{ task.id }}"
-                class="list-group-item list-group-item-action task {{ task.status }} text-decoration-none"
-                title="Open task detail">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <h3 class="h6 mb-1">
-                      <span class="me-1" title="Task ID" data-bs-toggle="tooltip" aria-label="Task ID">
+              <div
+                class="list-group-item list-group-item-action task {{ task.status }} position-relative task-row-action"
+                data-task-detail-url="/admin/task/{{ task.id }}">
+                <div class="task-list-content min-w-0">
+                  <div class="task-list-header-row">
+                    <h3 class="h6 mb-0 task-list-title">
+                      <span class="me-1 flex-shrink-0" title="Task ID" data-bs-toggle="tooltip" aria-label="Task ID">
                         <i class="bi bi-list-task" aria-hidden="true"></i>
                       </span>
                       <span class="visually-hidden">Task ID:</span>
-                      <span class="link-body-emphasis me-2">{{ task.id }}</span>
+                      <a href="/admin/task/{{ task.id }}"
+                        class="link-body-emphasis me-1 text-decoration-none task-id-link"
+                        title="Open task detail"
+                        data-bs-toggle="tooltip">
+                        {{ task.id }}
+                      </a>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary copy-task-id-btn me-2"
+                        data-copy-task-id="{{ task.id }}"
+                        aria-label="Copy task ID {{ task.id }}"
+                        title="Copy task ID"
+                        data-bs-toggle="tooltip">
+                        <i class="bi bi-clipboard" aria-hidden="true"></i>
+                      </button>
                       {% if task.video_id %}
-                        <span class="d-inline-flex align-items-center gap-1 ms-1 text-subtle">
-                          <span title="Video ID" data-bs-toggle="tooltip" aria-label="Video ID">
+                        <span class="d-inline-flex align-items-center gap-1 ms-1 text-subtle task-video-id">
+                          <span class="flex-shrink-0" title="Video ID" data-bs-toggle="tooltip" aria-label="Video ID">
                             <i class="bi bi-film" aria-hidden="true"></i>
                           </span>
                           <span class="visually-hidden">Video ID:</span>
@@ -320,26 +444,39 @@
                       'studio': {'label': 'Studio task', 'icon': 'bi-record-btn', 'title': 'Studio task.'},
                       'transcription': {'label': 'Transcription task', 'icon': 'bi-badge-cc', 'title': 'Transcription task.'}
                       } %}
-                      {% if task_icons.get(task.task_type) %}&nbsp;<i title="{{ task_icons[task.task_type].title }}"
-                        class="bi {{ task_icons[task.task_type].icon }}" data-bs-toggle="tooltip" aria-hidden="true"></i><span
-                        class="visually-hidden"> {{ task_icons[task.task_type].label }}</span>{% endif %}
+                      {% if task_icons.get(task.task_type) %}
+                        <span
+                          class="d-inline-flex align-items-center ms-1 task-type-indicator"
+                          title="{{ task_icons[task.task_type].title }}"
+                          data-bs-toggle="tooltip">
+                          <i class="bi {{ task_icons[task.task_type].icon }} task-type-icon" aria-hidden="true"></i>
+                        </span>
+                        <span class="visually-hidden"> {{ task_icons[task.task_type].label }}</span>
+                      {% endif %}
                     </h3>
-                    <small class="d-block text-subtle">
-                      Runner: {{ task.runner_id }} (<i>{{ task.created_at_display }}</i>)
-                    </small>
+                    <span class="badge flex-shrink-0 task-list-status-badge
+                        {% if task.status == 'pending' %}bg-warning text-dark
+                        {% elif task.status == 'running' %}bg-info text-dark
+                        {% elif task.status == 'warning' %}bg-warning text-dark
+                        {% elif task.status == 'completed' %}bg-success
+                        {% elif task.status == 'failed' %}bg-danger
+                        {% elif task.status == 'timeout' %}badge-timeout
+                        {% else %}bg-secondary{% endif %}">
+                      {{ task.status }}
+                    </span>
                   </div>
-                  <span class="badge
-                      {% if task.status == 'pending' %}bg-warning text-dark
-                      {% elif task.status == 'running' %}bg-info text-dark
-                      {% elif task.status == 'warning' %}bg-warning text-dark
-                      {% elif task.status == 'completed' %}bg-success
-                      {% elif task.status == 'failed' %}bg-danger
-                      {% elif task.status == 'timeout' %}badge-timeout
-                      {% else %}bg-secondary{% endif %}">
-                    {{ task.status }}
-                  </span>
+                  <small class="d-block text-subtle task-meta-line">
+                    {{ task.runner_id }} (<i>{{ task.created_at_display }}</i>)
+                    {% if task.age_label %}
+                      <span class="task-age-label {% if task.age_is_warning %}task-age-label-warning{% endif %}">
+                        · <i class="bi bi-clock-history" aria-hidden="true"></i>
+                        <span class="visually-hidden">Task age:</span>
+                        {{ task.age_label }}
+                      </span>
+                    {% endif %}
+                  </small>
                 </div>
-              </a>
+              </div>
             {% endfor %}
           </div>
         </div>
@@ -366,8 +503,241 @@
     const body = document.body;
     const form = document.getElementById('theme-form');
     const themeInput = document.getElementById('theme-input');
+    const AUTO_REFRESH_INTERVAL_SECONDS = 15;
+    const AUTO_REFRESH_STORAGE_KEY = 'esup-runner-admin-auto-refresh-paused';
+    const autoRefreshStatus = document.getElementById('auto-refresh-status');
+    const autoRefreshToggle = document.getElementById('auto-refresh-toggle');
+    const autoRefreshToggleLabel = document.getElementById('auto-refresh-toggle-label');
+    const autoRefreshToggleIcon = autoRefreshToggle ? autoRefreshToggle.querySelector('i') : null;
+    const autoRefreshFeedback = document.getElementById('auto-refresh-feedback');
     const reloadBtn = document.getElementById('reload-config-btn');
     const reloadStatus = document.getElementById('reload-config-status');
+    const copyTaskFeedback = document.getElementById('copy-task-feedback');
+    const copyTaskButtons = document.querySelectorAll('[data-copy-task-id]');
+    const taskRows = document.querySelectorAll('[data-task-detail-url]');
+    const attentionFilterButtons = document.querySelectorAll('[data-attention-filter]');
+    const attentionItems = document.querySelectorAll('[data-attention-kind]');
+    const attentionPanels = document.querySelectorAll('[data-attention-panel]');
+    const attentionFilterEmpty = document.getElementById('attention-filter-empty');
+    let autoRefreshRemainingSeconds = AUTO_REFRESH_INTERVAL_SECONDS;
+    let autoRefreshPaused = readAutoRefreshPaused();
+
+    function readAutoRefreshPaused() {
+      try {
+        return localStorage.getItem(AUTO_REFRESH_STORAGE_KEY) === 'true';
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function storeAutoRefreshPaused(paused) {
+      try {
+        localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, paused ? 'true' : 'false');
+      } catch (error) {
+        // Ignore storage errors: the control should still work for the current page load.
+      }
+    }
+
+    function setTooltipTitle(element, title) {
+      if (!element) {
+        return;
+      }
+
+      element.setAttribute('title', title);
+      element.setAttribute('data-bs-original-title', title);
+
+      const tooltip = bootstrap.Tooltip.getInstance(element);
+      if (tooltip) {
+        tooltip.setContent({ '.tooltip-inner': title });
+      }
+    }
+
+    function setAutoRefreshFeedback(message) {
+      if (autoRefreshFeedback) {
+        autoRefreshFeedback.textContent = message;
+      }
+    }
+
+    function updateAutoRefreshControls() {
+      if (!autoRefreshStatus || !autoRefreshToggle || !autoRefreshToggleLabel) {
+        return;
+      }
+
+      if (autoRefreshPaused) {
+        autoRefreshStatus.textContent = 'Auto-refresh paused';
+        autoRefreshToggle.setAttribute('aria-pressed', 'true');
+        autoRefreshToggleLabel.textContent = 'Resume refresh';
+        setTooltipTitle(autoRefreshToggle, 'Resume auto-refresh');
+        if (autoRefreshToggleIcon) {
+          autoRefreshToggleIcon.className = 'bi bi-play-fill';
+        }
+        return;
+      }
+
+      autoRefreshStatus.textContent = `Refresh in ${autoRefreshRemainingSeconds}s`;
+      autoRefreshToggle.setAttribute('aria-pressed', 'false');
+      autoRefreshToggleLabel.textContent = 'Pause refresh';
+      setTooltipTitle(autoRefreshToggle, 'Pause auto-refresh');
+      if (autoRefreshToggleIcon) {
+        autoRefreshToggleIcon.className = 'bi bi-pause-fill';
+      }
+    }
+
+    function setAutoRefreshPaused(paused) {
+      autoRefreshPaused = paused;
+      autoRefreshRemainingSeconds = AUTO_REFRESH_INTERVAL_SECONDS;
+      storeAutoRefreshPaused(paused);
+      updateAutoRefreshControls();
+      setAutoRefreshFeedback(paused ? 'Auto-refresh paused' : 'Auto-refresh resumed');
+    }
+
+    function startAutoRefreshCountdown() {
+      if (!autoRefreshStatus || !autoRefreshToggle) {
+        return;
+      }
+
+      updateAutoRefreshControls();
+      window.setInterval(() => {
+        if (autoRefreshPaused) {
+          return;
+        }
+
+        autoRefreshRemainingSeconds -= 1;
+        if (autoRefreshRemainingSeconds <= 0) {
+          window.location.reload();
+          return;
+        }
+
+        updateAutoRefreshControls();
+      }, 1000);
+    }
+
+    function setCopyTaskFeedback(message) {
+      if (copyTaskFeedback) {
+        copyTaskFeedback.textContent = message;
+      }
+    }
+
+    async function copyTextToClipboard(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-1000px';
+      textarea.style.left = '-1000px';
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      try {
+        const copied = document.execCommand('copy');
+        if (!copied) {
+          throw new Error('copy command failed');
+        }
+      } finally {
+        textarea.remove();
+      }
+    }
+
+    function isInteractiveTaskRowTarget(target) {
+      if (!(target instanceof Element)) {
+        return false;
+      }
+
+      return Boolean(target.closest('a, button, input, select, textarea, [role="button"]'));
+    }
+
+    function setAttentionFilter(filter) {
+      if (!attentionItems.length) {
+        return;
+      }
+
+      let visibleCount = 0;
+      attentionItems.forEach(item => {
+        const isVisible = filter === 'all' || item.dataset.attentionKind === filter;
+        item.hidden = !isVisible;
+        if (isVisible) {
+          visibleCount += 1;
+        }
+      });
+
+      attentionPanels.forEach(panel => {
+        const hasVisibleItem = Boolean(panel.querySelector('[data-attention-kind]:not([hidden])'));
+        panel.hidden = !hasVisibleItem;
+      });
+
+      if (attentionFilterEmpty) {
+        attentionFilterEmpty.classList.toggle('d-none', visibleCount > 0);
+      }
+
+      attentionFilterButtons.forEach(button => {
+        const isActive = button.dataset.attentionFilter === filter;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+    }
+
+    copyTaskButtons.forEach(button => {
+      button.addEventListener('click', async event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const taskId = button.dataset.copyTaskId;
+        if (!taskId) {
+          return;
+        }
+
+        const initialHtml = button.innerHTML;
+        const initialLabel = button.getAttribute('aria-label') || 'Copy task ID';
+        button.disabled = true;
+
+        try {
+          await copyTextToClipboard(taskId);
+          button.innerHTML = '<i class="bi bi-check-lg" aria-hidden="true"></i>';
+          button.setAttribute('aria-label', `Copied task ID ${taskId}`);
+          setCopyTaskFeedback(`Copied task ID ${taskId}`);
+        } catch (error) {
+          button.innerHTML = '<i class="bi bi-exclamation-triangle" aria-hidden="true"></i>';
+          setCopyTaskFeedback(`Unable to copy task ID ${taskId}`);
+        } finally {
+          setTimeout(() => {
+            button.disabled = false;
+            button.innerHTML = initialHtml;
+            button.setAttribute('aria-label', initialLabel);
+          }, 1800);
+        }
+      });
+    });
+
+    if (autoRefreshToggle) {
+      autoRefreshToggle.addEventListener('click', () => {
+        setAutoRefreshPaused(!autoRefreshPaused);
+      });
+    }
+    startAutoRefreshCountdown();
+
+    attentionFilterButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        setAttentionFilter(button.dataset.attentionFilter || 'all');
+      });
+    });
+
+    taskRows.forEach(row => {
+      row.addEventListener('click', event => {
+        if (isInteractiveTaskRowTarget(event.target)) {
+          return;
+        }
+
+        const detailUrl = row.dataset.taskDetailUrl;
+        if (detailUrl) {
+          window.location.href = detailUrl;
+        }
+      });
+    });
 
     radios.forEach(radio => {
       radio.addEventListener('change', () => {

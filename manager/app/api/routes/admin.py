@@ -16,6 +16,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.__version__ import __version__
+from app.api.routes.task import _NON_DELETABLE_TASK_STATUSES, _NON_RESTARTABLE_TASK_STATUSES
 from app.core import config as config_module
 from app.core.auth import OPENAPI_TOKEN_COOKIE_NAME, build_openapi_cookie_value, verify_admin
 from app.core.config import config
@@ -38,6 +39,18 @@ templates = Jinja2Templates(directory="app/web/templates")
 _ATTENTION_TASK_STATUSES = ("failed", "warning", "timeout")
 _ATTENTION_ITEMS_LIMIT = 5
 _ATTENTION_ERROR_LABEL_LIMIT = 160
+_STALE_RUNNING_TASK_THRESHOLD_MINUTES = 300
+_TASK_AGE_WARNING_THRESHOLD_MINUTES = 240
+_TASK_AGE_CREATED_AT_LABELS = {
+    "pending": "Waiting",
+    "running": "Started",
+}
+_TASK_AGE_UPDATED_AT_LABELS = {
+    "completed": "Completed",
+    "failed": "Failed",
+    "timeout": "Timed out",
+    "warning": "Warning",
+}
 
 # ======================================================
 # Endpoints
@@ -74,11 +87,100 @@ def _format_attention_error_label(value: Any, limit: int = _ATTENTION_ERROR_LABE
     return label[: limit - 3].rstrip() + "..."
 
 
+def _parse_datetime(value: Any) -> datetime | None:
+    """Parse an ISO datetime value into a local naive datetime for dashboard comparisons."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is not None:
+        return parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
+def _format_duration_label(total_seconds: int) -> str:
+    """Format a duration for compact dashboard labels."""
+    minutes = max(1, int(total_seconds // 60))
+    days, remaining_minutes_after_days = divmod(minutes, 24 * 60)
+    hours, remaining_minutes = divmod(remaining_minutes_after_days, 60)
+
+    if days > 0:
+        if hours == 0:
+            return f"{days}d"
+        return f"{days}d {hours}h"
+    if hours <= 0:
+        return f"{minutes}m"
+    if remaining_minutes == 0:
+        return f"{hours}h"
+    return f"{hours}h {remaining_minutes}m"
+
+
+def _build_task_age_metadata(
+    status: Any,
+    created_at: Any,
+    updated_at: Any,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Build compact task age metadata for dashboard display."""
+    normalized_status = str(status or "").lower()
+    label_prefix = _TASK_AGE_CREATED_AT_LABELS.get(normalized_status)
+    timestamp_value = created_at
+    uses_created_at = label_prefix is not None
+
+    if label_prefix is None:
+        label_prefix = _TASK_AGE_UPDATED_AT_LABELS.get(normalized_status)
+        timestamp_value = updated_at
+
+    if label_prefix is None:
+        return {"label": "", "is_warning": False}
+
+    timestamp = _parse_datetime(timestamp_value)
+    if timestamp is None:
+        return {"label": "", "is_warning": False}
+
+    reference_time = now or datetime.now()
+    age_seconds = max(0, int((reference_time - timestamp).total_seconds()))
+    duration = _format_duration_label(age_seconds)
+    suffix = "" if normalized_status == "pending" else " ago"
+    is_warning = uses_created_at and (age_seconds >= _TASK_AGE_WARNING_THRESHOLD_MINUTES * 60)
+
+    return {
+        "label": f"{label_prefix} {duration}{suffix}",
+        "is_warning": is_warning,
+    }
+
+
+def _build_task_detail_actions(task: Any) -> dict[str, Any]:
+    """Build task detail action state while mirroring task API constraints."""
+    status_value = str(getattr(task, "status", "") or "").lower()
+    can_delete = status_value not in _NON_DELETABLE_TASK_STATUSES
+    can_restart = status_value not in _NON_RESTARTABLE_TASK_STATUSES
+
+    return {
+        "can_delete": can_delete,
+        "can_restart": can_restart,
+        "delete_disabled_reason": (
+            "" if can_delete else f"Task status '{status_value}' cannot be deleted"
+        ),
+        "restart_disabled_reason": (
+            "" if can_restart else f"Task status '{status_value}' cannot be restarted"
+        ),
+    }
+
+
 def _build_attention_summary(
     runners_data: list[dict[str, Any]],
     tasks_data_sorted: list[dict[str, Any]],
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Build compact dashboard data for runners and tasks needing attention."""
+    reference_time = now or datetime.now()
     offline_runners = sorted(
         [runner for runner in runners_data if runner["status"] == "offline"],
         key=lambda runner: runner["age_seconds"],
@@ -91,10 +193,32 @@ def _build_attention_summary(
     attention_tasks = [
         task for task in tasks_data_sorted if task["status"] in _ATTENTION_TASK_STATUSES
     ]
+    stale_running_tasks: list[dict[str, Any]] = []
+    stale_threshold_seconds = _STALE_RUNNING_TASK_THRESHOLD_MINUTES * 60
+    for task in tasks_data_sorted:
+        if task["status"] != "running":
+            continue
+
+        updated_at = _parse_datetime(task.get("updated_at"))
+        if updated_at is None:
+            continue
+
+        age_seconds = int((reference_time - updated_at).total_seconds())
+        if age_seconds < stale_threshold_seconds:
+            continue
+
+        stale_task = dict(task)
+        stale_task["stale_running_label"] = (
+            f"Running without update for {_format_duration_label(age_seconds)}."
+        )
+        stale_running_tasks.append(stale_task)
+
+    attention_tasks.extend(stale_running_tasks)
 
     return {
         "attention_count": len(offline_runners) + len(attention_tasks),
         "attention_task_status_counts": attention_task_status_counts,
+        "stale_running_tasks_count": len(stale_running_tasks),
         "attention_tasks_count": len(attention_tasks),
         "attention_tasks": attention_tasks[:_ATTENTION_ITEMS_LIMIT],
         "offline_runners": offline_runners[:_ATTENTION_ITEMS_LIMIT],
@@ -147,6 +271,12 @@ async def admin_dashboard(request: Request):
     tasks_data = []
     for task_id, task in tasks_snapshot.items():
         params = getattr(task, "parameters", {}) or {}
+        age_metadata = _build_task_age_metadata(
+            task.status,
+            task.created_at,
+            task.updated_at,
+            now=now,
+        )
         tasks_data.append(
             {
                 "id": task_id,
@@ -158,6 +288,8 @@ async def admin_dashboard(request: Request):
                 "updated_at": task.updated_at,
                 "updated_at_display": _format_datetime_without_milliseconds(task.updated_at),
                 "error_label": _format_attention_error_label(getattr(task, "error", None)),
+                "age_label": age_metadata["label"],
+                "age_is_warning": age_metadata["is_warning"],
                 "video_id": params.get("video_id"),
             }
         )
@@ -168,7 +300,7 @@ async def admin_dashboard(request: Request):
         key=lambda x: str(x["created_at"] or ""),
         reverse=True,
     )
-    attention_summary = _build_attention_summary(runners_data, tasks_data_sorted)
+    attention_summary = _build_attention_summary(runners_data, tasks_data_sorted, now=now)
 
     month_key = now.strftime("%Y-%m")
     tasks_this_month = 0
@@ -235,6 +367,7 @@ async def get_task_detail(request: Request, task_id: str):
         {
             "request": request,
             "task": task,
+            "task_actions": _build_task_detail_actions(task),
             "dark_mode_enabled": dark_mode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,

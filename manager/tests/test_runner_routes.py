@@ -50,43 +50,6 @@ def runner_module():
     return runner_module
 
 
-def test_verify_runner_token_false_when_missing(clean_runners_state, runner_module):
-    """Validate Verify runner token false when missing."""
-    assert runner_module.verify_runner_token("nope", "tok") is False
-
-
-def test_verify_runner_token_true_when_matches(clean_runners_state, runner_module):
-    """Validate Verify runner token true when matches."""
-    runners["r1"] = Runner(
-        id="r1",
-        url="http://r1.example",
-        task_types=["encoding"],
-        token="tok1",
-        version="1.0.0",
-        last_heartbeat=datetime.now(),
-        availability="available",
-        status="offline",
-    )
-
-    assert runner_module.verify_runner_token("r1", "tok1") is True
-
-
-def test_verify_runner_token_false_when_mismatch(clean_runners_state, runner_module):
-    """Validate Verify runner token false when mismatch."""
-    runners["r1"] = Runner(
-        id="r1",
-        url="http://r1.example",
-        task_types=["encoding"],
-        token="tok1",
-        version="1.0.0",
-        last_heartbeat=datetime.now(),
-        availability="available",
-        status="offline",
-    )
-
-    assert runner_module.verify_runner_token("r1", "wrong") is False
-
-
 def test_register_runner_sets_token_version_and_heartbeat(runner_client, clean_runners_state):
     """Validate Register runner sets token version and heartbeat."""
     payload = {

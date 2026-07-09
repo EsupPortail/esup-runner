@@ -79,14 +79,10 @@ def test_get_online_runners_filters_by_heartbeat(clean_runners):
     assert [r["id"] for r in online] == ["on"]
 
 
-def test_verify_runner_token_and_update_heartbeat(clean_runners):
-    """Validate Verify runner token and update heartbeat."""
+def test_update_runner_heartbeat(clean_runners):
+    """Validate Update runner heartbeat."""
     now = datetime.now() - timedelta(minutes=1)
     runners["r1"] = _runner("r1", last_heartbeat=now)
-
-    assert runner_service.verify_runner_tokenINUTILE("r1", "tok") is True
-    assert runner_service.verify_runner_tokenINUTILE("r1", "wrong") is False
-    assert runner_service.verify_runner_tokenINUTILE("missing", "tok") is False
 
     assert runner_service.update_runner_heartbeat("r1") is True
     assert runner_service.update_runner_heartbeat("missing") is False

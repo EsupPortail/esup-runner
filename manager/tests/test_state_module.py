@@ -62,6 +62,20 @@ def test_cleanup_old_task_files(monkeypatch):
     assert state.cleanup_old_task_files(days_to_keep=7) == 7
 
 
+def test_cleanup_old_task_files_skips_when_disabled(monkeypatch):
+    """Validate cleanup-days zero does not delete persisted task directories."""
+    called = {"count": 0}
+
+    def _cleanup(_days):
+        called["count"] += 1
+        return 1
+
+    monkeypatch.setattr(state.persistence, "cleanup_old_files", _cleanup)
+
+    assert state.cleanup_old_task_files(days_to_keep=0) == 0
+    assert called["count"] == 0
+
+
 def test_load_historical_tasks(monkeypatch):
     """Validate Load historical tasks."""
     monkeypatch.setattr(state.persistence, "load_historical_tasks", lambda *_: {"a": 1})
@@ -156,12 +170,12 @@ def test_get_deleted_task_ids_handles_exception(monkeypatch):
     assert state._get_deleted_task_ids() == set()
 
 
-def test_should_keep_local_only_task_returns_false_when_cleanup_days_zero(monkeypatch):
-    """Validate Should keep local only task returns false when cleanup days zero."""
+def test_should_keep_local_only_task_returns_true_when_cleanup_days_zero(monkeypatch):
+    """Validate cleanup-days zero keeps local-only tasks indefinitely."""
     task = _task("retention-zero")
     monkeypatch.setattr(state.config, "CLEANUP_TASK_FILES_DAYS", 0)
 
-    assert state._should_keep_local_only_task_in_production(task) is False
+    assert state._should_keep_local_only_task_in_production(task) is True
 
 
 def test_should_keep_local_only_task_falls_back_to_updated_at(monkeypatch):

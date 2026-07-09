@@ -104,6 +104,26 @@ async def test_cleanup_old_tasks_removes_expired(monkeypatch, clean_tasks):
 
 
 @pytest.mark.asyncio
+async def test_cleanup_old_tasks_disabled_when_cleanup_days_zero(monkeypatch, clean_tasks):
+    """Validate cleanup-days zero disables manager task cleanup."""
+    old = datetime.now() - timedelta(days=3)
+    tasks["old"] = _task("old", "completed", created_at=old)
+    delete_calls = {"count": 0}
+
+    def _delete(_task_id):
+        delete_calls["count"] += 1
+        return True
+
+    monkeypatch.setattr(config, "CLEANUP_TASK_FILES_DAYS", 0)
+    monkeypatch.setattr(task_service, "delete_task_for_retention_cleanup", _delete)
+
+    await task_service.cleanup_old_tasks(poll_interval=0, stop_event=asyncio.Event())
+
+    assert "old" in tasks
+    assert delete_calls["count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_cleanup_old_tasks_handles_invalid_created_at(monkeypatch, clean_tasks):
     """Validate Cleanup old tasks handles invalid created at."""
     tasks["bad"] = _task("bad", "completed")

@@ -159,6 +159,14 @@ def test_format_attention_error_label_returns_short_first_line():
     assert admin_routes._format_attention_error_label("abcdefghijk", limit=10) == "abcdefg..."
 
 
+def test_format_secret_preview_masks_sensitive_values():
+    """Validate secret previews never expose the full value."""
+    assert admin_routes._format_secret_preview("A" * 25) == "AAAAAAAAAA...AAAA"
+    assert admin_routes._format_secret_preview("abcdef") == "abcd..."
+    assert admin_routes._format_secret_preview("xyz") == "***"
+    assert admin_routes._format_secret_preview("") == "not configured"
+
+
 def test_admin_dashboard_datetime_helpers_support_stale_running_tasks():
     """Validate dashboard datetime helpers support stale running task labels."""
     assert admin_routes._parse_datetime(None) is None
@@ -172,6 +180,27 @@ def test_admin_dashboard_datetime_helpers_support_stale_running_tasks():
     assert admin_routes._format_duration_label(24 * 3600) == "1d"
     assert admin_routes._format_duration_label((24 + 3) * 3600) == "1d 3h"
     assert admin_routes._format_duration_label(146 * 3600) == "6d 2h"
+
+
+def test_build_runner_heartbeat_metadata_uses_last_heartbeat():
+    """Validate runner display status is derived from heartbeat age."""
+    now = datetime(2026, 1, 1, 12, 0, 0)
+    online = SimpleNamespace(last_heartbeat=now - timedelta(seconds=30))
+    offline = SimpleNamespace(last_heartbeat=now - timedelta(seconds=90), status="online")
+
+    assert admin_routes._build_runner_heartbeat_metadata(online, now=now) == {
+        "status": "online",
+        "last_heartbeat": "2026-01-01 11:59:30",
+        "age_seconds": 30,
+    }
+    assert admin_routes._build_runner_heartbeat_metadata(offline, now=now)["status"] == "offline"
+    assert admin_routes._build_runner_heartbeat_metadata(
+        SimpleNamespace(last_heartbeat="bad-date"), now=now
+    ) == {
+        "status": "offline",
+        "last_heartbeat": "bad-date",
+        "age_seconds": 0,
+    }
 
 
 def test_admin_dashboard_builds_task_age_metadata():
@@ -710,7 +739,10 @@ def test_runner_detail_not_found(admin_client, clean_state):
 
 def test_runner_detail_ok(admin_client, clean_state, monkeypatch):
     """Validate Runner detail ok."""
-    runners["r1"] = _make_runner("r1")
+    runner = _make_runner("r1", seconds_ago=90)
+    runner.status = "online"
+    runner.token = "runner-token-secret-value-1234"
+    runners["r1"] = runner
 
     async def _fake_runner_live_status(_runner):
         return {
@@ -742,6 +774,9 @@ def test_runner_detail_ok(admin_client, clean_state, monkeypatch):
     assert resp.status_code == 200
     assert "r1" in resp.text
     assert "Disk Usage" in resp.text
+    assert "OFFLINE" in resp.text
+    assert "runner-tok...1234" in resp.text
+    assert "runner-token-secret-value-1234" not in resp.text
     assert "76.0%" in resp.text
     assert "bi-exclamation-triangle-fill" in resp.text
     assert "Storage usage is elevated" in resp.text
@@ -935,6 +970,25 @@ def test_statistics_helpers_cover_branches(tmp_path, monkeypatch):
     assert statistics_routes._filter_rows_by_date_range(rows, date(2026, 2, 5), None) == [
         {"date": "2026-02-10"}
     ]
+    assert statistics_routes._normalize_date_range(
+        date(2026, 3, 1),
+        date(2026, 2, 1),
+    ) == (date(2026, 2, 1), date(2026, 3, 1))
+    assert (
+        statistics_routes._download_filename(
+            "20260709",
+            date(2026, 2, 1),
+            date(2026, 3, 1),
+        )
+        == "task_stats_20260709_from_20260201_to_20260301.csv"
+    )
+    assert (
+        statistics_routes._csv_rows_to_text(
+            [{"task_id": "1", "date": "2026-02-01", "ignored": "x"}],
+            ["task_id", "date"],
+        )
+        == "task_id,date\n1,2026-02-01\n"
+    )
 
 
 def test_statistics_dashboard_renders_with_data(admin_client, monkeypatch, tmp_path):
@@ -953,6 +1007,7 @@ def test_statistics_dashboard_renders_with_data(admin_client, monkeypatch, tmp_p
     assert "2026-02-02" in resp.text
     assert "2026-02-01 \u2192 2026-02-02" in resp.text
     assert "encode" in resp.text
+    assert "Download CSV" in resp.text
     assert "/statistics/task-stats.csv" in resp.text
 
 
@@ -977,6 +1032,8 @@ def test_statistics_dashboard_filters_by_date_range(admin_client, monkeypatch, t
     assert 'value="2026-02-05"' in resp.text
     assert 'value="2026-02-28"' in resp.text
     assert "2026-02-05 \u2192 2026-02-28" in resp.text
+    assert "Download filtered CSV" in resp.text
+    assert "/statistics/task-stats.csv?start_date=2026-02-05&amp;end_date=2026-02-28" in resp.text
 
     data_match = re.search(
         r'<script id="statistics-data" type="application/json">\s*(.*?)\s*</script>',
@@ -1006,6 +1063,32 @@ def test_statistics_csv_download_returns_attachment(admin_client, monkeypatch, t
     content_disposition = resp.headers.get("content-disposition", "")
     assert "attachment" in content_disposition
     assert re.search(r"task_stats_\d{8}\.csv", content_disposition)
+
+
+def test_statistics_csv_download_can_filter_by_date_range(admin_client, monkeypatch, tmp_path):
+    """Validate statistics CSV download can export the active date range."""
+    csv_dir = tmp_path / "data"
+    csv_dir.mkdir()
+    (csv_dir / "task_stats.csv").write_text(
+        "task_id,date,task_type,etab_name\n"
+        "1,2026-02-01,encode,UM\n"
+        "2,2026-02-10,other,UA\n"
+        "3,2026-03-01,encode,UB\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(statistics_routes, "Path", lambda *_a, **_k: csv_dir)
+
+    resp = admin_client.get("/statistics/task-stats.csv?start_date=2026-02-05&end_date=2026-02-28")
+    assert resp.status_code == 200
+    assert resp.text == "task_id,date,task_type,etab_name\n2,2026-02-10,other,UA\n"
+
+    content_disposition = resp.headers.get("content-disposition", "")
+    assert "attachment" in content_disposition
+    assert re.search(
+        r"task_stats_\d{8}_from_20260205_to_20260228\.csv",
+        content_disposition,
+    )
 
 
 def test_statistics_csv_download_returns_404_when_missing(admin_client, monkeypatch, tmp_path):

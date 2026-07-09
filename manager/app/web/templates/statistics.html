@@ -17,14 +17,14 @@
 <body class="container py-4" data-bs-theme="{% if dark_mode_enabled %}dark{% else %}light{% endif %}">
   <div class="container">
     <!-- Header -->
-    <Header class="row mb-4">
+    <header class="row mb-4">
       <div class="col">
         <div class="d-flex justify-content-between align-items-center">
           <div>
             <h1 class="h2 mb-2">Statistics</h1>
             <p class="text-subtle mb-0">
               Usage overview based on task_stats.csv ·
-              <a href="{{ download_csv_url }}" class="text-decoration-none">Download CSV</a>
+              <a href="{{ download_csv_url }}" class="text-decoration-none">{{ download_csv_label }}</a>
             </p>
           </div>
           <div class="text-end">
@@ -35,7 +35,7 @@
           </div>
         </div>
       </div>
-    </Header>
+    </header>
 
     <div class="card border-0 shadow-sm mb-4">
       <div class="card-body">

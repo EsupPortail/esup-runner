@@ -57,6 +57,7 @@ _TASK_AGE_UPDATED_AT_LABELS = {
     "warning": "Warning",
 }
 _RUNNER_STATUS_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=2.0, pool=2.0)
+_RUNNER_ONLINE_HEARTBEAT_SECONDS = 60
 
 # ======================================================
 # Endpoints
@@ -93,6 +94,18 @@ def _format_attention_error_label(value: Any, limit: int = _ATTENTION_ERROR_LABE
     return label[: limit - 3].rstrip() + "..."
 
 
+def _format_secret_preview(value: Any) -> str:
+    """Return a non-sensitive preview for configured secrets."""
+    raw = str(value or "").strip()
+    if not raw:
+        return "not configured"
+    if len(raw) > 20:
+        return f"{raw[:10]}...{raw[-4:]}"
+    if len(raw) > 4:
+        return f"{raw[:4]}..."
+    return "***"
+
+
 def _parse_datetime(value: Any) -> datetime | None:
     """Parse an ISO datetime value into a local naive datetime for dashboard comparisons."""
     raw = str(value or "").strip()
@@ -108,6 +121,35 @@ def _parse_datetime(value: Any) -> datetime | None:
     if parsed.tzinfo is not None:
         return parsed.astimezone().replace(tzinfo=None)
     return parsed
+
+
+def _build_runner_heartbeat_metadata(runner: Any, now: datetime | None = None) -> dict[str, Any]:
+    """Build heartbeat-derived runner status metadata for admin pages."""
+    raw_heartbeat = getattr(runner, "last_heartbeat", None)
+    heartbeat: datetime | None
+    if isinstance(raw_heartbeat, datetime):
+        heartbeat = (
+            raw_heartbeat.astimezone().replace(tzinfo=None)
+            if raw_heartbeat.tzinfo is not None
+            else raw_heartbeat
+        )
+    else:
+        heartbeat = _parse_datetime(raw_heartbeat)
+
+    if heartbeat is None:
+        return {
+            "status": "offline",
+            "last_heartbeat": _format_datetime_without_milliseconds(str(raw_heartbeat or "")),
+            "age_seconds": 0,
+        }
+
+    reference_time = now or datetime.now()
+    age_seconds = max(0, int((reference_time - heartbeat).total_seconds()))
+    return {
+        "status": "online" if age_seconds < _RUNNER_ONLINE_HEARTBEAT_SECONDS else "offline",
+        "last_heartbeat": heartbeat.strftime("%Y-%m-%d %H:%M:%S"),
+        "age_seconds": age_seconds,
+    }
 
 
 def _format_duration_label(total_seconds: int) -> str:
@@ -321,18 +363,17 @@ async def admin_dashboard(request: Request):
     # Prepare runner data for dashboard
     runners_data = []
     for runner_id, runner in runners.items():
-        status_value = "online" if (now - runner.last_heartbeat).total_seconds() < 60 else "offline"
-        age_seconds = int((now - runner.last_heartbeat).total_seconds())
+        heartbeat_metadata = _build_runner_heartbeat_metadata(runner, now=now)
 
         runners_data.append(
             {
                 "id": runner_id,
                 "url": runner.url,
-                "status": status_value,
+                "status": heartbeat_metadata["status"],
                 "availability": runner.availability,
                 "task_types": runner.task_types,
-                "last_heartbeat": runner.last_heartbeat.strftime("%Y-%m-%d %H:%M:%S"),
-                "age_seconds": age_seconds,
+                "last_heartbeat": heartbeat_metadata["last_heartbeat"],
+                "age_seconds": heartbeat_metadata["age_seconds"],
             }
         )
 
@@ -378,8 +419,8 @@ async def admin_dashboard(request: Request):
             with csv_path.open("r", encoding="utf-8") as file:
                 reader = csv.DictReader(file)
                 for row in reader:
-                    dae_value = row.get("dae") or row.get("date")
-                    if dae_value and dae_value.startswith(month_key):
+                    date_value = row.get("date") or row.get("dae")
+                    if date_value and date_value.startswith(month_key):
                         tasks_this_month += 1
         except Exception as exc:
             logger.error(f"Failed to read task stats CSV: {exc}")
@@ -468,6 +509,7 @@ async def get_runner_detail(request: Request, runner_id: str):
 
     runner = runners[runner_id]
     runner_live_status = await _fetch_runner_live_status(runner)
+    heartbeat_metadata = _build_runner_heartbeat_metadata(runner)
 
     dark_mode = request.cookies.get("theme") == "dark"
 
@@ -477,6 +519,10 @@ async def get_runner_detail(request: Request, runner_id: str):
         {
             "request": request,
             "runner": runner,
+            "runner_status": heartbeat_metadata["status"],
+            "runner_last_heartbeat": heartbeat_metadata["last_heartbeat"],
+            "runner_age_seconds": heartbeat_metadata["age_seconds"],
+            "runner_token_preview": _format_secret_preview(getattr(runner, "token", "")),
             "runner_live_status": runner_live_status,
             "dark_mode_enabled": dark_mode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -600,11 +646,7 @@ async def credentials_page(request: Request):
     # Prepare authorized tokens list with preview (show first 10 and last 4 chars)
     authorized_tokens = []
     for token_name, token_value in config.AUTHORIZED_TOKENS.items():
-        if len(token_value) > 20:
-            token_preview = f"{token_value[:10]}...{token_value[-4:]}"
-        else:
-            token_preview = f"{token_value[:4]}..." if len(token_value) > 4 else "***"
-        authorized_tokens.append((token_name, token_preview))
+        authorized_tokens.append((token_name, _format_secret_preview(token_value)))
 
     return templates.TemplateResponse(
         request,

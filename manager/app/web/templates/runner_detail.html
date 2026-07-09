@@ -134,6 +134,105 @@
           </div>
         </div>
       </div>
+
+      <hr>
+
+      <!-- Live disk usage -->
+      <div class="detail-section">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <h3 class="h5 mb-0">Disk Usage</h3>
+          {% if runner_live_status and runner_live_status.disk_usage %}
+            {% set disk = runner_live_status.disk_usage %}
+            <span
+              class="fs-5
+                {% if disk.status == 'green' %}text-success
+                {% elif disk.status == 'orange' %}text-warning
+                {% elif disk.status == 'red' %}text-danger
+                {% else %}text-secondary{% endif %}"
+              title="{% if disk.status == 'green' %}Storage usage is normal{% elif disk.status == 'orange' %}Storage usage is elevated{% elif disk.status == 'red' %}Storage usage is critical{% else %}Storage usage is unavailable{% endif %}"
+              data-bs-toggle="tooltip">
+              {% if disk.status == 'green' %}
+                <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+                <span class="visually-hidden">Storage usage is normal</span>
+              {% elif disk.status == 'orange' %}
+                <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+                <span class="visually-hidden">Storage usage is elevated</span>
+              {% elif disk.status == 'red' %}
+                <i class="bi bi-x-octagon-fill" aria-hidden="true"></i>
+                <span class="visually-hidden">Storage usage is critical</span>
+              {% else %}
+                <i class="bi bi-question-circle-fill" aria-hidden="true"></i>
+                <span class="visually-hidden">Storage usage is unavailable</span>
+              {% endif %}
+            </span>
+          {% endif %}
+        </div>
+
+        {% if runner_live_status and runner_live_status.disk_usage %}
+          {% set disk = runner_live_status.disk_usage %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th scope="col">Directory</th>
+                  <th scope="col">Total</th>
+                  <th scope="col">Used</th>
+                  <th scope="col">Free</th>
+                  <th scope="col">Use</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for key, item in disk.directories.items() %}
+                  <tr>
+                    <th scope="row">
+                      <span class="d-block">{{ key }}</span>
+                      <small class="d-block text-subtle">{{ item.description }}</small>
+                      <small class="d-block text-subtle">{{ item.path }}</small>
+                    </th>
+                    <td>{{ item.total_human }}</td>
+                    <td>{{ item.used_human }}</td>
+                    <td>{{ item.free_human }}</td>
+                    <td>{{ item.used_percent_display }}</td>
+                    <td>
+                      <span
+                        class="fs-5
+                          {% if item.status == 'green' %}text-success
+                          {% elif item.status == 'orange' %}text-warning
+                          {% elif item.status == 'red' %}text-danger
+                          {% else %}text-secondary{% endif %}"
+                        title="{% if item.status == 'green' %}Storage usage is normal{% elif item.status == 'orange' %}Storage usage is elevated{% elif item.status == 'red' %}Storage usage is critical{% else %}Storage usage is unavailable{% endif %}"
+                        data-bs-toggle="tooltip">
+                        {% if item.status == 'green' %}
+                          <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+                          <span class="visually-hidden">Storage usage is normal</span>
+                        {% elif item.status == 'orange' %}
+                          <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+                          <span class="visually-hidden">Storage usage is elevated</span>
+                        {% elif item.status == 'red' %}
+                          <i class="bi bi-x-octagon-fill" aria-hidden="true"></i>
+                          <span class="visually-hidden">Storage usage is critical</span>
+                        {% else %}
+                          <i class="bi bi-question-circle-fill" aria-hidden="true"></i>
+                          <span class="visually-hidden">Storage usage is unavailable</span>
+                        {% endif %}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <p class="text-subtle small mt-2 mb-0">
+            Last check: {{ disk.checked_at }}
+          </p>
+        {% else %}
+          <div class="alert alert-secondary mb-0" role="status">
+            <i class="bi bi-info-circle" aria-hidden="true"></i>
+            Disk usage unavailable{% if runner_live_status and runner_live_status.error %}: {{ runner_live_status.error }}{% endif %}
+          </div>
+        {% endif %}
+      </div>
     </div>
   </main>
 

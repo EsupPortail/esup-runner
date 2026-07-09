@@ -36,25 +36,6 @@ class RunnerHeartbeatPayload(BaseModel):
 # ======================================================
 
 
-def verify_runner_token(runner_id: str, token: str) -> bool:
-    """
-    Verify that a token is valid for a specific runner.
-
-    Args:
-        runner_id: Unique identifier of the runner
-        token: Authentication token to verify
-
-    Returns:
-        bool: True if token is valid for the runner, False otherwise
-    """
-    if runner_id not in runners:
-        return False
-
-    runner = runners[runner_id]
-    is_valid: bool = runner.token == token
-    return is_valid
-
-
 def _host_matches_allowlist(host: str, allowed_hosts: list[str]) -> bool:
     """Return True when host matches one allowlist entry (exact/subdomain)."""
     normalized_host = (host or "").strip().lower().rstrip(".")

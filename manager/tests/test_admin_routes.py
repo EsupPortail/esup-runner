@@ -219,20 +219,26 @@ def test_admin_task_detail_actions_respect_api_constraints():
     assert admin_routes._build_task_detail_actions(completed_task) == {
         "can_delete": True,
         "can_restart": True,
+        "can_stop": False,
         "delete_disabled_reason": "",
         "restart_disabled_reason": "",
+        "stop_disabled_reason": "Task status 'completed' cannot be stopped",
     }
     assert admin_routes._build_task_detail_actions(pending_task) == {
         "can_delete": False,
         "can_restart": False,
+        "can_stop": False,
         "delete_disabled_reason": "Task status 'pending' cannot be deleted",
         "restart_disabled_reason": "Task status 'pending' cannot be restarted",
+        "stop_disabled_reason": "Task status 'pending' cannot be stopped",
     }
     assert admin_routes._build_task_detail_actions(running_task) == {
         "can_delete": False,
         "can_restart": False,
+        "can_stop": True,
         "delete_disabled_reason": "Task status 'running' cannot be deleted",
         "restart_disabled_reason": "Task status 'running' cannot be restarted",
+        "stop_disabled_reason": "",
     }
 
 
@@ -243,13 +249,18 @@ def test_task_detail_template_renders_delete_and_restart_actions():
     assert 'id="taskActionFeedback"' in html
     assert 'id="deleteTaskBtn"' in html
     assert 'id="restartTaskBtn"' in html
+    assert 'id="stopTaskBtn"' in html
     assert 'data-task-action="delete"' in html
     assert 'data-task-action="restart"' in html
+    assert 'data-task-action="stop"' in html
     assert "/tasks/delete-selected" in html
     assert "/tasks/restart-selected" in html
+    assert "/tasks/stop-selected" in html
     assert "redirectUrl: '/admin'" in html
     assert "Delete this task? This cannot be undone." in html
     assert "Restart this task?" in html
+    assert "This failed task can be deleted or restarted." in html
+    assert "text-subtle fst-italic" in html
     assert "This failed task cannot be deleted or restarted." not in html
 
 
@@ -257,10 +268,21 @@ def test_task_detail_template_disables_actions_for_pending_task():
     """Validate protected task statuses disable detail actions."""
     html = _render_task_detail_template("pending")
 
-    assert "This pending task cannot be deleted or restarted." in html
+    assert "This pending task cannot be stopped, deleted, or restarted." in html
     assert "Task status 'pending' cannot be deleted" in html
     assert "Task status 'pending' cannot be restarted" in html
-    assert html.count('disabled aria-disabled="true"') == 2
+    assert "Task status 'pending' cannot be stopped" in html
+    assert html.count('disabled aria-disabled="true"') == 3
+
+
+def test_task_detail_template_enables_stop_for_running_task():
+    """Validate running tasks expose the stop action."""
+    html = _render_task_detail_template("running")
+
+    assert "This running task can be stopped, but cannot be deleted or restarted." in html
+    assert "text-subtle fst-italic" in html
+    assert "Stop this running task?" in html
+    assert "Task status 'running' cannot be stopped" not in html
 
 
 def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):

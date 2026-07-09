@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -55,6 +56,7 @@ _TASK_AGE_UPDATED_AT_LABELS = {
     "timeout": "Timed out",
     "warning": "Warning",
 }
+_RUNNER_STATUS_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=2.0, pool=2.0)
 
 # ======================================================
 # Endpoints
@@ -180,6 +182,63 @@ def _build_task_detail_actions(task: Any) -> dict[str, Any]:
         "stop_disabled_reason": (
             "" if can_stop else f"Task status '{status_value}' cannot be stopped"
         ),
+    }
+
+
+def _runner_status_headers(runner: Any) -> dict[str, str]:
+    """Return optional auth headers for live runner status requests."""
+    token = str(getattr(runner, "token", "") or "").strip()
+    return {"X-API-Token": token} if token else {}
+
+
+async def _fetch_runner_live_status(runner: Any) -> dict[str, Any]:
+    """Fetch live status from a runner for the admin detail page."""
+    url = f"{str(getattr(runner, 'url', '')).rstrip('/')}/runner/status"
+    try:
+        async with httpx.AsyncClient(timeout=_RUNNER_STATUS_TIMEOUT) as client:
+            response = await client.get(url, headers=_runner_status_headers(runner))
+    except (httpx.RequestError, httpx.TimeoutException) as exc:
+        logger.warning(f"Unable to fetch runner status from {url}: {exc}")
+        return {
+            "available": False,
+            "url": url,
+            "error": "Runner status request failed.",
+            "disk_usage": None,
+        }
+
+    if response.status_code != 200:
+        return {
+            "available": False,
+            "url": url,
+            "error": f"Runner status returned HTTP {response.status_code}.",
+            "disk_usage": None,
+        }
+
+    try:
+        payload = response.json()
+    except ValueError:
+        return {
+            "available": False,
+            "url": url,
+            "error": "Runner status returned invalid JSON.",
+            "disk_usage": None,
+        }
+
+    if not isinstance(payload, dict):
+        return {
+            "available": False,
+            "url": url,
+            "error": "Runner status returned an unexpected payload.",
+            "disk_usage": None,
+        }
+
+    disk_usage = payload.get("disk_usage")
+    return {
+        "available": True,
+        "url": url,
+        "error": "",
+        "payload": payload,
+        "disk_usage": disk_usage if isinstance(disk_usage, dict) else None,
     }
 
 
@@ -408,6 +467,7 @@ async def get_runner_detail(request: Request, runner_id: str):
         )
 
     runner = runners[runner_id]
+    runner_live_status = await _fetch_runner_live_status(runner)
 
     dark_mode = request.cookies.get("theme") == "dark"
 
@@ -417,6 +477,7 @@ async def get_runner_detail(request: Request, runner_id: str):
         {
             "request": request,
             "runner": runner,
+            "runner_live_status": runner_live_status,
             "dark_mode_enabled": dark_mode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,

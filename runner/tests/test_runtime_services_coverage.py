@@ -5,12 +5,24 @@ import os
 import signal
 import sys
 import types
+from email.message import EmailMessage
 
 import pytest
 
 import app.managers.process_manager as process_manager_module
 import app.managers.service_manager as service_manager_module
 import app.services.email_service as email_service_module
+import app.services.email_templates as email_templates_module
+
+
+def _message_body(message, content_type):
+    body = message.get_body((content_type,))
+    assert body is not None
+    return body.get_content()
+
+
+def _message_content_ids(message):
+    return {part.get("Content-ID") for part in message.walk() if part.get("Content-ID")}
 
 
 @pytest.fixture(autouse=True)
@@ -369,8 +381,70 @@ def test_email_helpers_and_composition(monkeypatch):
     )
 
     assert message["Subject"] == "[esup-runner] Task task-1 failed"
-    assert "(no details)" in message.get_content()
-    assert "Script output:" in message.get_content()
+    assert message.is_multipart()
+    plain_body = _message_body(message, "plain")
+    html_body = _message_body(message, "html")
+    assert "(no details)" in plain_body
+    assert "Script output:" in plain_body
+    assert "Runner failure notification" in html_body
+    assert "cid:esup-runner-logo" in html_body
+    assert "Script output" in html_body
+    assert "<esup-runner-logo>" in _message_content_ids(message)
+
+
+def test_email_status_tones_manager_url_and_template_optional_branches(monkeypatch):
+    """Validate Email status tones manager url and template optional branches."""
+    assert email_service_module._tone_for_status("timeout") == "warning"
+    assert email_service_module._tone_for_status("completed") == "info"
+
+    monkeypatch.setattr(email_service_module.config, "MANAGER_URL", "https://manager.example/admin")
+    assert email_service_module._manager_admin_url() == "https://manager.example/admin"
+
+    html = email_templates_module.render_html_email(
+        product_name="ESUP-Runner",
+        eyebrow="Preview",
+        title="Email preview",
+        summary="HTML rendering preview",
+        status_label="TEST",
+        tone="unknown-tone",
+        details=[("Task", "task-1"), ("Empty", None)],
+        primary_block_title="No block",
+        primary_block_body=None,
+        secondary_block_title="Diagnostics",
+        secondary_block_body="secondary details",
+        action_label="Open manager",
+        action_url="https://manager.example/admin",
+        footer="Footer",
+        logo_cid=None,
+    )
+
+    assert "ESUP-Runner" in html
+    assert "secondary details" in html
+    assert "Open manager" in html
+    assert "https://manager.example/admin" in html
+    assert "(none)" in html
+
+
+def test_email_attach_inline_logo_ignores_missing_logo_and_plain_messages(tmp_path):
+    """Validate Attach inline logo ignores missing logo and plain messages."""
+    html_message = EmailMessage()
+    html_message.set_content("plain")
+    html_message.add_alternative("<p>html</p>", subtype="html")
+
+    email_templates_module.attach_inline_logo(
+        html_message,
+        tmp_path / "missing-logo.png",
+        "missing-logo",
+    )
+    assert "missing-logo" not in _message_content_ids(html_message)
+
+    plain_message = EmailMessage()
+    plain_message.set_content("plain only")
+    logo_path = tmp_path / "logo.png"
+    logo_path.write_bytes(b"png")
+
+    email_templates_module.attach_inline_logo(plain_message, logo_path, "plain-logo")
+    assert "plain-logo" not in _message_content_ids(plain_message)
 
 
 @pytest.mark.asyncio
@@ -408,6 +482,7 @@ async def test_send_task_failure_email_skip_success_and_failure(monkeypatch):
 
         def send_message(self, message):
             sent["subject"] = message["Subject"]
+            sent["message"] = message
 
     async def fake_to_thread(func):
         func()
@@ -418,6 +493,7 @@ async def test_send_task_failure_email_skip_success_and_failure(monkeypatch):
     monkeypatch.setattr(email_service_module.config, "SMTP_USERNAME", "user")
     monkeypatch.setattr(email_service_module.config, "SMTP_PASSWORD", "secret")
     monkeypatch.setattr(email_service_module.config, "MANAGER_EMAIL", "manager@example.org")
+    monkeypatch.setattr(email_service_module.config, "MANAGER_URL", "http://manager")
     monkeypatch.setattr(email_service_module.smtplib, "SMTP", FakeSMTP)
     monkeypatch.setattr(email_service_module.asyncio, "to_thread", fake_to_thread)
     monkeypatch.setattr(email_service_module, "get_runner_id", lambda: "runner-1")
@@ -435,6 +511,9 @@ async def test_send_task_failure_email_skip_success_and_failure(monkeypatch):
     assert sent["init"] == ("smtp.example.org", 2525, 10)
     assert sent["tls"] is True
     assert sent["login"] == ("user", "secret")
+    sent_html = _message_body(sent["message"], "html")
+    assert "Open manager" in sent_html
+    assert "http://manager/admin" in sent_html
 
     async def failing_to_thread(_func):
         raise RuntimeError("smtp down")

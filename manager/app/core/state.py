@@ -74,7 +74,7 @@ def _should_keep_local_only_task_in_production(
     """Return True when a local-only task should remain visible in production snapshots."""
     cleanup_days = max(0, int(getattr(config, "CLEANUP_TASK_FILES_DAYS", 60) or 0))
     if cleanup_days == 0:
-        return False
+        return True
 
     # Retention is based on task creation age across all statuses.
     reference_ts = _parse_updated_at(getattr(task, "created_at", None))
@@ -286,6 +286,10 @@ def cleanup_old_task_files(days_to_keep: int = 30) -> int:
     Returns:
         int: Number of files deleted
     """
+    if days_to_keep <= 0:
+        logger.info("Task file cleanup skipped: retention is disabled")
+        return 0
+
     deleted_count: int = persistence.cleanup_old_files(days_to_keep)
     return deleted_count
 

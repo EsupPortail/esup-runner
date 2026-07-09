@@ -15,11 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added compact task age labels to the admin dashboard task list, with a stronger visual cue when pending/running tasks approach the attention threshold.
 - Added quick filters to the admin dashboard `Needs attention` panel to isolate offline runners, task incidents, and stale running tasks.
 - Added delete and restart actions to the admin task detail page, reusing the existing task action constraints for protected statuses.
+- Added a protected `POST /task/stop/{task_id}` endpoint that proxies running-task stop requests to the assigned runner without changing manager-side task status before the completion callback.
+- Added admin stop controls for running tasks on the task detail page and task list, including bulk stop requests and action availability messages.
+- Added branded multipart HTML email notifications, with plain-text fallback and embedded ESUP-Runner logo, for manager-side notify callback warnings.
+- Added `update-stack.sh --send-test-email` to send a preview of the update notification email without running update, restart, or smoke-test steps.
 
 ### Changed
 
 - Changed admin dashboard task age labels to use day-based durations for long-running tasks and keep task list items to two visual lines.
 - Improved admin dashboard runner/task list items so each row is fully clickable, visually aligned with incident links, and clearer for keyboard and screen-reader users.
+- Improved `update-stack.sh` update emails with the branded HTML template.
+
+### Fixed
+
+- Fixed manager CI stability in sandboxed environments by using a thread-free ASGI test client and removing real DNS/email dependencies from task route unit tests.
 
 ## [1.5.0] - 2026-07-02
 

@@ -58,8 +58,10 @@ templates = Jinja2Templates(directory="app/web/templates")
 _FAILURE_TASK_STATUSES = {"failed", "timeout", "error"}
 _NON_DELETABLE_TASK_STATUSES = {"pending", "running"}
 _NON_RESTARTABLE_TASK_STATUSES = {"pending", "running"}
+_STOPPABLE_TASK_STATUSES = {"running"}
 _MAX_BULK_DELETE_TASKS = 200
 _MAX_BULK_RESTART_TASKS = 200
+_MAX_BULK_STOP_TASKS = 200
 _MANIFEST_READ_ATTEMPTS = 5
 _MANIFEST_READ_DELAY_SECONDS = 0.2
 _TASK_STATS_EXCLUDED_ETAB_NAMES = {"quick manual test"}
@@ -731,6 +733,84 @@ def _http_exception_detail_to_text(detail: object) -> str:
     return str(detail)
 
 
+def _runner_response_detail_to_text(response: httpx.Response) -> str:
+    """Extract a readable error detail from a runner response."""
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict) and "detail" in payload:
+        return _http_exception_detail_to_text(payload.get("detail"))
+
+    text = (response.text or "").strip()
+    return text or f"Runner returned status {response.status_code}"
+
+
+async def _request_runner_task_stop(task_id: str, runner: Runner) -> httpx.Response:
+    """Forward a task stop request to the assigned runner."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                f"{runner.url}/task/stop/{task_id}",
+                headers=_runner_auth_headers(runner, accept="application/json"),
+            )
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Timeout contacting runner")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"Error contacting runner: {str(exc)}")
+
+    if response.status_code == 409:
+        raise HTTPException(status_code=409, detail=_runner_response_detail_to_text(response))
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail=_runner_response_detail_to_text(response))
+    if response.status_code < 200 or response.status_code >= 300:
+        detail = _runner_response_detail_to_text(response)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Runner stop request failed: {response.status_code} - {detail}",
+        )
+
+    return response
+
+
+async def _stop_selected_task(task_id: str) -> tuple[str, dict[str, str | int]]:
+    """Stop a single selected task and return outcome bucket with payload."""
+    task = get_task_from_state(task_id)
+    if task is None:
+        return "skipped", {"task_id": task_id, "reason": "Task not found"}
+
+    if task.status not in _STOPPABLE_TASK_STATUSES:
+        return (
+            "skipped",
+            {
+                "task_id": task_id,
+                "reason": f"Task status '{task.status}' cannot be stopped",
+            },
+        )
+
+    runner = runners.get(task.runner_id)
+    if runner is None:
+        return "failed", {"task_id": task_id, "reason": "Runner not found"}
+
+    try:
+        response = await _request_runner_task_stop(task_id, runner)
+    except HTTPException as exc:
+        return "failed", {"task_id": task_id, "reason": _http_exception_detail_to_text(exc.detail)}
+    except Exception as exc:
+        logger.exception(f"Unexpected error while stopping task {task_id}: {exc}")
+        return "failed", {"task_id": task_id, "reason": "Unexpected error while stopping task"}
+
+    return (
+        "stopped",
+        {
+            "task_id": task_id,
+            "runner_id": runner.id,
+            "runner_status_code": response.status_code,
+        },
+    )
+
+
 def _task_request_fingerprint(
     *,
     task_type: str,
@@ -1139,6 +1219,54 @@ async def restart_selected_tasks(payload: Dict[str, List[str]]) -> dict:
     }
 
 
+@router.post(
+    "s/stop-selected",  # This makes the full path /tasks/stop-selected
+    response_model=dict,
+    summary="Stop selected running tasks",
+    description="Request stop for selected running tasks from the tasks web interface",
+    tags=["Task"],
+    dependencies=[Depends(verify_admin)],
+)
+async def stop_selected_tasks(payload: Dict[str, List[str]]) -> dict:
+    """Request stop for selected running tasks without mutating their manager status."""
+    raw_task_ids = payload.get("task_ids", [])
+    if not isinstance(raw_task_ids, list):
+        raise HTTPException(status_code=400, detail="task_ids must be a list")
+
+    task_ids = _normalize_task_ids(raw_task_ids)
+    if not task_ids:
+        raise HTTPException(status_code=400, detail="task_ids must contain at least one task ID")
+    if len(task_ids) > _MAX_BULK_STOP_TASKS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Too many task IDs in one request ({len(task_ids)}). "
+                f"Maximum allowed: {_MAX_BULK_STOP_TASKS}"
+            ),
+        )
+
+    stopped: List[dict[str, str | int]] = []
+    skipped: List[dict[str, str]] = []
+    failed: List[dict[str, str]] = []
+
+    for task_id in task_ids:
+        outcome, payload_item = await _stop_selected_task(task_id)
+        if outcome == "stopped":
+            stopped.append(payload_item)
+            continue
+        if outcome == "skipped":
+            skipped.append(cast(dict[str, str], payload_item))
+            continue
+        failed.append(cast(dict[str, str], payload_item))
+
+    return {
+        "requested": len(task_ids),
+        "stopped": stopped,
+        "skipped": skipped,
+        "failed": failed,
+    }
+
+
 # ======================================================
 # API Endpoints
 # ======================================================
@@ -1168,6 +1296,48 @@ async def execute_task_async(
         HTTPException: If no runners are available
     """
     return await _queue_task_execution(task_request, current_token)
+
+
+@router.post(
+    "/stop/{task_id}",
+    response_model=dict,
+    summary="Stop a running task",
+    description="Request a running task stop through its assigned runner",
+    tags=["Task"],
+    dependencies=[Depends(verify_token)],
+    responses={
+        202: {"description": "Task stop request accepted"},
+        404: {"description": "Task or runner not found"},
+        409: {"description": "Task not running or runner cannot stop it yet"},
+        502: {"description": "Runner HTTP error"},
+        504: {"description": "Runner timeout"},
+    },
+)
+async def stop_task(
+    task_id: str = Path(..., description="Task identifier to stop"),
+) -> JSONResponse:
+    """Request stop for a running task without changing manager-side status."""
+    task = get_task_from_state(task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    if task.status not in _STOPPABLE_TASK_STATUSES:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Task not running")
+
+    runner = runners.get(task.runner_id)
+    if runner is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runner not found")
+
+    response = await _request_runner_task_stop(task_id, runner)
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "task_id": task_id,
+            "status": "stop_requested",
+            "runner_id": runner.id,
+            "runner_status_code": response.status_code,
+        },
+    )
 
 
 @router.get(
@@ -1570,6 +1740,7 @@ def _build_streaming_response(
     """Create the streaming response and ensure resources are released."""
 
     async def content_generator():
+        """Yield streamed runner response chunks and close network resources."""
         try:
             async for chunk in response.aiter_bytes():
                 yield chunk

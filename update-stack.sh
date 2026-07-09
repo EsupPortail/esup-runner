@@ -52,6 +52,7 @@ RUN_UV_UPDATE=1
 RUN_GIT_UPDATE=1
 RUN_TEST=1
 RUN_EMAIL=1
+SEND_TEST_EMAIL=0
 USE_SUDO=1
 DRY_RUN=0
 RUN_INIT=0
@@ -107,6 +108,7 @@ Options:
   --no-restart                      Shortcut for --restart-policy never
   --skip-test                       Skip post-update check_pipeline_tasks test
   --skip-email                      Skip email notification
+  --send-test-email                 Send only a test update email, then exit
   --no-sudo                         Do not use sudo even when needed
   --dry-run                         Print commands without executing them
   -h, --help                        Show this help
@@ -844,6 +846,40 @@ build_manager_url_from_manager_env() {
   printf '%s://%s:%s\n' "${manager_protocol}" "${manager_host}" "${manager_port}"
 }
 
+normalize_manager_admin_url() {
+  # Normalize MANAGER_URL into the admin URL used by update email actions.
+  local manager_url="$1"
+
+  while [[ "${manager_url}" == */ ]]; do
+    manager_url="${manager_url%/}"
+  done
+
+  if [[ -z "${manager_url}" ]]; then
+    return 0
+  fi
+
+  if [[ "${manager_url}" == */admin ]]; then
+    printf '%s\n' "${manager_url}"
+  else
+    printf '%s/admin\n' "${manager_url}"
+  fi
+}
+
+resolve_manager_admin_url() {
+  # Resolve the best manager admin URL from runner or manager environment files.
+  local manager_url=""
+
+  if [[ -f "${RUNNER_ENV_FILE}" ]]; then
+    manager_url="$(read_env_var "${RUNNER_ENV_FILE}" "MANAGER_URL" || true)"
+  fi
+
+  if [[ -z "${manager_url}" && -f "${MANAGER_ENV_FILE}" ]]; then
+    manager_url="$(build_manager_url_from_manager_env)"
+  fi
+
+  normalize_manager_admin_url "${manager_url}"
+}
+
 run_post_update_test() {
   # Optional smoke test through manager/scripts/check_pipeline_tasks.py
   # with optional full transcription+translation chain.
@@ -963,7 +999,9 @@ send_update_email_if_configured() {
   fi
 
   local updated_label
-  if [[ "${#updated_parts[@]}" -eq 0 ]]; then
+  if [[ "${SEND_TEST_EMAIL}" -eq 1 ]]; then
+    updated_label="preview only"
+  elif [[ "${#updated_parts[@]}" -eq 0 ]]; then
     updated_label="none"
   else
     updated_label="$(printf '%s, ' "${updated_parts[@]}")"
@@ -975,14 +1013,14 @@ send_update_email_if_configured() {
   local version_lines=""
   local subject_versions=()
 
-  if [[ "${UPDATED_MANAGER}" -eq 1 ]]; then
+  if [[ "${UPDATED_MANAGER}" -eq 1 || ( "${SEND_TEST_EMAIL}" -eq 1 && -d "${MANAGER_DIR}" ) ]]; then
     manager_version="$(read_component_version "${MANAGER_DIR}")"
     version_lines="${version_lines}
 - Manager version      : ${manager_version}"
     subject_versions+=("manager ${manager_version}")
   fi
 
-  if [[ "${UPDATED_RUNNER}" -eq 1 ]]; then
+  if [[ "${UPDATED_RUNNER}" -eq 1 || ( "${SEND_TEST_EMAIL}" -eq 1 && -d "${RUNNER_DIR}" ) ]]; then
     runner_version="$(read_component_version "${RUNNER_DIR}")"
     version_lines="${version_lines}
 - Runner version       : ${runner_version}"
@@ -998,11 +1036,15 @@ send_update_email_if_configured() {
   fi
 
   local git_revision hostname_value date_value subject body overall_status test_status_label
+  local manager_admin_url report_title report_summary report_eyebrow
   git_revision="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
   hostname_value="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "unknown-host")"
   date_value="$(date -Is 2>/dev/null || date)"
+  manager_admin_url="$(resolve_manager_admin_url)"
 
-  if [[ "${EXIT_CODE}" -eq 0 ]]; then
+  if [[ "${SEND_TEST_EMAIL}" -eq 1 ]]; then
+    overall_status="TEST EMAIL"
+  elif [[ "${EXIT_CODE}" -eq 0 ]]; then
     overall_status="SUCCESS"
   else
     overall_status="COMPLETED WITH WARNINGS"
@@ -1029,8 +1071,36 @@ send_update_email_if_configured() {
       ;;
   esac
 
-  subject="[esup-runner] ${overall_status} - ${versions_label}"
-  body="Hello,
+  if [[ "${SEND_TEST_EMAIL}" -eq 1 ]]; then
+    subject="[esup-runner] Test email - update notification preview"
+    report_eyebrow="Stack update email preview"
+    report_title="ESUP-Runner test email"
+    report_summary="This preview verifies SMTP configuration, HTML rendering and the manager admin link without running an update."
+    body="Hello,
+
+This is a test ESUP-Runner update notification.
+
+========================================================================
+ESUP-RUNNER UPDATE EMAIL PREVIEW
+========================================================================
+Overall status:
+- Workflow result      : ${overall_status}
+- Updated components   : ${updated_label}${version_lines}
+
+Execution details:
+- Git revision         : ${git_revision}
+- Date                 : ${date_value}
+- Host                 : ${hostname_value}
+- Post-update test     : ${test_status_label}
+- Manager admin        : ${manager_admin_url:-unavailable}
+
+This message was generated automatically by the ESUP-Runner update-stack.sh."
+  else
+    subject="[esup-runner] ${overall_status} - ${versions_label}"
+    report_eyebrow="Stack update report"
+    report_title="ESUP-Runner update completed"
+    report_summary="The automatic stack update finished and this report summarizes the result."
+    body="Hello,
 
 The automatic ESUP-Runner update has completed.
 
@@ -1046,12 +1116,24 @@ Execution details:
 - Date                 : ${date_value}
 - Host                 : ${hostname_value}
 - Post-update test     : ${test_status_label}
+- Manager admin        : ${manager_admin_url:-unavailable}
 
-This message was generated automatically by update-stack.sh."
+This message was generated automatically by the ESUP-Runner update-stack.sh."
+  fi
+
+  local logo_path=""
+  if [[ -n "${MANAGER_DIR}" && -f "${MANAGER_DIR}/app/web/static/logo.png" ]]; then
+    logo_path="${MANAGER_DIR}/app/web/static/logo.png"
+  elif [[ -n "${RUNNER_DIR}" && -f "${RUNNER_DIR}/app/web/static/logo.png" ]]; then
+    logo_path="${RUNNER_DIR}/app/web/static/logo.png"
+  fi
 
   log_action "Sending update email to ${manager_email}"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     printf 'DRY-RUN: send email to %s via %s:%s\n' "${manager_email}" "${smtp_server}" "${smtp_port}"
+    if [[ -n "${manager_admin_url}" ]]; then
+      printf 'DRY-RUN: manager admin URL %s\n' "${manager_admin_url}"
+    fi
     EMAIL_STATUS="dry-run"
     return 0
   fi
@@ -1066,15 +1148,218 @@ This message was generated automatically by update-stack.sh."
     MANAGER_EMAIL="${manager_email}" \
     EMAIL_SUBJECT="${subject}" \
     EMAIL_BODY="${body}" \
+    EMAIL_OVERALL_STATUS="${overall_status}" \
+    EMAIL_UPDATED_COMPONENTS="${updated_label}" \
+    EMAIL_MANAGER_VERSION="${manager_version}" \
+    EMAIL_RUNNER_VERSION="${runner_version}" \
+    EMAIL_GIT_REVISION="${git_revision}" \
+    EMAIL_DATE="${date_value}" \
+    EMAIL_HOST="${hostname_value}" \
+    EMAIL_TEST_STATUS="${test_status_label}" \
+    EMAIL_LOGO_PATH="${logo_path}" \
+    EMAIL_MANAGER_ADMIN_URL="${manager_admin_url}" \
+    EMAIL_REPORT_EYEBROW="${report_eyebrow}" \
+    EMAIL_REPORT_TITLE="${report_title}" \
+    EMAIL_REPORT_SUMMARY="${report_summary}" \
     python3 - <<'PY'
+from __future__ import annotations
+
 import os
 import smtplib
 import sys
 from email.message import EmailMessage
+from html import escape
+from pathlib import Path
+
+
+LOGO_CID = "esup-runner-logo"
+
+TONE_STYLES = {
+    "success": {
+        "accent": "#198754",
+        "badge_bg": "#e8f6ef",
+        "badge_text": "#0f5132",
+    },
+    "warning": {
+        "accent": "#fd7e14",
+        "badge_bg": "#fff4e5",
+        "badge_text": "#7a3f00",
+    },
+    "info": {
+        "accent": "#0d6bf4",
+        "badge_bg": "#eaf3ff",
+        "badge_text": "#084298",
+    },
+}
 
 
 def as_bool(raw: str) -> bool:
+    """Parse shell-style truthy environment values."""
     return raw.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
+def display(raw: str, fallback: str = "(none)") -> str:
+    """Return a stripped display value, or the fallback when it is blank."""
+    value = (raw or "").strip()
+    return value or fallback
+
+
+def is_http_url(raw: str) -> bool:
+    """Return True when a value is an HTTP(S) URL safe for email links."""
+    return raw.startswith(("http://", "https://"))
+
+
+def render_logo(logo_cid: str | None) -> str:
+    """Render either the inline ESUP-Runner logo or a text fallback."""
+    if logo_cid:
+        return (
+            f'<img src="cid:{logo_cid}" width="190" alt="ESUP-Runner" '
+            'style="display:block;width:190px;max-width:100%;height:auto;border:0;outline:none;">'
+        )
+    return (
+        '<div style="font-size:22px;font-weight:700;color:#1f2937;line-height:1.2;">'
+        "ESUP-Runner</div>"
+    )
+
+
+def render_rows(rows: list[tuple[str, str]]) -> str:
+    """Render key/value rows for the update email details table."""
+    rendered = []
+    for label, value in rows:
+        rendered.append(
+            "<tr>"
+            '<td style="padding:10px 12px;border-bottom:1px solid #e9ecef;'
+            'font-size:13px;color:#6c747c;width:34%;vertical-align:top;">'
+            f"{escape(label)}"
+            "</td>"
+            '<td style="padding:10px 12px;border-bottom:1px solid #e9ecef;'
+            'font-size:14px;color:#212529;font-weight:600;vertical-align:top;'
+            'word-break:break-word;">'
+            f"{escape(display(value))}"
+            "</td>"
+            "</tr>"
+        )
+    return "".join(rendered)
+
+
+def render_html_email(
+    *,
+    overall_status: str,
+    updated_components: str,
+    manager_version: str,
+    runner_version: str,
+    git_revision: str,
+    date_value: str,
+    host: str,
+    test_status: str,
+    manager_admin_url: str,
+    eyebrow: str,
+    title: str,
+    summary: str,
+    logo_cid: str | None,
+) -> str:
+    """Render the HTML body for update report and preview emails."""
+    if overall_status == "SUCCESS":
+        tone = "success"
+    elif overall_status == "TEST EMAIL":
+        tone = "info"
+    else:
+        tone = "warning"
+    style = TONE_STYLES[tone]
+    rows = [
+        ("Workflow result", overall_status),
+        ("Updated components", updated_components),
+    ]
+    if manager_version:
+        rows.append(("Manager version", manager_version))
+    if runner_version:
+        rows.append(("Runner version", runner_version))
+    rows.extend(
+        [
+            ("Git revision", git_revision),
+            ("Date", date_value),
+            ("Host", host),
+            ("Post-update test", test_status),
+            ("Manager admin", manager_admin_url),
+        ]
+    )
+
+    action_html = ""
+    if is_http_url(manager_admin_url):
+        action_html = (
+            '<tr><td style="padding:0 28px 28px 28px;background:#ffffff;">'
+            f'<a href="{escape(manager_admin_url, quote=True)}" '
+            f'style="display:inline-block;background:{style["accent"]};color:#ffffff;'
+            "text-decoration:none;font-size:14px;font-weight:700;padding:11px 18px;"
+            'border-radius:6px;">Open manager</a>'
+            "</td></tr>"
+        )
+
+    return (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+        f"<title>{escape(title)}</title></head>"
+        '<body style="margin:0;padding:0;background:#f4f6f8;'
+        '-webkit-text-size-adjust:100%;font-family:Arial,Helvetica,sans-serif;">'
+        '<span style="display:none!important;visibility:hidden;opacity:0;color:transparent;'
+        'height:0;width:0;overflow:hidden;">'
+        f"{escape(summary)}</span>"
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        'style="background:#f4f6f8;margin:0;padding:0;">'
+        '<tr><td align="center" style="padding:28px 12px;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        'style="max-width:680px;background:#ffffff;border-collapse:separate;'
+        'border-spacing:0;border-radius:8px;overflow:hidden;'
+        'box-shadow:0 12px 32px rgba(33,37,41,0.12);">'
+        f'<tr><td style="height:5px;background:{style["accent"]};font-size:0;line-height:0;">'
+        "&nbsp;</td></tr>"
+        '<tr><td style="padding:26px 28px 18px 28px;background:#ffffff;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0">'
+        "<tr>"
+        f'<td align="left" style="vertical-align:middle;">{render_logo(logo_cid)}</td>'
+        '<td align="right" style="vertical-align:middle;">'
+        f'<span style="display:inline-block;background:{style["badge_bg"]};'
+        f'color:{style["badge_text"]};border:1px solid {style["accent"]};'
+        'border-radius:999px;padding:7px 12px;font-size:12px;font-weight:700;'
+        'text-transform:uppercase;letter-spacing:0;">'
+        f"{escape(overall_status)}</span>"
+        "</td></tr></table>"
+        '<div style="font-size:13px;color:#6c747c;font-weight:700;text-transform:uppercase;'
+        f'letter-spacing:0;margin-top:24px;">{escape(eyebrow)}</div>'
+        f'<h1 style="margin:8px 0 10px 0;color:#212529;font-size:26px;line-height:1.25;'
+        f'font-weight:700;">{escape(title)}</h1>'
+        f'<p style="margin:0;color:#495057;font-size:15px;line-height:1.6;">{escape(summary)}</p>'
+        "</td></tr>"
+        '<tr><td style="padding:0 28px 24px 28px;background:#ffffff;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        'style="border:1px solid #e9ecef;border-radius:6px;overflow:hidden;">'
+        f"{render_rows(rows)}"
+        "</table></td></tr>"
+        f"{action_html}"
+        '<tr><td style="padding:18px 28px 24px 28px;background:#f8f9fa;'
+        'border-top:1px solid #e9ecef;color:#6c747c;font-size:12px;line-height:1.5;">'
+        "This message was generated automatically by the ESUP-Runner update-stack.sh."
+        "</td></tr>"
+        "</table></td></tr></table></body></html>"
+    )
+
+
+def attach_logo(message: EmailMessage, logo_path: str) -> None:
+    """Attach the ESUP-Runner logo as an inline image when available."""
+    path = Path(logo_path)
+    if not path.is_file():
+        return
+
+    html_part = message.get_body(("html",))
+    if html_part is None:
+        return
+
+    html_part.add_related(
+        path.read_bytes(),
+        maintype="image",
+        subtype="png",
+        cid=f"<{LOGO_CID}>",
+    )
 
 
 smtp_server = os.environ.get("SMTP_SERVER", "").strip()
@@ -1086,6 +1371,19 @@ smtp_sender = os.environ.get("SMTP_SENDER", "").strip()
 manager_email = os.environ.get("MANAGER_EMAIL", "").strip()
 subject = os.environ.get("EMAIL_SUBJECT", "").strip()
 body = os.environ.get("EMAIL_BODY", "")
+overall_status = os.environ.get("EMAIL_OVERALL_STATUS", "").strip()
+updated_components = os.environ.get("EMAIL_UPDATED_COMPONENTS", "").strip()
+manager_version = os.environ.get("EMAIL_MANAGER_VERSION", "").strip()
+runner_version = os.environ.get("EMAIL_RUNNER_VERSION", "").strip()
+git_revision = os.environ.get("EMAIL_GIT_REVISION", "").strip()
+date_value = os.environ.get("EMAIL_DATE", "").strip()
+host = os.environ.get("EMAIL_HOST", "").strip()
+test_status = os.environ.get("EMAIL_TEST_STATUS", "").strip()
+logo_path = os.environ.get("EMAIL_LOGO_PATH", "").strip()
+manager_admin_url = os.environ.get("EMAIL_MANAGER_ADMIN_URL", "").strip()
+report_eyebrow = os.environ.get("EMAIL_REPORT_EYEBROW", "").strip()
+report_title = os.environ.get("EMAIL_REPORT_TITLE", "").strip()
+report_summary = os.environ.get("EMAIL_REPORT_SUMMARY", "").strip()
 
 if not smtp_server or not manager_email:
     print("SMTP_SERVER and MANAGER_EMAIL are required.", file=sys.stderr)
@@ -1102,11 +1400,33 @@ try:
 except ValueError:
     smtp_port = 25
 
+logo_cid = LOGO_CID if logo_path and Path(logo_path).is_file() else None
+html_body = render_html_email(
+    overall_status=display(overall_status, "UNKNOWN"),
+    updated_components=display(updated_components),
+    manager_version=manager_version,
+    runner_version=runner_version,
+    git_revision=display(git_revision, "unknown"),
+    date_value=display(date_value, "unknown"),
+    host=display(host, "unknown-host"),
+    test_status=display(test_status, "SKIPPED"),
+    manager_admin_url=display(manager_admin_url, "unavailable"),
+    eyebrow=display(report_eyebrow, "Stack update report"),
+    title=display(report_title, "ESUP-Runner update completed"),
+    summary=display(
+        report_summary,
+        "The automatic stack update finished and this report summarizes the result.",
+    ),
+    logo_cid=logo_cid,
+)
+
 msg = EmailMessage()
 msg["Subject"] = subject or "[esup-runner] Update completed"
 msg["From"] = smtp_sender
 msg["To"] = manager_email
 msg.set_content(body)
+msg.add_alternative(html_body, subtype="html")
+attach_logo(msg, logo_path)
 
 with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as smtp:
     if smtp_use_tls:
@@ -1184,6 +1504,10 @@ parse_args() {
         RUN_EMAIL=0
         shift
         ;;
+      --send-test-email)
+        SEND_TEST_EMAIL=1
+        shift
+        ;;
       --no-sudo)
         USE_SUDO=0
         shift
@@ -1233,6 +1557,9 @@ validate_inputs() {
       ;;
   esac
 
+  if [[ "${SEND_TEST_EMAIL}" -eq 1 && "${RUN_EMAIL}" -ne 1 ]]; then
+    die "--send-test-email cannot be combined with --skip-email"
+  fi
 }
 
 main() {
@@ -1322,6 +1649,15 @@ main() {
 
   if [[ "${RUN_TEST_WITH_TRANSCRIPTION_TRANSLATION}" -eq 1 ]]; then
     log "Post-update smoke test mode: with --with-transcription-translation."
+  fi
+
+  if [[ "${SEND_TEST_EMAIL}" -eq 1 ]]; then
+    TEST_STATUS="disabled"
+    log "Test email mode: update, restart and smoke-test steps are skipped."
+    print_step_banner "Send test update notification email"
+    send_update_email_if_configured
+    print_update_summary
+    exit "${EXIT_CODE}"
   fi
 
   if [[ "${RUN_UV_UPDATE}" -eq 1 ]]; then

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib
 import signal
+from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import main
@@ -58,3 +60,25 @@ def test_lifespan_adds_protected_openapi_when_private(monkeypatch):
     # Restore visibility and module state for subsequent tests
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", orig_visibility)
     importlib.reload(main)
+
+
+@pytest.mark.asyncio
+async def test_lifespan_stops_background_services_on_shutdown(monkeypatch):
+    """Validate Lifespan stops background services on shutdown."""
+    events: list[str] = []
+
+    async def _start():
+        events.append("start")
+
+    async def _stop():
+        events.append("stop")
+
+    monkeypatch.setattr(main.background_manager, "start_all_services", _start)
+    monkeypatch.setattr(main.background_manager, "stop_all_services", _stop)
+
+    app_stub = SimpleNamespace(state=SimpleNamespace(routers_included=True))
+
+    async with main.lifespan(app_stub):
+        assert events == ["start"]
+
+    assert events == ["start", "stop"]

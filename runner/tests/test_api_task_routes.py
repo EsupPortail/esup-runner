@@ -306,6 +306,77 @@ def test_delete_task_result(tmp_path):
         assert not task_dir.exists()
 
 
+def test_stop_task_running_success(monkeypatch):
+    """Validate stop task marks a running task as user-stopped after killing a process."""
+    from app.api.routes import task as task_module
+
+    state.set_task_status("task-stop", "running")
+    state.set_task_metadata("task-stop", process_pid=1234, process_pgid=1234)
+    monkeypatch.setattr(
+        task_module,
+        "_terminate_running_task_processes",
+        lambda task_id, payload: (True, True),
+    )
+
+    with TestClient(app) as client:
+        resp = client.post("/task/stop/task-stop")
+
+    assert resp.status_code == 202
+    assert resp.json() == {
+        "task_id": "task-stop",
+        "status": "stop_requested",
+        "termination_attempted": True,
+        "terminated_any_process": True,
+    }
+    payload = state.get_task_status("task-stop")
+    assert payload is not None
+    assert payload["status"] == "running"
+    assert payload["stop_requested"] == "true"
+    assert payload["error_message"] == "Cancelled by user."
+
+
+def test_stop_task_already_terminal():
+    """Validate stop task is idempotent for terminal runner-side statuses."""
+    state.set_task_status("task-done", "completed")
+
+    with TestClient(app) as client:
+        resp = client.post("/task/stop/task-done")
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "task_id": "task-done",
+        "status": "already_terminal",
+        "current_status": "completed",
+    }
+
+
+def test_stop_task_unknown_returns_404():
+    """Validate stop task returns 404 for unknown tasks."""
+    with TestClient(app) as client:
+        resp = client.post("/task/stop/missing-task")
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Task not found"
+
+
+def test_stop_task_running_without_killable_process_returns_409(monkeypatch):
+    """Validate stop task reports a conflict when no external process is killable yet."""
+    from app.api.routes import task as task_module
+
+    state.set_task_status("task-no-process", "running")
+    monkeypatch.setattr(
+        task_module,
+        "_terminate_running_task_processes",
+        lambda task_id, payload: (False, False),
+    )
+
+    with TestClient(app) as client:
+        resp = client.post("/task/stop/task-no-process")
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Task is running but no killable external process found yet"
+
+
 @pytest.mark.asyncio
 async def test_process_task_success(monkeypatch):
     """Validate Process task success."""
@@ -389,6 +460,140 @@ async def test_process_task_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_process_task_stop_requested_normalizes_failure(monkeypatch):
+    """Validate process task reports user-stopped failures with a stable message."""
+    from app.api.routes import task as task_module
+    from app.models.models import TaskRequest
+
+    events = {"notified": None, "email": None}
+
+    async def _dispatch(task_id, task_request):
+        state.set_task_metadata(
+            task_id,
+            stop_requested="true",
+            error_message="Cancelled by user.",
+        )
+        return {
+            "success": False,
+            "error": "Encoding process was terminated by SIGKILL (return code -9)",
+            "script_output": {"returncode": -9},
+        }
+
+    async def _notify(url, task_id, status, error_message, script_output=None):
+        events["notified"] = (url, status, error_message, script_output)
+
+    async def _send_email(**kwargs):
+        events["email"] = kwargs
+        return True
+
+    monkeypatch.setattr(task_module.task_dispatcher, "dispatch_task", _dispatch)
+    monkeypatch.setattr(task_module, "notify_completion", _notify)
+    monkeypatch.setattr(task_module, "send_task_failure_email", _send_email)
+
+    req = TaskRequest(
+        task_id="tid-stop",
+        etab_name="UM",
+        app_name="Pod",
+        task_type="encoding",
+        source_url="https://example.org/video.mp4",
+        parameters={},
+        notify_url="http://notify",
+        completion_callback="http://cb",
+    )
+
+    await task_module.process_task("tid-stop", req)
+
+    payload = state.get_task_status("tid-stop")
+    assert payload is not None
+    assert payload["status"] == "failed"
+    assert payload["error_message"] == "Cancelled by user."
+    assert events["notified"][1:3] == ("failed", "Cancelled by user.")
+    assert events["email"]["error_message"] == "Cancelled by user."
+
+
+@pytest.mark.asyncio
+async def test_process_task_clears_stale_stop_marker_on_new_run(monkeypatch):
+    """Validate stale stop metadata from a previous run does not cancel a new run."""
+    from app.api.routes import task as task_module
+    from app.models.models import TaskRequest
+
+    async def _dispatch(task_id, task_request):
+        return {"success": True, "script_output": {"ok": True}}
+
+    monkeypatch.setattr(task_module.task_dispatcher, "dispatch_task", _dispatch)
+
+    state.set_task_status("tid-restarted", "failed", error_message="Cancelled by user.")
+    state.set_task_metadata("tid-restarted", stop_requested="true")
+
+    req = TaskRequest(
+        task_id="tid-restarted",
+        etab_name="UM",
+        app_name="Pod",
+        task_type="encoding",
+        source_url="https://example.org/video.mp4",
+        parameters={},
+        notify_url="http://notify",
+        completion_callback=None,
+    )
+
+    await task_module.process_task("tid-restarted", req)
+
+    payload = state.get_task_status("tid-restarted")
+    assert payload is not None
+    assert payload["status"] == "completed"
+    assert "stop_requested" not in payload
+    assert "error_message" not in payload
+
+
+@pytest.mark.asyncio
+async def test_process_task_success_with_stop_marker_is_normalized_to_failure(monkeypatch):
+    """Validate successful dispatch is converted to cancelled failure when stop was requested."""
+    from app.api.routes import task as task_module
+    from app.models.models import TaskRequest
+
+    events = {"notified": None, "email": None}
+
+    async def _dispatch(task_id, task_request):
+        state.set_task_metadata(
+            task_id,
+            stop_requested="true",
+            error_message="Cancelled by user.",
+        )
+        return {"success": True, "script_output": {"ok": True}}
+
+    async def _notify(url, task_id, status, error_message, script_output=None):
+        events["notified"] = (url, status, error_message, script_output)
+
+    async def _send_email(**kwargs):
+        events["email"] = kwargs
+        return True
+
+    monkeypatch.setattr(task_module.task_dispatcher, "dispatch_task", _dispatch)
+    monkeypatch.setattr(task_module, "notify_completion", _notify)
+    monkeypatch.setattr(task_module, "send_task_failure_email", _send_email)
+
+    req = TaskRequest(
+        task_id="tid-stop-success",
+        etab_name="UM",
+        app_name="Pod",
+        task_type="encoding",
+        source_url="https://example.org/video.mp4",
+        parameters={},
+        notify_url="http://notify",
+        completion_callback="http://cb",
+    )
+
+    await task_module.process_task("tid-stop-success", req)
+
+    payload = state.get_task_status("tid-stop-success")
+    assert payload is not None
+    assert payload["status"] == "failed"
+    assert payload["error_message"] == "Cancelled by user."
+    assert events["notified"][1:3] == ("failed", "Cancelled by user.")
+    assert events["email"]["error_message"] == "Cancelled by user."
+
+
+@pytest.mark.asyncio
 async def test_process_task_exception(monkeypatch):
     """Validate Process task exception."""
     from app.api.routes import task as task_module
@@ -429,6 +634,67 @@ async def test_process_task_exception(monkeypatch):
 
     assert events["avail"] == [False, True]
     assert events["email"]["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_process_task_exception_uses_cancelled_error_when_stop_requested(monkeypatch):
+    """Validate exception path is normalized to cancelled error when stop marker exists."""
+    from app.api.routes import task as task_module
+    from app.models.models import TaskRequest
+
+    events = {"email": None}
+
+    async def _dispatch(task_id, task_request):
+        state.set_task_metadata(
+            task_id,
+            stop_requested="true",
+            error_message="Cancelled by user.",
+        )
+        raise RuntimeError("boom")
+
+    async def _send_email(**kwargs):
+        events["email"] = kwargs
+        return True
+
+    monkeypatch.setattr(task_module.task_dispatcher, "dispatch_task", _dispatch)
+    monkeypatch.setattr(task_module, "send_task_failure_email", _send_email)
+
+    req = TaskRequest(
+        task_id="tid-exc-stop",
+        etab_name="UM",
+        app_name="Pod",
+        task_type="encoding",
+        source_url="https://example.org/video.mp4",
+        parameters={},
+        notify_url="http://notify",
+        completion_callback=None,
+    )
+
+    await task_module.process_task("tid-exc-stop", req)
+
+    payload = state.get_task_status("tid-exc-stop")
+    assert payload is not None
+    assert payload["status"] == "failed"
+    assert payload["error_message"] == "Cancelled by user."
+    assert events["email"]["error_message"] == "Cancelled by user."
+
+
+def test_stop_task_returns_500_on_internal_error(monkeypatch):
+    """Validate stop task maps unexpected internal errors to HTTP 500."""
+    from app.api.routes import task as task_module
+
+    state.set_task_status("task-stop-500", "running")
+
+    def _raise_internal(_task_id, _payload):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(task_module, "_terminate_running_task_processes", _raise_internal)
+
+    with TestClient(app) as client:
+        resp = client.post("/task/stop/task-stop-500")
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Internal stop error"
 
 
 @pytest.mark.asyncio

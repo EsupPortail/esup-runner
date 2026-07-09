@@ -44,17 +44,17 @@
   <main class="card border-0 shadow-sm mb-4">
     <div class="card-body">
       <!-- Runner header -->
-      <div class="task-header {% if runner.status == 'online' %}border-success {% else %}border-danger{% endif %}">
+      <div class="task-header {% if runner_status == 'online' %}border-success {% else %}border-danger{% endif %}">
         <div class="row align-items-center">
           <div class="col-md-8">
             <h2 class="h4 mb-2">Runner #{{ runner.id }}</h2>
             <p class="text-subtle mb-0">
-              Last heartbeat: {{ runner.last_heartbeat }}
+              Last heartbeat: {{ runner_last_heartbeat }} ({{ runner_age_seconds }} s)
             </p>
           </div>
           <div class="col-md-4 text-md-end">
-            <span class="badge task-status-badge {% if runner.status == 'online' %}bg-success{% else %}bg-danger{% endif %}">
-              {{ runner.status | upper }}
+            <span class="badge task-status-badge {% if runner_status == 'online' %}bg-success{% else %}bg-danger{% endif %}">
+              {{ runner_status | upper }}
             </span>
           </div>
         </div>
@@ -118,8 +118,8 @@
           </div>
           <div class="metadata-item">
             <span class="metadata-label">Status:</span>
-            <span class="badge {% if runner.status == 'online' %}bg-success{% else %}bg-danger{% endif %}">
-              {{ runner.status }}
+            <span class="badge {% if runner_status == 'online' %}bg-success{% else %}bg-danger{% endif %}">
+              {{ runner_status }}
             </span>
           </div>
           <div class="metadata-item">
@@ -130,7 +130,7 @@
           </div>
           <div class="metadata-item">
             <span class="metadata-label">Token:</span>
-            <span class="text-subtle">{{ runner.token }}</span>
+            <span class="text-subtle">{{ runner_token_preview }}</span>
           </div>
         </div>
       </div>

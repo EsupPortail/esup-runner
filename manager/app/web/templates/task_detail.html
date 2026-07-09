@@ -36,6 +36,16 @@
               Refresh
             </button>
             <button
+              id="stopTaskBtn"
+              type="button"
+              class="btn btn-outline-warning"
+              data-task-id="{{ task.task_id }}"
+              data-task-action="stop"
+              {% if not task_actions.can_stop %}disabled aria-disabled="true" title="{{ task_actions.stop_disabled_reason }}"{% endif %}>
+              <i class="bi bi-stop-circle" aria-hidden="true"></i>
+              Stop
+            </button>
+            <button
               id="restartTaskBtn"
               type="button"
               class="btn btn-outline-primary"
@@ -56,17 +66,19 @@
               Delete
             </button>
           </div>
-          {% if not task_actions.can_delete or not task_actions.can_restart %}
-            <small class="d-block mt-2 text-subtle">
-              {% if not task_actions.can_delete and not task_actions.can_restart %}
-                This {{ task.status }} task cannot be deleted or restarted.
-              {% elif not task_actions.can_delete %}
-                {{ task_actions.delete_disabled_reason }}.
-              {% else %}
-                {{ task_actions.restart_disabled_reason }}.
-              {% endif %}
-            </small>
-          {% endif %}
+          <small class="d-block mt-2 text-subtle fst-italic">
+            {% if task_actions.can_stop %}
+              This {{ task.status }} task can be stopped, but cannot be deleted or restarted.
+            {% elif task_actions.can_delete and task_actions.can_restart %}
+              This {{ task.status }} task can be deleted or restarted.
+            {% elif task_actions.can_delete %}
+              This {{ task.status }} task can be deleted.
+            {% elif task_actions.can_restart %}
+              This {{ task.status }} task can be restarted.
+            {% else %}
+              This {{ task.status }} task cannot be stopped, deleted, or restarted.
+            {% endif %}
+          </small>
         </div>
       </div>
       <div id="taskActionFeedback" class="alert mt-3 mb-0 d-none" role="alert"></div>
@@ -249,6 +261,7 @@
 
   <script>
     const taskActionFeedback = document.getElementById('taskActionFeedback');
+    const stopTaskBtn = document.getElementById('stopTaskBtn');
     const deleteTaskBtn = document.getElementById('deleteTaskBtn');
     const restartTaskBtn = document.getElementById('restartTaskBtn');
 
@@ -262,7 +275,7 @@
     }
 
     function setTaskActionButtonsDisabled(disabled) {
-      [deleteTaskBtn, restartTaskBtn].forEach(button => {
+      [stopTaskBtn, deleteTaskBtn, restartTaskBtn].forEach(button => {
         if (button && !button.hasAttribute('aria-disabled')) {
           button.disabled = disabled;
         }
@@ -325,6 +338,23 @@
         button.innerHTML = initialButtonHtml;
         setTaskActionButtonsDisabled(false);
       }
+    }
+
+    if (stopTaskBtn) {
+      stopTaskBtn.addEventListener('click', () => {
+        runTaskDetailAction(stopTaskBtn, {
+          endpoint: '/tasks/stop-selected',
+          successKey: 'stopped',
+          confirmMessage: 'Stop this running task?',
+          progressLabel: 'Stopping…',
+          progressMessage: 'Stop request in progress…',
+          doneLabel: 'Stop requested',
+          successText: 'requested',
+          failureMessage: 'Failed to stop task',
+          errorLabel: 'Stop failed',
+          redirectUrl: `/admin/task/${encodeURIComponent(stopTaskBtn.dataset.taskId || '')}`,
+        });
+      });
     }
 
     if (deleteTaskBtn) {

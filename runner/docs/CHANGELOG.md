@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a manager-authenticated `POST /task/stop/{task_id}` endpoint that requests termination of running task processes by persisted PGID/PID, with a workspace process scan fallback.
+- Added branded multipart HTML task failure emails, with plain-text fallback and embedded ESUP-Runner logo.
+- Added `update-stack.sh --send-test-email` to send a preview of the update notification email without running update, restart, or smoke-test steps.
+
+### Changed
+
+- User-stopped tasks now finish through the existing completion flow as `failed` with the normalized `Cancelled by user.` message, clear stale stop markers on new runs, and skip automatic recovery restarts.
+- Improved `update-stack.sh` update emails with the branded HTML template.
+
 ### Fixed
 
 - Fixed encoding audio derivatives for cut videos so generated MP3/M4A files use the same `-ss`/`-to` window as video renditions, keeping downstream transcription subtitles aligned with the trimmed media.

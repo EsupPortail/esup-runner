@@ -47,6 +47,31 @@ The runner then sends updated task status back to the manager.
 During this startup reconciliation window, runner availability is kept `false`
 to avoid accepting new work too early.
 
+## Stopping a running task
+
+The manager can request cancellation of a task that is still tracked as
+`running` on a runner instance.
+
+```bash
+RUNNER_URL="http://127.0.0.1:<RUNNER_PORT>"
+TASK_ID="some-task-id"
+
+curl -sS -X POST \
+  -H "Authorization: Bearer ${RUNNER_TOKEN}" \
+  "${RUNNER_URL}/task/stop/${TASK_ID}"
+```
+
+Expected responses:
+
+- `202`: stop was requested and at least one external process was terminated
+- `200`: the task is already terminal on the runner (`completed`, `failed`, or `timeout`)
+- `404`: the runner does not know this task id
+- `409`: the task is marked as running, but no killable external process was found yet
+
+After a successful stop request, the task completes through the normal failure
+flow with the stable error message `Cancelled by user.`. User-stopped tasks are
+not automatically restarted by startup recovery.
+
 ### Quick operator check
 
 After a restart, verify only these points:

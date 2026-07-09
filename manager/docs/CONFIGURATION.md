@@ -28,7 +28,7 @@ Behavior:
 - `MANAGER_BIND_HOST` controls the socket bind interface.
   - If unset and `MANAGER_HOST` is an IP (`127.0.0.1`, `10.x.x.x`, `::1`, etc.), manager binds on that IP.
   - If unset and `MANAGER_HOST` is a DNS hostname, manager binds on `0.0.0.0` for reliability.
-- `CLEANUP_TASK_FILES_DAYS` controls cleanup retention for all task files (all statuses).
+- `CLEANUP_TASK_FILES_DAYS` controls cleanup retention for all task files (all statuses). Set `0` to disable age-based cleanup.
 - `UVICORN_WORKERS` is used in production process setups (Gunicorn/Uvicorn workers).
 
 ## Authentication

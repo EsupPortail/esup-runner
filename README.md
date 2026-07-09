@@ -46,6 +46,10 @@ Each project has its own `pyproject.toml`, documentation, release process, etc.
 - Changelog: [runner/docs/CHANGELOG.md](runner/docs/CHANGELOG.md)
 - Versioning: [runner/docs/VERSION_MANAGEMENT.md](runner/docs/VERSION_MANAGEMENT.md)
 
+### Repository
+
+- Release automation: [RELEASE.md](RELEASE.md)
+
 ## License
 
 This repository is licensed under the GPL-3.0 license. See [LICENSE](LICENSE).

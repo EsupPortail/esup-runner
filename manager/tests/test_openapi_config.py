@@ -35,6 +35,7 @@ def test_assign_tags_to_endpoints_by_path_patterns():
             "/health": {"get": {}},
             "/runner/register": {"post": {}},
             "/task/execute": {"post": {}},
+            "/task/stop/{task_id}": {"post": {}},
             "/auth/token": {"post": {}},
             "/other": {"get": {}},
         }
@@ -46,6 +47,7 @@ def test_assign_tags_to_endpoints_by_path_patterns():
     assert schema["paths"]["/health"]["get"]["tags"] == ["Health"]
     assert schema["paths"]["/runner/register"]["post"]["tags"] == ["Runner"]
     assert schema["paths"]["/task/execute"]["post"]["tags"] == ["Task"]
+    assert schema["paths"]["/task/stop/{task_id}"]["post"]["tags"] == ["Task"]
     assert schema["paths"]["/auth/token"]["post"]["tags"] == ["Authentication"]
     assert schema["paths"]["/other"]["get"]["tags"] == ["API"]
 

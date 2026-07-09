@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added admin stop controls for running tasks on the task detail page and task list, including bulk stop requests and action availability messages.
 - Added branded multipart HTML email notifications, with plain-text fallback and embedded ESUP-Runner logo, for manager-side notify callback warnings.
 - Added `update-stack.sh --send-test-email` to send a preview of the update notification email without running update, restart, or smoke-test steps.
+- Added live runner disk-usage monitoring on the admin runner detail page, showing df-like total, used, free, usage percentage, and status icons for runner storage/cache directories.
 
 ### Changed
 

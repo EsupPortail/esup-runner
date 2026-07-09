@@ -7,11 +7,13 @@ Reads data/task_stats.csv and renders statistics page.
 import csv
 from collections import Counter
 from datetime import date, datetime
+from io import StringIO
 from pathlib import Path
 from typing import Dict, List
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.__version__ import __version__
@@ -24,6 +26,16 @@ router = APIRouter(prefix="/statistics", tags=["Statistics"], dependencies=[Depe
 
 templates = Jinja2Templates(directory="app/web/templates")
 
+_TASK_STATS_DEFAULT_FIELDNAMES = [
+    "task_id",
+    "date",
+    "task_type",
+    "status",
+    "app_name",
+    "app_version",
+    "etab_name",
+]
+
 
 def _task_stats_csv_path() -> Path:
     """Return the canonical path of the statistics CSV file."""
@@ -32,15 +44,21 @@ def _task_stats_csv_path() -> Path:
 
 def _load_task_stats_csv(csv_path: Path) -> List[Dict[str, str]]:
     """Load CSV task-stat rows, or return an empty list if unavailable."""
+    rows, _fieldnames = _load_task_stats_csv_with_fieldnames(csv_path)
+    return rows
+
+
+def _load_task_stats_csv_with_fieldnames(csv_path: Path) -> tuple[List[Dict[str, str]], List[str]]:
+    """Load CSV task-stat rows and field names, or return empty values if unavailable."""
     if not csv_path.exists():
-        return []
+        return [], []
     try:
         with csv_path.open("r", encoding="utf-8") as file:
             reader = csv.DictReader(file)
-            return [row for row in reader]
+            return [row for row in reader], list(reader.fieldnames or [])
     except Exception as exc:
         logger.error(f"Failed to read task stats CSV: {exc}")
-        return []
+        return [], []
 
 
 def _sorted_counter(counter: Counter) -> List[Dict[str, int]]:
@@ -96,6 +114,62 @@ def _filter_rows_by_date_range(
     return filtered_rows
 
 
+def _normalize_date_range(
+    start_date: date | None, end_date: date | None
+) -> tuple[date | None, date | None]:
+    """Return a normalized inclusive date range."""
+    ordered_filter_dates = sorted(value for value in (start_date, end_date) if value is not None)
+    if len(ordered_filter_dates) != 2:
+        return start_date, end_date
+    return ordered_filter_dates[0], ordered_filter_dates[1]
+
+
+def _build_filtered_csv_url(
+    request: Request,
+    start_date: date | None,
+    end_date: date | None,
+) -> str:
+    """Return the CSV download URL, preserving active date filters."""
+    base_url = str(request.url_for("download_task_stats_csv"))
+    params: Dict[str, str] = {}
+    if start_date is not None:
+        params["start_date"] = start_date.isoformat()
+    if end_date is not None:
+        params["end_date"] = end_date.isoformat()
+    if not params:
+        return base_url
+    return f"{base_url}?{urlencode(params)}"
+
+
+def _csv_rows_to_text(rows: List[Dict[str, str]], fieldnames: List[str]) -> str:
+    """Render task-stat rows to CSV text."""
+    output = StringIO()
+    effective_fieldnames = fieldnames or _TASK_STATS_DEFAULT_FIELDNAMES
+    writer = csv.DictWriter(
+        output,
+        fieldnames=effective_fieldnames,
+        extrasaction="ignore",
+        lineterminator="\n",
+    )
+    writer.writeheader()
+    writer.writerows(rows)
+    return output.getvalue()
+
+
+def _download_filename(
+    download_date: str,
+    start_date: date | None,
+    end_date: date | None,
+) -> str:
+    """Return a clear download filename for raw or filtered CSV exports."""
+    parts = [download_date]
+    if start_date is not None:
+        parts.append(f"from_{start_date.isoformat().replace('-', '')}")
+    if end_date is not None:
+        parts.append(f"to_{end_date.isoformat().replace('-', '')}")
+    return f"task_stats_{'_'.join(parts)}.csv"
+
+
 @router.get("", include_in_schema=False)
 async def statistics_dashboard(
     request: Request,
@@ -110,13 +184,7 @@ async def statistics_dashboard(
     rows = _load_task_stats_csv(csv_path)
     available_start_date, available_end_date = _available_date_bounds(rows)
 
-    ordered_filter_dates = sorted(
-        value for value in (start_date_value, end_date_value) if value is not None
-    )
-    start_date_value = (
-        ordered_filter_dates[0] if len(ordered_filter_dates) == 2 else start_date_value
-    )
-    end_date_value = ordered_filter_dates[1] if len(ordered_filter_dates) == 2 else end_date_value
+    start_date_value, end_date_value = _normalize_date_range(start_date_value, end_date_value)
 
     filtered_rows = _filter_rows_by_date_range(rows, start_date_value, end_date_value)
     total_tasks = len(filtered_rows)
@@ -174,21 +242,47 @@ async def statistics_dashboard(
             "dark_mode_enabled": dark_mode,
             "csv_path": str(csv_path),
             "statistics_url": request.url_for("statistics_dashboard"),
-            "download_csv_url": request.url_for("download_task_stats_csv"),
+            "download_csv_url": _build_filtered_csv_url(
+                request,
+                start_date_value,
+                end_date_value,
+            ),
+            "download_csv_label": (
+                "Download filtered CSV"
+                if start_date_value is not None or end_date_value is not None
+                else "Download CSV"
+            ),
         },
     )
 
 
 @router.get("/task-stats.csv", include_in_schema=False)
-async def download_task_stats_csv():
+async def download_task_stats_csv(
+    start_date: str | None = Query(default=None),
+    end_date: str | None = Query(default=None),
+):
     """Download the raw task statistics CSV file."""
     csv_path = _task_stats_csv_path()
     if not csv_path.exists() or not csv_path.is_file():
         raise HTTPException(status_code=404, detail="Task stats CSV not found")
 
+    start_date_value, end_date_value = _normalize_date_range(
+        _parse_iso_date(start_date),
+        _parse_iso_date(end_date),
+    )
     download_date = datetime.now().strftime("%Y%m%d")
+    if start_date_value is not None or end_date_value is not None:
+        rows, fieldnames = _load_task_stats_csv_with_fieldnames(csv_path)
+        filtered_rows = _filter_rows_by_date_range(rows, start_date_value, end_date_value)
+        filename = _download_filename(download_date, start_date_value, end_date_value)
+        return Response(
+            content=_csv_rows_to_text(filtered_rows, fieldnames),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     return FileResponse(
         path=str(csv_path),
         media_type="text/csv",
-        filename=f"task_stats_{download_date}.csv",
+        filename=_download_filename(download_date, None, None),
     )

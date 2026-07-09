@@ -71,24 +71,6 @@ def get_online_runners() -> List[Dict]:
     return online_runners
 
 
-def verify_runner_tokenINUTILE(runner_id: str, token: str) -> bool:
-    """
-    Verify that a token is valid for a specific runner.
-
-    Args:
-        runner_id: Unique identifier of the runner
-        token: Authentication token to verify
-
-    Returns:
-        bool: True if token is valid for the runner, False otherwise
-    """
-    if runner_id not in runners:
-        return False
-    runner = runners[runner_id]
-    is_valid: bool = runner.token == token
-    return is_valid
-
-
 def update_runner_heartbeat(runner_id: str) -> bool:
     """
     Update the heartbeat timestamp for a runner.

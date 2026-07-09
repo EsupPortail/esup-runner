@@ -37,7 +37,7 @@ _TERMINAL_TASK_STATUSES = {"completed", "failed", "timeout"}
 _ALLOWED_TASK_STATUSES = {"running", *_TERMINAL_TASK_STATUSES}
 _RUNNER_STATE_LOCK = threading.RLock()
 _RECOVERABLE_TASK_STATUSES = {"running", "failed", "timeout"}
-_PERSISTED_STRING_FIELDS = ("runner_id", "completion_callback", "error_message")
+_PERSISTED_STRING_FIELDS = ("runner_id", "completion_callback", "error_message", "stop_requested")
 _PERSISTED_POSITIVE_INT_FIELDS = ("process_pid", "process_pgid")
 
 

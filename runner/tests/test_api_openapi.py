@@ -21,6 +21,16 @@ def test_custom_openapi_includes_logo_and_tags():
     assert {"Storage", "Task"}.issubset(tag_names)
 
 
+def test_app_openapi_includes_task_stop_route():
+    """Validate runner app OpenAPI exposes the task stop endpoint."""
+    from app.main import app as runner_app
+
+    schema = runner_app.openapi()
+
+    assert "/task/stop/{task_id}" in schema["paths"]
+    assert "post" in schema["paths"]["/task/stop/{task_id}"]
+
+
 @pytest.mark.asyncio
 async def test_custom_openapi_cached_schema():
     """Validate Custom openapi cached schema."""

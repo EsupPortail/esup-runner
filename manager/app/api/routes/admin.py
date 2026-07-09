@@ -16,7 +16,11 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.__version__ import __version__
-from app.api.routes.task import _NON_DELETABLE_TASK_STATUSES, _NON_RESTARTABLE_TASK_STATUSES
+from app.api.routes.task import (
+    _NON_DELETABLE_TASK_STATUSES,
+    _NON_RESTARTABLE_TASK_STATUSES,
+    _STOPPABLE_TASK_STATUSES,
+)
 from app.core import config as config_module
 from app.core.auth import OPENAPI_TOKEN_COOKIE_NAME, build_openapi_cookie_value, verify_admin
 from app.core.config import config
@@ -161,15 +165,20 @@ def _build_task_detail_actions(task: Any) -> dict[str, Any]:
     status_value = str(getattr(task, "status", "") or "").lower()
     can_delete = status_value not in _NON_DELETABLE_TASK_STATUSES
     can_restart = status_value not in _NON_RESTARTABLE_TASK_STATUSES
+    can_stop = status_value in _STOPPABLE_TASK_STATUSES
 
     return {
         "can_delete": can_delete,
         "can_restart": can_restart,
+        "can_stop": can_stop,
         "delete_disabled_reason": (
             "" if can_delete else f"Task status '{status_value}' cannot be deleted"
         ),
         "restart_disabled_reason": (
             "" if can_restart else f"Task status '{status_value}' cannot be restarted"
+        ),
+        "stop_disabled_reason": (
+            "" if can_stop else f"Task status '{status_value}' cannot be stopped"
         ),
     }
 
@@ -490,6 +499,7 @@ async def admin_tasks(request: Request) -> Any:
     description="Toggle light/dark theme",
 )
 def toggle_theme(request: Request):
+    """Toggle the admin UI theme cookie and redirect to the dashboard."""
     current = request.cookies.get("theme")
     new_theme = "light" if current == "dark" else "dark"
     resp = RedirectResponse(url="/admin", status_code=303)

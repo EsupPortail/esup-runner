@@ -10,6 +10,7 @@ from datetime import datetime
 from fastapi import APIRouter
 
 from app.core.config import config
+from app.core.disk_usage import collect_disk_usage
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_runner_id, get_runner_instance_id, is_available, is_registered
 from app.managers.storage_manager import storage_manager
@@ -103,4 +104,5 @@ async def status() -> dict:
         "storage_stats": (
             storage_manager.get_usage_stats() if hasattr(storage_manager, "get_usage_stats") else {}
         ),
+        "disk_usage": collect_disk_usage(config),
     }

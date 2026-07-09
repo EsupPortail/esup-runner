@@ -242,6 +242,191 @@ def test_admin_task_detail_actions_respect_api_constraints():
     }
 
 
+def test_runner_status_headers_include_runner_token():
+    """Validate runner status headers include runner token when present."""
+    assert admin_routes._runner_status_headers(SimpleNamespace(token="runner-token")) == {
+        "X-API-Token": "runner-token"
+    }
+    assert admin_routes._runner_status_headers(SimpleNamespace(token="")) == {}
+
+
+@pytest.mark.asyncio
+async def test_fetch_runner_live_status_success(monkeypatch):
+    """Validate live runner status fetch returns disk usage."""
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"disk_usage": {"ok": True}}
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            captured["timeout"] = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, *, headers):
+            captured["url"] = url
+            captured["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr(admin_routes.httpx, "AsyncClient", FakeAsyncClient)
+
+    payload = await admin_routes._fetch_runner_live_status(
+        SimpleNamespace(url="http://runner.example/", token="runner-token")
+    )
+
+    assert payload["available"] is True
+    assert payload["disk_usage"] == {"ok": True}
+    assert captured["url"] == "http://runner.example/runner/status"
+    assert captured["headers"] == {"X-API-Token": "runner-token"}
+
+
+@pytest.mark.asyncio
+async def test_fetch_runner_live_status_handles_request_error(monkeypatch):
+    """Validate live runner status fetch handles request errors."""
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            raise admin_routes.httpx.RequestError("boom")
+
+    monkeypatch.setattr(admin_routes.httpx, "AsyncClient", FakeAsyncClient)
+
+    payload = await admin_routes._fetch_runner_live_status(
+        SimpleNamespace(url="http://runner.example", token="runner-token")
+    )
+
+    assert payload == {
+        "available": False,
+        "url": "http://runner.example/runner/status",
+        "error": "Runner status request failed.",
+        "disk_usage": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_fetch_runner_live_status_handles_non_200(monkeypatch):
+    """Validate live runner status fetch handles non-200 responses."""
+
+    class FakeResponse:
+        status_code = 503
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(admin_routes.httpx, "AsyncClient", FakeAsyncClient)
+
+    payload = await admin_routes._fetch_runner_live_status(
+        SimpleNamespace(url="http://runner.example", token="runner-token")
+    )
+
+    assert payload == {
+        "available": False,
+        "url": "http://runner.example/runner/status",
+        "error": "Runner status returned HTTP 503.",
+        "disk_usage": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_fetch_runner_live_status_handles_invalid_json(monkeypatch):
+    """Validate live runner status fetch handles invalid JSON."""
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            raise ValueError("bad json")
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(admin_routes.httpx, "AsyncClient", FakeAsyncClient)
+
+    payload = await admin_routes._fetch_runner_live_status(
+        SimpleNamespace(url="http://runner.example", token="runner-token")
+    )
+
+    assert payload == {
+        "available": False,
+        "url": "http://runner.example/runner/status",
+        "error": "Runner status returned invalid JSON.",
+        "disk_usage": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_fetch_runner_live_status_handles_non_object_payload(monkeypatch):
+    """Validate live runner status fetch handles unexpected payloads."""
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return []
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(admin_routes.httpx, "AsyncClient", FakeAsyncClient)
+
+    payload = await admin_routes._fetch_runner_live_status(
+        SimpleNamespace(url="http://runner.example", token="runner-token")
+    )
+
+    assert payload == {
+        "available": False,
+        "url": "http://runner.example/runner/status",
+        "error": "Runner status returned an unexpected payload.",
+        "disk_usage": None,
+    }
+
+
 def test_task_detail_template_renders_delete_and_restart_actions():
     """Validate task detail template renders task actions without TestClient."""
     html = _render_task_detail_template("failed")
@@ -523,13 +708,43 @@ def test_runner_detail_not_found(admin_client, clean_state):
     assert resp.status_code == 404
 
 
-def test_runner_detail_ok(admin_client, clean_state):
+def test_runner_detail_ok(admin_client, clean_state, monkeypatch):
     """Validate Runner detail ok."""
     runners["r1"] = _make_runner("r1")
+
+    async def _fake_runner_live_status(_runner):
+        return {
+            "available": True,
+            "url": "http://r1.example/runner/status",
+            "error": "",
+            "disk_usage": {
+                "ok": True,
+                "status": "orange",
+                "checked_at": "2026-01-01T00:00:00",
+                "output_dir_pattern": "/tmp/esup-runner/<task_id>/output",
+                "directories": {
+                    "STORAGE_DIR": {
+                        "path": "/tmp/esup-runner",
+                        "description": "Runner storage and task output root",
+                        "total_human": "100.0G",
+                        "used_human": "76.0G",
+                        "free_human": "24.0G",
+                        "used_percent_display": "76.0%",
+                        "status": "orange",
+                    }
+                },
+            },
+        }
+
+    monkeypatch.setattr(admin_routes, "_fetch_runner_live_status", _fake_runner_live_status)
 
     resp = admin_client.get("/admin/runner/r1")
     assert resp.status_code == 200
     assert "r1" in resp.text
+    assert "Disk Usage" in resp.text
+    assert "76.0%" in resp.text
+    assert "bi-exclamation-triangle-fill" in resp.text
+    assert "Storage usage is elevated" in resp.text
 
 
 def test_admin_tasks_page_renders(admin_client, clean_state):

@@ -41,13 +41,21 @@ def test_runner_health_and_ping(monkeypatch):
 
 def test_runner_status_uses_storage_stats(monkeypatch):
     fake_stats = {"total_size": 10, "file_count": 1, "available_space": 100}
+    fake_disk_usage = {
+        "ok": True,
+        "status": "green",
+        "output_dir_pattern": "/tmp/esup-runner/<task_id>/output",
+        "directories": {"STORAGE_DIR": {"free_human": "42.0G", "status": "green"}},
+    }
 
     from app.api.routes import runner as runner_module
 
     monkeypatch.setattr(runner_module.storage_manager, "get_usage_stats", lambda: fake_stats)
+    monkeypatch.setattr(runner_module, "collect_disk_usage", lambda _cfg: fake_disk_usage)
 
     with TestClient(app) as client:
         resp = client.get("/runner/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["storage_stats"] == fake_stats
+        assert data["disk_usage"] == fake_disk_usage

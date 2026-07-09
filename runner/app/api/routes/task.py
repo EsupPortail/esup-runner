@@ -15,7 +15,7 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.auth import get_current_manager
 from app.core.config import config
@@ -48,6 +48,8 @@ _RECOVERY_MONITOR_INTERVAL_SECONDS = 10
 _MAX_RECOVERY_LOG_CHARS = 100000
 _RECOVERY_AUTO_RESTART_MAX_ATTEMPTS = 1
 _RECOVERY_MONITORS: dict[str, asyncio.Task] = {}
+_STOP_REQUESTED_METADATA_VALUE = "true"
+_CANCELLED_BY_USER_ERROR = "Cancelled by user."
 
 # ======================================================
 # Utility Functions
@@ -417,6 +419,50 @@ def _terminate_stale_task_processes(task_id: str, payload: dict) -> bool:
     return terminated
 
 
+def _is_stop_requested_payload(payload: dict | None) -> bool:
+    """Return True when a task payload carries a user stop marker."""
+    if not isinstance(payload, dict):
+        return False
+
+    marker = str(payload.get("stop_requested") or "").strip().lower()
+    if marker in {"1", "true", "yes"}:
+        return True
+
+    error_message = str(payload.get("error_message") or "").strip()
+    return error_message == _CANCELLED_BY_USER_ERROR
+
+
+def _is_task_stop_requested(task_id: str) -> bool:
+    """Return True when the tracked task has been stopped by a user."""
+    return _is_stop_requested_payload(get_task_status(task_id))
+
+
+def _terminate_running_task_processes(task_id: str, payload: dict) -> tuple[bool, bool]:
+    """Try to terminate external processes for one running task."""
+    termination_attempted = False
+    terminated_any_process = False
+
+    pgid = _parse_process_pgid(payload)
+    if pgid is not None:
+        termination_attempted = True
+        terminated_any_process = _terminate_process_group(pgid) or terminated_any_process
+
+    pid = _parse_process_pid(payload)
+    if pid is not None:
+        termination_attempted = True
+        if _is_process_alive(pid):
+            terminated_any_process = _terminate_process_pid(pid) or terminated_any_process
+
+    matched_pids = _find_task_process_pids(task_id)
+    if matched_pids:
+        termination_attempted = True
+        terminated_any_process = (
+            _terminate_stale_task_processes(task_id, payload) or terminated_any_process
+        )
+
+    return termination_attempted, terminated_any_process
+
+
 def _collect_recovery_script_output(task_id: str, payload: dict) -> Optional[str]:
     """Collect script stdout/stderr logs for recovery diagnostics."""
     candidate_paths: list[Path] = []
@@ -716,6 +762,7 @@ def _schedule_failed_task_restart(task_id: str, payload: dict) -> bool:
         task_request=task_request.model_dump(mode="json"),
         recovery_restart_attempts=restart_attempts + 1,
         error_message=None,
+        stop_requested=None,
     )
     set_task_status(task_id, "running")
     asyncio.create_task(process_task(task_id, task_request))
@@ -854,6 +901,10 @@ async def _recover_owned_running_tasks(running_tasks: dict[str, dict]) -> None:
 
 async def _recover_failed_task(task_id: str, payload: dict) -> bool:
     """Recover one failed task. Returns True when a restart is scheduled."""
+    if _is_stop_requested_payload(payload):
+        logger.info("Skipping automatic restart for user-stopped task %s", task_id)
+        return False
+
     workspace_terminal_status = _infer_workspace_terminal_status(task_id, payload)
     if workspace_terminal_status is not None:
         status, _error_message, script_output = workspace_terminal_status
@@ -935,6 +986,8 @@ async def process_task(task_id: str, task_request: TaskRequest):
             runner_id=get_runner_id(),
             completion_callback=completion_callback,
             task_request=task_request.model_dump(mode="json"),
+            error_message=None,
+            stop_requested=None,
         )
 
         # Mark runner as busy
@@ -947,6 +1000,11 @@ async def process_task(task_id: str, task_request: TaskRequest):
 
         # Dispatch task to appropriate handler
         results = await task_dispatcher.dispatch_task(task_id=task_id, task_request=task_request)
+
+        if results.get("success") and _is_task_stop_requested(task_id):
+            results = dict(results)
+            results["success"] = False
+            results["error"] = _CANCELLED_BY_USER_ERROR
 
         # Notify manager of task completion if callback provided
         if results.get("success"):
@@ -963,6 +1021,8 @@ async def process_task(task_id: str, task_request: TaskRequest):
                 )
         else:
             error_msg = results.get("error", "Unknown error")
+            if _is_task_stop_requested(task_id):
+                error_msg = _CANCELLED_BY_USER_ERROR
             failure_status = _derive_failure_status(error_msg)
             # Detailed error from script output if available
             script_output_text = _normalize_script_output(results.get("script_output"))
@@ -992,6 +1052,8 @@ async def process_task(task_id: str, task_request: TaskRequest):
 
     except Exception as e:
         error_msg = str(e)
+        if _is_task_stop_requested(task_id):
+            error_msg = _CANCELLED_BY_USER_ERROR
         failure_status = _derive_failure_status(error_msg)
         set_task_status(task_id, failure_status, error_message=error_msg)
         logger.error(f"Error processing task {task_id}: {error_msg}")
@@ -1261,6 +1323,60 @@ async def delete_task_result(task_id: str, current_manager: str = Depends(get_cu
 
 
 @router.post(
+    "/stop/{task_id}",
+    response_model=dict,
+    summary="Stop a running task",
+    description="Request termination of the external process for a running task",
+    tags=["Task"],
+)
+async def stop_task(task_id: str, current_manager: str = Depends(get_current_manager)):
+    """Request external process termination for a running task."""
+    safe_task_id = (task_id or "").strip()
+    try:
+        payload = get_task_status(safe_task_id)
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        current_status = str(payload.get("status") or "").strip().lower()
+        if current_status != "running":
+            return {
+                "task_id": safe_task_id,
+                "status": "already_terminal",
+                "current_status": current_status or "unknown",
+            }
+
+        termination_attempted, terminated_any_process = _terminate_running_task_processes(
+            safe_task_id, payload
+        )
+        if not terminated_any_process:
+            raise HTTPException(
+                status_code=409,
+                detail="Task is running but no killable external process found yet",
+            )
+
+        set_task_metadata(
+            safe_task_id,
+            stop_requested=_STOP_REQUESTED_METADATA_VALUE,
+            error_message=_CANCELLED_BY_USER_ERROR,
+        )
+        logger.warning("Stop requested for running task %s", safe_task_id)
+        return JSONResponse(
+            status_code=202,
+            content={
+                "task_id": safe_task_id,
+                "status": "stop_requested",
+                "termination_attempted": termination_attempted,
+                "terminated_any_process": terminated_any_process,
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Internal stop error for task %s: %s", safe_task_id, exc)
+        raise HTTPException(status_code=500, detail="Internal stop error")
+
+
+@router.post(
     "/run",
     response_model=dict,
     summary="Execute task",
@@ -1300,6 +1416,8 @@ async def run_task(
         runner_id=get_runner_id(),
         completion_callback=task_request.completion_callback,
         task_request=task_request.model_dump(mode="json"),
+        error_message=None,
+        stop_requested=None,
     )
 
     # Start task processing in background

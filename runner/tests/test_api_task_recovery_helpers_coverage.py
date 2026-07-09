@@ -50,6 +50,57 @@ def test_task_helpers_parse_pid_and_is_process_alive_branches(monkeypatch):
     assert task_module._is_process_alive(1234) is True
 
 
+def test_task_is_stop_requested_payload_branches():
+    """Validate stop-request payload helper handles non-dicts and cancellation marker."""
+    assert task_module._is_stop_requested_payload(None) is False
+    assert task_module._is_stop_requested_payload("oops") is False
+    assert (
+        task_module._is_stop_requested_payload(
+            {
+                "error_message": task_module._CANCELLED_BY_USER_ERROR,
+            }
+        )
+        is True
+    )
+
+
+def test_task_terminate_running_task_processes_attempts_all_sources(monkeypatch):
+    """Validate running task termination probes PGID, PID and stale process matches."""
+    calls = {
+        "groups": [],
+        "pids": [],
+        "stale": [],
+    }
+
+    monkeypatch.setattr(task_module, "_parse_process_pgid", lambda _payload: 3210)
+    monkeypatch.setattr(task_module, "_parse_process_pid", lambda _payload: 4321)
+    monkeypatch.setattr(task_module, "_is_process_alive", lambda _pid: True)
+    monkeypatch.setattr(task_module, "_find_task_process_pids", lambda _task_id: [5555])
+    monkeypatch.setattr(
+        task_module,
+        "_terminate_process_group",
+        lambda pgid: calls["groups"].append(pgid) or False,
+    )
+    monkeypatch.setattr(
+        task_module,
+        "_terminate_process_pid",
+        lambda pid: calls["pids"].append(pid) or True,
+    )
+    monkeypatch.setattr(
+        task_module,
+        "_terminate_stale_task_processes",
+        lambda task_id, _payload: calls["stale"].append(task_id) or False,
+    )
+
+    attempted, terminated = task_module._terminate_running_task_processes("task-run", {})
+
+    assert attempted is True
+    assert terminated is True
+    assert calls["groups"] == [3210]
+    assert calls["pids"] == [4321]
+    assert calls["stale"] == ["task-run"]
+
+
 def test_task_find_and_terminate_stale_task_processes(monkeypatch, tmp_path):
     """Validate Task find and terminate stale task processes."""
     task_root = tmp_path / "task-stale"
@@ -442,6 +493,25 @@ def test_task_schedule_failed_task_restart_when_attempt_limit_reached():
     """Validate Task schedule failed task restart when attempt limit reached."""
     payload = {"recovery_restart_attempts": task_module._RECOVERY_AUTO_RESTART_MAX_ATTEMPTS}
     assert task_module._schedule_failed_task_restart("task-max", payload) is False
+
+
+@pytest.mark.asyncio
+async def test_task_recover_failed_user_stopped_task_is_not_restarted(monkeypatch):
+    """Validate user-stopped failed tasks are not auto-restarted during recovery."""
+    monkeypatch.setattr(
+        task_module,
+        "_schedule_failed_task_restart",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("user-stopped tasks must not be restarted")
+        ),
+    )
+
+    restarted = await task_module._recover_failed_task(
+        "task-user-stopped",
+        {"error_message": "Cancelled by user.", "status": "failed"},
+    )
+
+    assert restarted is False
 
 
 def test_task_schedule_failed_task_restart_cleans_stale_processes(monkeypatch):

@@ -188,7 +188,16 @@ async def _resolve_host_ips(host: str) -> List[str]:
     """Resolve all IPs for a hostname using system DNS."""
     loop = asyncio.get_running_loop()
     infos = await loop.getaddrinfo(host, None, type=socket.SOCK_STREAM)
-    ips: List[str] = sorted({info[4][0] for info in infos if info and info[4]})
+    ips_set: set[str] = set()
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        ip = sockaddr[0]
+        if isinstance(ip, str):
+            ips_set.add(ip)
+
+    ips: List[str] = sorted(ips_set)
     return ips
 
 

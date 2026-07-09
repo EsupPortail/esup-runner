@@ -104,6 +104,10 @@ def _task(task_id: str, runner_id: str, *, status: str, notify_url: str | None =
     )
 
 
+async def _fake_resolve_public_ips(_host: str) -> list[str]:
+    return ["93.184.216.34"]
+
+
 def test_append_task_stats_csv_handles_invalid_date(task_module, tmp_path, monkeypatch):
     """Validate Append task stats csv handles invalid date."""
     monkeypatch.setattr(task_module, "_is_pytest_run", lambda: False)
@@ -308,10 +312,7 @@ async def test_send_notify_callback_success(monkeypatch, task_module, clean_stat
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
 
-    async def _fake_resolve(_host: str):
-        return ["93.184.216.34"]
-
-    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve)
+    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve_public_ips)
 
     ok, err = await task_module._send_notify_callback(tasks["t1"], notification)
     assert ok is True
@@ -354,6 +355,8 @@ async def test_send_notify_callback_non_200_returns_error(monkeypatch, task_modu
 
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve_public_ips)
 
     ok, err = await task_module._send_notify_callback(tasks["t1"], notification)
     assert ok is False
@@ -541,8 +544,12 @@ async def test_retry_notify_callback_sleeps_when_delay_positive(
     async def fake_send(*_a, **_k):
         return False, "nope"
 
+    async def fake_email(**_kwargs):
+        return True
+
     monkeypatch.setattr(task_module.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(task_module, "_send_notify_callback", fake_send)
+    monkeypatch.setattr(task_module, "send_notify_retry_exhausted_email", fake_email)
 
     await task_module._retry_notify_callback(
         "t1", TaskCompletionNotification(task_id="t1", status="completed")
@@ -1019,6 +1026,316 @@ def test_restart_selected_tasks_collects_unexpected_failures(
     ]
 
 
+@pytest.mark.asyncio
+async def test_stop_selected_tasks_stops_and_reports(monkeypatch, task_module, clean_state):
+    """Validate stop selected tasks proxies running tasks and reports all outcomes."""
+    runners["r1"] = _runner("r1")
+    tasks["t-running"] = _task("t-running", "r1", status="running")
+    tasks["t-fail"] = _task("t-fail", "r1", status="running")
+    tasks["t-completed"] = _task("t-completed", "r1", status="completed")
+    tasks["t-no-runner"] = _task("t-no-runner", "missing-runner", status="running")
+
+    async def fake_stop(task_id: str, runner: Runner):
+        if task_id == "t-fail":
+            raise HTTPException(status_code=409, detail="no killable process")
+        return SimpleNamespace(status_code=202)
+
+    monkeypatch.setattr(task_module, "_request_runner_task_stop", fake_stop)
+
+    payload = await task_module.stop_selected_tasks(
+        {
+            "task_ids": [
+                "t-running",
+                "t-completed",
+                "missing",
+                "t-no-runner",
+                "t-fail",
+            ]
+        }
+    )
+
+    assert payload["requested"] == 5
+    assert payload["stopped"] == [
+        {"task_id": "t-running", "runner_id": "r1", "runner_status_code": 202}
+    ]
+    assert tasks["t-running"].status == "running"
+
+    skipped_by_task_id = {item["task_id"]: item["reason"] for item in payload["skipped"]}
+    assert "cannot be stopped" in skipped_by_task_id["t-completed"]
+    assert skipped_by_task_id["missing"] == "Task not found"
+
+    failed_by_task_id = {item["task_id"]: item["reason"] for item in payload["failed"]}
+    assert failed_by_task_id["t-no-runner"] == "Runner not found"
+    assert failed_by_task_id["t-fail"] == "no killable process"
+
+
+@pytest.mark.asyncio
+async def test_stop_selected_tasks_collects_unexpected_failures(
+    monkeypatch, task_module, clean_state
+):
+    """Validate stop selected tasks collects unexpected failures."""
+    runners["r1"] = _runner("r1")
+    tasks["t-bug"] = _task("t-bug", "r1", status="running")
+
+    async def fake_stop(_task_id: str, _runner: Runner):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(task_module, "_request_runner_task_stop", fake_stop)
+
+    payload = await task_module.stop_selected_tasks({"task_ids": ["t-bug"]})
+
+    assert payload["requested"] == 1
+    assert payload["stopped"] == []
+    assert payload["skipped"] == []
+    assert payload["failed"] == [
+        {"task_id": "t-bug", "reason": "Unexpected error while stopping task"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stop_selected_tasks_rejects_empty_task_ids(task_module):
+    """Validate stop selected tasks rejects empty task ids."""
+    with pytest.raises(HTTPException) as exc:
+        await task_module.stop_selected_tasks({"task_ids": []})
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "task_ids must contain at least one task ID"
+
+
+@pytest.mark.asyncio
+async def test_stop_selected_tasks_rejects_non_list_task_ids(task_module):
+    """Validate stop selected tasks rejects non list task ids."""
+    with pytest.raises(HTTPException) as exc:
+        await task_module.stop_selected_tasks({"task_ids": "t1"})  # type: ignore[arg-type]
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "task_ids must be a list"
+
+
+@pytest.mark.asyncio
+async def test_stop_selected_tasks_rejects_too_many_task_ids(monkeypatch, task_module):
+    """Validate stop selected tasks rejects too many task ids."""
+    monkeypatch.setattr(task_module, "_MAX_BULK_STOP_TASKS", 2)
+    with pytest.raises(HTTPException) as exc:
+        await task_module.stop_selected_tasks({"task_ids": ["a", "b", "c"]})
+    assert exc.value.status_code == 400
+    assert "Too many task IDs" in str(exc.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_stop_task_proxies_to_runner_success(monkeypatch, task_module, clean_state):
+    """Validate manager stop endpoint proxies to the assigned runner."""
+    runners["r1"] = _runner("r1", url="http://r1.example", token="runner-token")
+    tasks["t1"] = _task("t1", "r1", status="running")
+    captured: dict[str, Any] = {}
+
+    class FakeRunnerResponse:
+        status_code = 202
+        text = ""
+
+        def json(self):
+            return {"status": "stop_requested"}
+
+    class FakeAsyncClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url: str, **kwargs):
+            captured["url"] = url
+            captured["headers"] = kwargs.get("headers")
+            return FakeRunnerResponse()
+
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    response = await task_module.stop_task("t1")
+
+    assert response.status_code == 202
+    assert json.loads(response.body) == {
+        "task_id": "t1",
+        "status": "stop_requested",
+        "runner_id": "r1",
+        "runner_status_code": 202,
+    }
+    assert captured["url"] == "http://r1.example/task/stop/t1"
+    assert captured["headers"]["Authorization"] == "Bearer runner-token"
+    assert tasks["t1"].status == "running"
+
+
+@pytest.mark.asyncio
+async def test_stop_task_rejects_non_running_task(task_module, clean_state):
+    """Validate manager stop endpoint rejects non-running tasks."""
+    runners["r1"] = _runner("r1")
+    tasks["t1"] = _task("t1", "r1", status="completed")
+
+    with pytest.raises(HTTPException) as exc:
+        await task_module.stop_task("t1")
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "Task not running"
+
+
+@pytest.mark.asyncio
+async def test_stop_task_returns_404_when_task_missing(task_module, clean_state):
+    """Validate manager stop endpoint returns 404 when task is missing."""
+    with pytest.raises(HTTPException) as exc:
+        await task_module.stop_task("missing")
+
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Task not found"
+
+
+@pytest.mark.asyncio
+async def test_stop_task_returns_404_when_runner_missing(task_module, clean_state):
+    """Validate manager stop endpoint returns 404 when the assigned runner is missing."""
+    tasks["t1"] = _task("t1", "missing-runner", status="running")
+
+    with pytest.raises(HTTPException) as exc:
+        await task_module.stop_task("t1")
+
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Runner not found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("runner_status", "runner_detail"),
+    [
+        (409, "no killable process"),
+        (404, "task unknown on runner"),
+    ],
+)
+async def test_stop_task_runner_404_and_409_are_forwarded(
+    monkeypatch, task_module, clean_state, runner_status: int, runner_detail: str
+):
+    """Validate manager stop endpoint forwards runner 404/409 details."""
+    runners["r1"] = _runner("r1", url="http://r1.example")
+    tasks["t1"] = _task("t1", "r1", status="running")
+
+    class FakeRunnerResponse:
+        status_code = runner_status
+        text = ""
+
+        def json(self):
+            return {"detail": runner_detail}
+
+    class FakeAsyncClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            return FakeRunnerResponse()
+
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    with pytest.raises(HTTPException) as exc:
+        await task_module.stop_task("t1")
+
+    assert exc.value.status_code == runner_status
+    assert exc.value.detail == runner_detail
+
+
+@pytest.mark.asyncio
+async def test_stop_task_runner_request_error_maps_to_502(monkeypatch, task_module, clean_state):
+    """Validate manager stop endpoint maps runner request errors to 502."""
+    runners["r1"] = _runner("r1", url="http://r1.example")
+    tasks["t1"] = _task("t1", "r1", status="running")
+
+    class FakeAsyncClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            request = httpx.Request("POST", "http://r1.example/task/stop/t1")
+            raise httpx.RequestError("runner unreachable", request=request)
+
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    with pytest.raises(HTTPException) as exc:
+        await task_module.stop_task("t1")
+
+    assert exc.value.status_code == 502
+    assert exc.value.detail == "Error contacting runner: runner unreachable"
+
+
+@pytest.mark.asyncio
+async def test_stop_task_runner_error_maps_to_502(monkeypatch, task_module, clean_state):
+    """Validate manager stop endpoint maps runner 5xx responses to 502."""
+    runners["r1"] = _runner("r1", url="http://r1.example")
+    tasks["t1"] = _task("t1", "r1", status="running")
+
+    class FakeRunnerResponse:
+        status_code = 500
+        text = "boom"
+
+        def json(self):
+            raise ValueError("not json")
+
+    class FakeAsyncClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            return FakeRunnerResponse()
+
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    with pytest.raises(HTTPException) as exc:
+        await task_module.stop_task("t1")
+
+    assert exc.value.status_code == 502
+    assert "Runner stop request failed: 500 - boom" in str(exc.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_stop_task_runner_timeout_maps_to_504(monkeypatch, task_module, clean_state):
+    """Validate manager stop endpoint maps runner timeouts to 504."""
+    runners["r1"] = _runner("r1", url="http://r1.example")
+    tasks["t1"] = _task("t1", "r1", status="running")
+
+    class FakeAsyncClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            raise httpx.TimeoutException("timeout")
+
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    with pytest.raises(HTTPException) as exc:
+        await task_module.stop_task("t1")
+
+    assert exc.value.status_code == 504
+    assert exc.value.detail == "Timeout contacting runner"
+
+
 # -----------------------------
 # Execute async
 # -----------------------------
@@ -1034,10 +1351,7 @@ def test_execute_task_async_rejects_on_priority_quota(
 
     monkeypatch.setattr(task_module, "would_exceed_other_domain_quota", lambda **_: True)
 
-    async def _fake_resolve(_host: str):
-        return ["93.184.216.34"]
-
-    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve)
+    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve_public_ips)
 
     resp = client.post(
         "/task/execute",
@@ -1075,6 +1389,7 @@ def test_execute_task_async_no_runners_available(monkeypatch, client, task_modul
             raise httpx.TimeoutException("timeout")
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve_public_ips)
 
     resp = client.post(
         "/task/execute",
@@ -1253,6 +1568,7 @@ def test_execute_task_async_reservation_race_skips_runner(
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(task_module, "_try_reserve_runner_for_dispatch", lambda _runner_id: None)
+    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve_public_ips)
 
     resp = client.post(
         "/task/execute",
@@ -1308,6 +1624,7 @@ def test_execute_task_async_reuses_duplicate_after_reservation_race(
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(task_module, "_try_reserve_runner_for_dispatch", fake_try_reserve)
     monkeypatch.setattr(task_module.asyncio, "create_task", fail_if_scheduled)
+    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve_public_ips)
 
     resp = client.post(
         "/task/execute",
@@ -1362,6 +1679,7 @@ def test_execute_task_async_success_creates_task_and_schedules(
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(task_module.asyncio, "create_task", fake_create_task)
+    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve_public_ips)
 
     resp = client.post(
         "/task/execute",

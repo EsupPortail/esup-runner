@@ -3,18 +3,24 @@
 import asyncio
 import smtplib
 from email.message import EmailMessage
+from pathlib import Path
 
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
+from app.services.email_templates import build_branded_email_message
 
 logger = setup_default_logging()
 
+_LOGO_PATH = Path(__file__).resolve().parents[1] / "web" / "static" / "logo.png"
+
 
 def _is_email_configured() -> bool:
+    """Return True when SMTP settings and a recipient are configured."""
     return bool(config.SMTP_SERVER and config.MANAGER_EMAIL)
 
 
 def _build_sender_address() -> str:
+    """Build the manager notification sender address."""
     sender = (config.SMTP_SENDER or "").strip()
     if sender:
         return sender
@@ -28,6 +34,16 @@ def _build_sender_address() -> str:
     return f"esup-runner-manager@{host}"
 
 
+def _tone_for_status(status: str) -> str:
+    """Map a task status to the branded email tone."""
+    normalized = status.lower()
+    if normalized in {"failed", "error"}:
+        return "danger"
+    if normalized in {"warning", "timeout", "cancelled", "canceled"}:
+        return "warning"
+    return "info"
+
+
 def _compose_notify_retry_exhausted_email(
     *,
     task_id: str,
@@ -36,6 +52,7 @@ def _compose_notify_retry_exhausted_email(
     attempts: int,
     error_message: str | None,
 ) -> EmailMessage:
+    """Compose the notification sent after callback retry exhaustion."""
     subject = f"[esup-runner-manager] Task {task_id} notify callback warning"
     body_lines = [
         f"Task: {task_id}",
@@ -47,12 +64,28 @@ def _compose_notify_retry_exhausted_email(
         error_message or "(no details)",
     ]
 
-    message = EmailMessage()
-    message["Subject"] = subject
-    message["From"] = _build_sender_address()
-    message["To"] = config.MANAGER_EMAIL
-    message.set_content("\n".join(body_lines))
-    return message
+    return build_branded_email_message(
+        subject=subject,
+        sender=_build_sender_address(),
+        recipient=config.MANAGER_EMAIL,
+        text_body="\n".join(body_lines),
+        product_name="ESUP-Runner Manager",
+        eyebrow="Manager callback warning",
+        title="Notify callback retries exhausted",
+        summary="The manager could not deliver a task completion callback after all retries.",
+        status_label=status.upper(),
+        tone=_tone_for_status(status),
+        details=[
+            ("Task", task_id),
+            ("Status", status),
+            ("Notify URL", notify_url),
+            ("Retry attempts exhausted", str(attempts)),
+        ],
+        primary_block_title="Last known error",
+        primary_block_body=error_message or "(no details)",
+        footer="This message was generated automatically by the ESUP-Runner manager.",
+        logo_path=_LOGO_PATH,
+    )
 
 
 async def send_notify_retry_exhausted_email(
@@ -63,6 +96,7 @@ async def send_notify_retry_exhausted_email(
     attempts: int,
     error_message: str | None,
 ) -> bool:
+    """Send the manager callback retry-exhausted email when configured."""
     if not _is_email_configured():
         logger.warning("SMTP_SERVER or MANAGER_EMAIL not configured: email notification skipped")
         return False
@@ -76,6 +110,7 @@ async def send_notify_retry_exhausted_email(
     )
 
     def _send() -> None:
+        """Send the composed email through the configured SMTP server."""
         with smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT, timeout=10) as smtp:
             if config.SMTP_USE_TLS:
                 smtp.starttls()

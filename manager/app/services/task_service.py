@@ -21,6 +21,52 @@ logger = setup_default_logging()
 _RUNNER_REPORTED_STATUSES = {"running", "completed", "failed", "timeout"}
 
 
+def _cleanup_days_from_config() -> int:
+    """Return normalized task cleanup retention days."""
+    return max(0, int(getattr(config, "CLEANUP_TASK_FILES_DAYS", 60) or 0))
+
+
+def _parse_task_created_at_for_cleanup(task_id: str, task: Task) -> datetime | None:
+    """Return a naive datetime usable for cleanup age checks."""
+    try:
+        raw_created_at = datetime.fromisoformat(task.created_at.replace("Z", "+00:00"))
+    except Exception:
+        logger.warning(f"Skipping cleanup age check for task {task_id}: invalid created_at")
+        return None
+
+    if raw_created_at.tzinfo is not None:
+        return raw_created_at.astimezone(timezone.utc).replace(tzinfo=None)
+    return raw_created_at
+
+
+def _expired_task_ids_for_cleanup(now: datetime, cleanup_seconds: int) -> list[str]:
+    """Return task IDs older than the configured cleanup retention."""
+    expired_task_ids: list[str] = []
+    for task_id, task in list(tasks.items()):
+        created_at = _parse_task_created_at_for_cleanup(task_id, task)
+        if created_at is None:
+            continue
+
+        task_age = now - created_at
+        if task_age.total_seconds() > cleanup_seconds:
+            expired_task_ids.append(task_id)
+    return expired_task_ids
+
+
+def _delete_expired_tasks(task_ids: list[str], cleanup_days: int) -> None:
+    """Delete expired tasks and log persistence failures."""
+    for task_id in task_ids:
+        if delete_task_for_retention_cleanup(task_id):
+            logger.info(
+                f"Task {task_id} cleaned up from memory and persistence "
+                f"(age: {cleanup_days}+ days)"
+            )
+        else:
+            logger.warning(
+                f"Task {task_id} matched cleanup but could not be deleted from persistence"
+            )
+
+
 async def cleanup_old_tasks(
     poll_interval: float = 3600.0, stop_event: Optional[asyncio.Event] = None
 ) -> None:
@@ -31,7 +77,11 @@ async def cleanup_old_tasks(
     Runs every hour.
     """
     logger.info("Starting task cleanup service")
-    cleanup_days = config.CLEANUP_TASK_FILES_DAYS
+    cleanup_days = _cleanup_days_from_config()
+    if cleanup_days <= 0:
+        logger.info("Task cleanup service disabled: CLEANUP_TASK_FILES_DAYS is 0 (unlimited)")
+        return
+
     cleanup_seconds = cleanup_days * 86400  # Convert days to seconds
 
     while True:
@@ -39,35 +89,8 @@ async def cleanup_old_tasks(
             logger.info("Stopping task cleanup service")
             break
 
-        now = datetime.now()
-        tasks_to_remove = []
-
-        for task_id, task in list(tasks.items()):
-            try:
-                raw_created_at = datetime.fromisoformat(task.created_at.replace("Z", "+00:00"))
-            except Exception:
-                logger.warning(f"Skipping cleanup age check for task {task_id}: invalid created_at")
-                continue
-
-            if raw_created_at.tzinfo is not None:
-                created_at = raw_created_at.astimezone(timezone.utc).replace(tzinfo=None)
-            else:
-                created_at = raw_created_at
-            task_age = now - created_at
-
-            # Remove tasks older than CLEANUP_TASK_FILES_DAYS ago, regardless of status.
-            if task_age.total_seconds() > cleanup_seconds:
-                tasks_to_remove.append(task_id)
-
-        for task_id in tasks_to_remove:
-            if delete_task_for_retention_cleanup(task_id):
-                logger.info(
-                    f"Task {task_id} cleaned up from memory and persistence (age: {cleanup_days}+ days)"
-                )
-            else:
-                logger.warning(
-                    f"Task {task_id} matched cleanup but could not be deleted from persistence"
-                )
+        tasks_to_remove = _expired_task_ids_for_cleanup(datetime.now(), cleanup_seconds)
+        _delete_expired_tasks(tasks_to_remove, cleanup_days)
 
         await asyncio.sleep(poll_interval)
 

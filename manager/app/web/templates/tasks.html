@@ -201,6 +201,10 @@
               <h2 class="h3 mb-0">Tasks</h2>
               <div class="d-flex align-items-center gap-2">
                 <small id="selectionCount" class="text-muted">0 selected</small>
+                <button id="stopSelectedBtn" class="btn btn-sm btn-outline-warning" disabled>
+                  <i class="bi bi-stop-circle" aria-hidden="true"></i>
+                  Stop running tasks
+                </button>
                 <button id="deleteSelectedBtn" class="btn btn-sm btn-outline-danger" disabled>
                   <i class="bi bi-trash" aria-hidden="true"></i>
                   Delete selected tasks
@@ -236,11 +240,13 @@
                   {% for task in tasks %}
                     <tr class="task-row" data-status="{{ task.status }}" data-type="{{ task.task_type }}" data-task-id="{{ task.id }}">
                       <td>
-                        <input type="checkbox"
-                            class="form-check-input task-select-checkbox"
-                            data-task-id="{{ task.id }}"
+                        <input
+                          type="checkbox"
+                          class="form-check-input task-select-checkbox"
+                          data-task-id="{{ task.id }}"
+                          data-task-status="{{ task.status }}"
                           autocomplete="off"
-                            aria-label="Select task {{ task.id }}">
+                          aria-label="Select task {{ task.id }}">
                       </td>
                       <td>
                         <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
@@ -336,6 +342,7 @@
     const taskTypeSelect = document.getElementById('taskTypeSelect');
     const refreshBtn = document.getElementById('refreshBtn');
     const selectAllTasks = document.getElementById('selectAllTasks');
+    const stopSelectedBtn = document.getElementById('stopSelectedBtn');
     const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
     const restartSelectedBtn = document.getElementById('restartSelectedBtn');
     const selectionCount = document.getElementById('selectionCount');
@@ -360,6 +367,9 @@
     function updateSelectionState() {
       const checkboxes = getTaskSelectionCheckboxes();
       const selectedCount = checkboxes.filter(cb => cb.checked).length;
+      const selectedRunningCount = checkboxes.filter(
+        cb => cb.checked && cb.dataset.taskStatus === 'running'
+      ).length;
       const totalCount = checkboxes.length;
 
       if (selectionCount) {
@@ -370,6 +380,9 @@
       }
       if (restartSelectedBtn) {
         restartSelectedBtn.disabled = selectedCount === 0;
+      }
+      if (stopSelectedBtn) {
+        stopSelectedBtn.disabled = selectedRunningCount === 0;
       }
       if (selectAllTasks) {
         selectAllTasks.checked = totalCount > 0 && selectedCount === totalCount;
@@ -464,6 +477,9 @@
         if (restartSelectedBtn) {
           restartSelectedBtn.disabled = true;
         }
+        if (stopSelectedBtn) {
+          stopSelectedBtn.disabled = true;
+        }
         deleteSelectedBtn.innerHTML = (
           '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Deleting…'
         );
@@ -530,6 +546,12 @@
 
         const initialButtonHtml = restartSelectedBtn.innerHTML;
         restartSelectedBtn.disabled = true;
+        if (deleteSelectedBtn) {
+          deleteSelectedBtn.disabled = true;
+        }
+        if (stopSelectedBtn) {
+          stopSelectedBtn.disabled = true;
+        }
         restartSelectedBtn.innerHTML = (
           '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Restarting…'
         );
@@ -571,6 +593,78 @@
           const message = error instanceof Error ? error.message : String(error);
           setBulkActionFeedback('danger', `Restart failed: ${message}`);
           restartSelectedBtn.innerHTML = initialButtonHtml;
+          updateSelectionState();
+        }
+      });
+    }
+
+    if (stopSelectedBtn) {
+      stopSelectedBtn.addEventListener('click', async () => {
+        const selectedTaskIds = getTaskSelectionCheckboxes()
+          .filter(cb => cb.checked && cb.dataset.taskStatus === 'running')
+          .map(cb => cb.dataset.taskId)
+          .filter(Boolean);
+
+        if (selectedTaskIds.length === 0) {
+          return;
+        }
+
+        const confirmed = window.confirm(
+          `Stop ${selectedTaskIds.length} running selected task(s)?`
+        );
+        if (!confirmed) {
+          return;
+        }
+
+        const initialButtonHtml = stopSelectedBtn.innerHTML;
+        stopSelectedBtn.disabled = true;
+        if (deleteSelectedBtn) {
+          deleteSelectedBtn.disabled = true;
+        }
+        if (restartSelectedBtn) {
+          restartSelectedBtn.disabled = true;
+        }
+        stopSelectedBtn.innerHTML = (
+          '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Stopping…'
+        );
+        setBulkActionFeedback('info', 'Stop request in progress…');
+
+        try {
+          const response = await fetch('/tasks/stop-selected', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ task_ids: selectedTaskIds }),
+          });
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.detail || 'Failed to stop selected tasks');
+          }
+
+          const stoppedCount = (payload.stopped || []).length;
+          const skippedCount = (payload.skipped || []).length;
+          const failedCount = (payload.failed || []).length;
+
+          const level = failedCount > 0 ? 'warning' : 'success';
+          setBulkActionFeedback(
+            level,
+            `Stop requested: ${stoppedCount} requested, ${skippedCount} skipped, ${failedCount} failed.`
+          );
+
+          if (stoppedCount > 0) {
+            setTimeout(() => {
+              reloadTasksList();
+            }, 1200);
+          } else {
+            stopSelectedBtn.innerHTML = initialButtonHtml;
+            updateSelectionState();
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setBulkActionFeedback('danger', `Stop failed: ${message}`);
+          stopSelectedBtn.innerHTML = initialButtonHtml;
           updateSelectionState();
         }
       });

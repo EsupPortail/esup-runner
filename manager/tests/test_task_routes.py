@@ -108,6 +108,16 @@ async def _fake_resolve_public_ips(_host: str) -> list[str]:
     return ["93.184.216.34"]
 
 
+def test_runner_auth_headers_raises_when_runner_token_missing(task_module):
+    """Validate Runner auth headers raises when runner token missing."""
+    runner = Runner(id="r1", url="http://r1.example", task_types=["encoding"], token=None)
+
+    with pytest.raises(HTTPException) as exc:
+        task_module._runner_auth_headers(runner, accept="application/json")
+
+    assert exc.value.status_code == 503
+
+
 def test_append_task_stats_csv_handles_invalid_date(task_module, tmp_path, monkeypatch):
     """Validate Append task stats csv handles invalid date."""
     monkeypatch.setattr(task_module, "_is_pytest_run", lambda: False)

@@ -22,6 +22,26 @@ def test_is_disallowed_ip_invalid_is_true():
     assert task_module._is_disallowed_ip("8.8.8.8") is False
 
 
+@pytest.mark.asyncio
+async def test_resolve_host_ips_skips_empty_sockaddr(monkeypatch):
+    """Validate Resolve host ips skips empty sockaddr entries."""
+
+    class DummyLoop:
+        async def getaddrinfo(self, *_args, **_kwargs):
+            return [
+                (None, None, None, None, ()),
+                (None, None, None, None, ("8.8.8.8", 443)),
+                (None, None, None, None, (1234, 443)),
+                (None, None, None, None, ("1.1.1.1", 443)),
+                (None, None, None, None, ("8.8.8.8", 443)),
+            ]
+
+    monkeypatch.setattr(task_module.asyncio, "get_running_loop", lambda: DummyLoop())
+
+    ips = await task_module._resolve_host_ips("example.com")
+    assert ips == ["1.1.1.1", "8.8.8.8"]
+
+
 @pytest.mark.parametrize(
     "url,detail",
     (

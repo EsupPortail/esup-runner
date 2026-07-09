@@ -18,6 +18,7 @@ if PROJECT_ROOT not in sys.path:
 
 
 async def _run_sync_inline(func: Any, *args: Any, **kwargs: Any) -> Any:
+    """Run anyio thread callbacks inline for deterministic sandboxed tests."""
     kwargs.pop("abandon_on_cancel", None)
     kwargs.pop("cancellable", None)
     kwargs.pop("limiter", None)
@@ -28,6 +29,7 @@ anyio.to_thread.run_sync = _run_sync_inline
 
 
 def _run_async_blocking(awaitable: Any) -> Any:
+    """Run an awaitable synchronously, even when another event loop is active."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -37,6 +39,7 @@ def _run_async_blocking(awaitable: Any) -> Any:
     error: list[BaseException] = []
 
     def _runner() -> None:
+        """Execute the awaitable inside an isolated event loop thread."""
         try:
             result.append(asyncio.run(awaitable))
         except BaseException as exc:
@@ -51,6 +54,8 @@ def _run_async_blocking(awaitable: Any) -> Any:
 
 
 class _SyncASGITransport(httpx.BaseTransport):
+    """Synchronous transport adapter around httpx ASGITransport."""
+
     def __init__(
         self,
         app: Any,
@@ -59,6 +64,7 @@ class _SyncASGITransport(httpx.BaseTransport):
         root_path: str,
         client: tuple[str, int],
     ) -> None:
+        """Create the wrapped async ASGI transport."""
         self._transport = httpx.ASGITransport(
             app=app,
             raise_app_exceptions=raise_app_exceptions,
@@ -67,7 +73,10 @@ class _SyncASGITransport(httpx.BaseTransport):
         )
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
+        """Dispatch a synchronous request through the async ASGI transport."""
+
         async def _send_request() -> httpx.Response:
+            """Read the async response body before returning a sync response."""
             response = await self._transport.handle_async_request(request)
             body = await response.aread()
             return httpx.Response(
@@ -81,6 +90,7 @@ class _SyncASGITransport(httpx.BaseTransport):
         return _run_async_blocking(_send_request())
 
     def close(self) -> None:
+        """Close the wrapped async transport from synchronous test code."""
         _run_async_blocking(self._transport.aclose())
 
 
@@ -102,6 +112,7 @@ class _SyncTestClient(httpx.Client):
         follow_redirects: bool = True,
         client: tuple[str, int] = ("testclient", 50000),
     ) -> None:
+        """Create a synchronous test client using the custom ASGI transport."""
         del backend, backend_options
 
         self.app = app
@@ -124,6 +135,7 @@ class _SyncTestClient(httpx.Client):
         )
 
     def __enter__(self) -> "_SyncTestClient":
+        """Return the test client for context-manager compatibility."""
         return self
 
     def __exit__(
@@ -132,6 +144,7 @@ class _SyncTestClient(httpx.Client):
         exc: BaseException | None,
         tb: Any,
     ) -> None:
+        """Close the client when leaving the context manager."""
         self.close()
 
 

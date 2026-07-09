@@ -66,7 +66,7 @@ Task operations from `/tasks`:
 
 Task JSON persistence (`data/YYYY-MM-DD/*.json`) is automatically cleaned based on:
 
-- `CLEANUP_TASK_FILES_DAYS` in `.env` (default: `60`)
+- `CLEANUP_TASK_FILES_DAYS` in `.env` (default: `60`; set `0` to disable age-based cleanup)
 
 Important:
 
@@ -126,6 +126,7 @@ Notes:
 - Keep CSV format and UTF-8 encoding when editing manually.
 - Expected columns: `task_id,date,task_type,status,app_name,app_version,etab_name`.
 - You can download the current CSV from `/statistics/task-stats.csv` before maintenance.
+- When date filters are active on `/statistics`, the CSV download link exports only the selected period.
 
 ## Backup checklist (before risky operations)
 

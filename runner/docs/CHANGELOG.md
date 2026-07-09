@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a manager-authenticated `POST /task/stop/{task_id}` endpoint that requests termination of running task processes by persisted PGID/PID, with a workspace process scan fallback.
 - Added branded multipart HTML task failure emails, with plain-text fallback and embedded ESUP-Runner logo.
 - Added `update-stack.sh --send-test-email` to send a preview of the update notification email without running update, restart, or smoke-test steps.
+- Added df-like runtime disk-usage diagnostics to `GET /runner/status` for configured storage, cache, Whisper/Hugging Face model, uv cache, and log directories, including total, used, free, usage percentage, and 75%/90% status thresholds.
 
 ### Changed
 

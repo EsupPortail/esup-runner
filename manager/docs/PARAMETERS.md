@@ -35,7 +35,7 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 - `MANAGER_URL` is computed automatically as `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT`.
 - `ENVIRONMENT` (default `development`): Environment name used by runtime/deployment wrappers.
 - `UVICORN_WORKERS` (int, default `4`): Worker count for production process managers.
-- `CLEANUP_TASK_FILES_DAYS` (int, default `60`): Retention for all tasks managed by cleanup services, regardless of status.
+- `CLEANUP_TASK_FILES_DAYS` (int, default `60`): Retention for all tasks managed by cleanup services, regardless of status. Set `0` to disable age-based cleanup.
 
 ## Authentication and admin access
 - `AUTHORIZED_TOKENS__*`: Defines accepted API tokens (headers: `Authorization: Bearer <token>` or `X-API-Token: <token>`).

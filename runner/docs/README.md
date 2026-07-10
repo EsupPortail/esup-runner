@@ -112,6 +112,9 @@ When the Runner calls the Manager (registration / heartbeat), it authenticates a
 - `Authorization: Bearer <RUNNER_TOKEN>`
 - `X-Runner-Version: <runner_version>`
 
+Heartbeat payloads stay lightweight and only report runner availability. Disk usage diagnostics
+are exposed separately by `GET /runner/status` and are not sent during heartbeat calls.
+
 The Manager enforces **version compatibility at MAJOR + MINOR level**.
 In other words, a runner `1.0.x` can register only to a manager `1.0.y`.
 

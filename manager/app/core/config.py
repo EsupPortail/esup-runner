@@ -66,6 +66,14 @@ _CONFIG_ENV_KEYS = [
 ]
 
 
+def get_env_file_path() -> Path:
+    """Return the resolved .env path, honoring override variables when provided."""
+    env_override = os.getenv("CONFIG_ENV_PATH") or os.getenv("ENV_FILE")
+    if env_override:
+        return Path(env_override)
+    return _MANAGER_ROOT / ".env"
+
+
 def _parse_bool(value: Optional[str], default: bool = False) -> bool:
     """Parse a boolean from a string with a fallback default."""
     if value is None:
@@ -210,16 +218,12 @@ def _load_environment_variables() -> None:
     Load environment variables from .env file if it exists.
     This function is called only once.
     """
-    env_override = os.getenv("CONFIG_ENV_PATH") or os.getenv("ENV_FILE")
+    env_path_obj = get_env_file_path()
+    env_path = str(env_path_obj)
 
-    if env_override:
-        env_path = env_override
+    if os.getenv("CONFIG_ENV_PATH") or os.getenv("ENV_FILE"):
         print(f"Loading environment variables from override path: {env_path}")
     else:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        parent_dir = os.path.dirname(current_dir)
-        grandparent_dir = os.path.dirname(parent_dir)
-        env_path = os.path.join(grandparent_dir, ".env")
         print(f"Loading environment variables from default path: {env_path}")
 
     if os.path.exists(env_path):

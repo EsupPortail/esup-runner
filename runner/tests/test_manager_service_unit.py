@@ -80,8 +80,28 @@ async def test_send_heartbeat(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_send_heartbeat_updates_local_heartbeat_on_success(monkeypatch):
+    """Validate Send heartbeat updates the runner local heartbeat timestamp."""
+    calls = []
+    monkeypatch.setattr(manager_service, "is_registered", lambda: True)
+    monkeypatch.setattr(manager_service, "update_heartbeat", lambda: calls.append("updated"))
+
+    async def responder():
+        return FakeResponse(200)
+
+    monkeypatch.setattr(
+        manager_service.httpx, "AsyncClient", lambda *_, **__: FakeAsyncClient(responder)
+    )
+
+    ok = await manager_service.send_heartbeat()
+
+    assert ok is True
+    assert calls == ["updated"]
+
+
+@pytest.mark.asyncio
 async def test_send_heartbeat_sends_availability_payload(monkeypatch):
-    """Validate Send heartbeat includes current availability payload."""
+    """Validate Send heartbeat keeps a lightweight availability-only payload."""
     captured = {}
     monkeypatch.setattr(manager_service, "is_registered", lambda: True)
     monkeypatch.setattr(manager_service, "is_available", lambda: False)
@@ -103,6 +123,7 @@ async def test_send_heartbeat_sends_availability_payload(monkeypatch):
 
     assert ok is True
     assert captured["json"] == {"availability": "busy"}
+    assert "disk_usage" not in captured["json"]
 
 
 @pytest.mark.asyncio

@@ -340,6 +340,11 @@ async def test_background_service_manager_start_stop_and_status(monkeypatch):
     assert status["is_running"] is True
     assert status["tasks"] == 3
     assert len(status["services"]) == 3
+    assert {service["name"] for service in status["services"]} == {
+        "reconnect_loop",
+        "heartbeat_loop",
+        "storage_cleanup_loop",
+    }
 
     await manager.stop_all_services()
     await manager.stop_all_services()

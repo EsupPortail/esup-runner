@@ -183,6 +183,11 @@ CORS_ALLOW_HEADERS=Content-Type
 
 Helpers:
 
+Credentials can be provisioned in two ways:
+
+- From the admin UI (`/admin/credentials`) using the built-in generation forms (token and admin password hash), then optional copy/delete actions.
+- From CLI scripts, as shown below.
+
 - Generate one API token entry (`AUTHORIZED_TOKENS__…`):
 
   ```bash

@@ -832,6 +832,531 @@ def test_credentials_page_renders_token_previews(admin_client, monkeypatch):
     assert "AAAAAAAAAA...AAAA" in resp.text  # 10 + ... + last 4
     assert "abcd..." in resp.text
     assert "***" in resp.text
+    assert "hash..." in resp.text
+    assert 'action="/admin/credentials/admins"' in resp.text
+    assert 'data-copy-admin="true"' in resp.text
+    assert 'action="/admin/credentials/admins/admin/delete"' in resp.text
+    assert 'id="reload-config-btn-top"' in resp.text
+    assert 'id="reload-config-status-top"' in resp.text
+    assert 'id="copy-admin-feedback"' in resp.text
+    assert 'action="/admin/credentials/tokens"' in resp.text
+    assert 'data-copy-token="true"' in resp.text
+    assert 'id="copy-token-feedback"' in resp.text
+    assert 'aria-atomic="true"' in resp.text
+    assert 'aria-label="Delete token long"' in resp.text
+
+
+def test_generate_authorized_token_clamps_requested_length(monkeypatch):
+    """Validate generated token lengths stay within the supported bounds."""
+    requested_lengths = []
+
+    def _fake_token_urlsafe(length: int) -> str:
+        requested_lengths.append(length)
+        return f"generated-{length}"
+
+    monkeypatch.setattr(admin_routes.secrets, "token_urlsafe", _fake_token_urlsafe)
+
+    assert admin_routes._generate_authorized_token(1) == "generated-16"
+    assert admin_routes._generate_authorized_token(999) == "generated-128"
+    assert requested_lengths == [16, 128]
+
+
+def test_hash_admin_password_delegates_to_password_context(monkeypatch):
+    """Validate admin password hashing uses the configured password context."""
+    captured = {}
+
+    class FakePasswordContext:
+        def hash(self, password: str) -> str:
+            captured["password"] = password
+            return f"hashed:{password}"
+
+    monkeypatch.setattr(admin_routes, "_PASSWORD_CONTEXT", FakePasswordContext())
+
+    assert admin_routes._hash_admin_password("secret-password") == "hashed:secret-password"
+    assert captured == {"password": "secret-password"}
+
+
+def test_read_env_lines_returns_empty_when_env_file_is_missing(tmp_path):
+    """Validate missing .env files are treated as empty."""
+    assert admin_routes._read_env_lines(tmp_path / ".env") == []
+
+
+def test_delete_env_helpers_return_false_when_env_file_is_missing(monkeypatch, tmp_path):
+    """Validate delete helpers no-op cleanly when the .env file does not exist."""
+    env_path = tmp_path / "missing.env"
+    monkeypatch.setattr(config_module, "get_env_file_path", lambda: env_path)
+
+    assert admin_routes._delete_authorized_token_from_env("client") is False
+    assert admin_routes._delete_admin_user_from_env("admin") is False
+
+
+@pytest.mark.parametrize(
+    ("query_params", "expected_level", "expected_message"),
+    [
+        (
+            {"feedback": "token_created", "token_name": "api_client"},
+            "success",
+            "Token 'api_client' created.",
+        ),
+        (
+            {"feedback": "admin_deleted", "admin_name": "alice@example.org"},
+            "success",
+            "Administrator 'alice@example.org' deleted.",
+        ),
+    ],
+)
+def test_build_credentials_feedback_returns_known_messages(
+    query_params, expected_level, expected_message
+):
+    """Validate credentials feedback maps known token and admin outcomes."""
+    request = SimpleNamespace(query_params=query_params)
+
+    feedback = admin_routes._build_credentials_feedback(request)
+
+    assert feedback["level"] == expected_level
+    assert expected_message in feedback["message"]
+
+
+def test_upsert_authorized_token_in_env_updates_and_appends(monkeypatch, tmp_path):
+    """Validate .env token upsert updates existing labels and appends new labels."""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "MANAGER_HOST=localhost\n"
+        "AUTHORIZED_TOKENS__existing=old-value\n"
+        "ADMIN_USERS__admin=hash\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_module, "get_env_file_path", lambda: env_path)
+
+    admin_routes._upsert_authorized_token_in_env("existing", "new-value")
+    admin_routes._upsert_authorized_token_in_env("new_label", "new-token")
+
+    content = env_path.read_text(encoding="utf-8")
+    assert "AUTHORIZED_TOKENS__existing=new-value" in content
+    assert "AUTHORIZED_TOKENS__new_label=new-token" in content
+    assert content.index("AUTHORIZED_TOKENS__existing=new-value") < content.index(
+        "AUTHORIZED_TOKENS__new_label=new-token"
+    )
+
+
+def test_delete_authorized_token_from_env_returns_status(monkeypatch, tmp_path):
+    """Validate .env token delete returns whether a token line was removed."""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "AUTHORIZED_TOKENS__keep=keep-token\n" "AUTHORIZED_TOKENS__drop=drop-token\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_module, "get_env_file_path", lambda: env_path)
+
+    assert admin_routes._delete_authorized_token_from_env("drop") is True
+    content = env_path.read_text(encoding="utf-8")
+    assert "AUTHORIZED_TOKENS__drop=drop-token" not in content
+    assert "AUTHORIZED_TOKENS__keep=keep-token" in content
+    assert admin_routes._delete_authorized_token_from_env("missing") is False
+
+
+def test_upsert_admin_user_in_env_updates_and_appends(monkeypatch, tmp_path):
+    """Validate .env admin upsert updates existing labels and appends new labels."""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "MANAGER_HOST=localhost\n"
+        'ADMIN_USERS__existing="old-hash"\n'
+        "AUTHORIZED_TOKENS__client=token\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_module, "get_env_file_path", lambda: env_path)
+
+    admin_routes._upsert_admin_user_in_env("existing", "new-hash")
+    admin_routes._upsert_admin_user_in_env("new_admin", "new-admin-hash")
+
+    content = env_path.read_text(encoding="utf-8")
+    assert 'ADMIN_USERS__existing="new-hash"' in content
+    assert 'ADMIN_USERS__new_admin="new-admin-hash"' in content
+    assert content.index('ADMIN_USERS__existing="new-hash"') < content.index(
+        'ADMIN_USERS__new_admin="new-admin-hash"'
+    )
+
+
+def test_delete_admin_user_from_env_returns_status(monkeypatch, tmp_path):
+    """Validate .env admin delete returns whether an admin line was removed."""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        'ADMIN_USERS__keep="keep-hash"\n' 'ADMIN_USERS__drop="drop-hash"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_module, "get_env_file_path", lambda: env_path)
+
+    assert admin_routes._delete_admin_user_from_env("drop") is True
+    content = env_path.read_text(encoding="utf-8")
+    assert 'ADMIN_USERS__drop="drop-hash"' not in content
+    assert 'ADMIN_USERS__keep="keep-hash"' in content
+    assert admin_routes._delete_admin_user_from_env("missing") is False
+
+
+def test_create_authorized_token_endpoint_persists_and_reloads(admin_client, monkeypatch):
+    """Validate token creation endpoint writes .env then triggers config reload."""
+    captured = {}
+    reload_calls = {"count": 0}
+    publish_calls = {"count": 0}
+
+    monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {})
+    monkeypatch.setattr(admin_routes, "_generate_authorized_token", lambda _length=32: "generated")
+
+    def _fake_upsert(token_name: str, token_value: str):
+        captured["token_name"] = token_name
+        captured["token_value"] = token_value
+
+    def _fake_reload():
+        reload_calls["count"] += 1
+        return config
+
+    def _fake_publish():
+        publish_calls["count"] += 1
+        return 0
+
+    monkeypatch.setattr(admin_routes, "_upsert_authorized_token_in_env", _fake_upsert)
+    monkeypatch.setattr(config_module, "reload_config_env", _fake_reload)
+    monkeypatch.setattr(config_module, "publish_config_reload_event", _fake_publish)
+
+    resp = admin_client.post(
+        "/admin/credentials/tokens",
+        data={"token_name": "new_token"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"] == "/admin/credentials?feedback=token_created&token_name=new_token"
+    )
+    assert captured == {"token_name": "new_token", "token_value": "generated"}
+    assert reload_calls["count"] == 1
+    assert publish_calls["count"] == 1
+
+
+def test_create_authorized_token_endpoint_rejects_invalid_label(admin_client):
+    """Validate token creation endpoint rejects labels incompatible with .env keys."""
+    resp = admin_client.post(
+        "/admin/credentials/tokens",
+        data={"token_name": "invalid-label"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin/credentials?feedback=token_invalid"
+
+
+def test_create_authorized_token_endpoint_rejects_duplicate_label(admin_client, monkeypatch):
+    """Validate token creation endpoint rejects already existing token labels."""
+    monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"existing": "tok"})
+
+    resp = admin_client.post(
+        "/admin/credentials/tokens",
+        data={"token_name": "existing"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"] == "/admin/credentials?feedback=token_exists&token_name=existing"
+    )
+
+
+def test_create_authorized_token_endpoint_reports_write_failure(admin_client, monkeypatch):
+    """Validate token creation reports .env write failures."""
+    monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {})
+    monkeypatch.setattr(admin_routes, "_generate_authorized_token", lambda _length=32: "generated")
+
+    def _raise_oserror(_token_name: str, _token_value: str):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(admin_routes, "_upsert_authorized_token_in_env", _raise_oserror)
+
+    resp = admin_client.post(
+        "/admin/credentials/tokens",
+        data={"token_name": "new_token"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"]
+        == "/admin/credentials?feedback=token_write_failed&token_name=new_token"
+    )
+
+
+def test_delete_authorized_token_endpoint_updates_config(admin_client, monkeypatch):
+    """Validate token delete endpoint updates .env and reloads config."""
+    reload_calls = {"count": 0}
+    publish_calls = {"count": 0}
+
+    def _fake_reload():
+        reload_calls["count"] += 1
+        return config
+
+    def _fake_publish():
+        publish_calls["count"] += 1
+        return 0
+
+    monkeypatch.setattr(admin_routes, "_delete_authorized_token_from_env", lambda _name: True)
+    monkeypatch.setattr(config_module, "reload_config_env", _fake_reload)
+    monkeypatch.setattr(config_module, "publish_config_reload_event", _fake_publish)
+
+    resp = admin_client.post("/admin/credentials/tokens/legacy/delete", follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin/credentials?feedback=token_deleted&token_name=legacy"
+    assert reload_calls["count"] == 1
+    assert publish_calls["count"] == 1
+
+
+def test_delete_authorized_token_endpoint_handles_missing_label(admin_client, monkeypatch):
+    """Validate token delete endpoint reports missing labels gracefully."""
+    monkeypatch.setattr(admin_routes, "_delete_authorized_token_from_env", lambda _name: False)
+
+    resp = admin_client.post("/admin/credentials/tokens/missing/delete", follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"] == "/admin/credentials?feedback=token_missing&token_name=missing"
+    )
+
+
+def test_delete_authorized_token_endpoint_rejects_invalid_label(admin_client):
+    """Validate token delete rejects labels incompatible with .env keys."""
+    resp = admin_client.post(
+        "/admin/credentials/tokens/invalid-label/delete",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin/credentials?feedback=token_invalid"
+
+
+def test_delete_authorized_token_endpoint_reports_write_failure(admin_client, monkeypatch):
+    """Validate token delete reports .env write failures."""
+
+    def _raise_oserror(_token_name: str):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(admin_routes, "_delete_authorized_token_from_env", _raise_oserror)
+
+    resp = admin_client.post("/admin/credentials/tokens/legacy/delete", follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"]
+        == "/admin/credentials?feedback=token_write_failed&token_name=legacy"
+    )
+
+
+def test_create_admin_user_endpoint_persists_and_reloads(admin_client, monkeypatch):
+    """Validate admin creation endpoint writes .env then triggers config reload."""
+    captured = {}
+    reload_calls = {"count": 0}
+    publish_calls = {"count": 0}
+
+    monkeypatch.setattr(config, "ADMIN_USERS", {})
+    monkeypatch.setattr(admin_routes, "_hash_admin_password", lambda _password: "hashed-generated")
+
+    def _fake_upsert(admin_name: str, hashed_password: str):
+        captured["admin_name"] = admin_name
+        captured["hashed_password"] = hashed_password
+
+    def _fake_reload():
+        reload_calls["count"] += 1
+        return config
+
+    def _fake_publish():
+        publish_calls["count"] += 1
+        return 0
+
+    monkeypatch.setattr(admin_routes, "_upsert_admin_user_in_env", _fake_upsert)
+    monkeypatch.setattr(config_module, "reload_config_env", _fake_reload)
+    monkeypatch.setattr(config_module, "publish_config_reload_event", _fake_publish)
+
+    resp = admin_client.post(
+        "/admin/credentials/admins",
+        data={
+            "admin_name": "new_admin",
+            "admin_password": "secret-password",
+            "admin_password_confirm": "secret-password",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"] == "/admin/credentials?feedback=admin_created&admin_name=new_admin"
+    )
+    assert captured == {"admin_name": "new_admin", "hashed_password": "hashed-generated"}
+    assert reload_calls["count"] == 1
+    assert publish_calls["count"] == 1
+
+
+def test_create_admin_user_endpoint_rejects_invalid_label(admin_client):
+    """Validate admin creation endpoint rejects labels incompatible with .env keys."""
+    resp = admin_client.post(
+        "/admin/credentials/admins",
+        data={
+            "admin_name": "invalid label",
+            "admin_password": "password",
+            "admin_password_confirm": "password",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin/credentials?feedback=admin_invalid"
+
+
+def test_create_admin_user_endpoint_rejects_duplicate_label(admin_client, monkeypatch):
+    """Validate admin creation endpoint rejects already existing admin labels."""
+    monkeypatch.setattr(config, "ADMIN_USERS", {"existing": "hash"})
+
+    resp = admin_client.post(
+        "/admin/credentials/admins",
+        data={
+            "admin_name": "existing",
+            "admin_password": "password",
+            "admin_password_confirm": "password",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"] == "/admin/credentials?feedback=admin_exists&admin_name=existing"
+    )
+
+
+def test_create_admin_user_endpoint_rejects_password_mismatch(admin_client):
+    """Validate admin creation endpoint rejects mismatching passwords."""
+    resp = admin_client.post(
+        "/admin/credentials/admins",
+        data={
+            "admin_name": "alice",
+            "admin_password": "password-a",
+            "admin_password_confirm": "password-b",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"]
+        == "/admin/credentials?feedback=admin_password_mismatch&admin_name=alice"
+    )
+
+
+def test_create_admin_user_endpoint_rejects_empty_password(admin_client):
+    """Validate admin creation endpoint rejects empty passwords."""
+    resp = admin_client.post(
+        "/admin/credentials/admins",
+        data={
+            "admin_name": "alice",
+            "admin_password": "",
+            "admin_password_confirm": "",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"]
+        == "/admin/credentials?feedback=admin_password_empty&admin_name=alice"
+    )
+
+
+def test_create_admin_user_endpoint_reports_write_failure(admin_client, monkeypatch):
+    """Validate admin creation reports .env write failures."""
+    monkeypatch.setattr(config, "ADMIN_USERS", {})
+    monkeypatch.setattr(admin_routes, "_hash_admin_password", lambda _password: "hashed-generated")
+
+    def _raise_oserror(_admin_name: str, _hashed_password: str):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(admin_routes, "_upsert_admin_user_in_env", _raise_oserror)
+
+    resp = admin_client.post(
+        "/admin/credentials/admins",
+        data={
+            "admin_name": "new_admin",
+            "admin_password": "secret-password",
+            "admin_password_confirm": "secret-password",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"]
+        == "/admin/credentials?feedback=admin_write_failed&admin_name=new_admin"
+    )
+
+
+def test_delete_admin_user_endpoint_updates_config(admin_client, monkeypatch):
+    """Validate admin delete endpoint updates .env and reloads config."""
+    reload_calls = {"count": 0}
+    publish_calls = {"count": 0}
+
+    def _fake_reload():
+        reload_calls["count"] += 1
+        return config
+
+    def _fake_publish():
+        publish_calls["count"] += 1
+        return 0
+
+    monkeypatch.setattr(admin_routes, "_delete_admin_user_from_env", lambda _name: True)
+    monkeypatch.setattr(config_module, "reload_config_env", _fake_reload)
+    monkeypatch.setattr(config_module, "publish_config_reload_event", _fake_publish)
+
+    resp = admin_client.post("/admin/credentials/admins/alice/delete", follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin/credentials?feedback=admin_deleted&admin_name=alice"
+    assert reload_calls["count"] == 1
+    assert publish_calls["count"] == 1
+
+
+def test_delete_admin_user_endpoint_handles_missing_label(admin_client, monkeypatch):
+    """Validate admin delete endpoint reports missing labels gracefully."""
+    monkeypatch.setattr(admin_routes, "_delete_admin_user_from_env", lambda _name: False)
+
+    resp = admin_client.post("/admin/credentials/admins/missing/delete", follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"] == "/admin/credentials?feedback=admin_missing&admin_name=missing"
+    )
+
+
+def test_delete_admin_user_endpoint_rejects_invalid_label(admin_client):
+    """Validate admin delete rejects labels incompatible with .env keys."""
+    resp = admin_client.post(
+        "/admin/credentials/admins/invalid%20label/delete",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin/credentials?feedback=admin_invalid"
+
+
+def test_delete_admin_user_endpoint_reports_write_failure(admin_client, monkeypatch):
+    """Validate admin delete reports .env write failures."""
+
+    def _raise_oserror(_admin_name: str):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(admin_routes, "_delete_admin_user_from_env", _raise_oserror)
+
+    resp = admin_client.post("/admin/credentials/admins/alice/delete", follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert (
+        resp.headers["location"]
+        == "/admin/credentials?feedback=admin_write_failed&admin_name=alice"
+    )
 
 
 def test_reload_config_endpoint_returns_expected_payload(admin_client, monkeypatch):

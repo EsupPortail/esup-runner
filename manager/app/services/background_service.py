@@ -38,14 +38,14 @@ class BackgroundServiceManager:
 
         # Start each background service
         services = [
-            check_runners_activity(),
-            cleanup_old_tasks(),
-            check_task_timeouts(),
-            reconcile_running_tasks_with_runners(),
+            ("check_runners_activity", check_runners_activity()),
+            ("cleanup_old_tasks", cleanup_old_tasks()),
+            ("check_task_timeouts", check_task_timeouts()),
+            ("reconcile_running_tasks_with_runners", reconcile_running_tasks_with_runners()),
         ]
 
-        for service in services:
-            task = asyncio.create_task(service)
+        for name, service in services:
+            task = asyncio.create_task(service, name=name)
             self.tasks.append(task)
 
         self.is_running = True

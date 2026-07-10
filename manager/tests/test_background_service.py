@@ -36,6 +36,12 @@ async def test_start_and_stop_all_services(monkeypatch):
     assert mgr.is_running is True
     assert len(mgr.tasks) == 4
     assert set(started) == {"runners", "cleanup", "timeouts", "reconcile"}
+    assert {service["name"] for service in mgr.get_service_status()["services"]} == {
+        "check_runners_activity",
+        "cleanup_old_tasks",
+        "check_task_timeouts",
+        "reconcile_running_tasks_with_runners",
+    }
 
     await mgr.stop_all_services()
     assert mgr.is_running is False

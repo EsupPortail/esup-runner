@@ -30,6 +30,8 @@ journalctl --user -u esup-runner-manager -n 200 --no-pager
 
 Use one valid manager token (`AUTHORIZED_TOKENS__*`) from `.env`.
 
+This token can be provisioned either from the admin UI (`/admin/credentials`) or with the CLI helper script (`uv run scripts/generate_token.py`).
+
 ```bash
 curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
   "http://127.0.0.1:<MANAGER_PORT>/manager/health"
@@ -56,6 +58,19 @@ uv run scripts/check_pipeline_tasks.py --with-transcription-translation
 - `/admin`: global dashboard (runners + recent tasks)
 - `/tasks`: task browsing/search and bulk actions
 - `/statistics`: usage analytics from `data/task_stats.csv`
+- `/admin/credentials`: credentials management for `AUTHORIZED_TOKENS__*` and `ADMIN_USERS__*`
+
+From `/admin/credentials`, operators can:
+
+- Generate and store API tokens directly in `.env`
+- Generate and store admin bcrypt password hashes directly in `.env`
+- Copy or delete existing token/admin entries
+- Reload runtime configuration after updates
+
+Equivalent CLI workflow remains available with:
+
+- `uv run scripts/generate_token.py`
+- `uv run scripts/generate_password.py`
 
 Task operations from `/tasks`:
 

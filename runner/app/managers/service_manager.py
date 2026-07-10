@@ -82,13 +82,13 @@ class BackgroundServiceManager:
 
         # Start each background service
         services = [
-            reconnect_loop(),
-            heartbeat_loop(),
-            storage_cleanup_loop(),
+            ("reconnect_loop", reconnect_loop()),
+            ("heartbeat_loop", heartbeat_loop()),
+            ("storage_cleanup_loop", storage_cleanup_loop()),
         ]
 
-        for service in services:
-            task = asyncio.create_task(service)
+        for name, service in services:
+            task = asyncio.create_task(service, name=name)
             self.tasks.append(task)
 
         self.is_running = True

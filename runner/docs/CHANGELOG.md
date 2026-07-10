@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.6.0] - 2026-07-10
+
 ### Added
 
 - Added a manager-authenticated `POST /task/stop/{task_id}` endpoint that requests termination of running task processes by persisted PGID/PID, with a workspace process scan fallback.

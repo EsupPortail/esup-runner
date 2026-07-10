@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.6.0] - 2026-07-10
+
 ### Added
 
 - Added a `Needs attention` panel to the admin dashboard highlighting offline runners, task incidents (`failed`, `warning`, `timeout`), and `running` tasks without updates for at least 300 minutes, with direct links, compact labels, and video IDs when available.

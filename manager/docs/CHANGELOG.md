@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `update-stack.sh --send-test-email` to send a preview of the update notification email without running update, restart, or smoke-test steps.
 - Added live runner disk-usage monitoring on the admin runner detail page, showing df-like total, used, free, usage percentage, and status icons for runner storage/cache directories.
 - Added date-filter-aware downloads for `task_stats.csv` from the statistics dashboard.
+- Added full credentials self-service on `/admin/credentials` for both `AUTHORIZED_TOKENS__*` and `ADMIN_USERS__*`: create (secure token generation / bcrypt password hashing), delete, and copy-to-clipboard actions, with `.env` persistence and immediate config reload.
+- Added a `Reload config` action to the credentials page header, aligned with admin reload behavior.
 
 ### Changed
 
@@ -29,12 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved `update-stack.sh` update emails with the branded HTML template.
 - Masked runner tokens on the admin runner detail page and tightened small dashboard/statistics labels.
 - Removed unused duplicate runner-token helpers (`verify_runner_token`) and kept token checks on active route paths only.
+- Unified `Reload config` button presentation across admin dashboard and credentials page using a shared visual style that stays distinct from the primary `Refresh` button.
+- Tightened light/dark contrast for subtle UI text and reload button states, and improved dark-theme log timestamp readability for better WCAG AA legibility.
 
 ### Fixed
 
 - Fixed manager CI stability in sandboxed environments by using a thread-free ASGI test client and removing real DNS/email dependencies from task route unit tests.
 - Fixed manager cleanup handling for `CLEANUP_TASK_FILES_DAYS=0` so zero disables cleanup instead of deleting nearly all historical task records.
 - Fixed the admin runner detail page to derive runner online/offline status from heartbeat age, matching the main dashboard.
+- Improved credentials-page accessibility for screen readers by exposing reload/copy feedback as explicit live status regions (`role="status"`, `aria-live="polite"`, `aria-atomic="true"`).
 
 ## [1.5.0] - 2026-07-02
 

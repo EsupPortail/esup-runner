@@ -15,6 +15,37 @@
   --bs-btn-color: #6a97c4;
 }
 
+[data-bs-theme="light"] .text-subtle {
+  color: #4f5d6b !important;
+}
+
+[data-bs-theme="dark"] .text-subtle {
+  color: #c7d2de !important;
+}
+
+.reload-config-btn {
+  --bs-btn-color: #8b4500;
+  --bs-btn-border-color: rgba(139, 69, 0, 0.7);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #8b4500;
+  --bs-btn-hover-border-color: #8b4500;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #753b00;
+  --bs-btn-active-border-color: #753b00;
+  white-space: nowrap;
+}
+
+[data-bs-theme="dark"] .reload-config-btn {
+  --bs-btn-color: #ffbe63;
+  --bs-btn-border-color: rgba(255, 190, 99, 0.7);
+  --bs-btn-hover-color: #1f1f1f;
+  --bs-btn-hover-bg: #ffbe63;
+  --bs-btn-hover-border-color: #ffbe63;
+  --bs-btn-active-color: #1f1f1f;
+  --bs-btn-active-bg: #f2af4f;
+  --bs-btn-active-border-color: #f2af4f;
+}
+
 .alert-info,
 [data-bs-theme="light"] .bg-body-secondary {
   --bs-code-color: #c5257d;
@@ -223,6 +254,45 @@ body[data-bs-theme="light"] {
   border-top: 1px solid rgba(128, 128, 128, 0.2);
 }
 
+.token-list-block {
+  border: 0;
+  background-image: none !important;
+}
+
+[data-bs-theme="light"] .token-list-block {
+  background-color: #eef3f8 !important;
+}
+
+[data-bs-theme="dark"] .token-list-block {
+  background-color: #21262b !important;
+}
+
+.token-list-block .list-group {
+  border: 1px solid rgba(128, 128, 128, 0.22);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.token-list-block .list-group-item {
+  border-top-color: rgba(128, 128, 128, 0.2);
+}
+
+[data-bs-theme="light"] .token-list-block .list-group-item:nth-child(odd) {
+  background-color: #f7f9fb;
+}
+
+[data-bs-theme="light"] .token-list-block .list-group-item:nth-child(even) {
+  background-color: #ffffff;
+}
+
+[data-bs-theme="dark"] .token-list-block .list-group-item:nth-child(odd) {
+  background-color: #2f3336;
+}
+
+[data-bs-theme="dark"] .token-list-block .list-group-item:nth-child(even) {
+  background-color: #25292c;
+}
+
 .last-update {
   font-size: 0.85rem;
   margin-top: 1rem;
@@ -360,6 +430,10 @@ body[data-bs-theme="light"] {
   color: #6c757d;
   font-weight: 500;
   min-width: 160px;
+}
+
+[data-bs-theme="dark"] .log-timestamp {
+  color: #b9c4d0;
 }
 
 .log-module {

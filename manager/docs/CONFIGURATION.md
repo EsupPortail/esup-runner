@@ -49,6 +49,7 @@ AUTHORIZED_TOKENS__app=CHANGE_ME_APP_TOKEN
 Notes:
 - Suffix (for example `runners`, `app`) is just a label.
 - If no token is configured, the manager logs a warning and protected API access will fail.
+- Token entries can be generated/managed from `/admin/credentials` (UI) or via `scripts/generate_token.py` (CLI).
 
 ### Admin users (`ADMIN_USERS__*`)
 
@@ -59,6 +60,8 @@ ADMIN_USERS__admin="$2b$12$CHANGE_ME_BCRYPT_HASH"
 ```
 
 If no admin user is configured, the manager logs a warning and admin login is unavailable.
+
+Admin password hashes can be generated/managed from `/admin/credentials` (UI) or via `scripts/generate_password.py` (CLI).
 
 ## OpenAPI docs visibility
 

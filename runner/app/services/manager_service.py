@@ -17,6 +17,7 @@ from app.core.state import (
     is_available,
     is_registered,
     set_registered,
+    update_heartbeat,
 )
 
 logger = setup_default_logging()
@@ -98,6 +99,7 @@ async def send_heartbeat():
             )
 
             if response.status_code == 200:
+                update_heartbeat()
                 return True
             else:
                 logger.warning(f"Heartbeat failed: {response.text}")

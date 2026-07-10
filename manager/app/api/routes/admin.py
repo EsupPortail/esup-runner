@@ -5,12 +5,15 @@ Handles administrative dashboard and monitoring endpoints.
 """
 
 import csv
+import re
+import secrets
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from slowapi import Limiter
@@ -25,6 +28,7 @@ from app.api.routes.task import (
 from app.core import config as config_module
 from app.core.auth import OPENAPI_TOKEN_COOKIE_NAME, build_openapi_cookie_value, verify_admin
 from app.core.config import config
+from app.core.passwords import BcryptPasswordContext
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_task as get_task_from_state
 from app.core.state import get_tasks_snapshot, runners
@@ -58,6 +62,14 @@ _TASK_AGE_UPDATED_AT_LABELS = {
 }
 _RUNNER_STATUS_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=2.0, pool=2.0)
 _RUNNER_ONLINE_HEARTBEAT_SECONDS = 60
+_TOKEN_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
+_ADMIN_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_.@-]+$")
+_TOKEN_ENV_PREFIX = "AUTHORIZED_TOKENS__"
+_ADMIN_ENV_PREFIX = "ADMIN_USERS__"
+_DEFAULT_GENERATED_TOKEN_LENGTH = 32
+_MIN_GENERATED_TOKEN_LENGTH = 16
+_MAX_GENERATED_TOKEN_LENGTH = 128
+_PASSWORD_CONTEXT = BcryptPasswordContext()
 
 # ======================================================
 # Endpoints
@@ -104,6 +116,217 @@ def _format_secret_preview(value: Any) -> str:
     if len(raw) > 4:
         return f"{raw[:4]}..."
     return "***"
+
+
+def _is_valid_token_label(label: str) -> bool:
+    """Return True when token label can be used in .env key names."""
+    return bool(_TOKEN_LABEL_PATTERN.fullmatch(label))
+
+
+def _is_valid_admin_label(label: str) -> bool:
+    """Return True when admin label can be used in .env key names."""
+    return bool(_ADMIN_LABEL_PATTERN.fullmatch(label))
+
+
+def _generate_authorized_token(length: int = _DEFAULT_GENERATED_TOKEN_LENGTH) -> str:
+    """Generate a secure token using the same strategy as scripts/generate_token.py."""
+    bounded_length = max(_MIN_GENERATED_TOKEN_LENGTH, min(_MAX_GENERATED_TOKEN_LENGTH, length))
+    return secrets.token_urlsafe(bounded_length)
+
+
+def _hash_admin_password(password: str) -> str:
+    """Hash an admin password using the same policy as scripts/generate_password.py."""
+    return _PASSWORD_CONTEXT.hash(password)
+
+
+def _read_env_lines(env_path: Path) -> list[str]:
+    """Read .env lines, returning an empty list when the file does not yet exist."""
+    if not env_path.exists():
+        return []
+    return env_path.read_text(encoding="utf-8").splitlines()
+
+
+def _write_env_lines(env_path: Path, lines: list[str]) -> None:
+    """Write .env lines with a trailing newline for POSIX-friendly formatting."""
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    content = "\n".join(lines)
+    if content:
+        content += "\n"
+    env_path.write_text(content, encoding="utf-8")
+
+
+def _upsert_authorized_token_in_env(token_name: str, token_value: str) -> None:
+    """Insert or update one AUTHORIZED_TOKENS entry in .env."""
+    env_path = config_module.get_env_file_path()
+    lines = _read_env_lines(env_path)
+    token_prefix = f"{_TOKEN_ENV_PREFIX}{token_name}="
+
+    for index, line in enumerate(lines):
+        if line.startswith(token_prefix):
+            lines[index] = f"{token_prefix}{token_value}"
+            _write_env_lines(env_path, lines)
+            return
+
+    insert_index = len(lines)
+    for index, line in enumerate(lines):
+        if line.startswith(_TOKEN_ENV_PREFIX):
+            insert_index = index + 1
+
+    lines.insert(insert_index, f"{token_prefix}{token_value}")
+    _write_env_lines(env_path, lines)
+
+
+def _delete_authorized_token_from_env(token_name: str) -> bool:
+    """Delete one AUTHORIZED_TOKENS entry from .env."""
+    env_path = config_module.get_env_file_path()
+    if not env_path.exists():
+        return False
+
+    lines = _read_env_lines(env_path)
+    token_prefix = f"{_TOKEN_ENV_PREFIX}{token_name}="
+    filtered_lines = [line for line in lines if not line.startswith(token_prefix)]
+    if len(filtered_lines) == len(lines):
+        return False
+
+    _write_env_lines(env_path, filtered_lines)
+    return True
+
+
+def _upsert_admin_user_in_env(admin_name: str, hashed_password: str) -> None:
+    """Insert or update one ADMIN_USERS entry in .env."""
+    env_path = config_module.get_env_file_path()
+    lines = _read_env_lines(env_path)
+    admin_prefix = f"{_ADMIN_ENV_PREFIX}{admin_name}="
+    admin_line = f'{admin_prefix}"{hashed_password}"'
+
+    for index, line in enumerate(lines):
+        if line.startswith(admin_prefix):
+            lines[index] = admin_line
+            _write_env_lines(env_path, lines)
+            return
+
+    insert_index = len(lines)
+    for index, line in enumerate(lines):
+        if line.startswith(_ADMIN_ENV_PREFIX):
+            insert_index = index + 1
+
+    lines.insert(insert_index, admin_line)
+    _write_env_lines(env_path, lines)
+
+
+def _delete_admin_user_from_env(admin_name: str) -> bool:
+    """Delete one ADMIN_USERS entry from .env."""
+    env_path = config_module.get_env_file_path()
+    if not env_path.exists():
+        return False
+
+    lines = _read_env_lines(env_path)
+    admin_prefix = f"{_ADMIN_ENV_PREFIX}{admin_name}="
+    filtered_lines = [line for line in lines if not line.startswith(admin_prefix)]
+    if len(filtered_lines) == len(lines):
+        return False
+
+    _write_env_lines(env_path, filtered_lines)
+    return True
+
+
+def _credentials_redirect(
+    feedback: str,
+    token_name: str = "",
+    admin_name: str = "",
+) -> RedirectResponse:
+    """Build a redirect response to the credentials page with UI feedback hints."""
+    query_params = {"feedback": feedback}
+    if token_name:
+        query_params["token_name"] = token_name
+    if admin_name:
+        query_params["admin_name"] = admin_name
+    query = urlencode(query_params)
+    return RedirectResponse(
+        url=f"/admin/credentials?{query}", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+def _build_credentials_feedback(request: Request) -> dict[str, str]:
+    """Build user-facing feedback messages from query parameters."""
+    feedback = str(request.query_params.get("feedback", "") or "").strip()
+    token_name = str(request.query_params.get("token_name", "") or "").strip()
+    admin_name = str(request.query_params.get("admin_name", "") or "").strip()
+    safe_name = token_name if _is_valid_token_label(token_name) else "token"
+    safe_admin = admin_name if _is_valid_admin_label(admin_name) else "administrator"
+
+    token_feedback_messages = {
+        "token_created": {
+            "level": "success",
+            "message": f"Token '{safe_name}' created. .env updated and manager config reloaded.",
+        },
+        "token_deleted": {
+            "level": "success",
+            "message": f"Token '{safe_name}' deleted. .env updated and manager config reloaded.",
+        },
+        "token_exists": {
+            "level": "warning",
+            "message": f"Token label '{safe_name}' already exists.",
+        },
+        "token_missing": {
+            "level": "warning",
+            "message": f"Token label '{safe_name}' was not found in .env.",
+        },
+        "token_invalid": {
+            "level": "danger",
+            "message": "Invalid token label. Use only letters, numbers, and underscores.",
+        },
+        "token_write_failed": {
+            "level": "danger",
+            "message": "Unable to write token changes to .env. Check file permissions.",
+        },
+    }
+
+    admin_feedback_messages = {
+        "admin_created": {
+            "level": "success",
+            "message": (
+                f"Administrator '{safe_admin}' created. .env updated and manager config reloaded."
+            ),
+        },
+        "admin_deleted": {
+            "level": "success",
+            "message": (
+                f"Administrator '{safe_admin}' deleted. .env updated and manager config reloaded."
+            ),
+        },
+        "admin_exists": {
+            "level": "warning",
+            "message": f"Administrator label '{safe_admin}' already exists.",
+        },
+        "admin_missing": {
+            "level": "warning",
+            "message": f"Administrator label '{safe_admin}' was not found in .env.",
+        },
+        "admin_invalid": {
+            "level": "danger",
+            "message": "Invalid administrator label. Use only letters, numbers, underscores, ., -, and @.",
+        },
+        "admin_password_empty": {
+            "level": "danger",
+            "message": "Password cannot be empty.",
+        },
+        "admin_password_mismatch": {
+            "level": "danger",
+            "message": "Passwords do not match.",
+        },
+        "admin_write_failed": {
+            "level": "danger",
+            "message": "Unable to write administrator changes to .env. Check file permissions.",
+        },
+    }
+
+    if feedback in token_feedback_messages:
+        return token_feedback_messages[feedback]
+    if feedback in admin_feedback_messages:
+        return admin_feedback_messages[feedback]
+
+    return {"level": "", "message": ""}
 
 
 def _parse_datetime(value: Any) -> datetime | None:
@@ -639,14 +862,29 @@ async def credentials_page(request: Request):
         TemplateResponse: Rendered credentials configuration page
     """
     dark_mode = request.cookies.get("theme") == "dark"
+    feedback = _build_credentials_feedback(request)
 
-    # Prepare admin users list (only usernames, not passwords)
-    admin_users = list(config.ADMIN_USERS.keys())
+    # Prepare admin users list with preview and value (value is only used for clipboard copy).
+    admin_users = []
+    for admin_name, hashed_password in sorted(config.ADMIN_USERS.items()):
+        admin_users.append(
+            {
+                "name": admin_name,
+                "preview": _format_secret_preview(hashed_password),
+                "value": hashed_password,
+            }
+        )
 
-    # Prepare authorized tokens list with preview (show first 10 and last 4 chars)
+    # Prepare authorized tokens list with preview and value (value is only used for clipboard copy).
     authorized_tokens = []
-    for token_name, token_value in config.AUTHORIZED_TOKENS.items():
-        authorized_tokens.append((token_name, _format_secret_preview(token_value)))
+    for token_name, token_value in sorted(config.AUTHORIZED_TOKENS.items()):
+        authorized_tokens.append(
+            {
+                "name": token_name,
+                "preview": _format_secret_preview(token_value),
+                "value": token_value,
+            }
+        )
 
     return templates.TemplateResponse(
         request,
@@ -656,6 +894,8 @@ async def credentials_page(request: Request):
             "admin_users": admin_users,
             "admin_count": len(admin_users),
             "authorized_tokens": authorized_tokens,
+            "feedback_level": feedback["level"],
+            "feedback_message": feedback["message"],
             "tokens_count": len(authorized_tokens),
             "api_docs_visibility": config.API_DOCS_VISIBILITY,
             "dark_mode_enabled": dark_mode,
@@ -663,6 +903,130 @@ async def credentials_page(request: Request):
             "version": __version__,
         },
     )
+
+
+@router.post(
+    "/credentials/admins",
+    summary="Generate admin password",
+    include_in_schema=False,
+    description="Hash admin password, persist a new ADMIN_USERS entry in .env, and reload config",
+)
+async def create_admin_user(
+    admin_name: str = Form(...),
+    admin_password: str = Form(""),
+    admin_password_confirm: str = Form(""),
+    _: bool = Depends(verify_admin),
+):
+    """Create or update one admin user from the credentials page."""
+    normalized_name = str(admin_name or "").strip()
+    password = str(admin_password or "")
+    password_confirm = str(admin_password_confirm or "")
+
+    if not _is_valid_admin_label(normalized_name):
+        return _credentials_redirect("admin_invalid")
+
+    if not password.strip():
+        return _credentials_redirect("admin_password_empty", admin_name=normalized_name)
+
+    if password != password_confirm:
+        return _credentials_redirect("admin_password_mismatch", admin_name=normalized_name)
+
+    if normalized_name in config.ADMIN_USERS:
+        return _credentials_redirect("admin_exists", admin_name=normalized_name)
+
+    hashed_password = _hash_admin_password(password)
+    try:
+        _upsert_admin_user_in_env(normalized_name, hashed_password)
+    except OSError as exc:
+        logger.error(f"Failed to write generated admin '{normalized_name}' to .env: {exc}")
+        return _credentials_redirect("admin_write_failed", admin_name=normalized_name)
+
+    config_module.reload_config_env()
+    config_module.publish_config_reload_event()
+    return _credentials_redirect("admin_created", admin_name=normalized_name)
+
+
+@router.post(
+    "/credentials/admins/{admin_name}/delete",
+    summary="Delete administrator",
+    include_in_schema=False,
+    description="Delete one ADMIN_USERS entry from .env and reload config",
+)
+async def delete_admin_user(admin_name: str, _: bool = Depends(verify_admin)):
+    """Delete one admin user from .env from the credentials page."""
+    normalized_name = str(admin_name or "").strip()
+    if not _is_valid_admin_label(normalized_name):
+        return _credentials_redirect("admin_invalid")
+
+    try:
+        admin_deleted = _delete_admin_user_from_env(normalized_name)
+    except OSError as exc:
+        logger.error(f"Failed to delete admin '{normalized_name}' from .env: {exc}")
+        return _credentials_redirect("admin_write_failed", admin_name=normalized_name)
+
+    if not admin_deleted:
+        return _credentials_redirect("admin_missing", admin_name=normalized_name)
+
+    config_module.reload_config_env()
+    config_module.publish_config_reload_event()
+    return _credentials_redirect("admin_deleted", admin_name=normalized_name)
+
+
+@router.post(
+    "/credentials/tokens",
+    summary="Generate authorized token",
+    include_in_schema=False,
+    description="Generate a new AUTHORIZED_TOKENS entry, persist it in .env, and reload config",
+)
+async def create_authorized_token(
+    token_name: str = Form(...),
+    token_length: int = Form(_DEFAULT_GENERATED_TOKEN_LENGTH),
+    _: bool = Depends(verify_admin),
+):
+    """Generate and persist one API token in .env from the admin credentials page."""
+    normalized_name = str(token_name or "").strip()
+    if not _is_valid_token_label(normalized_name):
+        return _credentials_redirect("token_invalid")
+
+    if normalized_name in config.AUTHORIZED_TOKENS:
+        return _credentials_redirect("token_exists", normalized_name)
+
+    generated_token = _generate_authorized_token(token_length)
+    try:
+        _upsert_authorized_token_in_env(normalized_name, generated_token)
+    except OSError as exc:
+        logger.error(f"Failed to write generated token '{normalized_name}' to .env: {exc}")
+        return _credentials_redirect("token_write_failed", normalized_name)
+
+    config_module.reload_config_env()
+    config_module.publish_config_reload_event()
+    return _credentials_redirect("token_created", normalized_name)
+
+
+@router.post(
+    "/credentials/tokens/{token_name}/delete",
+    summary="Delete authorized token",
+    include_in_schema=False,
+    description="Delete one AUTHORIZED_TOKENS entry from .env and reload config",
+)
+async def delete_authorized_token(token_name: str, _: bool = Depends(verify_admin)):
+    """Delete one API token from .env from the admin credentials page."""
+    normalized_name = str(token_name or "").strip()
+    if not _is_valid_token_label(normalized_name):
+        return _credentials_redirect("token_invalid")
+
+    try:
+        token_deleted = _delete_authorized_token_from_env(normalized_name)
+    except OSError as exc:
+        logger.error(f"Failed to delete token '{normalized_name}' from .env: {exc}")
+        return _credentials_redirect("token_write_failed", normalized_name)
+
+    if not token_deleted:
+        return _credentials_redirect("token_missing", normalized_name)
+
+    config_module.reload_config_env()
+    config_module.publish_config_reload_event()
+    return _credentials_redirect("token_deleted", normalized_name)
 
 
 @router.post(

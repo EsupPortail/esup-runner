@@ -125,6 +125,26 @@ def _render_task_detail_template(status: str) -> str:
     )
 
 
+def test_admin_dashboard_rate_limit_allows_auto_refresh_margin(monkeypatch):
+    """Validate dashboard rate limit leaves margin above built-in auto-refresh."""
+
+    async def _noop(*_, **__):
+        return None
+
+    monkeypatch.setattr(background_service.background_manager, "start_all_services", _noop)
+    monkeypatch.setattr(background_service.background_manager, "stop_all_services", _noop)
+
+    app.dependency_overrides[verify_admin] = lambda: True
+
+    try:
+        with TestClient(app, client=("198.51.100.77", 50000)) as client:
+            responses = [client.get("/admin") for _ in range(11)]
+    finally:
+        app.dependency_overrides.pop(verify_admin, None)
+
+    assert {response.status_code for response in responses} == {200}
+
+
 def test_format_datetime_without_milliseconds_formats_iso_values():
     """Validate Format datetime without milliseconds formats iso values."""
     assert (

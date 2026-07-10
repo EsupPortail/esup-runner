@@ -39,7 +39,8 @@ logger = setup_default_logging()
 # Create admin router
 router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(verify_admin)])
 
-# Rate limiter for admin endpoints (stricter limit to prevent brute-force on Basic Auth)
+# Rate limiter for admin endpoints. The dashboard has built-in auto-refresh, so
+# keep this above normal browsing cadence while the global limiter still applies.
 limiter = Limiter(key_func=get_remote_address)
 
 # Templates configuration
@@ -60,6 +61,7 @@ _TASK_AGE_UPDATED_AT_LABELS = {
     "timeout": "Timed out",
     "warning": "Warning",
 }
+_ADMIN_DASHBOARD_RATE_LIMIT = "60/minute"
 _RUNNER_STATUS_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=2.0, pool=2.0)
 _RUNNER_ONLINE_HEARTBEAT_SECONDS = 60
 _TOKEN_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
@@ -565,7 +567,7 @@ def _build_attention_summary(
     include_in_schema=False,
     description="Main administration dashboard page",
 )
-@limiter.limit("10/minute")
+@limiter.limit(_ADMIN_DASHBOARD_RATE_LIMIT)
 async def admin_dashboard(request: Request):
     """
     Main administration dashboard page.

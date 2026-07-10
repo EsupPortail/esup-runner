@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Increased the admin dashboard page rate limit so the built-in auto-refresh no longer trips the `10/minute` threshold during normal use.
+
 
 ## [1.6.0] - 2026-07-10
 

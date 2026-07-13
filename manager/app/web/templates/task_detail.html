@@ -259,6 +259,9 @@
     <small>Runner Manager v{{ version }} / Last update: {{ last_update }}</small>
   </footer>
 
+  <!-- Bootstrap 5 JavaScript -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
   <script>
     const taskActionFeedback = document.getElementById('taskActionFeedback');
     const stopTaskBtn = document.getElementById('stopTaskBtn');
@@ -288,7 +291,9 @@
         return;
       }
 
-      const confirmed = window.confirm(options.confirmMessage);
+      const confirmed = options.confirmOptions
+        ? await window.esupConfirm(options.confirmOptions)
+        : window.confirm(options.confirmMessage);
       if (!confirmed) {
         return;
       }
@@ -363,6 +368,13 @@
           endpoint: '/tasks/delete-selected',
           successKey: 'deleted',
           confirmMessage: 'Delete this task? This cannot be undone.',
+          confirmOptions: {
+            title: 'Delete this task?',
+            message: 'This task will be permanently removed from the manager history.',
+            subject: deleteTaskBtn.dataset.taskId || '',
+            warning: 'This action cannot be undone.',
+            confirmLabel: 'Delete task',
+          },
           progressLabel: 'Deleting…',
           progressMessage: 'Deletion in progress…',
           doneLabel: 'Deletion done',

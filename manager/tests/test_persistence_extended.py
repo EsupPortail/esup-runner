@@ -6,6 +6,7 @@ import json
 import shutil
 from datetime import date, datetime, timedelta
 
+import pytest
 from filelock import Timeout
 
 from app.core import persistence as persistence_module
@@ -49,6 +50,78 @@ def test_save_tasks_writes_and_deletes(tmp_path):
 
     assert persistence.save_tasks({})
     assert not task_file.exists()
+
+
+@pytest.mark.parametrize("task_id", ["../outside", "task/name", r"task\name", ".hidden", "é"])
+def test_task_file_path_rejects_unsafe_task_ids(tmp_path, task_id):
+    """Reject task IDs that are not safe single filename components."""
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+
+    with pytest.raises(ValueError, match="Invalid task ID"):
+        persistence._get_task_file_path(task_id)
+
+
+def test_task_file_path_rejects_symlink_outside_data_directory(tmp_path):
+    """Reject a task file symlink that resolves outside the persistence root."""
+    data_directory = tmp_path / "data"
+    outside_file = tmp_path / "outside.json"
+    outside_file.write_text('{"task_id": "outside"}', encoding="utf-8")
+
+    persistence = DailyJSONPersistence(data_directory=data_directory, lock_timeout=1)
+    today_directory = data_directory / date.today().strftime("%Y-%m-%d")
+    today_directory.mkdir(parents=True)
+    (today_directory / "unsafe.json").symlink_to(outside_file)
+
+    with pytest.raises(ValueError, match="outside persistence directory"):
+        persistence._get_task_file_path("unsafe")
+
+    assert persistence.load_task("unsafe") is None
+    assert outside_file.read_text(encoding="utf-8") == '{"task_id": "outside"}'
+
+
+def test_read_and_backup_reject_paths_outside_data_directory(tmp_path):
+    """Never read or back up a caller-provided path outside the persistence root."""
+    data_directory = tmp_path / "data"
+    outside_file = tmp_path / "outside.json"
+    outside_file.write_text("{broken", encoding="utf-8")
+    persistence = DailyJSONPersistence(data_directory=data_directory, lock_timeout=1)
+
+    assert persistence._read_task_file(outside_file) is None
+    persistence._backup_corrupted_file(outside_file)
+
+    assert not outside_file.with_suffix(".json.bak").exists()
+
+
+def test_deleted_task_ids_reject_tombstone_symlink_outside_data_directory(tmp_path):
+    """Never read a tombstone symlink that resolves outside the persistence root."""
+    data_directory = tmp_path / "data"
+    outside_file = tmp_path / "outside.json"
+    outside_file.write_text('{"task_id": "outside"}', encoding="utf-8")
+    persistence = DailyJSONPersistence(data_directory=data_directory, lock_timeout=1)
+    deleted_directory = data_directory / ".deleted"
+    deleted_directory.mkdir()
+    (deleted_directory / "unsafe.json").symlink_to(outside_file)
+
+    assert persistence.get_deleted_task_ids() == set()
+
+
+def test_deleted_task_ids_reject_deleted_directory_symlink_outside_data_directory(tmp_path):
+    """Never enumerate a tombstone directory that resolves outside the persistence root."""
+    data_directory = tmp_path / "data"
+    outside_directory = tmp_path / "outside"
+    outside_directory.mkdir()
+    persistence = DailyJSONPersistence(data_directory=data_directory, lock_timeout=1)
+    (data_directory / ".deleted").symlink_to(outside_directory, target_is_directory=True)
+
+    assert persistence.get_deleted_task_ids() == set()
+
+
+def test_invalid_task_id_is_ignored_by_deleted_task_guards(tmp_path):
+    """Handle unsafe task IDs without touching the filesystem."""
+    persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
+
+    assert persistence.is_task_deleted("../outside") is False
+    persistence._delete_current_date_files_for_deleted_tasks({"../outside"})
 
 
 def test_save_tasks_uses_dict_when_model_dump_missing(tmp_path):

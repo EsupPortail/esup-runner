@@ -549,6 +549,10 @@ def _build_attention_summary(
         stale_running_tasks.append(stale_task)
 
     attention_tasks.extend(stale_running_tasks)
+    attention_tasks.sort(
+        key=lambda task: str(task.get("created_at") or ""),
+        reverse=True,
+    )
 
     return {
         "attention_count": len(offline_runners) + len(attention_tasks),

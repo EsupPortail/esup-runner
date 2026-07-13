@@ -6,6 +6,7 @@ Each day gets its own directory, with one JSON file per task.
 
 import json
 import logging
+import os
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -55,13 +56,11 @@ class DailyJSONPersistence:
 
     def _resolve_data_path(self, path: Path) -> Path:
         """Resolve a path and ensure it remains inside the persistence directory."""
-        resolved_path = path.resolve(strict=False)
-        if (
-            resolved_path != self.data_directory
-            and self.data_directory not in resolved_path.parents
-        ):
+        resolved_path = os.path.realpath(path)
+        safe_prefix = os.path.join(str(self.data_directory), "")
+        if not resolved_path.startswith(safe_prefix):
             raise ValueError(f"Path is outside persistence directory: {path}")
-        return resolved_path
+        return Path(resolved_path)
 
     def _get_directory_path(self, target_date: Optional[date] = None) -> Path:
         """

@@ -6,6 +6,7 @@ Each day gets its own directory, with one JSON file per task.
 
 import json
 import logging
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -16,6 +17,8 @@ from app.models.models import Task
 
 logger = logging.getLogger(__name__)
 
+_SAFE_TASK_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}\Z", re.ASCII)
+
 
 class DailyJSONPersistence:
     """
@@ -24,7 +27,7 @@ class DailyJSONPersistence:
     """
 
     def __init__(self, data_directory: str = "data", lock_timeout: int = 10):
-        self.data_directory = Path(data_directory)
+        self.data_directory = Path(data_directory).resolve(strict=False)
         self.data_directory.mkdir(parents=True, exist_ok=True)
         self.lock_timeout = lock_timeout
         self._current_date: Optional[date] = None
@@ -45,8 +48,20 @@ class DailyJSONPersistence:
         return target_date.strftime("%Y-%m-%d")
 
     def _sanitize_task_id(self, task_id: str) -> str:
-        """Sanitize a task ID for filesystem usage."""
-        return task_id.replace("/", "_").replace("\\", "_")
+        """Validate that a task ID is safe to use as a single filename component."""
+        if not _SAFE_TASK_ID_PATTERN.fullmatch(task_id):
+            raise ValueError(f"Invalid task ID for persistence: {task_id!r}")
+        return task_id
+
+    def _resolve_data_path(self, path: Path) -> Path:
+        """Resolve a path and ensure it remains inside the persistence directory."""
+        resolved_path = path.resolve(strict=False)
+        if (
+            resolved_path != self.data_directory
+            and self.data_directory not in resolved_path.parents
+        ):
+            raise ValueError(f"Path is outside persistence directory: {path}")
+        return resolved_path
 
     def _get_directory_path(self, target_date: Optional[date] = None) -> Path:
         """
@@ -59,7 +74,7 @@ class DailyJSONPersistence:
             Path: Full path to the date directory
         """
         date_suffix = self._get_date_suffix(target_date)
-        return self.data_directory / date_suffix
+        return self._resolve_data_path(self.data_directory / date_suffix)
 
     def _get_task_file_path(self, task_id: str, target_date: Optional[date] = None) -> Path:
         """
@@ -74,11 +89,11 @@ class DailyJSONPersistence:
         """
         directory = self._get_directory_path(target_date)
         safe_task_id = self._sanitize_task_id(task_id)
-        return directory / f"{safe_task_id}.json"
+        return self._resolve_data_path(directory / f"{safe_task_id}.json")
 
     def _get_deleted_directory_path(self) -> Path:
         """Return the tombstone directory used to track deleted tasks."""
-        return self.data_directory / ".deleted"
+        return self._resolve_data_path(self.data_directory / ".deleted")
 
     def _get_deleted_lock_path(self) -> Path:
         """Return the lock path for deleted task tombstones."""
@@ -88,7 +103,7 @@ class DailyJSONPersistence:
         """Return the tombstone path for a deleted task."""
         deleted_directory = self._get_deleted_directory_path()
         safe_task_id = self._sanitize_task_id(task_id)
-        return deleted_directory / f"{safe_task_id}.json"
+        return self._resolve_data_path(deleted_directory / f"{safe_task_id}.json")
 
     def _get_deleted_lock(self) -> BaseFileLock:
         """Return the lock guarding deleted task tombstones."""
@@ -131,7 +146,12 @@ class DailyJSONPersistence:
 
     def _get_deleted_task_ids(self) -> Set[str]:
         """Load deleted task IDs from tombstone files."""
-        deleted_directory = self._get_deleted_directory_path()
+        try:
+            deleted_directory = self._get_deleted_directory_path()
+        except ValueError as e:
+            logger.warning(f"Could not resolve deleted-task directory: {e}")
+            return set()
+
         if not deleted_directory.exists():
             return set()
 
@@ -142,6 +162,7 @@ class DailyJSONPersistence:
             with lock:
                 for tombstone_path in deleted_directory.glob("*.json"):
                     try:
+                        tombstone_path = self._resolve_data_path(tombstone_path)
                         with open(tombstone_path, "r", encoding="utf-8") as f:
                             payload = json.load(f)
 
@@ -149,7 +170,7 @@ class DailyJSONPersistence:
                             task_id = str(payload.get("task_id", tombstone_path.stem))
                         else:
                             task_id = tombstone_path.stem
-                        deleted_task_ids.add(task_id)
+                        deleted_task_ids.add(self._sanitize_task_id(task_id))
                     except Exception as e:
                         logger.warning(
                             f"Could not read deleted task tombstone {tombstone_path}: {e}"
@@ -168,7 +189,12 @@ class DailyJSONPersistence:
 
     def is_task_deleted(self, task_id: str) -> bool:
         """Return True when the task is marked as deleted."""
-        tombstone_path = self._get_deleted_task_file_path(task_id)
+        try:
+            tombstone_path = self._get_deleted_task_file_path(task_id)
+        except ValueError as e:
+            logger.warning(f"Could not check deleted-task tombstone for {task_id!r}: {e}")
+            return False
+
         if not tombstone_path.exists():
             return False
 
@@ -197,7 +223,11 @@ class DailyJSONPersistence:
     def _delete_current_date_files_for_deleted_tasks(self, deleted_task_ids: Set[str]) -> None:
         """Remove current-day persisted files for tombstoned task IDs."""
         for task_id in deleted_task_ids:
-            task_file = self._get_task_file_path(task_id)
+            try:
+                task_file = self._get_task_file_path(task_id)
+            except ValueError as e:
+                logger.warning(f"Could not resolve tombstoned task file for {task_id!r}: {e}")
+                continue
             if not task_file.exists():
                 continue
             try:
@@ -212,12 +242,12 @@ class DailyJSONPersistence:
             "task_id": task_id,
             "deleted_at": datetime.now().isoformat(),
         }
-        tombstone_path = self._get_deleted_task_file_path(task_id)
 
         try:
+            tombstone_path = self._get_deleted_task_file_path(task_id)
             deleted_lock = self._get_deleted_lock()
             with deleted_lock:
-                temp_path = tombstone_path.with_suffix(".tmp")
+                temp_path = self._resolve_data_path(tombstone_path.with_suffix(".tmp"))
                 with open(temp_path, "w", encoding="utf-8") as f:
                     json.dump(tombstone, f, indent=2, ensure_ascii=False)
                 temp_path.replace(tombstone_path)
@@ -233,11 +263,10 @@ class DailyJSONPersistence:
 
         deleted_files = 0
         for target_date in self.list_available_dates():
-            lock_path = self._get_lock_path(target_date)
-            lock = FileLock(lock_path, timeout=self.lock_timeout)
-            task_file = self._get_task_file_path(task_id, target_date)
-
             try:
+                lock_path = self._get_lock_path(target_date)
+                lock = FileLock(lock_path, timeout=self.lock_timeout)
+                task_file = self._get_task_file_path(task_id, target_date)
                 with lock:
                     if task_file.exists():
                         task_file.unlink()
@@ -298,7 +327,7 @@ class DailyJSONPersistence:
                     }
 
                     # Write to temporary file first, then rename (atomic)
-                    temp_path = task_file.with_suffix(".tmp")
+                    temp_path = self._resolve_data_path(task_file.with_suffix(".tmp"))
                     with open(temp_path, "w", encoding="utf-8") as f:
                         json.dump(task_data, f, indent=2, ensure_ascii=False)
 
@@ -366,7 +395,7 @@ class DailyJSONPersistence:
                         "date": self._get_date_suffix(),
                     }
 
-                    temp_path = task_file.with_suffix(".tmp")
+                    temp_path = self._resolve_data_path(task_file.with_suffix(".tmp"))
                     with open(temp_path, "w", encoding="utf-8") as f:
                         json.dump(task_data, f, indent=2, ensure_ascii=False)
 
@@ -406,11 +435,10 @@ class DailyJSONPersistence:
             if not directory.exists():
                 continue
 
-            lock_path = self._get_lock_path(target_date)
-            lock = FileLock(lock_path, timeout=self.lock_timeout)
-            task_file = self._get_task_file_path(task_id, target_date)
-
             try:
+                lock_path = self._get_lock_path(target_date)
+                lock = FileLock(lock_path, timeout=self.lock_timeout)
+                task_file = self._get_task_file_path(task_id, target_date)
                 with lock:
                     if not task_file.exists():
                         continue
@@ -432,6 +460,7 @@ class DailyJSONPersistence:
     ) -> Optional[tuple[str, Dict[str, Any], Optional[Dict[str, Any]]]]:
         """Read a single task file and return (task_id, task_data, metadata) or None on error."""
         try:
+            task_file = self._resolve_data_path(task_file)
             with open(task_file, "r", encoding="utf-8") as f:
                 loaded = json.load(f)
 
@@ -599,7 +628,7 @@ class DailyJSONPersistence:
         Returns:
             List[date]: Sorted list of available dates
         """
-        task_dirs = [d for d in self.data_directory.iterdir() if d.is_dir()]
+        task_dirs = [d for d in self.data_directory.iterdir() if not d.is_symlink() and d.is_dir()]
         dates = []
 
         for dir_path in task_dirs:
@@ -645,8 +674,9 @@ class DailyJSONPersistence:
 
     def _backup_corrupted_file(self, file_path: Path):
         """Create a backup of corrupted JSON file for recovery."""
-        backup_path = file_path.with_suffix(".json.bak")
         try:
+            file_path = self._resolve_data_path(file_path)
+            backup_path = self._resolve_data_path(file_path.with_suffix(".json.bak"))
             if file_path.exists():
                 import shutil
 

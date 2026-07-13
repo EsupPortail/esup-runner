@@ -59,4 +59,3 @@ runner/data/**
 # Local assistant config/docs (do not publish)
 /.codex
 /AGENTS.md
-/RTK.md

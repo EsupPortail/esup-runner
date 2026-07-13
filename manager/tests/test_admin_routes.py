@@ -125,6 +125,42 @@ def _render_task_detail_template(status: str) -> str:
     )
 
 
+def _render_tasks_template() -> str:
+    env = Environment(loader=FileSystemLoader("app/web/templates"))
+    template = env.get_template("tasks.html")
+    return template.render(
+        version="test",
+        dark_mode_enabled=False,
+        available_statuses=[],
+        status_counts={},
+        current_filters={
+            "statuses": [],
+            "search": None,
+            "task_type": None,
+            "auto_refresh": 0,
+            "limit": 50,
+        },
+        available_task_types=[],
+        tasks=[],
+        total_tasks=0,
+        now=datetime(2026, 1, 1, 0, 0, 0),
+    )
+
+
+def _render_credentials_template() -> str:
+    env = Environment(loader=FileSystemLoader("app/web/templates"))
+    template = env.get_template("credentials.html")
+    return template.render(
+        version="test",
+        dark_mode_enabled=False,
+        last_update="2026-01-01 00:00:00",
+        feedback_message=None,
+        feedback_level="info",
+        admin_users=[{"name": "alice", "preview": "hash...", "value": "admin-hash"}],
+        authorized_tokens=[{"name": "client_1", "preview": "token...", "value": "token-value"}],
+    )
+
+
 def test_admin_dashboard_rate_limit_allows_auto_refresh_margin(monkeypatch):
     """Validate dashboard rate limit leaves margin above built-in auto-refresh."""
 
@@ -492,10 +528,42 @@ def test_task_detail_template_renders_delete_and_restart_actions():
     assert "/tasks/stop-selected" in html
     assert "redirectUrl: '/admin'" in html
     assert "Delete this task? This cannot be undone." in html
+    assert "await window.esupConfirm(options.confirmOptions)" in html
+    assert "This task will be permanently removed from the manager history." in html
+    assert "subject: deleteTaskBtn.dataset.taskId" in html
+    assert "confirmLabel: 'Delete task'" in html
+    assert "bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" in html
+    assert html.find("bootstrap.bundle.min.js") < html.find("const taskActionFeedback")
     assert "Restart this task?" in html
     assert "This failed task can be deleted or restarted." in html
     assert "text-subtle fst-italic" in html
     assert "This failed task cannot be deleted or restarted." not in html
+
+
+def test_tasks_template_renders_visual_delete_confirmation():
+    """Validate bulk deletion uses the shared visual confirmation."""
+    html = _render_tasks_template()
+
+    assert "await window.esupConfirm" in html
+    assert "Delete selected task?" in html
+    assert "This action cannot be undone." in html
+    assert "Delete tasks" in html
+    assert "bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" in html
+    assert "refreshBtn.addEventListener" not in html
+
+
+def test_credentials_template_uses_visual_delete_confirmations():
+    """Validate credential deletions use the shared visual confirmation."""
+    html = _render_credentials_template()
+
+    assert html.count("data-delete-confirm") == 2
+    assert 'data-confirm-title="Delete this administrator?"' in html
+    assert 'data-confirm-subject="alice"' in html
+    assert 'data-confirm-subject-label="Administrator"' in html
+    assert 'data-confirm-title="Delete this authorized token?"' in html
+    assert 'data-confirm-subject="client_1"' in html
+    assert 'data-confirm-subject-label="Authorized token"' in html
+    assert "onsubmit=" not in html
 
 
 def test_task_detail_template_disables_actions_for_pending_task():

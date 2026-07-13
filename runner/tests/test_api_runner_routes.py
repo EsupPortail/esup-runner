@@ -59,3 +59,25 @@ def test_runner_status_uses_storage_stats(monkeypatch):
         data = resp.json()
         assert data["storage_stats"] == fake_stats
         assert data["disk_usage"] == fake_disk_usage
+
+
+def test_runner_status_does_not_expose_disk_usage_exception(monkeypatch):
+    """Return generic disk errors without exposing exception details through the API."""
+    from app.api.routes import runner as runner_module
+    from app.core import disk_usage
+
+    secret = "df failed for /srv/private/internal-volume"
+
+    def _raise_disk_usage(_path):
+        raise OSError(secret)
+
+    monkeypatch.setattr(runner_module.storage_manager, "get_usage_stats", lambda: {})
+    monkeypatch.setattr(disk_usage.shutil, "disk_usage", _raise_disk_usage)
+
+    with TestClient(app) as client:
+        response = client.get("/runner/status")
+
+    assert response.status_code == 200
+    assert secret not in response.text
+    errors = {item["error"] for item in response.json()["disk_usage"]["directories"].values()}
+    assert errors == {"Disk usage unavailable."}

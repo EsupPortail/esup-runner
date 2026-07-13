@@ -1,5 +1,6 @@
 """Runtime df-like disk usage diagnostics for runner status."""
 
+import logging
 from types import SimpleNamespace
 
 from app.core import disk_usage
@@ -93,20 +94,23 @@ def test_usage_for_path_handles_missing_parent(monkeypatch, tmp_path):
     assert payload["error"] == "No existing parent path found."
 
 
-def test_usage_for_path_handles_disk_usage_error(monkeypatch, tmp_path):
-    """Validate runtime disk usage handles OS errors."""
+def test_usage_for_path_hides_disk_usage_error_from_payload(monkeypatch, tmp_path, caplog):
+    """Keep OS error details in server logs and out of the status payload."""
 
     def _raise_disk_usage(_path):
         raise OSError("df failed")
 
     monkeypatch.setattr(disk_usage.shutil, "disk_usage", _raise_disk_usage)
 
-    payload = disk_usage._usage_for_path(str(tmp_path), "Storage")
+    with caplog.at_level(logging.ERROR, logger=disk_usage.__name__):
+        payload = disk_usage._usage_for_path(str(tmp_path), "Storage")
 
     assert payload["target_path"] == str(tmp_path)
     assert payload["exists"] is True
     assert payload["status"] == "unknown"
-    assert payload["error"] == "df failed"
+    assert payload["error"] == "Disk usage unavailable."
+    assert "df failed" not in payload["error"]
+    assert "df failed" in caplog.text
 
 
 def test_collect_disk_usage_returns_runtime_directories(monkeypatch):

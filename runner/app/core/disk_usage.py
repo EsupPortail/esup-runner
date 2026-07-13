@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 GREEN_USED_PERCENT_LIMIT = 75.0
 RED_USED_PERCENT_LIMIT = 90.0
@@ -124,7 +127,8 @@ def _usage_for_path(path: str, description: str) -> dict[str, Any]:
 
     try:
         usage = shutil.disk_usage(target_path)
-    except OSError as exc:
+    except OSError:
+        logger.exception("Failed to collect disk usage for %s", target_path)
         return {
             "path": path,
             "target_path": str(target_path),
@@ -139,7 +143,7 @@ def _usage_for_path(path: str, description: str) -> dict[str, Any]:
             "used_percent": None,
             "used_percent_display": "n/a",
             "status": "unknown",
-            "error": str(exc),
+            "error": "Disk usage unavailable.",
         }
 
     used_percent = round((usage.used / usage.total) * 100.0, 1) if usage.total > 0 else None

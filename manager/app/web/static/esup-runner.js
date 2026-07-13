@@ -94,19 +94,31 @@ window.esupConfirm = function esupConfirm(options) {
   const warning = options.warning || "This action cannot be undone.";
 
   if (!window.bootstrap || !window.bootstrap.Modal) {
-    return Promise.resolve(window.confirm(`${title}\n\n${message}\n\n${warning}`));
+    return Promise.resolve(
+      window.confirm(`${title}\n\n${message}\n\n${warning}`),
+    );
   }
 
   const modalElement = getActionConfirmationModal();
   const titleElement = modalElement.querySelector(".modal-title");
-  const messageElement = modalElement.querySelector("#actionConfirmationModalMessage");
-  const subjectElement = modalElement.querySelector("#actionConfirmationModalSubject");
-  const subjectLabelElement = subjectElement.querySelector("[data-confirm-subject-label]");
+  const messageElement = modalElement.querySelector(
+    "#actionConfirmationModalMessage",
+  );
+  const subjectElement = modalElement.querySelector(
+    "#actionConfirmationModalSubject",
+  );
+  const subjectLabelElement = subjectElement.querySelector(
+    "[data-confirm-subject-label]",
+  );
   const subjectCodeElement = subjectElement.querySelector("code");
-  const warningElement = modalElement.querySelector("#actionConfirmationModalWarning span");
+  const warningElement = modalElement.querySelector(
+    "#actionConfirmationModalWarning span",
+  );
   const cancelButton = modalElement.querySelector("[data-confirm-cancel]");
   const confirmButton = modalElement.querySelector("[data-confirm-accept]");
-  const confirmLabelElement = confirmButton.querySelector("[data-confirm-accept-label]");
+  const confirmLabelElement = confirmButton.querySelector(
+    "[data-confirm-accept-label]",
+  );
 
   titleElement.textContent = title;
   messageElement.textContent = message;
@@ -117,7 +129,7 @@ window.esupConfirm = function esupConfirm(options) {
   cancelButton.textContent = options.cancelLabel || "Cancel";
   confirmLabelElement.textContent = options.confirmLabel || "Confirm";
 
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const modal = window.bootstrap.Modal.getOrCreateInstance(modalElement);
     let accepted = false;
 
@@ -133,15 +145,22 @@ window.esupConfirm = function esupConfirm(options) {
     };
 
     confirmButton.addEventListener("click", handleConfirm);
-    modalElement.addEventListener("shown.bs.modal", handleShown, { once: true });
-    modalElement.addEventListener("hidden.bs.modal", handleHidden, { once: true });
+    modalElement.addEventListener("shown.bs.modal", handleShown, {
+      once: true,
+    });
+    modalElement.addEventListener("hidden.bs.modal", handleHidden, {
+      once: true,
+    });
     modal.show();
   });
 };
 
-document.addEventListener("submit", async event => {
+document.addEventListener("submit", async (event) => {
   const form = event.target;
-  if (!(form instanceof HTMLFormElement) || !form.matches("[data-delete-confirm]")) {
+  if (
+    !(form instanceof HTMLFormElement) ||
+    !form.matches("[data-delete-confirm]")
+  ) {
     return;
   }
 

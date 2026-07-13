@@ -617,6 +617,37 @@ def test_build_attention_summary_flags_stale_running_tasks():
     )
 
 
+def test_build_attention_summary_orders_tasks_by_creation_date():
+    """Validate attention tasks are ordered by creation date across incident types."""
+    now = datetime(2026, 1, 1, 12, 0, 0)
+    tasks_data = [
+        {
+            "id": "older_failed_task",
+            "status": "failed",
+            "created_at": "2026-01-01T08:00:00",
+        },
+        {
+            "id": "newer_stale_running_task",
+            "status": "running",
+            "created_at": "2026-01-01T10:00:00",
+            "updated_at": "2026-01-01T06:00:00",
+        },
+        {
+            "id": "newest_timeout_task",
+            "status": "timeout",
+            "created_at": "2026-01-01T11:00:00",
+        },
+    ]
+
+    summary = admin_routes._build_attention_summary([], tasks_data, now=now)
+
+    assert [task["id"] for task in summary["attention_tasks"]] == [
+        "newest_timeout_task",
+        "newer_stale_running_task",
+        "older_failed_task",
+    ]
+
+
 def test_admin_template_renders_copy_task_id_controls():
     """Validate admin template exposes task ID copy controls."""
     env = Environment(loader=FileSystemLoader("app/web/templates"))
@@ -647,7 +678,7 @@ def test_admin_template_renders_copy_task_id_controls():
                 "status": "failed",
                 "task_type": "encoding",
                 "runner_id": "runner-1",
-                "updated_at_display": "2026-01-01 00:00:30",
+                "created_at_display": "2026-01-01 00:00:00",
                 "error_label": "Encoding aborted.",
                 "stale_running_label": "",
                 "video_id": "video-123",
@@ -657,7 +688,7 @@ def test_admin_template_renders_copy_task_id_controls():
                 "status": "running",
                 "task_type": "encoding",
                 "runner_id": "runner-2",
-                "updated_at_display": "2026-01-01 00:00:30",
+                "created_at_display": "2026-01-01 00:00:10",
                 "error_label": "",
                 "stale_running_label": "Running without update for 5h.",
                 "video_id": "video-789",
@@ -713,6 +744,9 @@ def test_admin_template_renders_copy_task_id_controls():
     assert "attentionFilterButtons" in html
     assert "Started 4h 1m ago" in html
     assert "task-age-label-warning" in html
+    assert "Created: 2026-01-01 00:00:00" in html
+    assert "Created: 2026-01-01 00:00:10" in html
+    assert "Updated:" not in html
     assert "bi-clock-history" in html
     assert "task-list-title" in html
     assert "task-id-link" in html

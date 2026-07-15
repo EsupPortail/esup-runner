@@ -13,11 +13,15 @@ The state includes:
 """
 
 import json
+import logging
 import os
 import sys
 import threading
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 # Global state dictionary for consistent state management
 _RUNNER_STATE: Dict[str, Any] = {
@@ -179,7 +183,10 @@ def _resolve_task_status_file() -> Path:
         if not storage_dir:
             storage_dir = str(getattr(runtime_config, "STORAGE_DIR", "") or "").strip()
     except Exception:
-        pass
+        logger.warning(
+            "Failed to resolve runner task status file from runtime configuration; "
+            "using fallback path"
+        )
 
     if not storage_dir:
         storage_dir = "/tmp/esup-runner"
@@ -226,19 +233,26 @@ def _persist_task_statuses() -> None:
             os.replace(tmp_path, file_path)
         except Exception:
             # Best-effort persistence: runtime logic should still work in-memory.
+            logger.warning(
+                "Failed to atomically persist runner task statuses; keeping in-memory state"
+            )
             return
 
 
 def _load_task_statuses_from_disk() -> None:
     """Load persisted task statuses at startup if available."""
     file_path = _resolve_task_status_file()
-    if not file_path.exists():
-        return
 
     try:
+        if not file_path.exists():
+            return
         with open(file_path, "r", encoding="utf-8") as f:
             raw_payload = json.load(f)
     except Exception:
+        logger.warning(
+            "Failed to read or decode runner task status file as JSON; "
+            "keeping current in-memory state"
+        )
         return
 
     if not isinstance(raw_payload, dict):
@@ -559,27 +573,31 @@ def get_task_status(task_id: str) -> Optional[Dict[str, Any]]:
     if not normalized_task_id:
         return None
 
-    task_statuses = _RUNNER_STATE.get("task_statuses", {})
-    payload = task_statuses.get(normalized_task_id)
-    if not isinstance(payload, dict):
-        return None
-    return dict(payload)
+    with _RUNNER_STATE_LOCK:
+        task_statuses = _RUNNER_STATE.get("task_statuses", {})
+        if not isinstance(task_statuses, dict):
+            return None
+        payload = task_statuses.get(normalized_task_id)
+        if not isinstance(payload, dict):
+            return None
+        return dict(payload)
 
 
 def get_running_task_statuses() -> Dict[str, Dict[str, Any]]:
     """Return a copy of tasks currently marked as running."""
-    task_statuses = _RUNNER_STATE.get("task_statuses", {})
-    if not isinstance(task_statuses, dict):
-        return {}
+    with _RUNNER_STATE_LOCK:
+        task_statuses = _RUNNER_STATE.get("task_statuses", {})
+        if not isinstance(task_statuses, dict):
+            return {}
 
-    running_tasks: Dict[str, Dict[str, Any]] = {}
-    for task_id, payload in task_statuses.items():
-        if not isinstance(payload, dict):
-            continue
-        if payload.get("status") != "running":
-            continue
-        running_tasks[str(task_id)] = dict(payload)
-    return running_tasks
+        running_tasks: Dict[str, Dict[str, Any]] = {}
+        for task_id, payload in task_statuses.items():
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("status") != "running":
+                continue
+            running_tasks[str(task_id)] = dict(payload)
+        return running_tasks
 
 
 def clear_task_status(task_id: str) -> None:
@@ -604,7 +622,8 @@ def get_runner_state() -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Complete runner state dictionary
     """
-    return _RUNNER_STATE.copy()  # Return copy to prevent external modification
+    with _RUNNER_STATE_LOCK:
+        return deepcopy(_RUNNER_STATE)
 
 
 def reload_task_statuses_from_disk() -> None:

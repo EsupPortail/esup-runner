@@ -1442,7 +1442,7 @@ async def get_task_result(task_id: str = Path(..., description="Task identifier"
 
     # If manager has direct access to runner storage, return the manifest from disk
     if getattr(config, "RUNNERS_STORAGE_ENABLED", False):
-        return _get_local_manifest(task)
+        return await asyncio.to_thread(_get_local_manifest, task)
 
     runner = _get_task_runner(task)
     return await _stream_runner_manifest(task, runner)

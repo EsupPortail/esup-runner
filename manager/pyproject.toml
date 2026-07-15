@@ -136,3 +136,6 @@ filterwarnings = [
     "ignore::UserWarning:fastapi.openapi.utils",
     "ignore:Duplicate Operation ID.*:UserWarning",
 ]
+
+[tool.coverage.report]
+omit = ["app/web/templates/*"]

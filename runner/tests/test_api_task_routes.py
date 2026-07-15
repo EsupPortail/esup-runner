@@ -2,6 +2,7 @@
 
 import asyncio
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -740,9 +741,11 @@ async def test_notify_completion_success(monkeypatch):
             self.status_code = status_code
             self.text = "ok"
 
+    captured = {}
+
     class FakeClient:
-        def __init__(self, *_, **__):
-            pass
+        def __init__(self, *_, **kwargs):
+            captured["timeout"] = kwargs["timeout"]
 
         async def __aenter__(self):
             return self
@@ -751,13 +754,17 @@ async def test_notify_completion_success(monkeypatch):
             return False
 
         async def post(self, *_, **__):
-            return FakeResponse(200)
+            return FakeResponse(204)
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeClient)
     monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_MAX_RETRIES", 0)
 
     ok = await task_module.notify_completion("http://cb", "tid", "completed")
     assert ok is True
+    assert captured["timeout"].connect == 5.0
+    assert captured["timeout"].read == 30.0
+    assert captured["timeout"].write == 5.0
+    assert captured["timeout"].pool == 5.0
 
 
 @pytest.mark.asyncio
@@ -815,7 +822,7 @@ async def test_notify_completion_exception(monkeypatch):
             return False
 
         async def post(self, *_, **__):
-            raise RuntimeError("boom")
+            raise httpx.ReadTimeout("boom")
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeClient)
     monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_MAX_RETRIES", 0)

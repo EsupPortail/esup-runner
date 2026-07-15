@@ -96,8 +96,9 @@ def run_uvicorn_instance(runner_instance_id: int, runner_instance_port: int) -> 
             access_log=True,
             workers=1,
         )
-    except Exception as e:  # pragma: no cover - defensive logging
-        logger.error(f"Uvicorn instance {runner_instance_id} failed: {e}")
+    except Exception:
+        logger.exception("Uvicorn instance %s failed", runner_instance_id)
+        raise
 
 
 class UvicornProcessManager:
@@ -218,16 +219,20 @@ class UvicornProcessManager:
         for i, process in enumerate(self.processes):
             if process.is_alive():
                 logger.info(f"Stopping instance {i} (PID: {process.pid})")
-                process.terminate()
-                process.join(timeout=10)  # Wait up to 10 seconds
-
-                if process.is_alive():
-                    logger.warning(f"Instance {i} did not terminate gracefully, forcing…")
-                    process.kill()
-                    process.join()
+                self._stop_process(i, process, timeout=10)
 
         self.processes.clear()
         logger.info("All runner instances stopped")
+
+    def _stop_process(self, runner_instance_id: int, process: Process, timeout: float) -> None:
+        """Stop a process gracefully, then force it to exit after the timeout."""
+        process.terminate()
+        process.join(timeout=timeout)
+
+        if process.is_alive():
+            logger.warning(f"Instance {runner_instance_id} did not terminate gracefully, forcing…")
+            process.kill()
+            process.join()
 
     def restart_instance(self, runner_instance_id: int) -> bool:
         """
@@ -239,7 +244,7 @@ class UvicornProcessManager:
         Returns:
             bool: True if restart was successful
         """
-        if runner_instance_id >= len(self.processes):
+        if not 0 <= runner_instance_id < len(self.processes):
             logger.error(f"Cannot restart instance {runner_instance_id}: out of range")
             return False
 
@@ -248,8 +253,13 @@ class UvicornProcessManager:
 
         if old_process.is_alive():
             logger.info(f"Restarting instance {runner_instance_id} on port {port}")
-            old_process.terminate()
-            old_process.join(timeout=5)
+            self._stop_process(runner_instance_id, old_process, timeout=5)
+
+        if old_process.is_alive():
+            logger.error(
+                f"Cannot restart instance {runner_instance_id}: old process is still alive"
+            )
+            return False
 
         # Create new process
         new_process = self._create_uvicorn_process(port, runner_instance_id)

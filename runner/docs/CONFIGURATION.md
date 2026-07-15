@@ -50,6 +50,19 @@ When `RUNNER_TASK_TYPES` uses the grouped syntax, `RUNNER_INSTANCES` is effectiv
 - If `RUNNER_INSTANCES` is set and does not match the computed total, a warning is emitted.
 - Recommended: either omit `RUNNER_INSTANCES` or keep it consistent with the grouped total.
 
+## Validate before startup
+
+After changing `.env`, run the configuration preflight before restarting the
+Runner:
+
+```bash
+uv run scripts/check_config.py
+```
+
+The command uses the same loader and validators as the Runner, reports all
+detected errors together, excludes secrets from its summary, and returns exit
+code `0` when valid or `2` when invalid.
+
 ## Example configuration
 
 ```properties

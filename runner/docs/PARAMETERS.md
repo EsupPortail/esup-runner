@@ -97,7 +97,9 @@ Compatibility note:
 - `COMPLETION_NOTIFY_BACKOFF_FACTOR` (float, default `1.5`): Multiplier for retry backoff.
 
 ## Validation notes
-- At startup, the runner checks that at least one instance and task type are defined, ports are in the 80–65535 range, and tokens are non-default. In GPU mode it also checks `GPU_CUDA_PATH` exists.
+- Explicit invalid boolean, integer, and floating-point values are rejected instead of being silently replaced or clamped.
+- At startup, the runner validates required names and paths, HTTP(S) URLs, supported task types, complete instance port ranges, tokens, runtime modes, numeric limits, CORS compatibility, and Studio defaults. In GPU mode it also checks that `GPU_CUDA_PATH` exists.
+- Run `uv run scripts/check_config.py` after changing `.env` to see all validation errors together. The summary intentionally excludes secrets such as `RUNNER_TOKEN`; exit code `0` means valid and `2` means invalid.
 - When `RUNNER_TASK_TYPES` uses grouped syntax, the computed instance count overrides `RUNNER_INSTANCES` (a warning is logged if they differ).
 
 ## Related docs

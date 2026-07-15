@@ -183,6 +183,7 @@ For the CUDA 12 profile, use `make sync-transcription-gpu-cuda12`.
 Before starting the service, you can run a few built-in checks from `/opt/esup-runner/runner`.
 
 ```bash
+uv run scripts/check_config.py
 uv run scripts/check_version.py
 uv run scripts/check_ffmpeg.py
 uv run scripts/check_gpu.py
@@ -193,6 +194,7 @@ uv run scripts/check_runner_storage.py
 Notes:
 - These scripts may read your configuration from `.env`, so make sure it is present and correctly configured.
 - A successful check should exit with code `0`; any non-zero exit code indicates something to fix (missing binary, wrong permissions, insufficient disk/RAM, etc.).
+- `check_config.py` should run first: it uses the same loader and validators as the Runner, reports all configuration errors together, and never prints `RUNNER_TOKEN`.
 - `check_gpu.py` validates that the current Python/Torch runtime can actually use CUDA for transcription.
 - `check_runner_storage.py` validates free space in `LOG_DIR`, `STORAGE_DIR`, `HUGGINGFACE_MODELS_DIR`, `WHISPER_MODELS_DIR`, and `UV_CACHE_DIR` (which defaults to `CACHE_DIR/uv`).
 - Compatibility note: legacy variable `LOG_DIRECTORY` is still accepted.

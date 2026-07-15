@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added explicit, aggregated Runner configuration validation for scalar types, URLs, supported task types, port ranges, runtime modes, Studio defaults, and required paths, including validation before replacing a reloaded configuration.
+- Added `scripts/check_config.py` as a non-sensitive preflight command that validates the effective `.env` configuration, reports all detected errors with standard check-script output, and exits with code `2` when invalid.
+
 ### Security
 
 - Prevented filesystem and operating-system error details from leaking through `GET /runner/status` disk-usage diagnostics while retaining full exception details in server logs.

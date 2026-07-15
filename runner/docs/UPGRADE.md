@@ -183,6 +183,7 @@ make sync-transcription-gpu-cuda12
 From `/opt/esup-runner/runner`:
 
 ```bash
+uv run scripts/check_config.py
 uv run scripts/check_version.py
 uv run scripts/check_ffmpeg.py
 uv run scripts/check_gpu.py
@@ -190,6 +191,7 @@ uv run scripts/check_runner_resources.py
 uv run scripts/check_runner_storage.py
 ```
 
+- `check_config.py` validates the effective `.env` with the same schema used at Runner startup and reports all errors together without printing secrets.
 - `check_ffmpeg.py` helps catch codec/build issues early.
 - `check_gpu.py` validates that the current Python/Torch runtime can actually use CUDA for transcription.
 - `check_runner_resources.py` validates CPU/RAM/GPU/config.

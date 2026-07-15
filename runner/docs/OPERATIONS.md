@@ -130,6 +130,7 @@ done
 From `/opt/esup-runner/runner`:
 
 ```bash
+uv run scripts/check_config.py
 uv run scripts/check_version.py
 uv run scripts/check_ffmpeg.py
 uv run scripts/check_gpu.py
@@ -143,6 +144,10 @@ Use these checks:
 - after changing `.env`
 - after changing FFmpeg/GPU drivers
 - before and after maintenance windows
+
+Run `check_config.py` first after editing `.env`. It validates the same effective
+configuration used at Runner startup, prints only non-sensitive summary values,
+and returns `2` when one or more settings are invalid.
 
 ## Storage and retention operations
 

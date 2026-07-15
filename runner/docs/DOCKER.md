@@ -107,6 +107,17 @@ At minimum, review:
 - `LOG_DIR`
 - `ENCODING_TYPE`
 
+When a local Runner checkout is available, validate the environment file before
+creating or replacing the container:
+
+```bash
+uv run scripts/check_config.py
+```
+
+The script runs on the host and is not bundled in the Runner image. It validates
+the values read from `.env`; additionally injected Docker overrides such as
+`-e RUNNER_HOST=esup-runner-runner` must remain valid themselves.
+
 Compatibility note: legacy variable `LOG_DIRECTORY` is still accepted.
 
 For Docker deployment with a shared Docker network, set:

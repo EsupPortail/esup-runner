@@ -2475,9 +2475,45 @@ def test_get_task_result_local_storage(
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_ENABLED", True)
     monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_DIR", str(tmp_path))
 
+    async def run_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(task_module.asyncio, "to_thread", run_inline)
+
     resp = client.get("/task/result/t1")
     assert resp.status_code == 200
     assert resp.json()["task_id"] == "t1"
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_local_storage_uses_to_thread(monkeypatch, task_module, clean_state):
+    """Validate local manifest reads are moved off the asyncio event loop."""
+    task = _task("t1", "r1", status="completed")
+    tasks[task.task_id] = task
+    monkeypatch.setattr(task_module.config, "RUNNERS_STORAGE_ENABLED", True)
+
+    expected_response = JSONResponse({"task_id": task.task_id})
+
+    def fake_get_local_manifest(_task: Task):
+        return expected_response
+
+    called = {}
+
+    async def fake_to_thread(func, *args, **kwargs):
+        called.update(func=func, args=args, kwargs=kwargs)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(task_module, "_get_local_manifest", fake_get_local_manifest)
+    monkeypatch.setattr(task_module.asyncio, "to_thread", fake_to_thread)
+
+    response = await task_module.get_task_result(task.task_id)
+
+    assert response is expected_response
+    assert called == {
+        "func": fake_get_local_manifest,
+        "args": (task,),
+        "kwargs": {},
+    }
 
 
 def test_get_task_result_file_local_storage(

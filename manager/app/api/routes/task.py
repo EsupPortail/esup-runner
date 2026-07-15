@@ -28,6 +28,7 @@ from starlette.responses import Response
 from app.__version__ import __version__
 from app.core.auth import verify_admin, verify_token
 from app.core.config import config
+from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.priorities import would_exceed_other_domain_quota
 from app.core.setup_logging import setup_default_logging
 from app.core.state import delete_task as delete_task_from_state
@@ -49,7 +50,7 @@ logger = setup_default_logging()
 router = APIRouter(prefix="/task", tags=["Task"])
 
 # Templates configuration
-templates = Jinja2Templates(directory="app/web/templates")
+templates = Jinja2Templates(directory=WEB_TEMPLATES_DIR)
 
 # ======================================================
 # Utility Functions
@@ -65,6 +66,7 @@ _MAX_BULK_STOP_TASKS = 200
 _MANIFEST_READ_ATTEMPTS = 5
 _MANIFEST_READ_DELAY_SECONDS = 0.2
 _TASK_STATS_EXCLUDED_ETAB_NAMES = {"quick manual test"}
+_NOTIFY_CALLBACK_READ_TIMEOUT_SECONDS = 15.0
 
 
 def _is_pytest_run() -> bool:
@@ -285,7 +287,14 @@ async def _send_notify_callback(
     await _validate_notify_url(task.notify_url)
 
     logger.info(f"Sending notify URL callback to {task.notify_url} for task {notification.task_id}")
-    timeout = httpx.Timeout(connect=5.0, read=None, write=None, pool=5.0)
+    # Keep this below the runner's manager-callback timeout so the manager can
+    # acknowledge completion before the runner starts another delivery attempt.
+    timeout = httpx.Timeout(
+        connect=5.0,
+        read=_NOTIFY_CALLBACK_READ_TIMEOUT_SECONDS,
+        write=5.0,
+        pool=5.0,
+    )
 
     payload = {
         "task_id": notification.task_id,
@@ -311,7 +320,7 @@ async def _send_notify_callback(
             headers=headers,
         )
 
-    if response.status_code == 200:
+    if 200 <= response.status_code < 300:
         logger.info(
             f"Notify URL callback {task.notify_url} successful for task {notification.task_id}"
         )
@@ -1889,7 +1898,7 @@ async def _handle_notify_callback(task: Task, notification: TaskCompletionNotifi
 
         _set_notify_warning(
             notification.task_id,
-            notify_error or "Notify URL callback failed: non-200 response",
+            notify_error or "Notify URL callback failed: non-2xx response",
         )
         asyncio.create_task(
             _retry_notify_callback(

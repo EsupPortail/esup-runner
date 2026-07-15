@@ -11,6 +11,20 @@ This document describes the Manager runtime configuration (`manager/.env`) with 
   - `ENV_FILE=/path/to/.env` (legacy-compatible override)
 - If no `.env` file is found, built-in defaults are used.
 
+## Validate before startup
+
+After changing `.env`, run the configuration preflight before starting or
+restarting the Manager:
+
+```bash
+uv run scripts/check_config.py
+```
+
+The command uses the same loader and validators as the Manager, reports all
+detected errors together, excludes credential values from its summary, and
+returns exit code `0` when valid or `2` when invalid. The same validation runs at
+startup and before a hot-reloaded configuration replaces the live one.
+
 ## Core manager settings
 
 ```properties
@@ -97,6 +111,7 @@ How `OPENAPI_COOKIE_SECRET` works:
 - The OpenAPI auth cookie is **signed** (HMAC) with `OPENAPI_COOKIE_SECRET` so tampering is detected.
 - The cookie is not encrypted; this setting ensures integrity/authenticity, not confidentiality.
 - If `OPENAPI_COOKIE_SECRET` is empty, the manager derives a fallback secret from current configured tokens/admin hashes.
+- The documented `change-me-with-a-long-random-secret` value triggers a warning but does not block startup; replace it in production or leave it empty to use the fallback.
 - For stable behavior across restarts and multi-instance deployments, set an explicit long random secret and keep it identical on all manager instances.
 
 Example secret generation:
@@ -145,8 +160,8 @@ When enabled, the manager can reserve runner capacity for a priority domain:
 - Non-priority quota is computed from registered runner capacity:
   - `floor(capacity * MAX_OTHER_DOMAIN_TASK_PERCENT / 100)`
   - If `capacity > 0` and percentage `> 0`, at least `1` non-priority task is still allowed.
-- `MAX_OTHER_DOMAIN_TASK_PERCENT` is clamped between `0` and `100`.
-- If `PRIORITIES_ENABLED=true` but `PRIORITY_DOMAIN` is empty, priorities are automatically disabled with a warning.
+- `MAX_OTHER_DOMAIN_TASK_PERCENT` must be between `0` and `100`.
+- If `PRIORITIES_ENABLED=true`, `PRIORITY_DOMAIN` is required; an inconsistent configuration is rejected instead of silently disabling priorities.
 
 ## URL hardening policies
 

@@ -10,8 +10,8 @@ MANAGER_BIND_HOST=
 MANAGER_PORT=8081
 ENVIRONMENT=production
 UVICORN_WORKERS=2
-AUTHORIZED_TOKENS__runners=change-me-runners-token
-ADMIN_USERS__admin="$2b$12$change-me-bcrypt-hash"
+AUTHORIZED_TOKENS__runners=CHANGE_ME_RUNNERS_TOKEN
+ADMIN_USERS__admin="CHANGE_ME_BCRYPT_HASH"
 LOG_DIR=/var/log/esup-runner
 RUNNERS_STORAGE_ENABLED=false
 RUNNERS_STORAGE_DIR=/tmp/esup-runner
@@ -65,7 +65,7 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 ## Domain-based priorities
 - `PRIORITIES_ENABLED` (bool, default `false`): Enables priority-domain scheduling logic.
 - `PRIORITY_DOMAIN` (default empty): Domain (and subdomains) treated as priority.
-- `MAX_OTHER_DOMAIN_TASK_PERCENT` (int, default `100`): Non-priority quota percentage, clamped in `[0, 100]`.
+- `MAX_OTHER_DOMAIN_TASK_PERCENT` (int, default `100`): Non-priority quota percentage; must be in `[0, 100]`.
 
 ## URL hardening
 - `NOTIFY_URL_ALLOWED_HOSTS` (CSV, default empty): Optional callback-host allowlist.
@@ -90,10 +90,14 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
   `MANAGER_EMAIL` (default empty).
 
 ## Validation notes
+- Explicit invalid boolean, integer, and floating-point values are rejected instead of being silently replaced or clamped.
+- At startup, the manager validates URL components, supported environment/log/docs modes, numeric bounds, non-empty required paths, credential entries (including bcrypt hash structure), CORS compatibility, and priority settings.
 - `CORS_ALLOW_CREDENTIALS=true` is invalid when `CORS_ALLOW_ORIGINS=*` (startup error).
 - `RUNNERS_STORAGE_ENABLED=true` requires a non-empty `RUNNERS_STORAGE_DIR`/`RUNNERS_STORAGE_PATH`.
-- If `PRIORITIES_ENABLED=true` but `PRIORITY_DOMAIN` is empty, priorities are disabled with a warning.
+- `PRIORITIES_ENABLED=true` requires a non-empty hostname-only `PRIORITY_DOMAIN`.
+- Documented `CHANGE_ME_*` token/admin values are rejected. The optional `change-me-with-a-long-random-secret` OpenAPI cookie value emits a warning only; replace it in production or leave it empty to use the derived fallback. Empty token/admin collections remain allowed with an explicit warning because they intentionally disable the corresponding access.
 - Boolean values accept common forms: `true/false`, `1/0`, `yes/no`, `on/off`.
+- Run `uv run scripts/check_config.py` after changing `.env` to see all validation errors together. Its summary reports credential counts, never credential values; exit code `0` means valid and `2` means invalid.
 
 ## Related docs
 - Manager runtime behavior and security hardening: [docs/CONFIGURATION.md](CONFIGURATION.md)

@@ -226,13 +226,19 @@ make sync
 
 ### Verification checks
 
-After dependencies are installed, run the built-in version consistency checks:
+After dependencies are installed, validate the effective configuration first,
+then run the built-in version consistency checks:
 
 ```bash
+uv run scripts/check_config.py
 uv run scripts/check_version.py
 ```
 
 Expected outcome: the script prints a summary with all checks passing and exits with status code `0`.
+
+`check_config.py` uses the same loader and validators as Manager startup, reports
+all configuration errors together, and prints credential counts without exposing
+tokens, password hashes, or the OpenAPI cookie secret.
 
 Optional runtime checks (recommended):
 

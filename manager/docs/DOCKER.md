@@ -105,6 +105,17 @@ At minimum, review:
 - `LOG_DIR`
 - `RUNNERS_STORAGE_ENABLED` and `RUNNERS_STORAGE_DIR`
 
+When a local Manager checkout is available, validate the environment file before
+creating or replacing the container:
+
+```bash
+uv run scripts/check_config.py
+```
+
+The script runs on the host and is not bundled in the Manager image. It validates
+the values read from `.env`; any additional Docker `-e` overrides must remain
+valid themselves.
+
 Compatibility note: legacy names `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` are still accepted.
 
 For Docker deployment with a shared Docker network, set:

@@ -134,8 +134,13 @@ make sync
 Recommended quick checks:
 
 ```bash
+uv run scripts/check_config.py
 uv run scripts/check_version.py
 ```
+
+`check_config.py` validates the effective `.env` with the same schema used at
+Manager startup and reports all errors together without printing credential
+values. Fix an invalid configuration before restarting the service.
 
 (Optional) Run tests:
 

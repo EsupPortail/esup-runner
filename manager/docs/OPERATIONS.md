@@ -44,12 +44,17 @@ Optional local validation helpers:
 
 ```bash
 cd /opt/esup-runner/manager
+uv run scripts/check_config.py
 uv run scripts/check_runtime.py
 uv run scripts/check_version.py
 uv run scripts/check_pipeline_tasks.py
 # Optional: include transcription + translation smoke checks
 uv run scripts/check_pipeline_tasks.py --with-transcription-translation
 ```
+
+Run `check_config.py` first after editing `.env` and before restarting the
+service. It validates the effective configuration, reports all detected errors
+together without printing secrets, and returns `2` when invalid.
 
 `check_pipeline_tasks.py` reads `MANAGER_URL` and manager tokens from `.env` by default; `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL` remain available as optional overrides. The optional client callback is disabled by default; set `RUNNER_NOTIFY_URL` only when you want the smoke test to exercise a reachable `notify_url`.
 

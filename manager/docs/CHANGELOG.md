@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added explicit, aggregated Manager configuration validation for scalar types, URL components, ports, supported modes, numeric limits, credentials, required paths, CORS, and priority settings, including validation before replacing a hot-reloaded configuration.
+- Added `scripts/check_config.py` as a non-sensitive preflight command that validates the effective `.env` configuration, reports all detected errors with standard check-script output, and exits with code `2` when invalid.
 - Added a shared styled confirmation dialog for destructive admin actions, with explicit target and irreversible-impact warnings for task, administrator, and authorized-token deletion, including bulk task deletion.
 
 ### Changed

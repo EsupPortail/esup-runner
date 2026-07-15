@@ -50,6 +50,7 @@ _RECOVERY_AUTO_RESTART_MAX_ATTEMPTS = 1
 _RECOVERY_MONITORS: dict[str, asyncio.Task] = {}
 _STOP_REQUESTED_METADATA_VALUE = "true"
 _CANCELLED_BY_USER_ERROR = "Cancelled by user."
+_COMPLETION_NOTIFY_READ_TIMEOUT_SECONDS = 30.0
 
 # ======================================================
 # Utility Functions
@@ -1120,14 +1121,21 @@ async def notify_completion(
     Args:
         callback_url: Manager endpoint to receive notification
         task_id: Task identifier being reported
-        status: Completion status ('completed' or 'failed')
+        status: Terminal completion status ('completed', 'failed' or 'timeout')
         error_message: Optional error details for failed tasks
         script_output: Optional script output for debugging
+
+    All request phases use finite timeouts and any successful 2xx response is accepted.
     """
     max_retries = max(0, int(config.COMPLETION_NOTIFY_MAX_RETRIES))
     base_delay = max(0, int(config.COMPLETION_NOTIFY_RETRY_DELAY_SECONDS))
     backoff_factor = max(1.0, float(config.COMPLETION_NOTIFY_BACKOFF_FACTOR))
-    timeout = httpx.Timeout(connect=5.0, read=None, write=None, pool=5.0)
+    timeout = httpx.Timeout(
+        connect=5.0,
+        read=_COMPLETION_NOTIFY_READ_TIMEOUT_SECONDS,
+        write=5.0,
+        pool=5.0,
+    )
 
     attempt = 0
     while True:
@@ -1148,7 +1156,7 @@ async def notify_completion(
                     },
                 )
 
-                if response.status_code == 200:
+                if 200 <= response.status_code < 300:
                     if attempt > 1:
                         logger.info(
                             f"Completion notification sent for task {task_id} after {attempt} attempts"

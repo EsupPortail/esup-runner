@@ -71,7 +71,7 @@ body[data-bs-theme="light"] {
 
 [data-bs-theme="light"] .btn-outline-light {
   --bs-btn-color: #000;
-  --bs-border-color: #000;
+  --bs-btn-border-color: #000;
 }
 
 /* Dark theme */
@@ -88,11 +88,34 @@ body[data-bs-theme="light"] {
     transform 0.15s ease,
     box-shadow 0.15s ease;
 }
-.stat-item a:hover {
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+
+.dashboard-shortcut-card {
+  cursor: pointer;
 }
-[data-bs-theme="dark"] .stat-item a:hover {
-  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.3);
+
+.dashboard-shortcut-card:hover {
+  color: inherit;
+  transform: translateY(-2px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.18);
+}
+
+.dashboard-shortcut-card:focus-visible {
+  outline: 0.2rem solid rgba(var(--bs-primary-rgb), 0.5);
+  outline-offset: 0.2rem;
+}
+
+.dashboard-shortcut-icon {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.dashboard-shortcut-card:hover .dashboard-shortcut-icon,
+.dashboard-shortcut-card:focus-visible .dashboard-shortcut-icon {
+  transform: translateX(0.15rem);
+}
+
+[data-bs-theme="dark"] .dashboard-shortcut-card:hover {
+  box-shadow: 0 0.5rem 1rem rgba(255, 255, 255, 0.16);
 }
 
 .needs-attention-card {

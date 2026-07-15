@@ -261,94 +261,122 @@
   <div class="row g-3 mb-4">
     <!-- Credentials -->
     <div class="col-12 col-sm-6 col-lg-4">
-      <div class="card border-0 stat-item rounded p-3 h-100">
+      <a
+        href="/admin/credentials"
+        class="card border-0 stat-item dashboard-shortcut-card rounded p-3 h-100 text-body text-decoration-none"
+        aria-label="View Credentials"
+        title="View Credentials"
+        data-bs-toggle="tooltip">
         <div class="d-flex justify-content-between align-items-center">
           <div>
             <h2 class="h6 text-uppercase text-subtle mb-1">Credentials</h2>
             <div class="fs-6 fw-bold">Manager credentials ({{ admin_count }} administrators)</div>
           </div>
-          <a href="/admin/credentials" class="btn btn-outline-light btn-sm rounded-circle" title="View Credentials"
-            data-bs-toggle="tooltip">
+          <span class="btn btn-outline-light btn-sm rounded-circle dashboard-shortcut-icon" aria-hidden="true">
             <i class="bi bi-arrow-right" aria-hidden="true"></i>
-          </a>
+          </span>
         </div>
-      </div>
+      </a>
     </div>
 
     <!-- Documentation -->
     <div class="col-12 col-sm-6 col-lg-4">
-      <div class="card border-0 stat-item rounded p-3 h-100">
+      <a
+        href="/admin/docs"
+        class="card border-0 stat-item dashboard-shortcut-card rounded p-3 h-100 text-body text-decoration-none"
+        aria-label="View Documentation"
+        title="View Documentation"
+        data-bs-toggle="tooltip">
         <div class="d-flex justify-content-between align-items-center">
           <div>
             <h2 class="h6 text-uppercase text-subtle mb-1">Documentation</h2>
             <div class="fs-6 fw-bold">Manager documentation</div>
           </div>
-          <a href="/admin/docs" class="btn btn-outline-light btn-sm rounded-circle" title="View documentation"
-            data-bs-toggle="tooltip">
+          <span class="btn btn-outline-light btn-sm rounded-circle dashboard-shortcut-icon" aria-hidden="true">
             <i class="bi bi-arrow-right" aria-hidden="true"></i>
-          </a>
+          </span>
         </div>
-      </div>
+      </a>
     </div>
 
     <!-- Logs -->
     <div class="col-12 col-sm-6 col-lg-4">
-      <div class="card border-0 stat-item rounded p-3 h-100">
+      <a
+        href="/logs"
+        class="card border-0 stat-item dashboard-shortcut-card rounded p-3 h-100 text-body text-decoration-none"
+        aria-label="View Logs"
+        title="View Logs"
+        data-bs-toggle="tooltip">
         <div class="d-flex justify-content-between align-items-center">
           <div>
             <h2 class="h6 text-uppercase text-subtle mb-1">Logs</h2>
             <div class="fs-6 fw-bold">Manager logs</div>
           </div>
-          <a href="/logs" class="btn btn-outline-light btn-sm rounded-circle" title="View Logs"
-            data-bs-toggle="tooltip">
+          <span class="btn btn-outline-light btn-sm rounded-circle dashboard-shortcut-icon" aria-hidden="true">
             <i class="bi bi-arrow-right" aria-hidden="true"></i>
-          </a>
+          </span>
         </div>
-      </div>
+      </a>
     </div>
 
     <!-- Online Runners -->
     <div class="col-12 col-sm-6 col-lg-4">
-      <div class="card border-0 stat-item rounded p-3 h-100">
+      <a
+        href="#runners-list"
+        class="card border-0 stat-item dashboard-shortcut-card rounded p-3 h-100 text-body text-decoration-none"
+        aria-label="View Online Runners"
+        title="View Online Runners"
+        data-bs-toggle="tooltip">
         <div class="d-flex justify-content-between align-items-center">
           <div>
             <h2 class="h6 text-uppercase text-subtle mb-1">Online Runners</h2>
             <div class="fs-6 fw-bold">{{ online_runners }}</div>
           </div>
+          <span class="btn btn-outline-light btn-sm rounded-circle dashboard-shortcut-icon" aria-hidden="true">
+            <i class="bi bi-arrow-down" aria-hidden="true"></i>
+          </span>
         </div>
-      </div>
+      </a>
     </div>
 
     <!-- Tasks -->
     <div class="col-12 col-sm-6 col-lg-4">
-      <div class="card border-0 stat-item rounded p-3 h-100">
+      <a
+        href="/tasks"
+        class="card border-0 stat-item dashboard-shortcut-card rounded p-3 h-100 text-body text-decoration-none"
+        aria-label="View Tasks"
+        title="View Tasks"
+        data-bs-toggle="tooltip">
         <div class="d-flex justify-content-between align-items-center">
           <div>
             <h2 class="h6 text-uppercase text-subtle mb-1">Tasks</h2>
             <div class="fs-6 fw-bold">{{ total_tasks }} tasks</div>
           </div>
-          <a href="/tasks" class="btn btn-outline-light btn-sm rounded-circle" title="View Tasks"
-            data-bs-toggle="tooltip">
+          <span class="btn btn-outline-light btn-sm rounded-circle dashboard-shortcut-icon" aria-hidden="true">
             <i class="bi bi-arrow-right" aria-hidden="true"></i>
-          </a>
+          </span>
         </div>
-      </div>
+      </a>
     </div>
 
     <!-- Statistics -->
     <div class="col-12 col-sm-6 col-lg-4">
-      <div class="card border-0 stat-item rounded p-3 h-100">
+      <a
+        href="/statistics"
+        class="card border-0 stat-item dashboard-shortcut-card rounded p-3 h-100 text-body text-decoration-none"
+        aria-label="View Statistics"
+        title="View Statistics"
+        data-bs-toggle="tooltip">
         <div class="d-flex justify-content-between align-items-center">
           <div>
             <h2 class="h6 text-uppercase text-subtle mb-1">Statistics</h2>
             <div class="fs-6 fw-bold">{{ tasks_this_month }} tasks this month</div>
           </div>
-          <a href="/statistics" class="btn btn-outline-light btn-sm rounded-circle" title="View Statistics"
-            data-bs-toggle="tooltip">
+          <span class="btn btn-outline-light btn-sm rounded-circle dashboard-shortcut-icon" aria-hidden="true">
             <i class="bi bi-arrow-right" aria-hidden="true"></i>
-          </a>
+          </span>
         </div>
-      </div>
+      </a>
     </div>
   </div>
 
@@ -363,7 +391,8 @@
             {% for runner in runners | reverse %}
               <a href="/admin/runner/{{ runner.id }}"
                 class="list-group-item list-group-item-action runner {{ runner.status }} text-decoration-none"
-                title="Open runner detail">
+                title="Open runner detail"
+                data-bs-toggle="tooltip">
                 <div class="d-flex justify-content-between align-items-center">
                   <div>
                     <h3 class="h5 mb-1">

@@ -762,7 +762,16 @@ def test_admin_template_renders_copy_task_id_controls():
                 "video_id": "video-789",
             },
         ],
-        runners=[],
+        runners=[
+            {
+                "id": "runner-1",
+                "status": "online",
+                "task_types": ["encoding"],
+                "availability": "available",
+                "last_heartbeat": "2026-01-01 00:00:00",
+                "age_seconds": 30,
+            }
+        ],
         tasks=[
             {
                 "id": "dashboard-task",
@@ -823,6 +832,23 @@ def test_admin_template_renders_copy_task_id_controls():
     assert "copyTaskButtons" in html
     assert "taskRows" in html
     assert "stretched-link" not in html
+    assert html.count("dashboard-shortcut-card") == 6
+    assert 'href="/admin/credentials"' in html
+    assert 'href="/admin/docs"' in html
+    assert 'href="/logs"' in html
+    assert 'href="#runners-list"' in html
+    assert 'href="/tasks"' in html
+    assert 'href="/statistics"' in html
+    assert 'aria-label="View Online Runners"' in html
+    shortcut_tags = re.findall(r"<a\s+[^>]*dashboard-shortcut-card[^>]*>", html)
+    assert len(shortcut_tags) == 6
+    assert all('title="View ' in tag for tag in shortcut_tags)
+    assert all('data-bs-toggle="tooltip"' in tag for tag in shortcut_tags)
+    assert re.search(
+        r'href="/admin/runner/runner-1"[^>]*title="Open runner detail"'
+        r'[^>]*data-bs-toggle="tooltip"',
+        html,
+    )
 
 
 def test_task_detail_not_found(admin_client, clean_state):

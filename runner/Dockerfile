@@ -17,6 +17,7 @@ ARG RUNNER_EXTRA=
 
 # Copy only project metadata and application code required for install.
 COPY pyproject.toml uv.lock LICENSE launcher.py ./
+COPY docs/README.md ./docs/README.md
 COPY app ./app
 
 # Install production dependencies from the lockfile.

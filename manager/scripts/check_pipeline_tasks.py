@@ -58,7 +58,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -273,7 +273,7 @@ async def check_auth(client: httpx.AsyncClient, base_url: str, token: str) -> di
     except httpx.ConnectError as exc:
         raise SystemExit(_connect_error_help(base_url)) from exc
     await _raise_for_http_error(resp)
-    return resp.json()
+    return cast(dict[str, Any], resp.json())
 
 
 async def get_runners_overview(
@@ -536,12 +536,39 @@ async def submit_task(
 
 async def get_task_status(
     client: httpx.AsyncClient, base_url: str, token: str, task_id: str
-) -> dict:
+) -> dict[str, Any]:
     """Read the current task status."""
     url = f"{base_url}/task/status/{task_id}"
     resp = await client.get(url, headers=_auth_headers(token))
     await _raise_for_http_error(resp)
-    return resp.json()
+    return cast(dict[str, Any], resp.json())
+
+
+def _remaining_poll_time(
+    deadline: float,
+    now: float,
+    max_wait_seconds: int,
+    last_status: Any,
+    last_transport_error: Optional[httpx.TransportError],
+    last_transport_error_label: Optional[str],
+) -> float:
+    """Return the remaining task deadline or raise a readable timeout."""
+
+    remaining = deadline - now
+    if remaining > 0:
+        return remaining
+
+    if last_transport_error is not None:
+        raise TimeoutError(
+            f"Task status polling did not recover within {max_wait_seconds}s. "
+            f"Last status={last_status!r}; "
+            f"last transport error={last_transport_error_label}"
+        ) from last_transport_error
+
+    raise TimeoutError(
+        f"Task did not reach a terminal state within {max_wait_seconds}s. "
+        f"Last status={last_status!r}"
+    )
 
 
 async def wait_for_terminal_state(
@@ -550,29 +577,83 @@ async def wait_for_terminal_state(
     token: str,
     task_id: str,
     max_wait_seconds: int,
-) -> dict:
-    """Step 3: poll until the task is completed/failed.
+) -> dict[str, Any]:
+    """Step 3: poll until the task reaches a terminal state.
 
     The manager can transiently set status to "warning" if the notify callback
     fails (and then it may retry). We print it and keep waiting.
+
+    Transport errors are safe to retry here because reading a task status is
+    idempotent. The existing per-task deadline bounds those retries.
     """
 
-    deadline = asyncio.get_event_loop().time() + max_wait_seconds
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max_wait_seconds
+    last_status: Any = None
+    last_transport_error: Optional[httpx.TransportError] = None
+    last_transport_error_label: Optional[str] = None
 
     while True:
-        status_payload = await get_task_status(client, base_url, token, task_id)
+        remaining = _remaining_poll_time(
+            deadline,
+            loop.time(),
+            max_wait_seconds,
+            last_status,
+            last_transport_error,
+            last_transport_error_label,
+        )
+
+        try:
+            status_payload = await asyncio.wait_for(
+                get_task_status(client, base_url, token, task_id),
+                timeout=remaining,
+            )
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(
+                f"Task status request exceeded the {max_wait_seconds}s task deadline. "
+                f"Last status={last_status!r}"
+            ) from exc
+        except (httpx.NetworkError, httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
+            error_detail = str(exc).strip()
+            error_label = type(exc).__name__
+            if error_detail:
+                error_label = f"{error_label}: {error_detail}"
+            last_transport_error = exc
+            last_transport_error_label = error_label
+
+            retry_delay = min(
+                float(POLL_SECONDS),
+                _remaining_poll_time(
+                    deadline,
+                    loop.time(),
+                    max_wait_seconds,
+                    last_status,
+                    last_transport_error,
+                    last_transport_error_label,
+                ),
+            )
+            print(
+                format_status(
+                    f"Status request failed temporarily for task {task_id} "
+                    f"({error_label}); retrying in {retry_delay:g}s…",
+                    level="warning",
+                )
+            )
+            await asyncio.sleep(retry_delay)
+            continue
+
+        last_transport_error = None
+        last_transport_error_label = None
         status = status_payload.get("status")
         error = status_payload.get("error")
+        last_status = status
 
-        # The common states are: running / completed / failed / warning
-        # We treat "completed" and "failed" as terminal.
-        if status == "completed":
-            return status_payload
-        if status == "failed":
+        # Runner-reported terminal states.
+        if status in {"completed", "failed", "timeout"}:
             return status_payload
 
         # "warning" is not necessarily terminal: it usually means the job is done
-        # but the notify_url callback did not return HTTP 200.
+        # but the notify_url callback did not return a successful 2xx response.
         if status == "warning" and error:
             print(
                 format_status(f"Status=warning (notify callback issue): {error}", level="warning")
@@ -580,13 +661,19 @@ async def wait_for_terminal_state(
         else:
             print(format_status(f"Status={status!r} (waiting…)", level="info"))
 
-        if asyncio.get_event_loop().time() >= deadline:
-            raise TimeoutError(
-                f"Task did not reach a terminal state within {max_wait_seconds}s. "
-                f"Last status={status!r}"
+        await asyncio.sleep(
+            min(
+                float(POLL_SECONDS),
+                _remaining_poll_time(
+                    deadline,
+                    loop.time(),
+                    max_wait_seconds,
+                    last_status,
+                    last_transport_error,
+                    last_transport_error_label,
+                ),
             )
-
-        await asyncio.sleep(POLL_SECONDS)
+        )
 
 
 async def get_result_manifest(
@@ -599,7 +686,7 @@ async def get_result_manifest(
     url = f"{base_url}/task/result/{task_id}"
     resp = await client.get(url, headers=_auth_headers(token))
     await _raise_for_http_error(resp)
-    return resp.json()
+    return cast(dict[str, Any], resp.json())
 
 
 async def download_result_file(

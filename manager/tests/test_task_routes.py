@@ -298,7 +298,7 @@ async def test_send_notify_callback_success(monkeypatch, task_module, clean_stat
     )
 
     class FakeResponse:
-        status_code = 200
+        status_code = 204
         text = "ok"
 
     captured: dict[str, Any] = {}
@@ -331,11 +331,15 @@ async def test_send_notify_callback_success(monkeypatch, task_module, clean_stat
     assert "Authorization" not in (captured["headers"] or {})
     assert captured["headers"].get("Content-Type") == "application/json"
     assert isinstance(captured["content"], (bytes, bytearray))
+    assert captured["timeout"].connect == 5.0
+    assert captured["timeout"].read == 15.0
+    assert captured["timeout"].write == 5.0
+    assert captured["timeout"].pool == 5.0
 
 
 @pytest.mark.asyncio
-async def test_send_notify_callback_non_200_returns_error(monkeypatch, task_module, clean_state):
-    """Validate Send notify callback non 200 returns error."""
+async def test_send_notify_callback_non_2xx_returns_error(monkeypatch, task_module, clean_state):
+    """Validate Send notify callback non 2xx returns error."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed", notify_url="https://example.com/notify")
 
@@ -2546,6 +2550,30 @@ def test_get_task_result_file_proxies_to_runner_when_storage_disabled(
 # -----------------------------
 
 
+@pytest.mark.parametrize("invalid_status", ["pending", "running", "warning", "error"])
+def test_task_completion_rejects_non_terminal_status(
+    invalid_status, client, task_module, clean_state
+):
+    """Reject invalid completion states before mutating task or runner state."""
+    runner = _runner("r1", token="tok")
+    runner.availability = "busy"
+    runners["r1"] = runner
+    tasks["t1"] = _task("t1", "r1", status="running")
+
+    app.dependency_overrides[verify_token] = lambda: "tok"
+    try:
+        response = client.post(
+            "/task/completion",
+            json={"task_id": "t1", "status": invalid_status},
+        )
+    finally:
+        app.dependency_overrides[verify_token] = lambda: True
+
+    assert response.status_code == 422
+    assert tasks["t1"].status == "running"
+    assert runners["r1"].availability == "busy"
+
+
 def test_task_completion_404_task(client, task_module, clean_state):
     """Validate Task completion 404 task."""
     app.dependency_overrides[verify_token] = lambda: "tok"
@@ -2632,10 +2660,10 @@ def test_task_completion_saves_before_notify(monkeypatch, client, task_module, c
     assert "notify" in events
 
 
-def test_task_completion_notify_non_200_sets_warning_and_schedules_retry(
+def test_task_completion_notify_non_2xx_sets_warning_and_schedules_retry(
     monkeypatch, client, task_module, clean_state
 ):
-    """Validate Task completion notify non 200 sets warning and schedules retry."""
+    """Validate Task completion notify non 2xx sets warning and schedules retry."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
 
@@ -2836,10 +2864,10 @@ async def test_handle_notify_callback_ignores_stale_run_after_exception(
     assert scheduled["count"] == 0
 
 
-def test_task_completion_timeout_notify_non_200_keeps_timeout_and_schedules_retry(
+def test_task_completion_timeout_notify_non_2xx_keeps_timeout_and_schedules_retry(
     monkeypatch, client, task_module, clean_state
 ):
-    """Validate Task completion timeout notify non 200 keeps timeout and schedules retry."""
+    """Validate Task completion timeout notify non 2xx keeps timeout and schedules retry."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
 

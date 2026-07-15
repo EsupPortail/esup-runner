@@ -10,6 +10,40 @@ import sys
 import warnings
 from pathlib import Path
 from typing import List, Optional, Set
+from urllib.parse import urlparse
+
+SUPPORTED_TASK_TYPES = frozenset({"encoding", "studio", "transcription"})
+SUPPORTED_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+SUPPORTED_STUDIO_PRESETS = frozenset(
+    {
+        "ultrafast",
+        "superfast",
+        "veryfast",
+        "faster",
+        "fast",
+        "medium",
+        "slow",
+        "slower",
+        "veryslow",
+    }
+)
+
+
+class ConfigValidationError(ValueError):
+    """Raised with all configuration errors detected during validation."""
+
+    def __init__(self, errors: List[str]):
+        unique_errors = list(dict.fromkeys(errors))
+        self.errors = tuple(unique_errors)
+        details = "\n".join(f"- {error}" for error in unique_errors)
+        super().__init__(f"Invalid runner configuration:\n{details}")
+
+
+def _raise_validation_errors(errors: List[str]) -> None:
+    """Raise one error containing every collected configuration issue."""
+    if errors:
+        raise ConfigValidationError(errors)
+
 
 # Module-level global state - these persist across imports
 _CONFIG_ENV_LOADED = False
@@ -123,6 +157,9 @@ def reload_config_from_env():
         _CONFIG_ENV_LOADED = True
 
     refreshed = Config()
+    validator = getattr(refreshed, "validate_configuration", None)
+    if callable(validator):
+        validator()
 
     if _CONFIG_INSTANCE is None:
         _CONFIG_INSTANCE = refreshed
@@ -162,11 +199,92 @@ class Config:
     Assumes .env file has already been loaded.
     """
 
+    def _record_configuration_error(self, message: str) -> None:
+        """Store one error so validation can report all invalid values together."""
+        self._configuration_errors.append(message)
+
+    def _read_bool(self, name: str, default: bool) -> bool:
+        """Read a boolean variable, recording an error before using its default."""
+        value = os.getenv(name)
+        if value is None:
+            return default
+
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "f", "no", "n", "off"}:
+            return False
+
+        self._record_configuration_error(f"{name} must be a boolean (true/false), got {value!r}")
+        return default
+
+    def _read_int(
+        self,
+        name: str,
+        default: int,
+        *,
+        min_value: Optional[int] = None,
+        max_value: Optional[int] = None,
+    ) -> int:
+        """Read a bounded integer, recording invalid explicit values."""
+        value = os.getenv(name)
+        if value is None:
+            return default
+
+        try:
+            parsed = int(value.strip())
+        except (TypeError, ValueError):
+            self._record_configuration_error(f"{name} must be an integer, got {value!r}")
+            return default
+
+        if min_value is not None and parsed < min_value:
+            self._record_configuration_error(f"{name} must be at least {min_value}, got {parsed}")
+            return default
+        if max_value is not None and parsed > max_value:
+            self._record_configuration_error(f"{name} must be at most {max_value}, got {parsed}")
+            return default
+        return parsed
+
+    def _read_float(
+        self,
+        name: str,
+        default: float,
+        *,
+        min_value: Optional[float] = None,
+        max_value: Optional[float] = None,
+    ) -> float:
+        """Read a bounded float, recording invalid explicit values."""
+        value = os.getenv(name)
+        if value is None:
+            return default
+
+        try:
+            parsed = float(value.strip())
+        except (TypeError, ValueError):
+            self._record_configuration_error(f"{name} must be a number, got {value!r}")
+            return default
+
+        if min_value is not None and parsed < min_value:
+            self._record_configuration_error(f"{name} must be at least {min_value}, got {parsed}")
+            return default
+        if max_value is not None and parsed > max_value:
+            self._record_configuration_error(f"{name} must be at most {max_value}, got {parsed}")
+            return default
+        return parsed
+
     def _configure_runner_task_types(
         self, runner_instances_env: Optional[str], runner_task_types_spec: str
     ) -> None:
         """Configure RUNNER_TASK_TYPES* attributes for grouped or legacy syntax."""
-        grouped = _parse_grouped_task_types_spec(runner_task_types_spec)
+        try:
+            grouped = _parse_grouped_task_types_spec(runner_task_types_spec)
+        except ValueError as exc:
+            self._record_configuration_error(str(exc))
+            self.RUNNER_INSTANCES = 1
+            self.RUNNER_TASK_TYPES = set(SUPPORTED_TASK_TYPES)
+            self.RUNNER_TASK_TYPES_BY_INSTANCE = [set(SUPPORTED_TASK_TYPES)]
+            return
+
         if grouped is None:
             self._configure_legacy_task_types(runner_task_types_spec)
             return
@@ -185,7 +303,7 @@ class Config:
 
     def _configure_legacy_task_types(self, runner_task_types_spec: str) -> None:
         """Configure task types when using simple CSV RUNNER_TASK_TYPES syntax."""
-        self.RUNNER_INSTANCES = int(os.getenv("RUNNER_INSTANCES", 1))
+        self.RUNNER_INSTANCES = self._read_int("RUNNER_INSTANCES", 1, min_value=1)
         task_types = _parse_task_types_csv(runner_task_types_spec)
         self.RUNNER_TASK_TYPES = task_types
         self.RUNNER_TASK_TYPES_BY_INSTANCE = [set(task_types) for _ in range(self.RUNNER_INSTANCES)]
@@ -221,30 +339,30 @@ class Config:
                 union |= set(types)
             return union
 
-        instance_id = int(instance_id_env)
-        if not (0 <= instance_id < computed_instances):
-            raise ValueError(
-                f"RUNNER_INSTANCE_ID={instance_id} out of range for grouped RUNNER_TASK_TYPES (instances={computed_instances})"
-            )
+        instance_id = self._read_int(
+            "RUNNER_INSTANCE_ID",
+            0,
+            min_value=0,
+            max_value=computed_instances - 1,
+        )
 
         return set(self.RUNNER_TASK_TYPES_BY_INSTANCE[instance_id])
 
     def __init__(self):
         """Initialize configuration values."""
 
+        self._configuration_errors: List[str] = []
+
         # DEBUG mode
-        debug_env = os.getenv("DEBUG", "False")
-        self.DEBUG: bool = (
-            debug_env.lower() in ("true", "1", "yes")
-            if isinstance(debug_env, str)
-            else bool(debug_env)
-        )
+        self.DEBUG: bool = self._read_bool("DEBUG", False)
 
         # Runner/Multi-instance configuration
         self.RUNNER_PROTOCOL: str = os.getenv("RUNNER_PROTOCOL", "http")
         self.RUNNER_HOST: str = os.getenv("RUNNER_HOST", "localhost")
         self.RUNNER_BASE_NAME: str = os.getenv("RUNNER_BASE_NAME", "default-runner")
-        self.RUNNER_BASE_PORT: int = int(os.getenv("RUNNER_BASE_PORT", 8082))
+        self.RUNNER_BASE_PORT: int = self._read_int(
+            "RUNNER_BASE_PORT", 8082, min_value=80, max_value=65535
+        )
 
         runner_instances_env = os.getenv("RUNNER_INSTANCES")
         runner_task_types_spec = os.getenv("RUNNER_TASK_TYPES", "encoding,studio")
@@ -259,24 +377,21 @@ class Config:
         self._configure_runner_task_types(runner_instances_env, runner_task_types_spec)
 
         # Monitor instances and automatically restart failed ones
-        self.RUNNER_MONITORING: bool = os.getenv("RUNNER_MONITORING", "False").lower() in (
-            "true",
-            "1",
-            "yes",
-        )
+        self.RUNNER_MONITORING: bool = self._read_bool("RUNNER_MONITORING", False)
 
         # API token authentication: access token for this runner (must match an authorised token in the manager)
         self.RUNNER_TOKEN: str = os.getenv("RUNNER_TOKEN", "default-runner-token")
 
         # Manager URL configuration
-        self.MANAGER_URL: str = _normalize_base_url(
-            os.getenv("MANAGER_URL"), "http://localhost:8081"
-        )
+        manager_url_env = os.getenv("MANAGER_URL")
+        if manager_url_env is not None and not manager_url_env.strip():
+            self._record_configuration_error("MANAGER_URL must not be empty")
+        self.MANAGER_URL: str = _normalize_base_url(manager_url_env, "http://localhost:8081")
 
         # SMTP configuration for failure notifications
         self.SMTP_SERVER: str = os.getenv("SMTP_SERVER", "")
-        self.SMTP_PORT: int = _parse_int(os.getenv("SMTP_PORT"), 25, min_value=1, max_value=65535)
-        self.SMTP_USE_TLS: bool = _parse_bool(os.getenv("SMTP_USE_TLS"), default=False)
+        self.SMTP_PORT: int = self._read_int("SMTP_PORT", 25, min_value=1, max_value=65535)
+        self.SMTP_USE_TLS: bool = self._read_bool("SMTP_USE_TLS", False)
         self.SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
         self.SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
         self.SMTP_SENDER: str = os.getenv("SMTP_SENDER", "")
@@ -284,21 +399,21 @@ class Config:
 
         # Task completion notification retry settings
         # Maximum number of retries for notifying task completion
-        self.COMPLETION_NOTIFY_MAX_RETRIES: int = _parse_int(
-            os.getenv("COMPLETION_NOTIFY_MAX_RETRIES"),
+        self.COMPLETION_NOTIFY_MAX_RETRIES: int = self._read_int(
+            "COMPLETION_NOTIFY_MAX_RETRIES",
             5,
             min_value=0,
         )
 
         # Delay between retries in seconds
-        self.COMPLETION_NOTIFY_RETRY_DELAY_SECONDS: int = _parse_int(
-            os.getenv("COMPLETION_NOTIFY_RETRY_DELAY_SECONDS"),
+        self.COMPLETION_NOTIFY_RETRY_DELAY_SECONDS: int = self._read_int(
+            "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS",
             60,
             min_value=0,
         )
         # Backoff factor for retry delays
-        self.COMPLETION_NOTIFY_BACKOFF_FACTOR: float = _parse_float(
-            os.getenv("COMPLETION_NOTIFY_BACKOFF_FACTOR"),
+        self.COMPLETION_NOTIFY_BACKOFF_FACTOR: float = self._read_float(
+            "COMPLETION_NOTIFY_BACKOFF_FACTOR",
             1.5,
             min_value=1.0,
         )
@@ -308,9 +423,7 @@ class Config:
         self.CORS_ALLOW_ORIGINS = [
             o.strip() for o in (cors_origins_raw or "").split(",") if o.strip()
         ] or ["*"]
-        self.CORS_ALLOW_CREDENTIALS: bool = _parse_bool(
-            os.getenv("CORS_ALLOW_CREDENTIALS"), default=False
-        )
+        self.CORS_ALLOW_CREDENTIALS: bool = self._read_bool("CORS_ALLOW_CREDENTIALS", False)
         self.CORS_ALLOW_METHODS = [
             m.strip() for m in (os.getenv("CORS_ALLOW_METHODS", "*") or "").split(",") if m.strip()
         ] or ["*"]
@@ -325,13 +438,16 @@ class Config:
             for h in (os.getenv("DOWNLOAD_ALLOWED_HOSTS", "") or "").split(",")
             if h.strip()
         ]
-        self.DOWNLOAD_ALLOW_PRIVATE_NETWORKS: bool = _parse_bool(
-            os.getenv("DOWNLOAD_ALLOW_PRIVATE_NETWORKS"), default=True
+        self.DOWNLOAD_ALLOW_PRIVATE_NETWORKS: bool = self._read_bool(
+            "DOWNLOAD_ALLOW_PRIVATE_NETWORKS", True
         )
 
         # Log directory.
         # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.
         log_dir = _first_env_value("LOG_DIR", "LOG_DIRECTORY", default="/var/log/esup-runner")
+        if not log_dir.strip():
+            self._record_configuration_error("LOG_DIR must not be empty")
+            log_dir = "/var/log/esup-runner"
         # Add slash at end if missing
         if not log_dir.endswith("/"):
             log_dir += "/"
@@ -352,7 +468,7 @@ class Config:
             self.RUNNER_TASK_STATUS_FILE = str(Path(self.STORAGE_DIR) / "runner_task_statuses.json")
 
         # Maximum video size in GB for processing (0 for unlimited)
-        self.MAX_VIDEO_SIZE_GB: int = int(os.getenv("MAX_VIDEO_SIZE_GB", 0))
+        self.MAX_VIDEO_SIZE_GB: int = self._read_int("MAX_VIDEO_SIZE_GB", 0, min_value=0)
 
         # Application-level denylist for media codecs rejected before FFmpeg/Whisper.
         media_codec_denylist_raw = os.getenv("MEDIA_CODEC_DENYLIST", "magicyuv")
@@ -361,19 +477,17 @@ class Config:
         ]
 
         # Maximum age of files in storage in days (0 for unlimited)
-        self.MAX_FILE_AGE_DAYS: int = int(os.getenv("MAX_FILE_AGE_DAYS", 0))
+        self.MAX_FILE_AGE_DAYS: int = self._read_int("MAX_FILE_AGE_DAYS", 0, min_value=0)
 
         # Interval for periodic cleanup in hours
-        self.CLEANUP_INTERVAL_HOURS: int = int(os.getenv("CLEANUP_INTERVAL_HOURS", 24))
+        self.CLEANUP_INTERVAL_HOURS: int = self._read_int("CLEANUP_INTERVAL_HOURS", 24, min_value=1)
 
         # Maximum duration (seconds) allowed for external task scripts
         # (encoding/studio/transcription handlers)
-        external_script_timeout = _parse_int(
-            os.getenv("EXTERNAL_SCRIPT_TIMEOUT_SECONDS"),
+        self.EXTERNAL_SCRIPT_TIMEOUT_SECONDS: int = self._read_int(
+            "EXTERNAL_SCRIPT_TIMEOUT_SECONDS",
             18000,
-        )
-        self.EXTERNAL_SCRIPT_TIMEOUT_SECONDS: int = (
-            external_script_timeout if external_script_timeout > 0 else 18000
+            min_value=1,
         )
 
         # Encoding type (CPU or GPU)
@@ -381,7 +495,7 @@ class Config:
 
         # # # Specifics settings for GPU encoding # # #
         # HWACCEL_DEVICE parameter for GPU encoding (Ex: 0)
-        self.GPU_HWACCEL_DEVICE: int = int(os.getenv("GPU_HWACCEL_DEVICE", 0))
+        self.GPU_HWACCEL_DEVICE: int = self._read_int("GPU_HWACCEL_DEVICE", 0, min_value=0)
         # CUDA_VISIBLE_DEVICES parameter for GPU encoding (Ex: 0,1)
         self.GPU_CUDA_VISIBLE_DEVICES: str = os.getenv("GPU_CUDA_VISIBLE_DEVICES", "0,1")
         # CUDA_DEVICE_ORDER parameter for GPU encoding (Ex: PCI_BUS_ID)
@@ -401,7 +515,11 @@ class Config:
         # Logical whisper model (small|medium|large|turbo)
         self.WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "small").lower()
         # Shared cache root for transcription models and uv cache.
-        cache_dir = Path(os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner"))
+        cache_dir_raw = os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
+        if not cache_dir_raw.strip():
+            self._record_configuration_error("CACHE_DIR must not be empty")
+            cache_dir_raw = "/home/esup-runner/.cache/esup-runner"
+        cache_dir = Path(cache_dir_raw)
         self.CACHE_DIR: str = str(cache_dir)
         # Directory where whisper models (.gguf/.bin) are stored
         self.WHISPER_MODELS_DIR: str = os.getenv(
@@ -425,20 +543,41 @@ class Config:
         Validate critical configuration settings.
 
         Raises:
-            ValueError: If essential configuration is missing or invalid
+            ConfigValidationError: If configuration values are missing or invalid
         """
-        self._validate_instances()
-        self._validate_task_types()
-        self._validate_ports()
-        self._validate_tokens()
-        self._validate_cors()
-        self._validate_gpu()
+        errors = list(getattr(self, "_configuration_errors", []))
+        validators = (
+            self._validate_instances,
+            self._validate_task_types,
+            self._validate_ports,
+            self._validate_tokens,
+            self._validate_cors,
+            self._validate_names_and_urls,
+            self._validate_enums,
+            self._validate_numeric_limits,
+            self._validate_studio_defaults,
+            self._validate_paths,
+            self._validate_gpu,
+        )
+
+        for validator in validators:
+            try:
+                validator()
+            except ConfigValidationError as exc:
+                errors.extend(exc.errors)
+            except ValueError as exc:
+                errors.append(str(exc))
+
+        _raise_validation_errors(errors)
 
     def _validate_instances(self) -> None:
+        """Validate that the runner starts at least one instance."""
         if self.RUNNER_INSTANCES < 1:
             raise ValueError("RUNNER_INSTANCES must be at least 1")
 
     def _validate_task_types(self) -> None:
+        """Validate that each instance references at least one known handler."""
+        errors: List[str] = []
         if not hasattr(self, "RUNNER_TASK_TYPES_BY_INSTANCE"):
             raise ValueError("RUNNER_TASK_TYPES must define at least one instance")
         if len(self.RUNNER_TASK_TYPES_BY_INSTANCE) < 1:
@@ -446,23 +585,151 @@ class Config:
 
         for idx, task_types in enumerate(self.RUNNER_TASK_TYPES_BY_INSTANCE):
             if not task_types:
-                raise ValueError(f"RUNNER_TASK_TYPES: instance {idx} has no task types")
+                errors.append(f"RUNNER_TASK_TYPES: instance {idx} has no task types")
+                continue
+
+            unsupported = sorted(set(task_types) - SUPPORTED_TASK_TYPES)
+            if unsupported:
+                errors.append(
+                    f"RUNNER_TASK_TYPES: instance {idx} contains unsupported task types: "
+                    f"{', '.join(unsupported)}"
+                )
+
+        _raise_validation_errors(errors)
 
     def _validate_ports(self) -> None:
-        if not (80 <= self.RUNNER_BASE_PORT <= 65535):
-            raise ValueError("RUNNER_BASE_PORT must be between 80 and 65535")
+        """Validate the complete TCP port range required by all instances."""
+        errors: List[str] = []
+        if not 80 <= self.RUNNER_BASE_PORT <= 65535:
+            errors.append("RUNNER_BASE_PORT must be between 80 and 65535")
+        elif self.RUNNER_BASE_PORT + self.RUNNER_INSTANCES - 1 > 65535:
+            errors.append("RUNNER_BASE_PORT and RUNNER_INSTANCES require ports above 65535")
+        _raise_validation_errors(errors)
 
     def _validate_tokens(self) -> None:
-        if not self.RUNNER_TOKEN or self.RUNNER_TOKEN == "default-runner-token":
+        """Reject empty and documented placeholder authentication tokens."""
+        if not self.RUNNER_TOKEN or self.RUNNER_TOKEN in {
+            "default-runner-token",
+            "CHANGE_ME_RUNNERS_TOKEN",
+        }:
             raise ValueError("RUNNER_TOKEN must be set to a secure value")
 
     def _validate_cors(self) -> None:
+        """Reject the wildcard-origin and credential combination forbidden by CORS."""
         if self.CORS_ALLOW_CREDENTIALS and ("*" in self.CORS_ALLOW_ORIGINS):
             raise ValueError(
                 "Invalid CORS configuration: CORS_ALLOW_CREDENTIALS=true is not compatible with CORS_ALLOW_ORIGINS=*"
             )
 
+    def _validate_names_and_urls(self) -> None:
+        """Validate required runner identifiers and the manager base URL."""
+        errors: List[str] = []
+        for name, value in (
+            ("RUNNER_HOST", self.RUNNER_HOST),
+            ("RUNNER_BASE_NAME", self.RUNNER_BASE_NAME),
+        ):
+            if not value.strip():
+                errors.append(f"{name} must not be empty")
+
+        if self.RUNNER_HOST.strip() and (
+            any(character.isspace() for character in self.RUNNER_HOST) or "/" in self.RUNNER_HOST
+        ):
+            errors.append("RUNNER_HOST must contain a hostname or IP address only")
+
+        try:
+            manager_url = urlparse(self.MANAGER_URL)
+            manager_hostname = manager_url.hostname
+            manager_url.port
+        except ValueError:
+            manager_url = None
+            manager_hostname = None
+
+        if (
+            manager_url is None
+            or manager_url.scheme not in {"http", "https"}
+            or not manager_hostname
+            or any(character.isspace() for character in manager_hostname)
+        ):
+            errors.append("MANAGER_URL must be an absolute HTTP(S) URL")
+
+        _raise_validation_errors(errors)
+
+    def _validate_enums(self) -> None:
+        """Validate configuration values drawn from a finite supported set."""
+        errors: List[str] = []
+        if self.RUNNER_PROTOCOL not in {"http", "https"}:
+            errors.append("RUNNER_PROTOCOL must be either 'http' or 'https'")
+        if self.LOG_LEVEL not in SUPPORTED_LOG_LEVELS:
+            errors.append("LOG_LEVEL must be one of: " + ", ".join(sorted(SUPPORTED_LOG_LEVELS)))
+        if self.ENCODING_TYPE not in {"CPU", "GPU"}:
+            errors.append("ENCODING_TYPE must be either 'CPU' or 'GPU'")
+        _raise_validation_errors(errors)
+
+    def _validate_numeric_limits(self) -> None:
+        """Validate numeric limits even when attributes were changed after loading."""
+        errors: List[str] = []
+        checks = (
+            ("SMTP_PORT", self.SMTP_PORT, 1, 65535),
+            ("COMPLETION_NOTIFY_MAX_RETRIES", self.COMPLETION_NOTIFY_MAX_RETRIES, 0, None),
+            (
+                "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS",
+                self.COMPLETION_NOTIFY_RETRY_DELAY_SECONDS,
+                0,
+                None,
+            ),
+            ("COMPLETION_NOTIFY_BACKOFF_FACTOR", self.COMPLETION_NOTIFY_BACKOFF_FACTOR, 1, None),
+            ("MAX_VIDEO_SIZE_GB", self.MAX_VIDEO_SIZE_GB, 0, None),
+            ("MAX_FILE_AGE_DAYS", self.MAX_FILE_AGE_DAYS, 0, None),
+            ("CLEANUP_INTERVAL_HOURS", self.CLEANUP_INTERVAL_HOURS, 1, None),
+            ("EXTERNAL_SCRIPT_TIMEOUT_SECONDS", self.EXTERNAL_SCRIPT_TIMEOUT_SECONDS, 1, None),
+            ("GPU_HWACCEL_DEVICE", self.GPU_HWACCEL_DEVICE, 0, None),
+        )
+        for name, value, minimum, maximum in checks:
+            if value < minimum:
+                errors.append(f"{name} must be at least {minimum}")
+            if maximum is not None and value > maximum:
+                errors.append(f"{name} must be at most {maximum}")
+        _raise_validation_errors(errors)
+
+    def _validate_studio_defaults(self) -> None:
+        """Validate FFmpeg-compatible defaults used by Studio tasks."""
+        errors: List[str] = []
+        try:
+            crf = int(self.STUDIO_DEFAULT_CRF)
+        except (TypeError, ValueError):
+            crf = None
+        if crf is None or not 0 <= crf <= 51:
+            errors.append("STUDIO_DEFAULT_CRF must be an integer between 0 and 51")
+
+        if self.STUDIO_DEFAULT_PRESET not in SUPPORTED_STUDIO_PRESETS:
+            errors.append(
+                "STUDIO_DEFAULT_PRESET must be one of: "
+                + ", ".join(sorted(SUPPORTED_STUDIO_PRESETS))
+            )
+
+        if not re.fullmatch(r"[1-9]\d*(?:\.\d+)?[kKmM]?", self.STUDIO_DEFAULT_AUDIO_BITRATE):
+            errors.append("STUDIO_DEFAULT_AUDIO_BITRATE must be a positive bitrate such as '128k'")
+        _raise_validation_errors(errors)
+
+    def _validate_paths(self) -> None:
+        """Ensure required storage and cache path settings are not empty."""
+        errors = [
+            f"{name} must not be empty"
+            for name, value in (
+                ("LOG_DIR", self.LOG_DIR),
+                ("STORAGE_DIR", self.STORAGE_DIR),
+                ("RUNNER_TASK_STATUS_FILE", self.RUNNER_TASK_STATUS_FILE),
+                ("CACHE_DIR", self.CACHE_DIR),
+                ("WHISPER_MODELS_DIR", self.WHISPER_MODELS_DIR),
+                ("HUGGINGFACE_MODELS_DIR", self.HUGGINGFACE_MODELS_DIR),
+                ("UV_CACHE_DIR", self.UV_CACHE_DIR),
+            )
+            if not value.strip()
+        ]
+        _raise_validation_errors(errors)
+
     def _validate_gpu(self) -> None:
+        """Ensure the configured CUDA directory exists when GPU mode is enabled."""
         if self.ENCODING_TYPE != "GPU":
             return
         if not os.path.exists(self.GPU_CUDA_PATH):

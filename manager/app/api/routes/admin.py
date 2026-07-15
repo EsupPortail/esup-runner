@@ -29,6 +29,7 @@ from app.core import config as config_module
 from app.core.auth import OPENAPI_TOKEN_COOKIE_NAME, build_openapi_cookie_value, verify_admin
 from app.core.config import config
 from app.core.passwords import BcryptPasswordContext
+from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_task as get_task_from_state
 from app.core.state import get_tasks_snapshot, runners
@@ -44,7 +45,7 @@ router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(verify
 limiter = Limiter(key_func=get_remote_address)
 
 # Templates configuration
-templates = Jinja2Templates(directory="app/web/templates")
+templates = Jinja2Templates(directory=WEB_TEMPLATES_DIR)
 
 _ATTENTION_TASK_STATUSES = ("failed", "warning", "timeout")
 _ATTENTION_ITEMS_LIMIT = 5

@@ -18,13 +18,14 @@ from fastapi.templating import Jinja2Templates
 
 from app.__version__ import __version__
 from app.core.auth import verify_admin
+from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.setup_logging import setup_default_logging
 
 logger = setup_default_logging()
 
 router = APIRouter(prefix="/statistics", tags=["Statistics"], dependencies=[Depends(verify_admin)])
 
-templates = Jinja2Templates(directory="app/web/templates")
+templates = Jinja2Templates(directory=WEB_TEMPLATES_DIR)
 
 _TASK_STATS_DEFAULT_FIELDNAMES = [
     "task_id",

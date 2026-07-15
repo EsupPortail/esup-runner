@@ -15,7 +15,10 @@ def test_custom_openapi_includes_logo_and_tags():
 
     assert schema["info"]["title"] == OpenAPIConfig.TITLE
     assert "x-logo" in schema["info"], "OpenAPI schema should expose logo metadata"
-    assert schema["components"]["securitySchemes"]["APIKeyHeader"]["type"] == "apiKey"
+    assert schema["info"]["contact"] == OpenAPIConfig.CONTACT
+    assert schema["info"]["license"] == OpenAPIConfig.LICENSE_INFO
+    assert "contact" not in schema
+    assert "license" not in schema
 
     tag_names = {t["name"] for t in schema.get("tags", [])}
     assert {"Storage", "Task"}.issubset(tag_names)
@@ -29,6 +32,22 @@ def test_app_openapi_includes_task_stop_route():
 
     assert "/task/stop/{task_id}" in schema["paths"]
     assert "post" in schema["paths"]["/task/stop/{task_id}"]
+
+    declared_schemes = schema["components"]["securitySchemes"]
+    assert declared_schemes["APIKeyHeader"]["name"] == "X-API-Token"
+    assert declared_schemes["HTTPBearer"]["scheme"] == "bearer"
+
+    referenced_schemes = {
+        scheme_name
+        for path_item in schema["paths"].values()
+        for operation in path_item.values()
+        if isinstance(operation, dict)
+        for requirement in operation.get("security", [])
+        for scheme_name in requirement
+    }
+    assert referenced_schemes == {"APIKeyHeader", "HTTPBearer"}
+    assert referenced_schemes <= declared_schemes.keys()
+    assert "security" not in schema["paths"]["/"]["get"]
 
 
 @pytest.mark.asyncio

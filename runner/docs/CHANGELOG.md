@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Prevented filesystem and operating-system error details from leaking through `GET /runner/status` disk-usage diagnostics while retaining full exception details in server logs.
+
+### Fixed
+
+- Fixed manager completion callbacks so every request phase has a finite timeout and every successful `2xx` response is accepted, avoiding indefinitely blocked task completion notifications.
+- Fixed multi-instance startup to reserve a distinct available TCP port for each child, reject invalid port ranges, and stop cleanly when no port remains.
+- Fixed production wheel and Docker packaging to include all nested `app` packages, the project README, and bundled static assets, with static files resolved from the installed package.
+- Fixed Runner OpenAPI metadata and authentication declarations so contact and license information is emitted under `info`, GPLv3 is advertised, and generated API-key and Bearer schemes are preserved.
 
 ## [1.6.0] - 2026-07-10
 

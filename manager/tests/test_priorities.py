@@ -6,6 +6,7 @@ from datetime import datetime
 
 import pytest
 
+from app.api.routes import task as task_module
 from app.core.priorities import (
     hostname_from_url,
     is_priority_hostname,
@@ -124,6 +125,12 @@ def test_execute_rejects_when_quota_reached(client, auth_headers, monkeypatch):
     monkeypatch.setattr(config, "PRIORITIES_ENABLED", True)
     monkeypatch.setattr(config, "PRIORITY_DOMAIN", "umontpellier.fr")
     monkeypatch.setattr(config, "MAX_OTHER_DOMAIN_TASK_PERCENT", 20)
+
+    async def _resolve_public_ip_without_network(_host: str) -> list[str]:
+        """Keep notify URL validation deterministic without external DNS."""
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(task_module, "_resolve_host_ips", _resolve_public_ip_without_network)
 
     # Arrange state
     original_tasks = dict(tasks)

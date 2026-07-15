@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 name = "esup-runner-runner"
 version = "1.6.0"
 description = "ESUP-Runner Runner - Outsourcing system for encoding, transcription, and other processes"
-readme = "README.md"
+readme = "docs/README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [
@@ -126,9 +126,13 @@ esup-runner-dev = "launcher:run_dev"
 runner-dev = "launcher:run_dev"
 
 [tool.setuptools]
-packages = ["app"]
 py-modules = ["launcher"]
 include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+namespaces = true
 
 [tool.setuptools.package-data]
 app = [

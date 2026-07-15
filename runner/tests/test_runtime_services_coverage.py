@@ -278,6 +278,79 @@ def test_restart_instance_status_monitor_and_wait(monkeypatch):
     assert stopped["called"] is True
 
 
+def test_restart_instance_rejects_negative_id(monkeypatch):
+    """Validate that a negative instance id cannot target the last process."""
+    manager = process_manager_module.UvicornProcessManager(base_port=9450, instances=1)
+    old_process = FakeProcess()
+    old_process.start()
+    manager.processes = [old_process]
+    manager.ports = [9450]
+    create_calls = []
+    monkeypatch.setattr(
+        manager,
+        "_create_uvicorn_process",
+        lambda port, instance_id: create_calls.append((port, instance_id)),
+    )
+
+    assert manager.restart_instance(-1) is False
+    assert manager.processes == [old_process]
+    assert old_process.terminate_calls == 0
+    assert create_calls == []
+
+
+def test_restart_instance_kills_stubborn_process_before_replacement(monkeypatch):
+    """Validate that a process ignoring terminate is killed before replacement."""
+    manager = process_manager_module.UvicornProcessManager(base_port=9460, instances=1)
+    old_process = FakeProcess()
+    old_process.stubborn = True
+    old_process.start()
+    replacement = FakeProcess()
+    manager.processes = [old_process]
+    manager.ports = [9460]
+
+    def create_replacement(port, instance_id):
+        assert (port, instance_id) == (9460, 0)
+        assert old_process.is_alive() is False
+        return replacement
+
+    monkeypatch.setattr(manager, "_create_uvicorn_process", create_replacement)
+
+    assert manager.restart_instance(0) is True
+    assert old_process.terminate_calls == 1
+    assert old_process.kill_calls == 1
+    assert old_process.join_calls == [5, None]
+    assert manager.processes == [replacement]
+    assert replacement.is_alive() is True
+
+
+def test_restart_instance_does_not_replace_process_still_alive_after_kill(monkeypatch):
+    """Validate that no replacement starts while the previous process is alive."""
+
+    class UnkillableProcess(FakeProcess):
+        def kill(self):
+            self.kill_calls += 1
+
+    manager = process_manager_module.UvicornProcessManager(base_port=9470, instances=1)
+    old_process = UnkillableProcess()
+    old_process.stubborn = True
+    old_process.start()
+    manager.processes = [old_process]
+    manager.ports = [9470]
+    create_calls = []
+    monkeypatch.setattr(
+        manager,
+        "_create_uvicorn_process",
+        lambda port, instance_id: create_calls.append((port, instance_id)),
+    )
+
+    assert manager.restart_instance(0) is False
+    assert manager.processes == [old_process]
+    assert old_process.terminate_calls == 1
+    assert old_process.kill_calls == 1
+    assert old_process.join_calls == [5, None]
+    assert create_calls == []
+
+
 def test_wait_for_termination_handles_keyboard_interrupt(monkeypatch):
     """Validate Wait for termination handles keyboard interrupt."""
     manager = process_manager_module.UvicornProcessManager(base_port=9500, instances=1)

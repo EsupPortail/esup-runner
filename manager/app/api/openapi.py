@@ -67,18 +67,12 @@ def custom_openapi(app: FastAPI) -> Callable[[], Dict]:
             version=app.version,
             description=app.description,
             routes=app.routes,
+            contact=app.contact,
+            license_info=app.license_info,
         )
 
         # Add custom tags for organization
         openapi_schema["tags"] = _get_openapi_tags()
-
-        # Add contact and license info (per OpenAPI spec: inside info)
-        if hasattr(app, "contact") and app.contact:
-            openapi_schema.setdefault("info", {})
-            openapi_schema["info"]["contact"] = app.contact
-        if hasattr(app, "license_info") and app.license_info:
-            openapi_schema.setdefault("info", {})
-            openapi_schema["info"]["license"] = app.license_info
 
         # Add custom documentation
         openapi_schema["info"]["x-logo"] = {
@@ -86,12 +80,13 @@ def custom_openapi(app: FastAPI) -> Callable[[], Dict]:
             "altText": "Runner Manager API Logo",
         }
 
+        # Header extraction stays optional so the dependency can return its
+        # explicit HTTP 400 error; the public contract still marks it required.
+        _mark_runner_version_headers_required(openapi_schema)
+
         # Assign tags to endpoints based on route paths
         # Useless for the moment. Kept in case it is needed for a future version.
         # _assign_tags_to_endpoints(openapi_schema)
-
-        # Add security schemes
-        _add_security_schemes(openapi_schema)
 
         # Add examples and response schemas
         _enhance_schemas_with_examples(openapi_schema)
@@ -158,33 +153,15 @@ def _assign_tags_to_endpoints(openapi_schema: Dict) -> None:
                 details["tags"] = ["API"]
 
 
-def _add_security_schemes(openapi_schema: Dict) -> None:
-    """
-    Add security schemes to OpenAPI schema.
-
-    Args:
-        openapi_schema: OpenAPI schema to modify
-    """
-    openapi_schema["components"] = openapi_schema.get("components", {})
-    openapi_schema["components"]["securitySchemes"] = {
-        "Bearer": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-            "description": "Enter your token in the format: Bearer <token>",
-        },
-        "APIKeyHeader": {
-            "type": "apiKey",
-            "in": "header",
-            "name": "X-API-Token",
-            "description": "Enter your token in the X-API-Token header.",
-        },
-    }
-
-    # Appliquer la sécurité à tous les endpoints par défaut
-    for path in openapi_schema["paths"].values():
-        for method in path.values():
-            method["security"] = [{"Bearer": []}, {"APIKeyHeader": []}]
+def _mark_runner_version_headers_required(openapi_schema: Dict) -> None:
+    """Document the runner version header as required wherever it is used."""
+    for path_item in openapi_schema.get("paths", {}).values():
+        for operation in path_item.values():
+            if not isinstance(operation, dict):
+                continue
+            for parameter in operation.get("parameters", []):
+                if parameter.get("name") == "X-Runner-Version" and parameter.get("in") == "header":
+                    parameter["required"] = True
 
 
 def _enhance_schemas_with_examples(openapi_schema: Dict) -> None:
@@ -367,7 +344,7 @@ A distributed task runner management system that allows you to:
 
 ### Authentication
 
-This API uses API key authentication. Include your API key in the `X-API-Token` header.
+This API uses token authentication. Include your token in the `X-API-Token` header or in the `Authorization: Bearer <token>` header.
 
 ### Web Interface
 

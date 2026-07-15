@@ -14,7 +14,8 @@ htmlcov/
 dist/
 build/
 tests/
-docs/
+docs/*
+!docs/README.md
 production/
 esup_runner.egg-info/
 gunicorn.ctl

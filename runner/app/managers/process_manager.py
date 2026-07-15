@@ -116,6 +116,13 @@ class UvicornProcessManager:
             base_port: Starting port number for the first instance
             instances: Number of runner instances to launch
         """
+        if instances < 1:
+            raise ValueError("instances must be at least 1")
+        if not (1 <= base_port <= 65535):
+            raise ValueError("base_port must be between 1 and 65535")
+        if base_port + instances - 1 > 65535:
+            raise ValueError("Configured runner instance ports exceed 65535")
+
         self.base_port = base_port
         self.instances = instances
         self.processes: List[Process] = []
@@ -139,13 +146,15 @@ class UvicornProcessManager:
             int: First available port number
         """
         port = start_port
-        while True:
+        while port <= 65535:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.bind(("localhost", port))
                     return port
             except OSError:
                 port += 1
+
+        raise RuntimeError(f"No available TCP port found from {start_port} to 65535")
 
     def _create_uvicorn_process(
         self, runner_instance_port: int, runner_instance_id: int
@@ -173,13 +182,22 @@ class UvicornProcessManager:
         Start all Uvicorn instances as separate processes.
         """
         logger.info(f"Starting {self.instances} runner instances…")
+        reserved_ports: set[int] = set()
 
         for i, port in enumerate(self.ports):
-            # Ensure port is available
-            available_port = self._find_available_port(port)
+            # Ensure the port is available and has not already been selected for
+            # another child that may not have bound its socket yet.
+            candidate_port = port
+            while True:
+                available_port = self._find_available_port(candidate_port)
+                if available_port not in reserved_ports:
+                    break
+                candidate_port = available_port + 1
+
             if available_port != port:
                 logger.warning(f"Port {port} busy, using {available_port} for instance {i}")
-                self.ports[i] = available_port
+            self.ports[i] = available_port
+            reserved_ports.add(available_port)
 
             # Create and start process
             process = self._create_uvicorn_process(self.ports[i], i)

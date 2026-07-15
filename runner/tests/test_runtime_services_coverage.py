@@ -148,6 +148,43 @@ def test_find_available_port_skips_busy_ports(monkeypatch):
     assert manager._find_available_port(9200) == 9201
 
 
+def test_find_available_port_raises_when_range_is_exhausted(monkeypatch):
+    """Validate that port lookup stops at the highest valid TCP port."""
+
+    class BusySocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def bind(self, addr):
+            raise OSError("busy")
+
+    monkeypatch.setattr(process_manager_module.socket, "socket", lambda *_args: BusySocket())
+    manager = process_manager_module.UvicornProcessManager(base_port=65535, instances=1)
+
+    with pytest.raises(RuntimeError, match="No available TCP port"):
+        manager._find_available_port(65535)
+
+
+@pytest.mark.parametrize(
+    ("base_port", "instances", "message"),
+    [
+        (0, 1, "base_port"),
+        (65535, 2, "exceed 65535"),
+        (9200, 0, "instances"),
+    ],
+)
+def test_process_manager_rejects_invalid_port_ranges(base_port, instances, message):
+    """Validate invalid multi-instance port ranges fail at startup."""
+    with pytest.raises(ValueError, match=message):
+        process_manager_module.UvicornProcessManager(
+            base_port=base_port,
+            instances=instances,
+        )
+
+
 def test_process_manager_lifecycle_methods(monkeypatch):
     """Validate Process manager lifecycle methods."""
     monkeypatch.setattr(process_manager_module, "Process", FakeProcess)
@@ -165,7 +202,7 @@ def test_process_manager_lifecycle_methods(monkeypatch):
     assert created.daemon is False
 
     manager.start_all_instances()
-    assert manager.ports == [9301, 9301]
+    assert manager.ports == [9301, 9302]
     assert len(manager.processes) == 2
     assert all(proc.pid is not None for proc in manager.processes)
 

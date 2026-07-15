@@ -33,16 +33,12 @@ def custom_openapi(app: FastAPI) -> Callable[[], Dict]:
             version=app.version,
             description=app.description,
             routes=app.routes,
+            contact=app.contact,
+            license_info=app.license_info,
         )
 
         # Add custom tags for organization
         openapi_schema["tags"] = _get_openapi_tags()
-
-        # Add contact and license info
-        if hasattr(app, "contact") and app.contact:
-            openapi_schema["contact"] = app.contact
-        if hasattr(app, "license_info") and app.license_info:
-            openapi_schema["license"] = app.license_info
 
         # Add custom documentation
         openapi_schema["info"]["x-logo"] = {
@@ -52,9 +48,6 @@ def custom_openapi(app: FastAPI) -> Callable[[], Dict]:
 
         # Assign tags to endpoints based on route paths
         # _assign_tags_to_endpoints(openapi_schema)
-
-        # Add security schemes
-        _add_security_schemes(openapi_schema)
 
         # Add examples and response schemas
         _enhance_schemas_with_examples(openapi_schema)
@@ -106,24 +99,6 @@ def _assign_tags_to_endpoints(openapi_schema: Dict) -> None:
             else:
                 details["tags"] = ["API"]
 """
-
-
-def _add_security_schemes(openapi_schema: Dict) -> None:
-    """
-    Add security schemes to OpenAPI schema.
-
-    Args:
-        openapi_schema: OpenAPI schema to modify
-    """
-    openapi_schema["components"] = openapi_schema.get("components", {})
-    openapi_schema["components"]["securitySchemes"] = {
-        "APIKeyHeader": {
-            "type": "apiKey",
-            "name": "X-API-Token",
-            "in": "header",
-            "description": "API Key for authentication",
-        }
-    }
 
 
 def _enhance_schemas_with_examples(openapi_schema: Dict) -> None:
@@ -211,8 +186,8 @@ Visit `/docs` for interactive API documentation.
         "email": "loic.bonavent@umontpellier.fr",
     }
     LICENSE_INFO = {
-        "name": "MIT License",
-        "url": "https://opensource.org/licenses/MIT",
+        "name": "GNU General Public License v3.0",
+        "url": "https://www.gnu.org/licenses/gpl-3.0.html",
     }
 
     # OpenAPI specific settings

@@ -7,10 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Hardened daily JSON task persistence by rejecting unsafe task IDs and preventing path traversal or symlink escapes outside the configured persistence directory for task records, tombstones, temporary files, and corrupted-file backups.
+
+### Added
+
+- Added a shared styled confirmation dialog for destructive admin actions, with explicit target and irreversible-impact warnings for task, administrator, and authorized-token deletion, including bulk task deletion.
+
+### Changed
+
+- Changed the admin dashboard `Needs attention` task list to order incidents by creation date, newest first, and display their creation timestamp instead of their last update timestamp.
+- Updated the Bootstrap JavaScript bundle to `5.3.3` across the manager administration, credentials, documentation, statistics, and task pages.
+- Restricted runner completion notifications to terminal statuses (`completed`, `failed`, `timeout`) and aligned the manager API documentation.
+
 ### Fixed
 
 - Increased the admin dashboard page rate limit so the built-in auto-refresh no longer trips the `10/minute` threshold during normal use.
-
+- Fixed the generated OpenAPI contract so authentication schemes match each route (`Bearer`, `X-API-Token`, or Basic), public endpoints remain unsecured, and `X-Runner-Version` is documented as required while preserving the explicit missing-header `400` response.
+- Fixed manager wheel and container packaging so all `app` subpackages, templates, static assets, and package metadata work when the manager is launched outside the source directory.
+- Fixed manager-side `notify_url` callbacks to accept every successful HTTP `2xx` response and use bounded connection, read, write, and pool timeouts.
+- Improved `scripts/check_pipeline_tasks.py` status polling to retry transient transport failures within the task deadline, bound in-flight requests and sleeps, and treat runner `timeout` as terminal.
 
 ## [1.6.0] - 2026-07-10
 

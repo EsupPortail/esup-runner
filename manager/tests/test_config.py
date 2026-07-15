@@ -1,10 +1,25 @@
 """Validates configuration parsing, environment loading, and dotenv file handling."""
 
 import builtins
+import importlib.util
+import os
 import sys
 from types import ModuleType
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolate_manager_config_environment(monkeypatch):
+    """Keep configuration tests independent from the developer's manager .env."""
+    from app.core import config as config_module
+
+    for key in list(os.environ):
+        if key in config_module._CONFIG_ENV_KEYS or any(
+            key.startswith(prefix) for prefix in config_module._CONFIG_ENV_PREFIXES
+        ):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("OPENAPI_COOKIE_SECRET", "unit-test-secret")
 
 
 def test_parse_helpers_cover_edge_cases():
@@ -325,7 +340,8 @@ def test_config_initialization_and_validation_branches(monkeypatch):
 
     # Token/admin discovery via prefixes
     monkeypatch.setenv("AUTHORIZED_TOKENS__client", "tok")
-    monkeypatch.setenv("ADMIN_USERS__admin", "hash")
+    valid_bcrypt_hash = "$2b$12$" + ("a" * 53)
+    monkeypatch.setenv("ADMIN_USERS__admin", valid_bcrypt_hash)
 
     cfg = Config()
     assert cfg.MANAGER_URL == "https://example.org:1234"
@@ -335,7 +351,7 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     assert cfg.CACHE_DIR == "/tmp/esup-cache"
     assert cfg.UV_CACHE_DIR == "/tmp/esup-cache/uv"
     assert cfg.AUTHORIZED_TOKENS == {"client": "tok"}
-    assert cfg.ADMIN_USERS == {"admin": "hash"}
+    assert cfg.ADMIN_USERS == {"admin": valid_bcrypt_hash}
     assert cfg.OPENAPI_COOKIE_MAX_AGE_SECONDS == 1200
     assert cfg.OPENAPI_COOKIE_ROTATE_EACH_REQUEST is False
     assert cfg.OPENAPI_COOKIE_SECRET == "cookie-secret"
@@ -348,13 +364,14 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     with pytest.raises(ValueError, match="RUNNERS_STORAGE_DIR"):
         cfg2.validate_configuration()
 
-    # PRIORITIES_ENABLED with empty domain disables itself
+    # PRIORITIES_ENABLED requires a domain instead of silently disabling itself.
     monkeypatch.setenv("RUNNERS_STORAGE_ENABLED", "false")
     monkeypatch.setenv("PRIORITIES_ENABLED", "true")
     monkeypatch.setenv("PRIORITY_DOMAIN", "")
     cfg3 = Config()
-    cfg3.validate_configuration()
-    assert cfg3.PRIORITIES_ENABLED is False
+    with pytest.raises(ValueError, match="PRIORITY_DOMAIN"):
+        cfg3.validate_configuration()
+    assert cfg3.PRIORITIES_ENABLED is True
 
     # Explicit UV cache override
     monkeypatch.setenv("UV_CACHE_DIR", "/tmp/custom-uv-cache")
@@ -393,3 +410,243 @@ def test_validate_configuration_rejects_wildcard_origins_with_credentials(monkey
     cfg = Config()
     with pytest.raises(ValueError, match="Invalid CORS configuration"):
         cfg.validate_configuration()
+
+
+def test_config_strict_readers_collect_invalid_explicit_values(monkeypatch):
+    """Validate invalid scalar values are reported together instead of hidden."""
+    from app.core.config import Config, ConfigValidationError
+
+    monkeypatch.setenv("RUNNERS_STORAGE_ENABLED", "sometimes")
+    monkeypatch.setenv("MANAGER_PORT", "not-a-port")
+    monkeypatch.setenv("UVICORN_WORKERS", "0")
+    monkeypatch.setenv("MAX_OTHER_DOMAIN_TASK_PERCENT", "101")
+    monkeypatch.setenv("COMPLETION_NOTIFY_BACKOFF_FACTOR", "0.5")
+
+    config = Config()
+
+    assert config.RUNNERS_STORAGE_ENABLED is False
+    assert config.MANAGER_PORT == 8081
+    assert config.UVICORN_WORKERS == 4
+    assert config.MAX_OTHER_DOMAIN_TASK_PERCENT == 100
+    assert config.COMPLETION_NOTIFY_BACKOFF_FACTOR == 1.5
+
+    with pytest.raises(ConfigValidationError) as raised:
+        config.validate_configuration()
+
+    errors = raised.value.errors
+    assert any("RUNNERS_STORAGE_ENABLED must be a boolean" in error for error in errors)
+    assert any("MANAGER_PORT must be an integer" in error for error in errors)
+    assert any("UVICORN_WORKERS must be at least 1" in error for error in errors)
+    assert any("MAX_OTHER_DOMAIN_TASK_PERCENT must be at most 100" in error for error in errors)
+    assert any("COMPLETION_NOTIFY_BACKOFF_FACTOR must be at least 1.0" in error for error in errors)
+
+
+def test_config_strict_readers_cover_defaults_formats_and_upper_bounds(monkeypatch):
+    """Validate strict scalar helpers cover default, format, bound, and valid paths."""
+    from app.core.config import Config
+
+    config = object.__new__(Config)
+    config._configuration_errors = []
+
+    monkeypatch.delenv("TEST_BOOL", raising=False)
+    assert config._read_bool("TEST_BOOL", True) is True
+    monkeypatch.setenv("TEST_BOOL", "off")
+    assert config._read_bool("TEST_BOOL", True) is False
+    monkeypatch.setenv("TEST_BOOL", "on")
+    assert config._read_bool("TEST_BOOL", False) is True
+
+    monkeypatch.delenv("TEST_INT", raising=False)
+    assert config._read_int("TEST_INT", 3) == 3
+    monkeypatch.setenv("TEST_INT", "11")
+    assert config._read_int("TEST_INT", 3, max_value=10) == 3
+    monkeypatch.setenv("TEST_INT", "7")
+    assert config._read_int("TEST_INT", 3, min_value=1, max_value=10) == 7
+
+    monkeypatch.delenv("TEST_FLOAT", raising=False)
+    assert config._read_float("TEST_FLOAT", 2.0) == 2.0
+    monkeypatch.setenv("TEST_FLOAT", "invalid")
+    assert config._read_float("TEST_FLOAT", 2.0) == 2.0
+    monkeypatch.setenv("TEST_FLOAT", "4.0")
+    assert config._read_float("TEST_FLOAT", 2.0, max_value=3.0) == 2.0
+    monkeypatch.setenv("TEST_FLOAT", "2.5")
+    assert config._read_float("TEST_FLOAT", 2.0, min_value=1.0, max_value=3.0) == 2.5
+
+    assert len(config._configuration_errors) == 3
+
+
+def test_config_validation_aggregates_schema_errors(monkeypatch):
+    """Validate independent schema violations are returned in one exception."""
+    from app.core.config import Config, ConfigValidationError
+
+    monkeypatch.setenv("MANAGER_PROTOCOL", "ftp")
+    monkeypatch.setenv("MANAGER_HOST", "bad host/path")
+    monkeypatch.setenv("MANAGER_BIND_HOST", "bad bind/path")
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    monkeypatch.setenv("LOG_LEVEL", "verbose")
+    monkeypatch.setenv("API_DOCS_VISIBILITY", "hidden")
+    monkeypatch.setenv("PRIORITY_DOMAIN", "https://priority.example.org")
+
+    config = Config()
+
+    with pytest.raises(ConfigValidationError) as raised:
+        config.validate_configuration()
+
+    message = str(raised.value)
+    assert "MANAGER_HOST must contain" in message
+    assert "MANAGER_BIND_HOST must contain" in message
+    assert "MANAGER_PROTOCOL" in message
+    assert "ENVIRONMENT" in message
+    assert "LOG_LEVEL" in message
+    assert "API_DOCS_VISIBILITY" in message
+    assert "PRIORITY_DOMAIN must contain a hostname only" in message
+
+
+def test_config_validation_rejects_placeholders_empty_credentials_and_paths(monkeypatch, capsys):
+    """Validate credential placeholders fail while the cookie placeholder warns."""
+    from app.core.config import Config, ConfigValidationError
+
+    monkeypatch.setenv("MANAGER_HOST", "")
+    monkeypatch.setenv("LOG_DIR", "")
+    monkeypatch.setenv("CACHE_DIR", "")
+    monkeypatch.setenv("UV_CACHE_DIR", "")
+    monkeypatch.setenv("OPENAPI_COOKIE_SECRET", "change-me-with-a-long-random-secret")
+    monkeypatch.setenv("AUTHORIZED_TOKENS__", "")
+    monkeypatch.setenv("AUTHORIZED_TOKENS__client", "CHANGE_ME_APP_TOKEN")
+    monkeypatch.setenv("ADMIN_USERS__", "")
+    monkeypatch.setenv("ADMIN_USERS__admin", "CHANGE_ME_BCRYPT_HASH")
+    monkeypatch.setenv("ADMIN_USERS__broken", "not-a-bcrypt-hash")
+
+    config = Config()
+
+    assert config.MANAGER_HOST == "0.0.0.0"
+    assert config.LOG_DIR == "/var/log/esup-runner/"
+    assert config.CACHE_DIR == "/home/esup-runner/.cache/esup-runner"
+    assert config.UV_CACHE_DIR == "/home/esup-runner/.cache/esup-runner/uv"
+
+    with pytest.raises(ConfigValidationError) as raised:
+        config.validate_configuration()
+
+    message = str(raised.value)
+    assert "MANAGER_HOST must not be empty" in message
+    assert "LOG_DIR must not be empty" in message
+    assert "CACHE_DIR must not be empty" in message
+    assert "UV_CACHE_DIR must not be empty" in message
+    assert "AUTHORIZED_TOKENS entries must have a non-empty name" in message
+    assert "AUTHORIZED_TOKENS__client must be replaced" in message
+    assert "ADMIN_USERS entries must have a non-empty username" in message
+    assert "ADMIN_USERS__admin must be replaced" in message
+    assert "ADMIN_USERS__broken must contain a valid bcrypt hash" in message
+    assert "OPENAPI_COOKIE_SECRET" not in message
+    assert "OPENAPI_COOKIE_SECRET uses a documented placeholder" in capsys.readouterr().out
+
+
+def test_openapi_cookie_secret_placeholder_is_warning_only(monkeypatch, capsys):
+    """Validate the optional example cookie secret does not block startup."""
+    from app.core import _check_output
+    from app.core.config import Config
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("OPENAPI_COOKIE_SECRET", "change-me-with-a-long-random-secret")
+
+    config = Config()
+    config.validate_configuration()
+
+    output = capsys.readouterr().out
+    assert f"{_check_output._COLORS['warning']}⚠ WARNING: OPENAPI_COOKIE_SECRET" in output
+    assert _check_output._RESET in output
+    assert "change-me-with-a-long-random-secret" not in output
+
+
+def test_semantic_validators_cover_mutated_numeric_paths_and_ipv6(monkeypatch):
+    """Validate semantic checks protect post-load mutations and IPv6 URL formatting."""
+    from app.core.config import Config, ConfigValidationError
+
+    monkeypatch.setenv("MANAGER_HOST", "::1")
+    config = Config()
+    assert config.MANAGER_URL == "http://[::1]:8081"
+
+    config.MANAGER_BIND_HOST = ""
+    with pytest.raises(ConfigValidationError, match="MANAGER_BIND_HOST must not be empty"):
+        config._validate_network_identity()
+    config.MANAGER_BIND_HOST = "::1"
+
+    config.MANAGER_PORT = 70000
+    config.UVICORN_WORKERS = 0
+    config.CLEANUP_TASK_FILES_DAYS = -1
+    config.SMTP_PORT = 0
+    config.OPENAPI_COOKIE_MAX_AGE_SECONDS = 59
+    with pytest.raises(ConfigValidationError) as numeric_error:
+        config._validate_numeric_limits()
+    assert "MANAGER_PORT must be at most 65535" in str(numeric_error.value)
+    assert "UVICORN_WORKERS must be at least 1" in str(numeric_error.value)
+    assert "CLEANUP_TASK_FILES_DAYS must be at least 0" in str(numeric_error.value)
+    assert "SMTP_PORT must be at least 1" in str(numeric_error.value)
+    assert "OPENAPI_COOKIE_MAX_AGE_SECONDS must be at least 60" in str(numeric_error.value)
+
+    config.LOG_DIR = ""
+    config.RUNNERS_STORAGE_ENABLED = True
+    config.RUNNERS_STORAGE_DIR = ""
+    with pytest.raises(ConfigValidationError) as path_error:
+        config._validate_paths()
+    assert "LOG_DIR must not be empty" in str(path_error.value)
+    assert "RUNNERS_STORAGE_DIR" in str(path_error.value)
+
+
+def test_reload_config_env_rejects_invalid_config_without_mutating_shared_state(monkeypatch):
+    """Validate failed hot reload restores environment and keeps the live object."""
+    from app.core import config as config_module
+
+    stable_config = ModuleType("stable_config")
+    stable_config.stable_value = "kept"
+    monkeypatch.setattr(config_module, "config", stable_config)
+    monkeypatch.setattr(config_module, "_CONFIG_INSTANCE", stable_config)
+    monkeypatch.setattr(config_module, "_CONFIG_ENV_LOADED", True)
+    monkeypatch.setenv("MANAGER_HOST", "stable.example.org")
+
+    def load_invalid_environment():
+        """Simulate a newly loaded .env containing an invalid port."""
+        config_module.os.environ["MANAGER_HOST"] = "invalid.example.org"
+        config_module.os.environ["MANAGER_PORT"] = "invalid"
+
+    monkeypatch.setattr(config_module, "_load_environment_variables", load_invalid_environment)
+
+    with pytest.raises(config_module.ConfigValidationError, match="MANAGER_PORT"):
+        config_module.reload_config_env()
+
+    assert config_module.config is stable_config
+    assert config_module._CONFIG_INSTANCE is stable_config
+    assert stable_config.stable_value == "kept"
+    assert os.environ["MANAGER_HOST"] == "stable.example.org"
+    assert "MANAGER_PORT" not in os.environ
+
+
+def test_config_module_auto_validates_outside_pytest(monkeypatch, tmp_path):
+    """Validate a normal process runs central validation during module import."""
+    from app.core import config as config_module
+
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "MANAGER_PROTOCOL=http\n"
+        "MANAGER_HOST=localhost\n"
+        "MANAGER_PORT=8081\n"
+        "OPENAPI_COOKIE_SECRET=unit-test-secret\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CONFIG_ENV_PATH", str(env_path))
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(sys, "argv", ["python"])
+
+    pytest_module = sys.modules.pop("pytest", None)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "manager_config_auto_validation", config_module.__file__
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        if pytest_module is not None:
+            sys.modules["pytest"] = pytest_module
+
+    assert module.config.MANAGER_HOST == "localhost"
+    module.config.validate_configuration()

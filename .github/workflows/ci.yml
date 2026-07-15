@@ -55,6 +55,20 @@ jobs:
         run: |
           make lint
 
+      - name: Build and smoke-test wheel
+        working-directory: ${{ matrix.project }}
+        env:
+          WHEEL_DIR: ${{ runner.temp }}/wheel-${{ matrix.project }}-py${{ matrix.python-version }}
+          WHEEL_VENV: ${{ runner.temp }}/wheel-venv-${{ matrix.project }}-py${{ matrix.python-version }}
+          LOG_DIR: ${{ runner.temp }}/logs-${{ matrix.project }}-py${{ matrix.python-version }}
+          RUNNER_TOKEN: wheel-smoke-token
+        run: |
+          uv build --wheel --out-dir "${WHEEL_DIR}"
+          uv venv "${WHEEL_VENV}"
+          uv pip install --python "${WHEEL_VENV}/bin/python" "${WHEEL_DIR}"/*.whl
+          cd "${RUNNER_TEMP}"
+          "${WHEEL_VENV}/bin/python" -c "import app.main; print(app.main.app.title)"
+
       - name: Test
         working-directory: ${{ matrix.project }}
         run: |

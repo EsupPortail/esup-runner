@@ -14,7 +14,8 @@ htmlcov/
 dist/
 build/
 tests/
-docs/
+docs/*
+!docs/README.md
 data/
 esup_runner_manager.egg-info/
 720p_sample-5s.mp4

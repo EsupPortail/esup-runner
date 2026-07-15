@@ -390,7 +390,7 @@ Payload:
 }
 ```
 
-Valid completion statuses: `completed`, `warning`, `failed`.
+Valid completion statuses: `completed`, `failed`, `timeout`.
 
 ### `POST /tasks/restart-selected` (admin UI helper)
 

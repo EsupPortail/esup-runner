@@ -46,8 +46,9 @@ Each project has its own `pyproject.toml`, documentation, release process, etc.
 - Changelog: [runner/docs/CHANGELOG.md](runner/docs/CHANGELOG.md)
 - Versioning: [runner/docs/VERSION_MANAGEMENT.md](runner/docs/VERSION_MANAGEMENT.md)
 
-### Repository
+### Development
 
+- Developer guide: [DEVELOPMENT.md](DEVELOPMENT.md)
 - Release automation: [RELEASE.md](RELEASE.md)
 
 ## License

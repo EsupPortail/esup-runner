@@ -6,7 +6,7 @@ Defines Pydantic models for request/response schemas and data validation.
 
 from datetime import datetime
 from ipaddress import ip_address
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
@@ -294,8 +294,8 @@ class TaskCompletionNotification(BaseModel):
 
     Attributes:
         task_id: Reference to the task being reported on
-        status: Final status of the task (completed, warning or failed)
-        error_message: Detailed error information if the task has a warning or is failed
+        status: Final status of the task (completed, failed or timeout)
+        error_message: Detailed error information if the task failed or timed out
         script_output: Raw output from the task execution script - useful for debugging and understanding task behavior
     """
 
@@ -303,13 +303,13 @@ class TaskCompletionNotification(BaseModel):
         ...,
         description="Task identifier - must match the ID of the originally assigned task for proper status updates",
     )
-    status: str = Field(
+    status: Literal["completed", "failed", "timeout"] = Field(
         ...,
-        description="Task status: 'completed', 'warning' or 'failed' - indicates final execution outcome from runner perspective",
+        description="Terminal task status reported by the runner: completed, failed or timeout",
     )
     error_message: Optional[str] = Field(
         None,
-        description="Error message if failed or warning - provides specific failure details for debugging and monitoring purposes",
+        description="Error message if failed or timed out - provides specific failure details for debugging and monitoring purposes",
     )
     script_output: Optional[str] = Field(
         None,

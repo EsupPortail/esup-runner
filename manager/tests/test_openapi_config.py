@@ -2,21 +2,22 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 from starlette.responses import Response
 
 from app.api.openapi import (
     OpenAPIConfig,
-    _add_security_schemes,
     _assign_tags_to_endpoints,
     _enhance_schemas_with_examples,
     _get_openapi_tags,
+    _mark_runner_version_headers_required,
     custom_openapi,
     setup_openapi_config,
     setup_protected_openapi_routes,
 )
+from app.core.auth import verify_admin, verify_runner_version, verify_token
 from app.core.config import config
 
 
@@ -52,20 +53,6 @@ def test_assign_tags_to_endpoints_by_path_patterns():
     assert schema["paths"]["/other"]["get"]["tags"] == ["API"]
 
 
-def test_add_security_schemes_adds_components_and_default_security():
-    """Validate Add security schemes adds components and default security."""
-    schema = {"paths": {"/x": {"get": {}}, "/y": {"post": {}}}}
-
-    _add_security_schemes(schema)
-
-    schemes = schema["components"]["securitySchemes"]
-    assert "Bearer" in schemes
-    assert "APIKeyHeader" in schemes
-
-    assert schema["paths"]["/x"]["get"]["security"] == [{"Bearer": []}, {"APIKeyHeader": []}]
-    assert schema["paths"]["/y"]["post"]["security"] == [{"Bearer": []}, {"APIKeyHeader": []}]
-
-
 def test_enhance_schemas_with_examples_sets_examples_when_schemas_exist():
     """Validate Enhance schemas with examples sets examples when schemas exist."""
     schema = {
@@ -93,8 +80,8 @@ def test_enhance_schemas_with_examples_creates_components_when_missing():
     assert "schemas" in schema["components"]
 
 
-def test_custom_openapi_sets_tags_logo_security_contact_license_and_caches():
-    """Validate Custom openapi sets tags logo security contact license and caches."""
+def test_custom_openapi_sets_tags_logo_contact_license_and_caches():
+    """Validate Custom openapi sets tags logo contact license and caches."""
     app = FastAPI(
         title="Test API",
         version="0.0.1",
@@ -115,12 +102,110 @@ def test_custom_openapi_sets_tags_logo_security_contact_license_and_caches():
     assert schema1["info"]["contact"] == {"name": "Alice"}
     assert schema1["info"]["license"] == {"name": "MIT"}
 
-    # Default security applied
-    assert schema1["paths"]["/ping"]["get"]["security"] == [{"Bearer": []}, {"APIKeyHeader": []}]
+    assert "security" not in schema1["paths"]["/ping"]["get"]
 
     # Cached schema path
     schema2 = app.openapi()
     assert schema2 is schema1
+
+
+def test_custom_openapi_preserves_security_and_header_contracts():
+    """Keep FastAPI security definitions aligned with route dependencies."""
+    app = FastAPI(title="Security API", version="1")
+
+    @app.get("/public")
+    def public_route():
+        return None
+
+    @app.get("/token", dependencies=[Depends(verify_token)])
+    def token_route():
+        return None
+
+    @app.get("/admin", dependencies=[Depends(verify_admin)])
+    def admin_route():
+        return None
+
+    @app.get(
+        "/runner",
+        dependencies=[Depends(verify_token), Depends(verify_runner_version)],
+    )
+    def runner_route():
+        return None
+
+    app.openapi = custom_openapi(app)
+    schema = app.openapi()
+
+    declared_schemes = schema["components"]["securitySchemes"]
+    assert declared_schemes["APIKeyHeader"]["name"] == "X-API-Token"
+    assert declared_schemes["HTTPBearer"]["scheme"] == "bearer"
+    assert declared_schemes["HTTPBasic"]["scheme"] == "basic"
+
+    public_operation = schema["paths"]["/public"]["get"]
+    token_operation = schema["paths"]["/token"]["get"]
+    admin_operation = schema["paths"]["/admin"]["get"]
+    runner_operation = schema["paths"]["/runner"]["get"]
+
+    assert "security" not in public_operation
+    assert {
+        scheme_name for requirement in token_operation["security"] for scheme_name in requirement
+    } == {"APIKeyHeader", "HTTPBearer"}
+    assert admin_operation["security"] == [{"HTTPBasic": []}]
+    assert runner_operation["security"] == token_operation["security"]
+    assert any(
+        parameter["name"] == "X-Runner-Version"
+        and parameter["in"] == "header"
+        and parameter["required"] is True
+        for parameter in runner_operation["parameters"]
+    )
+
+    referenced_schemes = {
+        scheme_name
+        for path_item in schema["paths"].values()
+        for operation in path_item.values()
+        if isinstance(operation, dict)
+        for requirement in operation.get("security", [])
+        for scheme_name in requirement
+    }
+    assert referenced_schemes <= declared_schemes.keys()
+
+
+def test_mark_runner_version_header_ignores_path_level_parameters():
+    """Handle OpenAPI path-level parameters while updating operations."""
+    schema = {
+        "paths": {
+            "/runner": {
+                "parameters": [],
+                "get": {
+                    "parameters": [
+                        {
+                            "name": "X-Runner-Version",
+                            "in": "header",
+                            "required": False,
+                        }
+                    ]
+                },
+            }
+        }
+    }
+
+    _mark_runner_version_headers_required(schema)
+
+    assert schema["paths"]["/runner"]["get"]["parameters"][0]["required"] is True
+
+
+def test_runner_version_dependency_keeps_explicit_missing_header_error():
+    """Return the existing HTTP 400 response when the version header is absent."""
+    app = FastAPI()
+
+    @app.get("/runner", dependencies=[Depends(verify_runner_version)])
+    def runner_route():
+        return None
+
+    with TestClient(app) as client:
+        response = client.get("/runner")
+
+    assert response.status_code == 400
+    assert response.json()["detail"].startswith("Missing X-Runner-Version header")
 
 
 def test_setup_openapi_config_assigns_openapi_callable():

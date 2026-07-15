@@ -13,7 +13,7 @@ import secrets
 import time
 from typing import Annotated, Optional
 
-from fastapi import Cookie, Depends, HTTPException, Query, status
+from fastapi import Cookie, Depends, Header, HTTPException, Query, status
 from fastapi.security import (
     APIKeyHeader,
     HTTPAuthorizationCredentials,
@@ -68,9 +68,6 @@ def _refresh_config_if_needed() -> None:
 # Authentication Bearer or X-API token
 bearer_scheme = HTTPBearer(auto_error=False)
 api_key_header = APIKeyHeader(name="X-API-Token", auto_error=False)
-
-# Handler for runner version header
-version_header = APIKeyHeader(name="X-Runner-Version", auto_error=False)
 
 OPENAPI_TOKEN_COOKIE_NAME = "openapi_token"
 
@@ -346,7 +343,7 @@ async def verify_token(
 
 
 async def verify_runner_version(
-    runner_version: Annotated[Optional[str], Depends(version_header)] = None,
+    runner_version: Annotated[Optional[str], Header(alias="X-Runner-Version")] = None,
 ) -> str:
     """
     Verify if the runner version matches the manager version at MAJOR+MINOR level.

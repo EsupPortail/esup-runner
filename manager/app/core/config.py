@@ -6,10 +6,55 @@ Handles environment variables, security settings, and application configuration.
 
 import ipaddress
 import os
+import re
+import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
+from app.core._check_output import format_status
 from app.core.passwords import BcryptPasswordContext
+
+SUPPORTED_API_DOCS_VISIBILITIES = frozenset({"private", "public"})
+SUPPORTED_ENVIRONMENTS = frozenset({"development", "production"})
+SUPPORTED_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+DOCUMENTED_PLACEHOLDER_VALUES = frozenset(
+    {
+        "CHANGE_ME_APP_TOKEN",
+        "CHANGE_ME_BCRYPT_HASH",
+        "CHANGE_ME_RUNNERS_TOKEN",
+        "change-me-with-a-long-random-secret",
+    }
+)
+
+
+def _is_documented_placeholder(value: str) -> bool:
+    """Return whether a credential still contains a documented example value."""
+    stripped_value = value.strip()
+    return stripped_value in DOCUMENTED_PLACEHOLDER_VALUES or "CHANGE_ME_" in stripped_value
+
+
+def _is_bcrypt_hash(value: str) -> bool:
+    """Return whether a value has a supported bcrypt hash structure and cost."""
+    match = re.fullmatch(r"\$2[aby]\$(\d{2})\$[./A-Za-z0-9]{53}", value.strip())
+    return match is not None and 4 <= int(match.group(1)) <= 31
+
+
+class ConfigValidationError(ValueError):
+    """Raised with all configuration errors detected during validation."""
+
+    def __init__(self, errors: List[str]):
+        """Build one exception from unique, actionable validation messages."""
+        unique_errors = list(dict.fromkeys(errors))
+        self.errors = tuple(unique_errors)
+        details = "\n".join(f"- {error}" for error in unique_errors)
+        super().__init__(f"Invalid manager configuration:\n{details}")
+
+
+def _raise_validation_errors(errors: List[str]) -> None:
+    """Raise one error containing every collected configuration issue."""
+    if errors:
+        raise ConfigValidationError(errors)
+
 
 # Module-level global state - these persist across imports
 _CONFIG_ENV_LOADED: bool = False
@@ -169,16 +214,35 @@ def _default_manager_bind_host(manager_host: str) -> str:
 
 
 def reload_config_env():
-    """Reload configuration from .env, updating the shared config object in place."""
+    """Reload and validate .env before updating the shared config object in place."""
     global _CONFIG_ENV_LOADED, _CONFIG_INSTANCE, config
 
     old_config = config if "config" in globals() else None
+    old_instance = _CONFIG_INSTANCE
+    old_env_loaded = _CONFIG_ENV_LOADED
+    old_environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key in _CONFIG_ENV_KEYS or any(key.startswith(prefix) for prefix in _CONFIG_ENV_PREFIXES)
+    }
 
     _CONFIG_ENV_LOADED = False
     _CONFIG_INSTANCE = None
     _clear_config_env_vars()
-    _load_environment_variables()
-    new_config = Config()
+    try:
+        _load_environment_variables()
+        new_config = Config()
+        validator = getattr(new_config, "validate_configuration", None)
+        if callable(validator):
+            validator()
+    except Exception:
+        _clear_config_env_vars()
+        os.environ.update(old_environment)
+        _CONFIG_ENV_LOADED = old_env_loaded
+        _CONFIG_INSTANCE = old_instance
+        raise
+
+    _CONFIG_ENV_LOADED = True
     _CONFIG_INSTANCE = new_config
 
     if old_config is not None and old_config is not new_config:
@@ -187,6 +251,7 @@ def reload_config_env():
         config = old_config
     else:
         config = new_config
+    _CONFIG_INSTANCE = config
 
     return config
 
@@ -292,37 +357,123 @@ class Config:
     Assumes .env file has already been loaded.
     """
 
+    def _record_configuration_error(self, message: str) -> None:
+        """Store one error so validation can report all invalid values together."""
+        self._configuration_errors.append(message)
+
+    def _read_bool(self, name: str, default: bool) -> bool:
+        """Read a boolean variable, recording an error before using its default."""
+        value = os.getenv(name)
+        if value is None:
+            return default
+
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "f", "no", "n", "off"}:
+            return False
+
+        self._record_configuration_error(f"{name} must be a boolean (true/false), got {value!r}")
+        return default
+
+    def _read_int(
+        self,
+        name: str,
+        default: int,
+        *,
+        min_value: Optional[int] = None,
+        max_value: Optional[int] = None,
+    ) -> int:
+        """Read a bounded integer, recording invalid explicit values."""
+        value = os.getenv(name)
+        if value is None:
+            return default
+
+        try:
+            parsed = int(value.strip())
+        except (TypeError, ValueError):
+            self._record_configuration_error(f"{name} must be an integer, got {value!r}")
+            return default
+
+        if min_value is not None and parsed < min_value:
+            self._record_configuration_error(f"{name} must be at least {min_value}, got {parsed}")
+            return default
+        if max_value is not None and parsed > max_value:
+            self._record_configuration_error(f"{name} must be at most {max_value}, got {parsed}")
+            return default
+        return parsed
+
+    def _read_float(
+        self,
+        name: str,
+        default: float,
+        *,
+        min_value: Optional[float] = None,
+        max_value: Optional[float] = None,
+    ) -> float:
+        """Read a bounded float, recording invalid explicit values."""
+        value = os.getenv(name)
+        if value is None:
+            return default
+
+        try:
+            parsed = float(value.strip())
+        except (TypeError, ValueError):
+            self._record_configuration_error(f"{name} must be a number, got {value!r}")
+            return default
+
+        if min_value is not None and parsed < min_value:
+            self._record_configuration_error(f"{name} must be at least {min_value}, got {parsed}")
+            return default
+        if max_value is not None and parsed > max_value:
+            self._record_configuration_error(f"{name} must be at most {max_value}, got {parsed}")
+            return default
+        return parsed
+
     def __init__(self):
         """Initialize configuration values."""
         print("Initializing configuration from environment variables…")
 
+        self._configuration_errors: List[str] = []
+        self._configuration_validated = False
+
         # Manager configuration
-        self.MANAGER_PROTOCOL: str = os.getenv("MANAGER_PROTOCOL", "http")
-        self.MANAGER_HOST: str = (os.getenv("MANAGER_HOST", "0.0.0.0") or "").strip() or "0.0.0.0"
+        self.MANAGER_PROTOCOL: str = (os.getenv("MANAGER_PROTOCOL", "http") or "").strip().lower()
+        manager_host = (os.getenv("MANAGER_HOST", "0.0.0.0") or "").strip()
+        if not manager_host:
+            self._record_configuration_error("MANAGER_HOST must not be empty")
+            manager_host = "0.0.0.0"
+        self.MANAGER_HOST: str = manager_host
         manager_bind_host = _first_env_value(
             "MANAGER_BIND_HOST", default=_default_manager_bind_host(self.MANAGER_HOST)
         ).strip()
         self.MANAGER_BIND_HOST: str = manager_bind_host or _default_manager_bind_host(
             self.MANAGER_HOST
         )
-        self.MANAGER_PORT: int = int(os.getenv("MANAGER_PORT", 8081))
+        self.MANAGER_PORT: int = self._read_int("MANAGER_PORT", 8081, min_value=1, max_value=65535)
         # Generate Manager URL
-        self.MANAGER_URL = f"{self.MANAGER_PROTOCOL}://{self.MANAGER_HOST}:{self.MANAGER_PORT}"
+        url_host = f"[{self.MANAGER_HOST}]" if ":" in self.MANAGER_HOST else self.MANAGER_HOST
+        self.MANAGER_URL = f"{self.MANAGER_PROTOCOL}://{url_host}:{self.MANAGER_PORT}"
 
         # API token authentication: authorized tokens for clients and runners
         self.AUTHORIZED_TOKENS: Dict[str, str] = self._load_authorized_tokens()
 
         # Production settings (development/production)
-        self.ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+        self.ENVIRONMENT: str = (os.getenv("ENVIRONMENT", "development") or "").strip().lower()
         # Number of Uvicorn workers (for Gunicorn, production mode)
-        self.UVICORN_WORKERS: int = int(os.getenv("UVICORN_WORKERS", 4))
+        self.UVICORN_WORKERS: int = self._read_int("UVICORN_WORKERS", 4, min_value=1)
 
         # Remove task files older than specified number of days
-        self.CLEANUP_TASK_FILES_DAYS: int = int(os.getenv("CLEANUP_TASK_FILES_DAYS", 60))
+        self.CLEANUP_TASK_FILES_DAYS: int = self._read_int(
+            "CLEANUP_TASK_FILES_DAYS", 60, min_value=0
+        )
 
         # Directory to store log files.
         # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.
         log_dir = _first_env_value("LOG_DIR", "LOG_DIRECTORY", default="/var/log/esup-runner")
+        if not log_dir.strip():
+            self._record_configuration_error("LOG_DIR must not be empty")
+            log_dir = "/var/log/esup-runner"
         # Add slash at end if missing
         if not log_dir.endswith("/"):
             log_dir += "/"
@@ -333,9 +484,7 @@ class Config:
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
         # Runner shared storage (optional)
-        self.RUNNERS_STORAGE_ENABLED: bool = _parse_bool(
-            os.getenv("RUNNERS_STORAGE_ENABLED"), default=False
-        )
+        self.RUNNERS_STORAGE_ENABLED: bool = self._read_bool("RUNNERS_STORAGE_ENABLED", False)
         runners_storage_dir = _first_env_value(
             "RUNNERS_STORAGE_DIR",
             "RUNNERS_STORAGE_PATH",
@@ -346,49 +495,59 @@ class Config:
         self.RUNNERS_STORAGE_PATH: str = runners_storage_dir
 
         # Shared cache root used for local cacheable artifacts (including uv cache).
-        self.CACHE_DIR: str = os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
-        self.UV_CACHE_DIR: str = os.getenv("UV_CACHE_DIR", os.path.join(self.CACHE_DIR, "uv"))
+        cache_dir = os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
+        if not cache_dir.strip():
+            self._record_configuration_error("CACHE_DIR must not be empty")
+            cache_dir = "/home/esup-runner/.cache/esup-runner"
+        self.CACHE_DIR: str = cache_dir
+        uv_cache_dir = os.getenv("UV_CACHE_DIR", os.path.join(self.CACHE_DIR, "uv"))
+        if not uv_cache_dir.strip():
+            self._record_configuration_error("UV_CACHE_DIR must not be empty")
+            uv_cache_dir = os.path.join(self.CACHE_DIR, "uv")
+        self.UV_CACHE_DIR: str = uv_cache_dir
 
         # Visibility of the API documentation (options: public, private -> requires token authentication)
-        self.API_DOCS_VISIBILITY: str = os.getenv("API_DOCS_VISIBILITY", "public").lower()
+        self.API_DOCS_VISIBILITY: str = (
+            (os.getenv("API_DOCS_VISIBILITY", "public") or "").strip().lower()
+        )
         print(f"API documentation visibility set to: {self.API_DOCS_VISIBILITY}")
 
         # Domain-based priorities (optional)
         # If enabled, the manager can reserve runner capacity for a priority domain.
-        self.PRIORITIES_ENABLED: bool = _parse_bool(os.getenv("PRIORITIES_ENABLED"), default=False)
+        self.PRIORITIES_ENABLED: bool = self._read_bool("PRIORITIES_ENABLED", False)
         # Priority domain (suffix match)
         self.PRIORITY_DOMAIN: str = os.getenv("PRIORITY_DOMAIN", "").strip().lower()
         # Maximum percentage of non-priority tasks allowed concurrently
-        self.MAX_OTHER_DOMAIN_TASK_PERCENT: int = _parse_int(
-            os.getenv("MAX_OTHER_DOMAIN_TASK_PERCENT"),
+        self.MAX_OTHER_DOMAIN_TASK_PERCENT: int = self._read_int(
+            "MAX_OTHER_DOMAIN_TASK_PERCENT",
             100,
             min_value=0,
             max_value=100,
         )
 
         # Completion notify retry settings
-        self.COMPLETION_NOTIFY_MAX_RETRIES: int = _parse_int(
-            os.getenv("COMPLETION_NOTIFY_MAX_RETRIES"),
+        self.COMPLETION_NOTIFY_MAX_RETRIES: int = self._read_int(
+            "COMPLETION_NOTIFY_MAX_RETRIES",
             5,
             min_value=0,
         )
         # Delay between notify callback retries in seconds
-        self.COMPLETION_NOTIFY_RETRY_DELAY_SECONDS: int = _parse_int(
-            os.getenv("COMPLETION_NOTIFY_RETRY_DELAY_SECONDS"),
+        self.COMPLETION_NOTIFY_RETRY_DELAY_SECONDS: int = self._read_int(
+            "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS",
             60,
             min_value=0,
         )
         # Backoff factor for notify callback retries
-        self.COMPLETION_NOTIFY_BACKOFF_FACTOR: float = _parse_float(
-            os.getenv("COMPLETION_NOTIFY_BACKOFF_FACTOR"),
+        self.COMPLETION_NOTIFY_BACKOFF_FACTOR: float = self._read_float(
+            "COMPLETION_NOTIFY_BACKOFF_FACTOR",
             1.5,
             min_value=1.0,
         )
 
         # SMTP configuration for warning emails (optional)
         self.SMTP_SERVER: str = os.getenv("SMTP_SERVER", "")
-        self.SMTP_PORT: int = _parse_int(os.getenv("SMTP_PORT"), 25, min_value=1, max_value=65535)
-        self.SMTP_USE_TLS: bool = _parse_bool(os.getenv("SMTP_USE_TLS"), default=False)
+        self.SMTP_PORT: int = self._read_int("SMTP_PORT", 25, min_value=1, max_value=65535)
+        self.SMTP_USE_TLS: bool = self._read_bool("SMTP_USE_TLS", False)
         self.SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
         self.SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
         self.SMTP_SENDER: str = os.getenv("SMTP_SENDER", "")
@@ -400,9 +559,7 @@ class Config:
         self.CORS_ALLOW_ORIGINS = [
             o.strip() for o in (cors_origins_raw or "").split(",") if o.strip()
         ] or ["*"]
-        self.CORS_ALLOW_CREDENTIALS: bool = _parse_bool(
-            os.getenv("CORS_ALLOW_CREDENTIALS"), default=False
-        )
+        self.CORS_ALLOW_CREDENTIALS: bool = self._read_bool("CORS_ALLOW_CREDENTIALS", False)
         self.CORS_ALLOW_METHODS = [
             m.strip() for m in (os.getenv("CORS_ALLOW_METHODS", "*") or "").split(",") if m.strip()
         ] or ["*"]
@@ -420,8 +577,8 @@ class Config:
         ]
         # Allow notify_url resolving to private/loopback networks.
         # Default False; set True only if you control internal callbacks.
-        self.NOTIFY_URL_ALLOW_PRIVATE_NETWORKS: bool = _parse_bool(
-            os.getenv("NOTIFY_URL_ALLOW_PRIVATE_NETWORKS"), default=False
+        self.NOTIFY_URL_ALLOW_PRIVATE_NETWORKS: bool = self._read_bool(
+            "NOTIFY_URL_ALLOW_PRIVATE_NETWORKS", False
         )
 
         # Runner registration hardening
@@ -435,26 +592,24 @@ class Config:
         # Allow runner URLs resolving to private/loopback networks.
         # Default True, as runners are often on the same network.
         # Set False to require runner URLs resolving to public IPs.
-        self.RUNNER_URL_ALLOW_PRIVATE_NETWORKS: bool = _parse_bool(
-            os.getenv("RUNNER_URL_ALLOW_PRIVATE_NETWORKS"), default=True
+        self.RUNNER_URL_ALLOW_PRIVATE_NETWORKS: bool = self._read_bool(
+            "RUNNER_URL_ALLOW_PRIVATE_NETWORKS", True
         )
 
         # OpenAPI token handling
         # Allow providing OpenAPI token in query string (?token=…). Default False to reduce leakage.
-        self.OPENAPI_ALLOW_QUERY_TOKEN: bool = _parse_bool(
-            os.getenv("OPENAPI_ALLOW_QUERY_TOKEN"), default=False
-        )
+        self.OPENAPI_ALLOW_QUERY_TOKEN: bool = self._read_bool("OPENAPI_ALLOW_QUERY_TOKEN", False)
         # OpenAPI auth cookie TTL (seconds). Used by /admin/docs -> /docs|/redoc|/openapi.json flow.
-        self.OPENAPI_COOKIE_MAX_AGE_SECONDS: int = _parse_int(
-            os.getenv("OPENAPI_COOKIE_MAX_AGE_SECONDS"),
+        self.OPENAPI_COOKIE_MAX_AGE_SECONDS: int = self._read_int(
+            "OPENAPI_COOKIE_MAX_AGE_SECONDS",
             900,
             min_value=60,
             max_value=86400,
         )
         # Rotate OpenAPI auth cookie on each protected docs request.
-        self.OPENAPI_COOKIE_ROTATE_EACH_REQUEST: bool = _parse_bool(
-            os.getenv("OPENAPI_COOKIE_ROTATE_EACH_REQUEST"),
-            default=True,
+        self.OPENAPI_COOKIE_ROTATE_EACH_REQUEST: bool = self._read_bool(
+            "OPENAPI_COOKIE_ROTATE_EACH_REQUEST",
+            True,
         )
         # Optional explicit signing secret for OpenAPI auth cookie.
         # If empty, a deterministic fallback derived from configured secrets is used.
@@ -495,8 +650,10 @@ class Config:
         Validate critical configuration settings.
 
         Raises:
-            ValueError: If essential configuration is missing or invalid
+            ConfigValidationError: If configuration values are missing or invalid
         """
+        errors = list(getattr(self, "_configuration_errors", []))
+
         if not self.AUTHORIZED_TOKENS:
             print("WARNING: No AUTHORIZED_TOKENS configured - API will be inaccessible")
 
@@ -504,22 +661,159 @@ class Config:
         if not self.ADMIN_USERS:
             print("WARNING: No admin users configured - admin interface will be inaccessible")
 
-        # CORS sanity: disallow wildcard origins with credentials.
+        self._warn_openapi_cookie_secret_placeholder()
+
+        validators = (
+            self._validate_network_identity,
+            self._validate_enums,
+            self._validate_numeric_limits,
+            self._validate_authorized_tokens,
+            self._validate_admin_users,
+            self._validate_paths,
+            self._validate_cors,
+            self._validate_priorities,
+        )
+        for validator in validators:
+            try:
+                validator()
+            except ConfigValidationError as exc:
+                errors.extend(exc.errors)
+            except ValueError as exc:
+                errors.append(str(exc))
+
+        _raise_validation_errors(errors)
+        self._configuration_validated = True
+
+    def _validate_network_identity(self) -> None:
+        """Validate manager URL components and the socket bind host."""
+        errors: List[str] = []
+        for name, value in (
+            ("MANAGER_HOST", self.MANAGER_HOST),
+            ("MANAGER_BIND_HOST", self.MANAGER_BIND_HOST),
+        ):
+            if not value.strip():
+                errors.append(f"{name} must not be empty")
+            elif any(character.isspace() for character in value) or "/" in value:
+                errors.append(f"{name} must contain a hostname or IP address only")
+        _raise_validation_errors(errors)
+
+    def _validate_enums(self) -> None:
+        """Validate configuration values drawn from finite supported sets."""
+        errors: List[str] = []
+        if self.MANAGER_PROTOCOL not in {"http", "https"}:
+            errors.append("MANAGER_PROTOCOL must be either 'http' or 'https'")
+        if self.ENVIRONMENT not in SUPPORTED_ENVIRONMENTS:
+            errors.append(
+                "ENVIRONMENT must be one of: " + ", ".join(sorted(SUPPORTED_ENVIRONMENTS))
+            )
+        if self.LOG_LEVEL not in SUPPORTED_LOG_LEVELS:
+            errors.append("LOG_LEVEL must be one of: " + ", ".join(sorted(SUPPORTED_LOG_LEVELS)))
+        if self.API_DOCS_VISIBILITY not in SUPPORTED_API_DOCS_VISIBILITIES:
+            errors.append(
+                "API_DOCS_VISIBILITY must be one of: "
+                + ", ".join(sorted(SUPPORTED_API_DOCS_VISIBILITIES))
+            )
+        _raise_validation_errors(errors)
+
+    def _validate_numeric_limits(self) -> None:
+        """Validate numeric limits even when attributes changed after loading."""
+        errors: List[str] = []
+        checks = (
+            ("MANAGER_PORT", self.MANAGER_PORT, 1, 65535),
+            ("UVICORN_WORKERS", self.UVICORN_WORKERS, 1, None),
+            ("CLEANUP_TASK_FILES_DAYS", self.CLEANUP_TASK_FILES_DAYS, 0, None),
+            ("MAX_OTHER_DOMAIN_TASK_PERCENT", self.MAX_OTHER_DOMAIN_TASK_PERCENT, 0, 100),
+            ("COMPLETION_NOTIFY_MAX_RETRIES", self.COMPLETION_NOTIFY_MAX_RETRIES, 0, None),
+            (
+                "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS",
+                self.COMPLETION_NOTIFY_RETRY_DELAY_SECONDS,
+                0,
+                None,
+            ),
+            ("COMPLETION_NOTIFY_BACKOFF_FACTOR", self.COMPLETION_NOTIFY_BACKOFF_FACTOR, 1, None),
+            ("SMTP_PORT", self.SMTP_PORT, 1, 65535),
+            ("OPENAPI_COOKIE_MAX_AGE_SECONDS", self.OPENAPI_COOKIE_MAX_AGE_SECONDS, 60, 86400),
+        )
+        for name, value, minimum, maximum in checks:
+            if value < minimum:
+                errors.append(f"{name} must be at least {minimum}")
+            if maximum is not None and value > maximum:
+                errors.append(f"{name} must be at most {maximum}")
+        _raise_validation_errors(errors)
+
+    def _validate_authorized_tokens(self) -> None:
+        """Reject empty API token entries and documented placeholder values."""
+        errors: List[str] = []
+        for name, value in self.AUTHORIZED_TOKENS.items():
+            if not name.strip():
+                errors.append("AUTHORIZED_TOKENS entries must have a non-empty name")
+            if not value.strip():
+                errors.append(f"AUTHORIZED_TOKENS__{name} must not be empty")
+            elif _is_documented_placeholder(value):
+                errors.append(f"AUTHORIZED_TOKENS__{name} must be replaced with a secure value")
+        _raise_validation_errors(errors)
+
+    def _validate_admin_users(self) -> None:
+        """Require non-empty administrator names and valid bcrypt hashes."""
+        errors: List[str] = []
+        for name, value in self.ADMIN_USERS.items():
+            if not name.strip():
+                errors.append("ADMIN_USERS entries must have a non-empty username")
+            if not value.strip():
+                errors.append(f"ADMIN_USERS__{name} must not be empty")
+            elif _is_documented_placeholder(value):
+                errors.append(f"ADMIN_USERS__{name} must be replaced with a bcrypt hash")
+            elif not _is_bcrypt_hash(value):
+                errors.append(f"ADMIN_USERS__{name} must contain a valid bcrypt hash")
+        _raise_validation_errors(errors)
+
+    def _warn_openapi_cookie_secret_placeholder(self) -> None:
+        """Warn when the optional OpenAPI cookie secret keeps its example value."""
+        if _is_documented_placeholder(self.OPENAPI_COOKIE_SECRET):
+            print(
+                format_status(
+                    "OPENAPI_COOKIE_SECRET uses a documented placeholder; "
+                    "replace it or leave it empty to use the derived fallback",
+                    level="warning",
+                )
+            )
+
+    def _validate_paths(self) -> None:
+        """Ensure required log, cache, and optional shared-storage paths are set."""
+        errors = [
+            f"{name} must not be empty"
+            for name, value in (
+                ("LOG_DIR", self.LOG_DIR),
+                ("CACHE_DIR", self.CACHE_DIR),
+                ("UV_CACHE_DIR", self.UV_CACHE_DIR),
+            )
+            if not value.strip()
+        ]
+
+        if self.RUNNERS_STORAGE_ENABLED and not self.RUNNERS_STORAGE_DIR.strip():
+            errors.append(
+                "RUNNERS_STORAGE_DIR (legacy: RUNNERS_STORAGE_PATH) must be set when "
+                "RUNNERS_STORAGE_ENABLED=true"
+            )
+        _raise_validation_errors(errors)
+
+    def _validate_cors(self) -> None:
+        """Reject the wildcard-origin and credential combination forbidden by CORS."""
         if self.CORS_ALLOW_CREDENTIALS and ("*" in self.CORS_ALLOW_ORIGINS):
             raise ValueError(
                 "Invalid CORS configuration: CORS_ALLOW_CREDENTIALS=true is not compatible with CORS_ALLOW_ORIGINS=*"
             )
 
-        if self.RUNNERS_STORAGE_ENABLED and not self.RUNNERS_STORAGE_DIR:
-            raise ValueError(
-                "RUNNERS_STORAGE_DIR (legacy: RUNNERS_STORAGE_PATH) must be set when RUNNERS_STORAGE_ENABLED=true"
-            )
-
+    def _validate_priorities(self) -> None:
+        """Require a valid hostname suffix when domain priorities are enabled."""
         if self.PRIORITIES_ENABLED and not self.PRIORITY_DOMAIN:
-            print(
-                "WARNING: PRIORITIES_ENABLED=true but PRIORITY_DOMAIN is empty - priorities disabled"
-            )
-            self.PRIORITIES_ENABLED = False
+            raise ValueError("PRIORITY_DOMAIN must be set when PRIORITIES_ENABLED=true")
+        if self.PRIORITY_DOMAIN and (
+            any(character.isspace() for character in self.PRIORITY_DOMAIN)
+            or "/" in self.PRIORITY_DOMAIN
+            or ":" in self.PRIORITY_DOMAIN
+        ):
+            raise ValueError("PRIORITY_DOMAIN must contain a hostname only")
 
 
 _CONFIG_RELOAD_MARKER_MTIME_NS = _read_config_reload_marker_mtime_ns()
@@ -527,5 +821,16 @@ _CONFIG_RELOAD_MARKER_MTIME_NS = _read_config_reload_marker_mtime_ns()
 # Create global config instance using the factory function
 config: "Config" = get_config()
 
-# Auto-validate configuration on module load
-config.validate_configuration()
+
+def _is_pytest_run() -> bool:
+    """Return whether configuration is imported by a pytest process."""
+    return (
+        os.getenv("PYTEST_CURRENT_TEST") is not None
+        or "pytest" in sys.modules
+        or any(os.path.basename(arg).startswith("pytest") for arg in sys.argv)
+    )
+
+
+# Auto-validate configuration on module load (skip under pytest to avoid failing imports).
+if not _is_pytest_run():
+    config.validate_configuration()

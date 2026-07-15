@@ -27,6 +27,7 @@ def test_run_uvicorn_instance_applies_grouped_task_types_per_instance(monkeypatc
     with monkeypatch.context() as m:
         m.setenv("RUNNER_TASK_TYPES", "[10x(encoding,studio),2x(transcription)]")
         m.setenv("RUNNER_INSTANCES", "12")
+        m.setenv("DEBUG", "false")
         m.delenv("RUNNER_INSTANCE_ID", raising=False)
         m.delenv("RUNNER_PORT", raising=False)
         m.delenv("RUNNER_INSTANCE_URL", raising=False)
@@ -45,4 +46,6 @@ def test_run_uvicorn_instance_applies_grouped_task_types_per_instance(monkeypatc
     os.environ.pop("RUNNER_INSTANCE_ID", None)
     os.environ.pop("RUNNER_PORT", None)
     os.environ.pop("RUNNER_INSTANCE_URL", None)
-    cfg.reload_config_from_env()
+    with monkeypatch.context() as m:
+        m.setenv("DEBUG", "false")
+        cfg.reload_config_from_env()

@@ -3,6 +3,8 @@
 from pathlib import Path
 from typing import Any, Dict
 
+import pytest
+
 from app.core.config import Config, config
 from app.models.models import TaskRequest
 from app.task_handlers.encoding.encoding_handler import VideoEncodingHandler
@@ -36,11 +38,16 @@ def test_external_script_timeout_env_override(monkeypatch):
     assert cfg.EXTERNAL_SCRIPT_TIMEOUT_SECONDS == 3600
 
 
-def test_external_script_timeout_non_positive_uses_default(monkeypatch):
-    """Validate External script timeout non positive uses default."""
+def test_external_script_timeout_non_positive_is_rejected(monkeypatch):
+    """Validate A non-positive script timeout is rejected during validation."""
     monkeypatch.setenv("EXTERNAL_SCRIPT_TIMEOUT_SECONDS", "0")
     cfg = Config()
+
+    # A safe value remains available while errors are aggregated for reporting.
     assert cfg.EXTERNAL_SCRIPT_TIMEOUT_SECONDS == 18000
+
+    with pytest.raises(ValueError, match="EXTERNAL_SCRIPT_TIMEOUT_SECONDS must be at least 1"):
+        cfg.validate_configuration()
 
 
 def test_encoding_handler_uses_configured_external_script_timeout(monkeypatch):

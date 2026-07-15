@@ -29,15 +29,18 @@ def restore_config_module_globals():
 
 def test_parse_helpers_cover_defaults_invalid_values_and_bounds(monkeypatch):
     """Validate Parse helpers cover defaults invalid values and bounds."""
+    assert config_module._parse_bool(None, default=True) is True
     assert config_module._parse_bool("true") is True
     assert config_module._parse_bool("off") is False
     assert config_module._parse_bool("maybe", default=True) is True
 
+    assert config_module._parse_int(None, 7) == 7
     assert config_module._parse_int("4", 1, min_value=2, max_value=5) == 4
     assert config_module._parse_int("nope", 7) == 7
     assert config_module._parse_int("-3", 0, min_value=0) == 0
     assert config_module._parse_int("99", 0, max_value=10) == 10
 
+    assert config_module._parse_float(None, 2.5) == 2.5
     assert config_module._parse_float("1.25", 0.0, min_value=1.0, max_value=2.0) == 1.25
     assert config_module._parse_float("bad", 2.5) == 2.5
     assert config_module._parse_float("-1.0", 0.0, min_value=0.5) == 0.5
@@ -125,6 +128,31 @@ def test_reload_config_from_env_updates_existing_instance_in_place(monkeypatch):
     assert not hasattr(refreshed, "old_value")
 
 
+def test_reload_config_validates_before_updating_existing_instance(monkeypatch):
+    """Validate Reload config rejects invalid values before mutating the singleton."""
+    existing = types.SimpleNamespace(stable_value="kept")
+
+    class InvalidConfig:
+        def __init__(self):
+            self.new_value = "invalid"
+
+        def validate_configuration(self):
+            raise config_module.ConfigValidationError(["broken configuration"])
+
+    monkeypatch.setattr(config_module, "_CONFIG_INSTANCE", existing)
+    monkeypatch.setattr(config_module, "_CONFIG_ENV_LOADED", True)
+    monkeypatch.setattr(config_module, "config", existing)
+    monkeypatch.setattr(config_module, "Config", InvalidConfig)
+
+    with pytest.raises(config_module.ConfigValidationError, match="broken configuration"):
+        config_module.reload_config_from_env()
+
+    assert config_module._CONFIG_INSTANCE is existing
+    assert config_module.config is existing
+    assert existing.stable_value == "kept"
+    assert not hasattr(existing, "new_value")
+
+
 def test_load_environment_variables_warns_when_dotenv_is_missing(monkeypatch, capsys):
     """Validate Load environment variables warns when dotenv is missing."""
     original_import = builtins.__import__
@@ -192,14 +220,17 @@ def test_config_warns_when_grouped_task_types_ignore_invalid_runner_instances(
     assert any("Invalid RUNNER_INSTANCES value ignored" in str(w.message) for w in caught)
 
 
-def test_config_raises_for_grouped_instance_out_of_range(monkeypatch):
-    """Validate Config raises for grouped instance out of range."""
+def test_config_validates_grouped_instance_out_of_range(monkeypatch):
+    """Validate Config reports a grouped instance id outside the computed range."""
     monkeypatch.setenv("RUNNER_TASK_TYPES", "[1x(encoding)]")
     monkeypatch.setenv("RUNNER_INSTANCES", "1")
     monkeypatch.setenv("RUNNER_INSTANCE_ID", "4")
+    monkeypatch.setenv("RUNNER_TOKEN", "secure-token")
 
-    with pytest.raises(ValueError, match="out of range"):
-        config_module.Config()
+    cfg = config_module.Config()
+
+    with pytest.raises(config_module.ConfigValidationError, match="RUNNER_INSTANCE_ID"):
+        cfg.validate_configuration()
 
 
 def test_config_uses_legacy_task_type_distribution(monkeypatch):
@@ -229,6 +260,7 @@ def test_config_parses_media_codec_denylist(monkeypatch):
 
 def test_config_validate_configuration_success(monkeypatch):
     """Validate Config validate configuration success."""
+    monkeypatch.setenv("DEBUG", "false")
     monkeypatch.setenv("RUNNER_TOKEN", "secure-token")
     monkeypatch.setenv("RUNNER_TASK_TYPES", "encoding")
     monkeypatch.setenv("RUNNER_INSTANCES", "1")
@@ -239,6 +271,142 @@ def test_config_validate_configuration_success(monkeypatch):
 
     cfg = config_module.Config()
     cfg.validate_configuration()
+
+
+def test_config_strict_readers_collect_all_explicit_invalid_values(monkeypatch):
+    """Validate Explicit invalid scalar values are reported together, not hidden."""
+    monkeypatch.setenv("RUNNER_TOKEN", "secure-token")
+    monkeypatch.setenv("DEBUG", "sometimes")
+    monkeypatch.setenv("SMTP_PORT", "not-a-port")
+    monkeypatch.setenv("COMPLETION_NOTIFY_MAX_RETRIES", "-1")
+    monkeypatch.setenv("COMPLETION_NOTIFY_BACKOFF_FACTOR", "0.5")
+    monkeypatch.setenv("CORS_ALLOW_CREDENTIALS", "perhaps")
+
+    cfg = config_module.Config()
+
+    assert cfg.DEBUG is False
+    assert cfg.SMTP_PORT == 25
+    assert cfg.COMPLETION_NOTIFY_MAX_RETRIES == 5
+    assert cfg.COMPLETION_NOTIFY_BACKOFF_FACTOR == 1.5
+
+    with pytest.raises(config_module.ConfigValidationError) as raised:
+        cfg.validate_configuration()
+
+    errors = raised.value.errors
+    assert any("DEBUG must be a boolean" in error for error in errors)
+    assert any("SMTP_PORT must be an integer" in error for error in errors)
+    assert any("COMPLETION_NOTIFY_MAX_RETRIES must be at least 0" in error for error in errors)
+    assert any("COMPLETION_NOTIFY_BACKOFF_FACTOR must be at least 1.0" in error for error in errors)
+    assert any("CORS_ALLOW_CREDENTIALS must be a boolean" in error for error in errors)
+
+
+def test_config_strict_float_reader_covers_invalid_valid_and_upper_bound(monkeypatch):
+    """Validate Strict float parsing records format and upper-bound violations."""
+    cfg = object.__new__(config_module.Config)
+    cfg._configuration_errors = []
+
+    monkeypatch.setenv("TEST_CONFIG_FLOAT", "invalid")
+    assert cfg._read_float("TEST_CONFIG_FLOAT", 2.0) == 2.0
+
+    monkeypatch.setenv("TEST_CONFIG_FLOAT", "3.5")
+    assert cfg._read_float("TEST_CONFIG_FLOAT", 2.0, max_value=3.0) == 2.0
+
+    monkeypatch.setenv("TEST_CONFIG_FLOAT", "2.5")
+    assert cfg._read_float("TEST_CONFIG_FLOAT", 2.0, max_value=3.0) == 2.5
+
+    assert len(cfg._configuration_errors) == 2
+
+
+def test_config_collects_invalid_grouped_syntax_and_empty_values(monkeypatch):
+    """Validate Parsing failures and explicit empty settings remain actionable."""
+    monkeypatch.setenv("RUNNER_TOKEN", "secure-token")
+    monkeypatch.setenv("RUNNER_TASK_TYPES", "[1x(encoding),broken]")
+    monkeypatch.setenv("MANAGER_URL", " ")
+    monkeypatch.setenv("LOG_DIR", "")
+    monkeypatch.setenv("CACHE_DIR", "")
+
+    cfg = config_module.Config()
+
+    assert cfg.RUNNER_TASK_TYPES == set(config_module.SUPPORTED_TASK_TYPES)
+    assert cfg.MANAGER_URL == "http://localhost:8081"
+    assert cfg.LOG_DIR == "/var/log/esup-runner/"
+    assert cfg.CACHE_DIR == "/home/esup-runner/.cache/esup-runner"
+
+    with pytest.raises(config_module.ConfigValidationError) as raised:
+        cfg.validate_configuration()
+
+    message = str(raised.value)
+    assert "Invalid RUNNER_TASK_TYPES grouped syntax" in message
+    assert "MANAGER_URL must not be empty" in message
+    assert "LOG_DIR must not be empty" in message
+    assert "CACHE_DIR must not be empty" in message
+
+
+def test_config_validation_aggregates_schema_errors(monkeypatch):
+    """Validate Independent schema violations are returned in one actionable error."""
+    monkeypatch.setenv("RUNNER_TOKEN", "secure-token")
+    monkeypatch.setenv("RUNNER_TASK_TYPES", "encoding,unknown")
+    monkeypatch.setenv("RUNNER_PROTOCOL", "ftp")
+    monkeypatch.setenv("MANAGER_URL", "manager-without-scheme")
+    monkeypatch.setenv("LOG_LEVEL", "VERBOSE")
+    monkeypatch.setenv("ENCODING_TYPE", "TPU")
+    monkeypatch.setenv("STUDIO_DEFAULT_CRF", "not-a-number")
+    monkeypatch.setenv("STUDIO_DEFAULT_PRESET", "instant")
+    monkeypatch.setenv("STUDIO_DEFAULT_AUDIO_BITRATE", "fast")
+
+    cfg = config_module.Config()
+
+    with pytest.raises(config_module.ConfigValidationError) as raised:
+        cfg.validate_configuration()
+
+    message = str(raised.value)
+    assert "unsupported task types: unknown" in message
+    assert "RUNNER_PROTOCOL" in message
+    assert "MANAGER_URL" in message
+    assert "LOG_LEVEL" in message
+    assert "ENCODING_TYPE" in message
+    assert "STUDIO_DEFAULT_CRF" in message
+    assert "STUDIO_DEFAULT_PRESET" in message
+    assert "STUDIO_DEFAULT_AUDIO_BITRATE" in message
+
+
+def test_config_semantic_validators_cover_ranges_names_paths_and_placeholders(monkeypatch):
+    """Validate Semantic checks also protect attributes changed after parsing."""
+    monkeypatch.setenv("DEBUG", "false")
+    monkeypatch.setenv("RUNNER_TOKEN", "secure-token")
+    cfg = config_module.Config()
+
+    cfg.RUNNER_BASE_PORT = 65535
+    cfg.RUNNER_INSTANCES = 2
+    with pytest.raises(config_module.ConfigValidationError, match="ports above 65535"):
+        cfg._validate_ports()
+
+    cfg.RUNNER_HOST = "bad host/path"
+    cfg.RUNNER_BASE_NAME = " "
+    cfg.MANAGER_URL = "http://manager:invalid"
+    with pytest.raises(config_module.ConfigValidationError) as names_error:
+        cfg._validate_names_and_urls()
+    assert "RUNNER_HOST must contain" in str(names_error.value)
+    assert "RUNNER_BASE_NAME must not be empty" in str(names_error.value)
+    assert "MANAGER_URL must be an absolute" in str(names_error.value)
+
+    cfg.SMTP_PORT = 70000
+    cfg.CLEANUP_INTERVAL_HOURS = 0
+    with pytest.raises(config_module.ConfigValidationError) as limits_error:
+        cfg._validate_numeric_limits()
+    assert "SMTP_PORT must be at most 65535" in str(limits_error.value)
+    assert "CLEANUP_INTERVAL_HOURS must be at least 1" in str(limits_error.value)
+
+    cfg.LOG_DIR = ""
+    cfg.STORAGE_DIR = ""
+    with pytest.raises(config_module.ConfigValidationError) as paths_error:
+        cfg._validate_paths()
+    assert "LOG_DIR must not be empty" in str(paths_error.value)
+    assert "STORAGE_DIR must not be empty" in str(paths_error.value)
+
+    cfg.RUNNER_TOKEN = "CHANGE_ME_RUNNERS_TOKEN"
+    with pytest.raises(config_module.ConfigValidationError, match="secure value"):
+        cfg.validate_configuration()
 
 
 def test_config_log_dir_prefers_new_name_and_keeps_legacy_alias(monkeypatch):
@@ -374,6 +542,7 @@ def test_config_module_auto_validates_outside_pytest(monkeypatch):
     """Validate Config module auto validates outside pytest."""
     config_path = Path(config_module.__file__)
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("DEBUG", "false")
     monkeypatch.setenv("RUNNER_TOKEN", "secure-token")
     monkeypatch.setenv("RUNNER_TASK_TYPES", "encoding")
     monkeypatch.setenv("RUNNER_INSTANCES", "1")

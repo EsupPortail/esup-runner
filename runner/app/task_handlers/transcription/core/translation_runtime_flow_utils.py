@@ -5,16 +5,9 @@ Loads tokenizer/model objects and places them on the requested device.
 Returns structured runtime objects consumed by VTT translation steps.
 """
 
-import sys
-from pathlib import Path
 from typing import Any, Optional
 
-_CORE_DIR = Path(__file__).resolve().parent
-
-if str(_CORE_DIR) not in sys.path:  # pragma: no cover - direct file-spec import guard
-    sys.path.insert(0, str(_CORE_DIR))
-
-from translation_flow_contexts import (
+from .translation_flow_contexts import (
     TranslationRuntimeContext,
 )
 

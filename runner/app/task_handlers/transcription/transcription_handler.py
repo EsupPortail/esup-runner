@@ -71,7 +71,6 @@ class TranscriptionHandler(BaseTaskHandler):
         """
         self.last_invalid_parameters = self.get_invalid_parameters(parameters)
 
-        # Check for unknown parameters
         if self.last_invalid_parameters:
             self.logger.error("Parameters not allowed: " + ", ".join(self.last_invalid_parameters))
             return False
@@ -92,7 +91,6 @@ class TranscriptionHandler(BaseTaskHandler):
             work_dir = "output"
             output_dir = workspace / work_dir
 
-            # Resolve input filename from source_url
             parsed = urlparse(task_request.source_url)
             source_name = Path(unquote(parsed.path)).name
             if not source_name:
@@ -108,7 +106,6 @@ class TranscriptionHandler(BaseTaskHandler):
             filename = source_name
             input_path = workspace / filename
 
-            # Download source file locally
             dl = self.download_source_file(task_request.source_url, str(input_path))
             if not dl.get("success"):
                 raise Exception(dl.get("error", "Unable to download input"))
@@ -117,12 +114,10 @@ class TranscriptionHandler(BaseTaskHandler):
             if input_validation_error is not None:
                 raise Exception(input_validation_error)
 
-            # Determine script path
             script_path = self.entrypoints_dir / "transcription.py"
             if not script_path.exists():
                 return {"success": False, "error": f"Script not found: {script_path}"}
 
-            # Build script arguments
             args = self._build_script_arguments(
                 parameters=task_request.parameters,
                 base_dir=str(workspace),
@@ -139,7 +134,6 @@ class TranscriptionHandler(BaseTaskHandler):
             )
             script_result = self._reclassify_non_error_stderr(script_result)
 
-            # Prepare results summary
             results: Dict[str, Any] = {
                 "success": script_result.get("success", False),
                 "task_type": self.task_type,
@@ -151,7 +145,6 @@ class TranscriptionHandler(BaseTaskHandler):
             if not script_result.get("success", False):
                 results["error"] = script_result.get("error") or "Transcription failed"
 
-            # Save metadata
             self.save_task_metadata(task_id, results, output_dir)
             return results
 
@@ -228,12 +221,10 @@ class TranscriptionHandler(BaseTaskHandler):
     ) -> List[str]:
         args: List[str] = []
 
-        # Base I/O
         args.extend(["--base-dir", base_dir])
         args.extend(["--input-file", input_file])
         args.extend(["--work-dir", work_dir])
 
-        # Output format default to VTT
         fmt = str(parameters.get("format", "vtt")).lower()
         args.extend(["--format", fmt])
 
@@ -245,7 +236,6 @@ class TranscriptionHandler(BaseTaskHandler):
         source_language = str(parameters.get("source_language", "auto"))
         args.extend(["--source-language", source_language])
 
-        # Model selection: allow per-task override or fallback to config
         logical_model = str(parameters.get("model", config.WHISPER_MODEL)).lower()
         args.extend(["--model", logical_model])
         args.extend(["--whisper-models-dir", str(config.WHISPER_MODELS_DIR)])
@@ -259,12 +249,10 @@ class TranscriptionHandler(BaseTaskHandler):
         if "video_title" in parameters:
             args.extend(["--video-title", str(parameters["video_title"])])
 
-        # GPU hints
         use_gpu = "true" if config.whisper_use_gpu() else "false"
         args.extend(["--use-gpu", use_gpu])
         args.extend(["--gpu-device", str(config.GPU_HWACCEL_DEVICE)])
 
-        # Normalize MP3 (optional, default false)
         normalize = str(parameters.get("normalize", False)).lower() in (
             "true",
             "1",
@@ -272,7 +260,6 @@ class TranscriptionHandler(BaseTaskHandler):
         )
         args.extend(["--normalize", "true" if normalize else "false"])
 
-        # Debug
         args.extend(["--debug", str(config.DEBUG)])
 
         return args

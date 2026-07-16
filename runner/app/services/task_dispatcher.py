@@ -44,7 +44,6 @@ class TaskDispatcher:
         """
         self.logger.info(f"Dispatching task {task_id} of type {task_request.task_type}")
 
-        # Get appropriate handler
         handler_class = task_handler_manager.get_handler(task_request.task_type)
         if not handler_class:
             return {
@@ -53,10 +52,8 @@ class TaskDispatcher:
             }
 
         try:
-            # Create handler instance
             handler = handler_class()
 
-            # Validate parameters
             if not handler.validate_parameters(task_request.parameters):
                 invalid_getter = getattr(handler, "get_invalid_parameters", None)
                 invalid_parameters = (
@@ -75,7 +72,6 @@ class TaskDispatcher:
                     ),
                 }
 
-            # Create workspace for this task
             workspace = Path(storage_manager.base_path) / task_id
             workspace.mkdir(parents=True, exist_ok=True)
             # Output directory inside workspace (already created in prepare_workspace)
@@ -89,7 +85,6 @@ class TaskDispatcher:
                     executor, handler.execute_task, task_id, task_request
                 )
 
-            # Package results if task was successful
             if results.get("success"):
                 results = await self._package_task_results(task_id, output_dir, results)
 
@@ -135,14 +130,8 @@ class TaskDispatcher:
                 os.fsync(f.fileno())
             temp_manifest_path.replace(canonical_manifest_path)
 
-            # Update results with manifest information
             results["result_manifest"] = str(canonical_manifest_path)
             results["output_files"] = output_files
-
-            # Clean up temporary files
-            # import shutil
-            # shutil.rmtree(output_dir)
-            # Path(manifest_path).unlink()
 
             self.logger.info(f"Packaged results for task {task_id}")
             return results
@@ -164,5 +153,4 @@ class TaskDispatcher:
         return handlers
 
 
-# Global task dispatcher instance
 task_dispatcher = TaskDispatcher()

@@ -10,6 +10,25 @@ import os
 from typing import Any, Dict
 
 
+def build_audio_stream_map(
+    audio_stream_indices: Any,
+    *,
+    fallback_map: str,
+) -> str:
+    """Build optional absolute audio mappings or return the primary-audio fallback."""
+    if not isinstance(audio_stream_indices, list) or not audio_stream_indices:
+        return fallback_map
+
+    normalized_indices: list[int] = []
+    for stream_index in audio_stream_indices:
+        if type(stream_index) is not int or stream_index < 0:
+            return fallback_map
+        if stream_index not in normalized_indices:
+            normalized_indices.append(stream_index)
+
+    return " ".join(f"-map 0:{stream_index}?" for stream_index in normalized_indices)
+
+
 def is_webm_source(
     *, file: str, codec: str, webm_extensions: set[str], webm_video_codecs: set[str]
 ) -> bool:
@@ -62,6 +81,7 @@ def get_cmd_gpu(
     hwaccel_device: int,
     subtime: str,
     source_video_fps: float,
+    audio_stream_map: str,
     gpu_template: str,
     scale_gpu_template: str,
     webm_extensions: set[str],
@@ -100,6 +120,7 @@ def get_cmd_gpu(
     for rendition_key, rendition_cfg, rendition_height in selected:
         ffmpeg_cmd += scale_gpu_template.format(
             height=rendition_height,
+            audio_stream_map=audio_stream_map,
             fps_mode_options=fps_mode_options,
             nvenc_rate_control_options=nvenc_rate_control_options,
         )
@@ -121,6 +142,7 @@ def get_cmd_cpu(
     videos_dir: str,
     subtime: str,
     source_video_fps: float,
+    audio_stream_map: str,
     cpu_template: str,
     scale_cpu_template: str,
     webm_extensions: set[str],
@@ -158,6 +180,7 @@ def get_cmd_cpu(
         ffmpeg_cmd += scale_cpu_template.format(
             height=rendition_height,
             encoder=encoder,
+            audio_stream_map=audio_stream_map,
             fps_mode_options=fps_mode_options,
             cpu_quality_options=cpu_quality_options,
         )

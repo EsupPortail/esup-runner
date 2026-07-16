@@ -322,6 +322,33 @@ def test_validate_configuration_warns_when_missing_tokens_and_admin(capsys):
     assert "No admin users" in out
 
 
+def test_config_constructor_delegates_to_coherent_loaders(monkeypatch):
+    """Validate the constructor delegates each configuration area in order."""
+    from app.core.config import Config
+
+    loader_names = (
+        "_load_network_configuration",
+        "_load_security_configuration",
+        "_load_storage_configuration",
+        "_load_notification_configuration",
+        "_load_business_configuration",
+    )
+    calls = []
+
+    for loader_name in loader_names:
+        monkeypatch.setattr(
+            Config,
+            loader_name,
+            lambda _self, name=loader_name: calls.append(name),
+        )
+
+    config = Config()
+
+    assert calls == list(loader_names)
+    assert config._configuration_errors == []
+    assert config._configuration_validated is False
+
+
 def test_config_initialization_and_validation_branches(monkeypatch):
     """Validate Config initialization and validation branches."""
     from app.core.config import Config

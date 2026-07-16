@@ -185,8 +185,6 @@ class LogManager:
         return stats
 
 
-# Log paths configuration
-# f"{config.LOG_DIRECTORY}uvicorn.log",
 LOG_PATHS = [
     f"{config.LOG_DIRECTORY}manager.log",
 ]

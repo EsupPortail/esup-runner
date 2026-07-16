@@ -284,6 +284,29 @@ def extract_primary_video_encoding_metadata(
     return "", ""
 
 
+def extract_recognized_audio_stream_indices(streams: Any) -> list[int]:
+    """Return absolute indices for audio streams recognized by ffprobe."""
+    if not isinstance(streams, list):
+        return []
+
+    indices: list[int] = []
+    for stream in streams:
+        if not isinstance(stream, dict) or stream.get("codec_type") != "audio":
+            continue
+
+        codec_name = str(stream.get("codec_name") or "").strip().lower()
+        if codec_name in {"", "none", "unknown"}:
+            continue
+
+        stream_index = stream.get("index")
+        if type(stream_index) is not int or stream_index < 0:
+            continue
+        if stream_index not in indices:
+            indices.append(stream_index)
+
+    return indices
+
+
 def refine_source_fps(
     *,
     file: str,
@@ -371,6 +394,12 @@ def get_info_video(
         info.get("streams", []),
         image_codecs=image_codecs,
     )
+    audio_stream_indices = extract_recognized_audio_stream_indices(info.get("streams", []))
+    if has_stream_audio:
+        if audio_stream_indices:
+            msg += f"recognized audio stream indices: {audio_stream_indices}\n"
+        else:
+            msg += "no recognized audio stream index; primary-audio fallback will be used\n"
 
     if has_stream_video:
         source_fps, fps_log = refine_source_fps_fn(
@@ -397,4 +426,5 @@ def get_info_video(
         "source_fps": source_fps,
         "profile": video_profile,
         "pix_fmt": pix_fmt,
+        "audio_stream_indices": audio_stream_indices,
     }

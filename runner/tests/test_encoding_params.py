@@ -425,7 +425,7 @@ def test_get_info_video_handles_missing_format_duration(tmp_path):
     probe_info = {
         "format": {"tags": {"major_brand": "isom"}},
         "streams": [
-            {"codec_type": "audio", "codec_name": "aac"},
+            {"index": 1, "codec_type": "audio", "codec_name": "aac"},
             {
                 "codec_type": "video",
                 "codec_name": "h264",
@@ -444,6 +444,7 @@ def test_get_info_video_handles_missing_format_duration(tmp_path):
     assert info["height"] == 720
     assert info["has_stream_video"] is True
     assert info["has_stream_audio"] is True
+    assert info["audio_stream_indices"] == [1]
 
 
 def test_get_cmd_gpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
@@ -456,7 +457,7 @@ def test_get_cmd_gpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
     cmd = enc.get_cmd_gpu("m3u8", "h264", 720, "input.mp4")
 
     assert "-probesize 100M -analyzeduration 100M -c:v:0 h264_cuvid -i" in cmd
-    assert cmd.count("-map 0:v:0? -map 0:a?") >= 2
+    assert cmd.count("-map 0:v:0? -map 0:a:0?") >= 2
     assert " -c:v h264_cuvid " not in cmd
 
 
@@ -756,10 +757,22 @@ def test_get_cmd_cpu_uses_primary_stream_mapping_and_probe_options(tmp_path):
     enc._VIDEOS_OUTPUT_DIR = str(tmp_path)
     enc._choose_h264_encoder = Mock(return_value=("libx264", ""))
 
+    enc._AUDIO_STREAM_MAP = enc._build_audio_stream_map([1, 2])
     cmd = enc.get_cmd_cpu("m3u8", "h264", 360, "input.mp4")
 
     assert " -probesize 100M -analyzeduration 100M -i " in cmd
-    assert "-map 0:v:0? -map 0:a?" in cmd
+    assert "-map 0:v:0? -map 0:1? -map 0:2?" in cmd
+
+
+def test_build_audio_stream_map_uses_valid_indices_and_safe_fallback():
+    """Validate recognized audio mappings and malformed-metadata fallback."""
+    enc = _load_encoding_script_module()
+
+    assert enc._build_audio_stream_map([1, 3, 3]) == "-map 0:1? -map 0:3?"
+    assert enc._build_audio_stream_map([]) == "-map 0:a:0?"
+    assert enc._build_audio_stream_map(None) == "-map 0:a:0?"
+    assert enc._build_audio_stream_map([1, "bad"]) == "-map 0:a:0?"
+    assert enc._build_audio_stream_map([True]) == "-map 0:a:0?"
 
 
 def test_get_cmd_cpu_uses_cfr_for_webm_sources_only(tmp_path):
@@ -851,7 +864,9 @@ def test_get_info_video_keeps_first_non_image_video_stream_as_primary(tmp_path):
             {"codec_type": "video", "codec_name": "h264", "height": 1080},
             # Secondary video stream should not override the primary one.
             {"codec_type": "video", "codec_name": "h264", "height": 720},
-            {"codec_type": "audio", "codec_name": "aac"},
+            {"index": 2, "codec_type": "audio", "codec_name": "aac"},
+            {"index": 3, "codec_type": "audio", "codec_tag_string": "apac"},
+            {"index": 4, "codec_type": "audio", "codec_name": "opus"},
         ],
     }
     enc.get_info_from_video = Mock(return_value=(probe_info, ""))
@@ -862,6 +877,7 @@ def test_get_info_video_keeps_first_non_image_video_stream_as_primary(tmp_path):
     assert info["height"] == 1080
     assert info["has_stream_video"] is True
     assert info["has_stream_audio"] is True
+    assert info["audio_stream_indices"] == [2, 4]
 
 
 def test_parse_fps_value_covers_valid_and_invalid_inputs():

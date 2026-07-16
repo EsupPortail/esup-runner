@@ -5,17 +5,9 @@ Combines language normalization and metadata persistence for final outputs.
 Ensures metadata shape remains stable across orchestration paths.
 """
 
-import sys
-from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
-_CORE_DIR = Path(__file__).resolve().parent
-if str(_CORE_DIR) not in sys.path:
-    sys.path.insert(0, str(_CORE_DIR))
-
-import language_utils
-import metadata_utils
-import runtime_cli_utils
+from . import language_utils, metadata_utils, runtime_cli_utils
 
 extract_video_identification = metadata_utils.extract_video_identification_from_args
 write_info_video_metadata = metadata_utils.write_info_video_metadata

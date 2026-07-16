@@ -5,16 +5,10 @@ Handles explicit-language Whisper fallbacks when auto-detection is ambiguous.
 Normalizes return codes so translation decisions remain traceable by callers.
 """
 
-import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, cast
 
-_CORE_DIR = Path(__file__).resolve().parent
-
-if str(_CORE_DIR) not in sys.path:  # pragma: no cover - direct file-spec import guard
-    sys.path.insert(0, str(_CORE_DIR))
-
-from translation_flow_contexts import (
+from .translation_flow_contexts import (
     TranslationDecisionContext,
 )
 

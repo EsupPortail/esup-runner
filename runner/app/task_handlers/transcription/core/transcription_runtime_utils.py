@@ -5,28 +5,17 @@ Selects CPU/GPU chunking thresholds and language normalization helpers.
 Exposes a stable runtime API consumed by top-level orchestration.
 """
 
-import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
-_CORE_DIR = Path(__file__).resolve().parent
-_CORE_DIR_STR = str(_CORE_DIR)
-if _CORE_DIR_STR in sys.path:
-    sys.path.remove(_CORE_DIR_STR)
-sys.path.insert(0, _CORE_DIR_STR)
-
-_RUNTIME_ARGS_MODULE = sys.modules.get("runtime_args_utils")
-if _RUNTIME_ARGS_MODULE is not None:
-    _runtime_args_file = getattr(_RUNTIME_ARGS_MODULE, "__file__", "")
-    if not _runtime_args_file or Path(_runtime_args_file).resolve().parent != _CORE_DIR:
-        sys.modules.pop("runtime_args_utils", None)
-
-import chunking_utils
-import language_utils
-import runtime_cli_utils
-import transcription_flow_utils
-import whisper_python_runtime_utils
-from runtime_args_utils import _CPU_CHUNK_THRESHOLD_SECONDS, _GPU_CHUNK_THRESHOLD_SECONDS
+from . import (
+    chunking_utils,
+    language_utils,
+    runtime_cli_utils,
+    transcription_flow_utils,
+    whisper_python_runtime_utils,
+)
+from .runtime_args_utils import _CPU_CHUNK_THRESHOLD_SECONDS, _GPU_CHUNK_THRESHOLD_SECONDS
 
 build_transcribe_kwargs = chunking_utils.build_transcribe_kwargs
 transcribe_audio = chunking_utils.transcribe_audio

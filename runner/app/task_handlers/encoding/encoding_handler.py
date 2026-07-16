@@ -50,7 +50,6 @@ class VideoEncodingHandler(BaseTaskHandler):
         """
         self.last_invalid_parameters = self.get_invalid_parameters(parameters)
 
-        # Check for unknown parameters
         if self.last_invalid_parameters:
             self.logger.error("Parameters not allowed: " + ", ".join(self.last_invalid_parameters))
             return False
@@ -77,7 +76,6 @@ class VideoEncodingHandler(BaseTaskHandler):
 
             # Prepare workspace directory, one per task
             self.workspace_dir = Path(storage_manager.base_path) / task_id
-            # Workspace path
             workspace = self.prepare_workspace()
             # Output directory inside workspace (already created in prepare_workspace)
             work_dir = "output"
@@ -91,7 +89,6 @@ class VideoEncodingHandler(BaseTaskHandler):
                     f"Source URL does not contain a valid filename: {task_request.source_url}"
                 )
 
-            # Validate that the filename corresponds to a video file
             if not self.is_video_file(source_name):
                 raise Exception(
                     f"Source URL does not point to a valid video file: {task_request.source_url}"
@@ -102,12 +99,10 @@ class VideoEncodingHandler(BaseTaskHandler):
                 f"Source URL points to a video file: {task_request.source_url} (ext: {extension})"
             )
 
-            # Use the actual source filename for the workspace input file
             filename = source_name
             input_path = workspace / filename
             self.logger.info(f"Input video will be saved to: {str(input_path)}")
 
-            # Download source file
             download_result = self.download_source_file(
                 source_url=task_request.source_url, dest_file=str(input_path)
             )
@@ -122,13 +117,11 @@ class VideoEncodingHandler(BaseTaskHandler):
             if extension == "webm":
                 self.log_ffmpeg_build_warnings(for_webm=True)
 
-            # Determine which script to use
             script_path = self.entrypoints_dir / "encoding.py"
 
             if not script_path.exists():
                 return {"success": False, "error": f"No script available: {script_path}"}
 
-            # Build script arguments
             args = self._build_script_arguments(
                 parameters=task_request.parameters,
                 base_dir=str(workspace),
@@ -138,7 +131,6 @@ class VideoEncodingHandler(BaseTaskHandler):
 
             self.logger.info(f"Run external script: {script_path} with args: {args}")
 
-            # Execute encoding script
             script_result = self.run_external_script_for_task(
                 script_path,
                 args,
@@ -147,7 +139,6 @@ class VideoEncodingHandler(BaseTaskHandler):
             )
             script_result = self._fill_empty_streams_from_encoding_log(script_result, output_dir)
 
-            # Collect results
             results = {
                 "success": script_result["success"],
                 "task_type": self.task_type,
@@ -156,11 +147,9 @@ class VideoEncodingHandler(BaseTaskHandler):
                 "script_output": script_result,
             }
 
-            # Check for errors
             if not script_result["success"]:
                 results["error"] = self._extract_script_error(script_result)
 
-            # Save metadata
             self.save_task_metadata(task_id, results, output_dir)
 
             if script_result["success"]:
@@ -175,8 +164,6 @@ class VideoEncodingHandler(BaseTaskHandler):
             return {"success": False, "error": str(e), "task_type": self.task_type}
         finally:
             pass
-            # Cleanup workspace after task completion
-            # self.cleanup_workspace()
 
     def _fill_empty_streams_from_encoding_log(
         self, script_result: Dict[str, Any], output_dir: Path
@@ -215,17 +202,12 @@ class VideoEncodingHandler(BaseTaskHandler):
         """
         args = []
 
-        # Encoding type can be CPU or GPU
         args.extend(["--encoding-type", config.ENCODING_TYPE])
 
         # # # Common settings for CPU or GPU encoding # # #
-        # Base directory for input files
         args.extend(["--base-dir", base_dir])
-        # Name of input file to encode
         args.extend(["--input-file", input_file])
-        # Work directory for output files
         args.extend(["--work-dir", work_dir])
-        # Run script in debug mode
         args.extend(["--debug", str(config.DEBUG)])
 
         # # # Specifics settings for GPU encoding # # #
@@ -239,15 +221,12 @@ class VideoEncodingHandler(BaseTaskHandler):
             # CUDA_PATH parameter for GPU encoding (Ex: /usr/local/cuda-13.2)
             args.extend(["--cuda-path", str(config.GPU_CUDA_PATH)])
 
-        # Add rendition configuration parameter
         if "rendition" in parameters:
             args.extend(["--rendition", str(parameters["rendition"])])
 
-        # Add cut configuration parameter
         if "cut" in parameters:
             args.extend(["--cut", str(parameters["cut"])])
 
-        # Add dressing configuration parameter
         if "dressing" in parameters:
             args.extend(["--dressing", str(parameters["dressing"])])
 
@@ -258,12 +237,6 @@ class VideoEncodingHandler(BaseTaskHandler):
             args.extend(["--video-slug", str(parameters["video_slug"])])
         if "video_title" in parameters:
             args.extend(["--video-title", str(parameters["video_title"])])
-
-        # Add any additional parameters (excluding already processed ones)
-        # Potentially useful for future extensions
-        # for key, value in parameters.items():
-        #    if key not in ["rendition", "cut", "dressing", "video_id", "video_slug", "video_title"]:
-        #        args.extend([f"--{key}", str(value)])
 
         return args
 

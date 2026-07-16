@@ -390,11 +390,6 @@ def prepare_component(
     else:
         warn(f"skipping {component.name} version update")
 
-    if not skip_ci:
-        run(component.ci_command, cwd=component.directory, dry_run=dry_run)
-    else:
-        warn(f"skipping {component.name} CI")
-
     if not skip_lock:
         run(component.lock_command, cwd=component.directory, dry_run=dry_run)
     else:
@@ -404,6 +399,11 @@ def prepare_component(
         run(component.sync_command, cwd=component.directory, dry_run=dry_run)
     else:
         warn(f"skipping {component.name} dependency sync")
+
+    if not skip_ci:
+        run(component.ci_command, cwd=component.directory, dry_run=dry_run)
+    else:
+        warn(f"skipping {component.name} CI")
 
     if not skip_changelog:
         promote_changelog(

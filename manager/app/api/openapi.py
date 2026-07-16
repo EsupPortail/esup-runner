@@ -61,7 +61,6 @@ def custom_openapi(app: FastAPI) -> Callable[[], Dict]:
         if app.openapi_schema:
             return app.openapi_schema
 
-        # Generate base OpenAPI schema
         openapi_schema = get_openapi(
             title=app.title,
             version=app.version,
@@ -71,10 +70,8 @@ def custom_openapi(app: FastAPI) -> Callable[[], Dict]:
             license_info=app.license_info,
         )
 
-        # Add custom tags for organization
         openapi_schema["tags"] = _get_openapi_tags()
 
-        # Add custom documentation
         openapi_schema["info"]["x-logo"] = {
             "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png",
             "altText": "Runner Manager API Logo",
@@ -84,11 +81,6 @@ def custom_openapi(app: FastAPI) -> Callable[[], Dict]:
         # explicit HTTP 400 error; the public contract still marks it required.
         _mark_runner_version_headers_required(openapi_schema)
 
-        # Assign tags to endpoints based on route paths
-        # Useless for the moment. Kept in case it is needed for a future version.
-        # _assign_tags_to_endpoints(openapi_schema)
-
-        # Add examples and response schemas
         _enhance_schemas_with_examples(openapi_schema)
 
         app.openapi_schema = openapi_schema
@@ -138,7 +130,6 @@ def _assign_tags_to_endpoints(openapi_schema: Dict) -> None:
     """
     for path, methods in openapi_schema["paths"].items():
         for method, details in methods.items():
-            # Assign tags based on path patterns
             if "admin" in path:
                 details["tags"] = ["Admin"]
             elif "health" in path or "ping" in path:
@@ -171,14 +162,12 @@ def _enhance_schemas_with_examples(openapi_schema: Dict) -> None:
     Args:
         openapi_schema: OpenAPI schema to modify
     """
-    # Add examples to components if they exist
     if "components" not in openapi_schema:
         openapi_schema["components"] = {}
 
     if "schemas" not in openapi_schema["components"]:
         openapi_schema["components"]["schemas"] = {}
 
-    # Add example for Runner model
     if "Runner" in openapi_schema["components"]["schemas"]:
         openapi_schema["components"]["schemas"]["Runner"]["example"] = {
             "id": "runner-123",
@@ -187,7 +176,6 @@ def _enhance_schemas_with_examples(openapi_schema: Dict) -> None:
             "token": "tohken-runner-123",
         }
 
-    # Add example for Task model
     if "Task" in openapi_schema["components"]["schemas"]:
         openapi_schema["components"]["schemas"]["Task"]["example"] = {
             "id": "task-abc-123",
@@ -204,7 +192,6 @@ def _enhance_schemas_with_examples(openapi_schema: Dict) -> None:
             "updated_at": "2023-01-01T12:30:00Z",
         }
 
-    # Add example for TaskRequest model
     if "TaskRequest" in openapi_schema["components"]["schemas"]:
         openapi_schema["components"]["schemas"]["TaskRequest"]["example"] = {
             "etab_name": "University of Example",

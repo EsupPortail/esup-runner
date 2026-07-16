@@ -99,8 +99,10 @@ _OVERVIEW_CONFIG = {
 # parameters (notably pix_fmt) arrive late.
 _INPUT_PROBE = "-probesize 100M -analyzeduration 100M"
 
-# Always target the primary video stream and optional first audio stream.
-_STREAM_MAP_PRIMARY = "-map 0:v:0? -map 0:a?"
+# Keep the first audio stream as a safe fallback when probing cannot provide a
+# usable list of recognized audio stream indices.
+_FALLBACK_AUDIO_STREAM_MAP = "-map 0:a:0?"
+_AUDIO_STREAM_MAP = _FALLBACK_AUDIO_STREAM_MAP
 
 # Audio encoding templates
 MP3 = (
@@ -148,13 +150,15 @@ GPU = (
 # (like yuv420p) can make FFmpeg try to insert swscale (auto_scale), which cannot consume
 # CUDA hardware frames. Keep pix_fmt enforcement only for CPU pipelines.
 COMMON_CPU = (
-    f" {_STREAM_MAP_PRIMARY} -c:a aac -ar 48000 -strict experimental -profile:v high "
+    " -map 0:v:0? {audio_stream_map} "
+    "-c:a aac -ar 48000 -strict experimental -profile:v high "
     '-pix_fmt yuv420p -force_key_frames "expr:gte(t,n_forced*2)" '
     "-preset slow -qmin 20 -qmax 50 "
 )
 
 COMMON_GPU = (
-    f" {_STREAM_MAP_PRIMARY} -c:a aac -ar 48000 -strict experimental -profile:v high "
+    " -map 0:v:0? {audio_stream_map} "
+    "-c:a aac -ar 48000 -strict experimental -profile:v high "
     '-force_key_frames "expr:gte(t,n_forced*2)" '
     "-preset p4 -qmin 20 -qmax 50 "
 )
@@ -249,6 +253,14 @@ def _build_nvenc_rate_control_options(*, is_webm_source: bool) -> str:
 def _build_cpu_quality_options(*, is_webm_source: bool) -> str:
     """Build CPU quality options for the current source profile."""
     return ffmpeg_command_utils.build_cpu_quality_options(is_webm=is_webm_source)
+
+
+def _build_audio_stream_map(audio_stream_indices: Any) -> str:
+    """Build audio mappings, falling back to the optional first audio stream."""
+    return ffmpeg_command_utils.build_audio_stream_map(
+        audio_stream_indices,
+        fallback_map=_FALLBACK_AUDIO_STREAM_MAP,
+    )
 
 
 def timestamp_to_seconds(timestamp: str) -> int:
@@ -460,6 +472,7 @@ def get_cmd_gpu(format: str, codec: str, height: int, file: str) -> str:
         hwaccel_device=_HWACCEL_DEVICE,
         subtime=SUBTIME,
         source_video_fps=_SOURCE_VIDEO_FPS,
+        audio_stream_map=_AUDIO_STREAM_MAP,
         gpu_template=GPU,
         scale_gpu_template=scale_gpu,
         webm_extensions=_WEBM_EXTENSIONS,
@@ -483,6 +496,7 @@ def get_cmd_cpu(format: str, codec: str, height: int, file: str) -> str:
         videos_dir=_VIDEOS_DIR,
         subtime=SUBTIME,
         source_video_fps=_SOURCE_VIDEO_FPS,
+        audio_stream_map=_AUDIO_STREAM_MAP,
         cpu_template=CPU,
         scale_cpu_template=scale_cpu,
         webm_extensions=_WEBM_EXTENSIONS,
@@ -551,12 +565,37 @@ def _convert_file(src: str, dst: str) -> tuple[bool, str]:
 
 def launch_cmd(ffmpeg_cmd: str, type: str, format: str) -> tuple[bool, str]:
     """Execute an FFmpeg command and return status/log output."""
-    return ffmpeg_runtime_utils.launch_cmd(
+    global _AUDIO_STREAM_MAP
+    success, msg = ffmpeg_runtime_utils.launch_cmd(
         ffmpeg_cmd,
         type,
         format,
         subprocess_module=subprocess,
     )
+    selected_audio_count = _AUDIO_STREAM_MAP.count("-map ")
+    should_retry_primary_audio = (
+        not success
+        and type in {"cpu", "gpu"}
+        and selected_audio_count > 1
+        and _AUDIO_STREAM_MAP in ffmpeg_cmd
+    )
+    if not should_retry_primary_audio:
+        return success, msg
+
+    fallback_cmd = ffmpeg_cmd.replace(_AUDIO_STREAM_MAP, _FALLBACK_AUDIO_STREAM_MAP)
+    retry_notice = (
+        "Recognized multi-track audio mapping failed; "
+        "retrying with the primary audio stream only.\n"
+    )
+    retry_success, retry_msg = ffmpeg_runtime_utils.launch_cmd(
+        fallback_cmd,
+        type,
+        format,
+        subprocess_module=subprocess,
+    )
+    if retry_success:
+        _AUDIO_STREAM_MAP = _FALLBACK_AUDIO_STREAM_MAP
+    return retry_success, msg + retry_notice + retry_msg
 
 
 def _safe_filename_from_url(url: str) -> str:
@@ -1261,10 +1300,12 @@ def _parse_video_identification(args, msg: str) -> str:
 def _apply_cli_config(args) -> str:
     """Apply CLI options to the script's global runtime configuration."""
     msg = ""
-    global _DEBUG, _VIDEOS_DIR, _VIDEOS_OUTPUT_DIR, _ENCODING_TYPE, _HWACCEL_DEVICE, _SOURCE_VIDEO_FPS
+    global _DEBUG, _VIDEOS_DIR, _VIDEOS_OUTPUT_DIR, _ENCODING_TYPE, _HWACCEL_DEVICE
+    global _SOURCE_VIDEO_FPS, _AUDIO_STREAM_MAP
     _DEBUG = args.debug and args.debug.lower() == "true"
     _ENCODING_TYPE = args.encoding_type
     _SOURCE_VIDEO_FPS = 0.0
+    _AUDIO_STREAM_MAP = _FALLBACK_AUDIO_STREAM_MAP
     _VIDEOS_DIR = args.base_dir or "/tmp/esup-runner/task01"
     workdir = args.work_dir or "output"
     _VIDEOS_OUTPUT_DIR = os.path.join(_VIDEOS_DIR, workdir)
@@ -1387,7 +1428,7 @@ def _validate_working_duration(working_duration: int) -> None:
 
 def _process_encoding(args) -> str:
     """Run the end-to-end encoding workflow for the provided CLI arguments."""
-    global _SOURCE_VIDEO_FPS
+    global _SOURCE_VIDEO_FPS, _AUDIO_STREAM_MAP
     msg = ""
     filename, prep_msg = _prepare_input_file(args)
     msg += prep_msg
@@ -1396,8 +1437,11 @@ def _process_encoding(args) -> str:
 
     info_video = get_info_video(filename)
     _SOURCE_VIDEO_FPS = float(info_video.get("source_fps") or 0.0)
+    _AUDIO_STREAM_MAP = _build_audio_stream_map(info_video.get("audio_stream_indices"))
     if _SOURCE_VIDEO_FPS > 0:
         msg += f"Using source fps estimate for encode decisions: {_SOURCE_VIDEO_FPS:.3f}\n"
+    if info_video.get("has_stream_audio", False):
+        msg += f"Using audio stream mapping: {_AUDIO_STREAM_MAP}\n"
     _validate_source_media_info(info_video)
     working_duration, duration_msg = _compute_working_duration(info_video)
     msg += duration_msg
@@ -1417,6 +1461,11 @@ def _process_encoding(args) -> str:
 
     encode_result = launch_encode(info_video, filename)
     add_info_video("encode_result", encode_result)
+    if not encode_result:
+        raise EncodingValidationError(
+            "Encoding failed: one or more required outputs could not be generated. "
+            "See encoding.log for details."
+        )
 
     msg += "- End of encoding: %s\n" % time.ctime()
     return msg

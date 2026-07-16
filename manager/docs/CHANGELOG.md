@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.7.0] - 2026-07-16
+
 ### Security
 
 - Hardened daily JSON task persistence by rejecting unsafe task IDs and preventing path traversal or symlink escapes outside the configured persistence directory for task records, tombstones, temporary files, and corrupted-file backups.

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.7.0] - 2026-07-16
+
 ### Added
 
 - Added explicit, aggregated Runner configuration validation for scalar types, URLs, supported task types, port ranges, runtime modes, Studio defaults, and required paths, including validation before replacing a reloaded configuration.

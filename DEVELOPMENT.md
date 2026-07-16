@@ -235,7 +235,7 @@ AUTHORIZED_TOKENS__dev=esup-runner-local-dev-token
 Create `runner/.env.docker.local` with the matching token and Docker hostnames:
 
 ```properties
-DEBUG=True
+DEBUG=true
 RUNNER_PROTOCOL=http
 RUNNER_HOST=esup-runner-runner
 RUNNER_BASE_PORT=8082

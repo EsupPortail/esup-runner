@@ -80,7 +80,7 @@ This starts 4 runner instances on ports 8082..8085 with the task-type mapping sh
 
 ```properties
 # DEBUG mode
-DEBUG=False
+DEBUG=false
 
 # Runner/Multi-instance configuration
 RUNNER_PROTOCOL=http
@@ -96,7 +96,7 @@ RUNNER_TASK_TYPES=[2x(encoding,studio,transcription),1x(encoding,studio),1x(tran
 RUNNER_INSTANCES=4
 
 # Monitor instances and automatically restart failed ones
-RUNNER_MONITORING=False
+RUNNER_MONITORING=false
 
 # Manager URL configuration
 MANAGER_URL=http://127.0.0.1:8081

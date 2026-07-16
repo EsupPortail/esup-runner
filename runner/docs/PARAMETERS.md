@@ -4,7 +4,7 @@ This page summarizes the environment variables consumed by the runner. Values ar
 
 ## Quick start (.env snippet)
 ```properties
-DEBUG=False
+DEBUG=false
 RUNNER_PROTOCOL=http
 RUNNER_HOST=127.0.0.1
 RUNNER_BASE_PORT=8082

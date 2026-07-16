@@ -64,13 +64,11 @@ class JSONFormatter(logging.Formatter):
             "line": record.lineno,
         }
 
-        # Add custom fields if they exist
         custom_fields = ["task_id", "runner_id", "component", "operation"]
         for field in custom_fields:
             if hasattr(record, field):
                 log_record[field] = getattr(record, field)
 
-        # Add exception information if present
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
             log_record["stack_trace"] = (
@@ -127,12 +125,10 @@ def setup_logging(
     except OSError as e:
         raise OSError(f"Failed to create log directory {log_dir}: {e}")
 
-    # Determine log file path
     if log_file is None:
         log_file = f'{name.lower().replace(" ", "_")}.log'
     log_path = os.path.join(log_dir, log_file)
 
-    # Get or create logger
     logger = logging.getLogger(name)
 
     # Prevent duplicate handlers and propagation to parent loggers
@@ -141,10 +137,8 @@ def setup_logging(
     logger.propagate = False
     logger.setLevel(log_level)
 
-    # Create formatter based on format preference
     formatter = _create_formatter(json_format)
 
-    # Add console handler for development
     _add_console_handler(logger, formatter, console_level)
 
     # Skip persistent handlers when running under pytest to avoid permission issues
@@ -152,14 +146,7 @@ def setup_logging(
     if not is_test_run:
         _add_file_handler(logger, formatter, log_path, file_level, max_file_size, backup_count)
 
-        # Add syslog handler for system logging
         _add_syslog_handler(logger, formatter)
-
-    # Log configuration summary (useless, too many logs will be generated otherwise)
-    # logger.info(
-    #    "Logging configured successfully",
-    #    extra={'component': name, 'log_level': logging.getLevelName(log_level)}
-    # )
 
     return logger
 
@@ -345,7 +332,6 @@ class LogContext:
             logging.setLogRecordFactory(self.old_factory)
 
 
-# Default logger configuration for quick setup
 def setup_default_logging(
     json_format: bool = False, log_level: int = config.LOG_LEVEL
 ) -> logging.Logger:
@@ -369,17 +355,14 @@ def setup_uvicorn_logging(json_format: bool = False) -> None:
     Args:
         json_format: Whether to use JSON formatting for uvicorn logs
     """
-    # Get uvicorn loggers
     uvicorn_logger = logging.getLogger("uvicorn")
     uvicorn_error_logger = logging.getLogger("uvicorn.error")
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
 
-    # Remove default uvicorn handlers
     for logger in [uvicorn_logger, uvicorn_error_logger, uvicorn_access_logger]:
         if logger.handlers:
             logger.handlers.clear()
 
-    # Set levels
     uvicorn_logger.setLevel(logging.INFO)
     uvicorn_error_logger.setLevel(logging.INFO)
     uvicorn_access_logger.setLevel(logging.INFO)
@@ -389,10 +372,8 @@ def setup_uvicorn_logging(json_format: bool = False) -> None:
     uvicorn_error_logger.propagate = False
     uvicorn_access_logger.propagate = False
 
-    # Create formatter
     formatter = _create_formatter(json_format)
 
-    # Add our handlers to uvicorn loggers
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
@@ -411,7 +392,6 @@ def setup_uvicorn_logging(json_format: bool = False) -> None:
     except PermissionError:
         file_handler = None
 
-    # Add handlers to uvicorn loggers
     for logger in [uvicorn_logger, uvicorn_error_logger, uvicorn_access_logger]:
         logger.addHandler(console_handler)
         if file_handler:

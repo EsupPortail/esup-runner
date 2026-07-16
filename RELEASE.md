@@ -26,11 +26,11 @@ uv run scripts/release_stack.py prepare 1.1.1
 This runs, for each selected component:
 
 - `uv run scripts/manage_version.py set <version>`
-- `make ci`
 - manager: `make lock-upgrade EXTRAS=dev`
-- manager: `make sync-dev`
 - runner: `make lock-all`
+- manager: `make sync-dev`
 - runner: `make sync-all`
+- `make ci` against the refreshed and synchronized dependencies
 - changelog promotion from `Unreleased` to `[<version>] - <date>`
 
 By default, the script does not commit, push, create tags, or push tags.

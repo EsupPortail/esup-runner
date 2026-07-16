@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Refactored task recovery, process cleanup, and task-result path resolution/deletion into dedicated services while preserving the existing API route contracts.
 - Simplified encoding, Studio, and transcription entry points and transcription runtime imports to use package-qualified modules, preserving direct CLI execution while removing shared `core` module eviction and per-module path manipulation.
+- Modernized Python package licensing metadata to PEP 639 with the `GPL-3.0-only` SPDX expression and explicit license-file inclusion.
 
 ### Security
 
@@ -24,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed encoding of recent iPhone videos containing an unsupported secondary audio track by preserving all ffprobe-recognized audio streams, ignoring unknown tracks, falling back to the primary audio stream when needed, propagating partial FFmpeg failures as failed tasks, and attaching `encoding.log` diagnostics to failed script results.
-- Fixed manager completion callbacks so every request phase has a finite timeout and every successful `2xx` response is accepted, avoiding indefinitely blocked task completion notifications.
+- Fixed Runner-to-Manager completion notifications so every request phase has a finite timeout and every successful `2xx` response is accepted, avoiding indefinitely blocked task completion notifications.
 - Fixed multi-instance lifecycle handling to reserve distinct TCP ports, reject invalid instance and port ranges, stop cleanly when no port remains, propagate child startup failures, reject invalid restart identifiers, and force-stop stubborn children before replacement.
 - Made persisted task-status reads and Runner state snapshots thread-safe, returned isolated snapshots, and logged status-file resolution, loading, and persistence failures.
 - Fixed production wheel and Docker packaging to include all nested `app` packages, the project README, and bundled static assets, with static files resolved from the installed package.

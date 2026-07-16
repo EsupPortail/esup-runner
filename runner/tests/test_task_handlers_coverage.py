@@ -798,13 +798,64 @@ def test_encoding_handler_fill_empty_streams_from_encoding_log_fallback_branches
     failed_with_stdout = {
         "success": False,
         "returncode": 1,
-        "stdout": "Loaded environment variables",
-        "stderr": "Encoding failed",
+        "stdout": "Loaded environment variables from: /opt/esup-runner/runner/.env",
+        "stderr": (
+            "2026-07-16 - runner - INFO - "
+            "[storage_manager:_ensure_directory_exists:40] - "
+            "Storage directory initialized: /tmp/esup-runner\n"
+            "Encoding failed"
+        ),
     }
     enriched_failure = handler._fill_empty_streams_from_encoding_log(failed_with_stdout, output_dir)
-    assert "Loaded environment variables" in enriched_failure["stdout"]
-    assert "===== encoding.log =====" in enriched_failure["stdout"]
+    assert "Loaded environment variables" not in enriched_failure["stdout"]
+    assert "===== encoding.log =====" not in enriched_failure["stdout"]
     assert "ERROR ENCODING mp4" in enriched_failure["stdout"]
+    assert "Storage directory initialized" not in enriched_failure["stderr"]
+    assert enriched_failure["stderr"] == "Encoding failed"
+
+    meaningful_stdout = {
+        "success": True,
+        "returncode": 0,
+        "stdout": "FFmpeg preflight completed",
+        "stderr": "",
+    }
+    enriched_meaningful_stdout = handler._fill_empty_streams_from_encoding_log(
+        meaningful_stdout, output_dir
+    )
+    assert enriched_meaningful_stdout["stdout"].startswith("FFmpeg preflight completed")
+    assert "===== encoding.log =====" in enriched_meaningful_stdout["stdout"]
+    assert "ERROR ENCODING mp4" in enriched_meaningful_stdout["stdout"]
+
+    (output_dir / "encoding.log").write_text(
+        "Encoding file: sample.mp4\n- End of encoding\n",
+        encoding="utf-8",
+    )
+    successful_with_startup_output = {
+        "success": True,
+        "returncode": 0,
+        "stdout": (
+            "Loaded environment variables from: /opt/esup-runner/runner/.env\n"
+            "2026-07-16 - runner - INFO - "
+            "[storage_manager:_ensure_directory_exists:40] - "
+            "Storage directory initialized: /tmp/esup-runner"
+        ),
+        "stderr": "",
+    }
+    enriched_success = handler._fill_empty_streams_from_encoding_log(
+        successful_with_startup_output, output_dir
+    )
+    assert "Loaded environment variables" not in enriched_success["stdout"]
+    assert "Storage directory initialized" not in enriched_success["stdout"]
+    assert "===== encoding.log =====" not in enriched_success["stdout"]
+    assert "Encoding file: sample.mp4" in enriched_success["stdout"]
+
+    already_merged = {
+        **successful_with_startup_output,
+        "stdout": enriched_success["stdout"],
+    }
+    assert (
+        handler._fill_empty_streams_from_encoding_log(already_merged, output_dir) == already_merged
+    )
 
     (output_dir / "encoding.log").unlink()
     empty_streams_result = {"success": True, "stdout": "", "stderr": ""}
@@ -812,6 +863,19 @@ def test_encoding_handler_fill_empty_streams_from_encoding_log_fallback_branches
         handler._fill_empty_streams_from_encoding_log(empty_streams_result, output_dir)
         == empty_streams_result
     )
+
+    startup_without_encoding_log = {
+        "success": False,
+        "stdout": "Loaded environment variables from: /runner/.env",
+        "stderr": "A useful startup error",
+    }
+    assert handler._fill_empty_streams_from_encoding_log(
+        startup_without_encoding_log, output_dir
+    ) == {
+        "success": False,
+        "stdout": "",
+        "stderr": "A useful startup error",
+    }
 
 
 def test_encoding_handler_build_script_arguments_gpu_and_error_extractors(monkeypatch):

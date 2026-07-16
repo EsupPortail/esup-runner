@@ -2,7 +2,7 @@
 # Standalone installable package
 
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,7 +11,8 @@ version = "1.6.0"
 description = "ESUP-Runner Manager - Centralized manager for distributed runners in the ESUP system"
 readme = "docs/README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 authors = [
     {name = "Loïc Bonavent", email = "loic.bonavent@umontpellier.fr"}
 ]
@@ -19,7 +20,6 @@ keywords = ["task", "manager", "orchestrator", "distributed", "async", "fastapi"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",

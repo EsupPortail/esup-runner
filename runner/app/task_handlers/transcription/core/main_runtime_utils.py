@@ -5,31 +5,19 @@ Binds orchestration hooks to runtime implementations from sibling modules.
 Keeps entrypoint startup minimal by moving wiring concerns into one place.
 """
 
-import sys
-from pathlib import Path
 from typing import cast
 
-_CORE_DIR = Path(__file__).resolve().parent
-_CORE_DIR_STR = str(_CORE_DIR)
-if _CORE_DIR_STR in sys.path:
-    sys.path.remove(_CORE_DIR_STR)
-sys.path.insert(0, _CORE_DIR_STR)
-
-_RUNTIME_ARGS_MODULE = sys.modules.get("runtime_args_utils")
-if _RUNTIME_ARGS_MODULE is not None:
-    _runtime_args_file = getattr(_RUNTIME_ARGS_MODULE, "__file__", "")
-    if not _runtime_args_file or Path(_runtime_args_file).resolve().parent != _CORE_DIR:
-        sys.modules.pop("runtime_args_utils", None)
-
-import gap_repair_runtime_utils
-import main_orchestration_utils
-import metadata_runtime_utils
-import output_validation_runtime_utils
-import runtime_cli_utils
-import runtime_media_utils
-import transcription_runtime_utils
-import translation_runtime_utils
-from runtime_args_utils import (
+from . import (
+    gap_repair_runtime_utils,
+    main_orchestration_utils,
+    metadata_runtime_utils,
+    output_validation_runtime_utils,
+    runtime_cli_utils,
+    runtime_media_utils,
+    transcription_runtime_utils,
+    translation_runtime_utils,
+)
+from .runtime_args_utils import (
     _MAX_VTT_INTERNAL_GAP_COUNT,
     _MAX_VTT_INTERNAL_GAP_SECONDS,
     parse_args,

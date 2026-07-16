@@ -30,47 +30,13 @@ Usage example:
 
 from __future__ import annotations
 
-import importlib
 import sys
-from argparse import Namespace
-from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
-from typing import cast
 
-_SCRIPT_DIR = Path(__file__).resolve().parent
-_CORE_DIR = _SCRIPT_DIR / "core"
+if __package__ in {None, ""}:  # pragma: no cover - exercised by subprocess regression tests
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-
-def _evict_mismatched_core_package() -> None:
-    """Drop stale `core*` modules when they point to a different task handler."""
-    loaded_core = sys.modules.get("core")
-    if loaded_core is None:
-        return
-
-    loaded_core_file = getattr(loaded_core, "__file__", "")
-    loaded_core_dir = Path(loaded_core_file).resolve().parent if loaded_core_file else None
-    if loaded_core_dir == _CORE_DIR:
-        return
-
-    for module_name in list(sys.modules):
-        if module_name == "core" or module_name.startswith("core."):
-            sys.modules.pop(module_name, None)
-
-
-def _load_core_module() -> ModuleType:
-    if __package__:
-        return importlib.import_module(".core", __package__)
-
-    if str(_SCRIPT_DIR) not in sys.path:
-        sys.path.insert(0, str(_SCRIPT_DIR))
-    _evict_mismatched_core_package()
-    return importlib.import_module("core")
-
-
-_core_module = _load_core_module()
-main = cast(Callable[[], int], getattr(_core_module, "main"))
-parse_args = cast(Callable[..., Namespace], getattr(_core_module, "parse_args"))
+from app.task_handlers.studio.core import main, parse_args  # noqa: E402
 
 __all__ = ["main", "parse_args"]
 

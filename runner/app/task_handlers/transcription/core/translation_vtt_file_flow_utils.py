@@ -5,16 +5,10 @@ Applies batching and line-format constraints to keep VTT output readable.
 Wraps backend failures with stable return codes for orchestration callers.
 """
 
-import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-_CORE_DIR = Path(__file__).resolve().parent
-
-if str(_CORE_DIR) not in sys.path:  # pragma: no cover - direct file-spec import guard
-    sys.path.insert(0, str(_CORE_DIR))
-
-from translation_flow_contexts import (
+from .translation_flow_contexts import (
     TranslateVttFileContext,
 )
 

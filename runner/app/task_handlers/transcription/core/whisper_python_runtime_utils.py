@@ -6,20 +6,17 @@ Provides runtime-safe wrappers so failures map to explicit return codes.
 """
 
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
-_CORE_DIR = Path(__file__).resolve().parent
-if str(_CORE_DIR) not in sys.path:
-    sys.path.insert(0, str(_CORE_DIR))
-
-import chunking_utils
-import language_utils
-import runtime_cli_utils
-import runtime_media_utils
-import segment_filter_utils
-import vtt_postprocess_utils
+from . import (
+    chunking_utils,
+    language_utils,
+    runtime_cli_utils,
+    runtime_media_utils,
+    segment_filter_utils,
+    vtt_postprocess_utils,
+)
 
 
 def extract_audio_chunk(

@@ -6,35 +6,24 @@ Keeps end-to-end translation behavior consistent across CPU/GPU execution modes.
 """
 
 import os
-import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, cast
 
-_CORE_DIR = Path(__file__).resolve().parent
-_CORE_DIR_STR = str(_CORE_DIR)
-if _CORE_DIR_STR in sys.path:
-    sys.path.remove(_CORE_DIR_STR)
-sys.path.insert(0, _CORE_DIR_STR)
-
-_RUNTIME_ARGS_MODULE = sys.modules.get("runtime_args_utils")
-if _RUNTIME_ARGS_MODULE is not None:
-    _runtime_args_file = getattr(_RUNTIME_ARGS_MODULE, "__file__", "")
-    if not _runtime_args_file or Path(_runtime_args_file).resolve().parent != _CORE_DIR:
-        sys.modules.pop("runtime_args_utils", None)
-
-import language_utils
-import metadata_utils
-import output_validation_runtime_utils
-import runtime_cli_utils
-import translation_decision_flow_utils
-import translation_flow_contexts
-import translation_runtime_flow_utils
-import translation_utils
-import translation_vtt_file_flow_utils
-import vtt_postprocess_utils
-import vtt_validation_utils
-import whisper_python_runtime_utils
-from runtime_args_utils import (
+from . import (
+    language_utils,
+    metadata_utils,
+    output_validation_runtime_utils,
+    runtime_cli_utils,
+    translation_decision_flow_utils,
+    translation_flow_contexts,
+    translation_runtime_flow_utils,
+    translation_utils,
+    translation_vtt_file_flow_utils,
+    vtt_postprocess_utils,
+    vtt_validation_utils,
+    whisper_python_runtime_utils,
+)
+from .runtime_args_utils import (
     _CPU_TRANSLATION_MODELS,
     _GPU_TRANSLATION_MODELS,
     _TRANSLATION_BACKEND_LOCAL,

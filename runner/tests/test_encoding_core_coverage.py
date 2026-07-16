@@ -679,6 +679,37 @@ def test_media_probe_utils_missing_noexclude_branches(monkeypatch, capsys, tmp_p
     assert result["duration"] == 0
     assert "Warning: duration unavailable" in logs[-1]
 
+    logs.clear()
+    result = media_probe.get_info_video(
+        "input.mov",
+        debug=False,
+        videos_dir=str(tmp_path),
+        image_codecs=["png"],
+        webm_video_codecs={"vp9"},
+        encode_log_fn=logs.append,
+        get_info_from_video_fn=lambda _cmd: (
+            {
+                "format": {"duration": "1"},
+                "streams": [{"index": 1, "codec_type": "audio", "codec_tag_string": "apac"}],
+            },
+            "",
+        ),
+        analyze_streams_fn=lambda _streams, image_codecs: (
+            False,
+            False,
+            True,
+            "",
+            0,
+            0.0,
+            "audio: unknown\n",
+        ),
+        extract_duration_from_probe_fn=lambda _info: 1,
+        refine_source_fps_fn=lambda **_k: (0.0, "unused\n"),
+        probe_packet_based_fps_fn=lambda *_a: 0.0,
+    )
+    assert result["audio_stream_indices"] == []
+    assert "primary-audio fallback will be used" in logs[-1]
+
     profile, pix_fmt = media_probe.extract_primary_video_encoding_metadata(
         [
             {"codec_type": "video", "codec_name": "png", "profile": "ignored"},
@@ -700,6 +731,22 @@ def test_media_probe_utils_missing_noexclude_branches(monkeypatch, capsys, tmp_p
         ["not-a-dict", {"codec_type": "audio", "codec_name": "aac"}],
         image_codecs=["png"],
     ) == ("", "")
+
+    assert media_probe.extract_recognized_audio_stream_indices(None) == []
+    assert media_probe.extract_recognized_audio_stream_indices(
+        [
+            "not-a-dict",
+            {"index": 0, "codec_type": "video", "codec_name": "h264"},
+            {"index": 1, "codec_type": "audio", "codec_name": "aac"},
+            {"index": 1, "codec_type": "audio", "codec_name": "aac"},
+            {"index": 2, "codec_type": "audio", "codec_name": "unknown"},
+            {"index": 3, "codec_type": "audio", "codec_name": None},
+            {"index": -1, "codec_type": "audio", "codec_name": "opus"},
+            {"index": "4", "codec_type": "audio", "codec_name": "flac"},
+            {"index": True, "codec_type": "audio", "codec_name": "vorbis"},
+            {"index": 5, "codec_type": "audio", "codec_name": "OPUS"},
+        ]
+    ) == [1, 5]
 
 
 def test_overview_utils_missing_noexclude_branches(monkeypatch, tmp_path):

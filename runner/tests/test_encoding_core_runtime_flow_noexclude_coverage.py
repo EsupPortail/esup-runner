@@ -111,6 +111,65 @@ def test_runtime_flow_wrapper_and_conversion_branches(monkeypatch, tmp_path):
     )
     assert runtime_flow.launch_cmd("ffmpeg -i in out", "cpu", "mp4") == (True, "launch ok")
 
+    launch_calls = []
+
+    def _launch_with_audio_fallback(cmd, *_args, **_kwargs):
+        launch_calls.append(cmd)
+        return (len(launch_calls) == 2, f"launch {len(launch_calls)}\n")
+
+    runtime_flow._AUDIO_STREAM_MAP = "-map 0:1? -map 0:2?"
+    monkeypatch.setattr(
+        runtime_flow.ffmpeg_runtime_utils,
+        "launch_cmd",
+        _launch_with_audio_fallback,
+    )
+    success, launch_msg = runtime_flow.launch_cmd(
+        "ffmpeg -map 0:v:0? -map 0:1? -map 0:2? output.mp4",
+        "cpu",
+        "mp4",
+    )
+    assert success is True
+    assert len(launch_calls) == 2
+    assert "-map 0:1? -map 0:2?" in launch_calls[0]
+    assert "-map 0:a:0?" in launch_calls[1]
+    assert "retrying with the primary audio stream" in launch_msg
+    assert runtime_flow._AUDIO_STREAM_MAP == "-map 0:a:0?"
+
+    runtime_flow._AUDIO_STREAM_MAP = "-map 0:1? -map 0:2?"
+    failed_retry_calls = []
+
+    def _launch_with_failed_audio_fallback(cmd, *_args, **_kwargs):
+        failed_retry_calls.append(cmd)
+        return False, "failed\n"
+
+    monkeypatch.setattr(
+        runtime_flow.ffmpeg_runtime_utils,
+        "launch_cmd",
+        _launch_with_failed_audio_fallback,
+    )
+    success, _ = runtime_flow.launch_cmd(
+        "ffmpeg -map 0:v:0? -map 0:1? -map 0:2? output.mp4",
+        "cpu",
+        "mp4",
+    )
+    assert success is False
+    assert len(failed_retry_calls) == 2
+    assert runtime_flow._AUDIO_STREAM_MAP == "-map 0:1? -map 0:2?"
+
+    launch_calls.clear()
+    monkeypatch.setattr(
+        runtime_flow.ffmpeg_runtime_utils,
+        "launch_cmd",
+        lambda cmd, *_a, **_k: (False, cmd),
+    )
+    success, _ = runtime_flow.launch_cmd(
+        "ffmpeg -map 0:v:0? -map 0:1? -map 0:2? output.mp4",
+        "thumbnail",
+        "png",
+    )
+    assert success is False
+    assert runtime_flow._AUDIO_STREAM_MAP == "-map 0:1? -map 0:2?"
+
     monkeypatch.setattr(
         runtime_flow.dressing_runtime_utils,
         "safe_filename_from_url",
@@ -425,6 +484,7 @@ def test_runtime_flow_parse_and_apply_cli_config_branches(monkeypatch, tmp_path)
     assert "Video identification metadata received" in msg
     assert runtime_flow._DEBUG is True
     assert runtime_flow._HWACCEL_DEVICE == 3
+    assert runtime_flow._AUDIO_STREAM_MAP == "-map 0:a:0?"
     assert os.environ.get("CUDA_VISIBLE_DEVICES") == "0,1"
 
     out_dir = Path(runtime_flow._VIDEOS_OUTPUT_DIR)
@@ -580,6 +640,7 @@ def test_runtime_flow_prepare_validate_and_process_branches(monkeypatch, tmp_pat
         lambda _filename: {
             "duration": 12,
             "source_fps": 29.97,
+            "audio_stream_indices": [1, 3],
             "has_stream_video": True,
             "has_stream_audio": True,
             "codec": "h264",
@@ -599,8 +660,16 @@ def test_runtime_flow_prepare_validate_and_process_branches(monkeypatch, tmp_pat
 
     process_msg = runtime_flow._process_encoding(_make_args(tmp_path))
     assert "Using source fps estimate for encode decisions" in process_msg
+    assert "Using audio stream mapping: -map 0:1? -map 0:3?" in process_msg
     assert "End of encoding" in process_msg
+    assert runtime_flow._AUDIO_STREAM_MAP == "-map 0:1? -map 0:3?"
     assert any(key == "encode_result" and value is True for key, value, _ in recorded_add_info)
+
+    recorded_add_info.clear()
+    monkeypatch.setattr(runtime_flow, "launch_encode", lambda _info, _file: False)
+    with pytest.raises(runtime_flow.EncodingValidationError, match="required outputs"):
+        runtime_flow._process_encoding(_make_args(tmp_path))
+    assert any(key == "encode_result" and value is False for key, value, _ in recorded_add_info)
 
     monkeypatch.setattr(runtime_flow, "_prepare_input_file", lambda _args: ("", "invalid file"))
     with pytest.raises(runtime_flow.EncodingValidationError):

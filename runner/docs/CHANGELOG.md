@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added explicit, aggregated Runner configuration validation for scalar types, URLs, supported task types, port ranges, runtime modes, Studio defaults, and required paths, including validation before replacing a reloaded configuration.
 - Added `scripts/check_config.py` as a non-sensitive preflight command that validates the effective `.env` configuration, reports all detected errors with standard check-script output, and exits with code `2` when invalid.
 
+### Changed
+
+- Refactored task recovery, process cleanup, and task-result path resolution/deletion into dedicated services while preserving the existing API route contracts.
+- Simplified encoding, Studio, and transcription entry points and transcription runtime imports to use package-qualified modules, preserving direct CLI execution while removing shared `core` module eviction and per-module path manipulation.
+
 ### Security
 
 - Prevented filesystem and operating-system error details from leaking through `GET /runner/status` disk-usage diagnostics while retaining full exception details in server logs.
@@ -19,7 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed manager completion callbacks so every request phase has a finite timeout and every successful `2xx` response is accepted, avoiding indefinitely blocked task completion notifications.
-- Fixed multi-instance startup to reserve a distinct available TCP port for each child, reject invalid port ranges, and stop cleanly when no port remains.
+- Fixed multi-instance lifecycle handling to reserve distinct TCP ports, reject invalid instance and port ranges, stop cleanly when no port remains, propagate child startup failures, reject invalid restart identifiers, and force-stop stubborn children before replacement.
+- Made persisted task-status reads and Runner state snapshots thread-safe, returned isolated snapshots, and logged status-file resolution, loading, and persistence failures.
 - Fixed production wheel and Docker packaging to include all nested `app` packages, the project README, and bundled static assets, with static files resolved from the installed package.
 - Fixed Runner OpenAPI metadata and authentication declarations so contact and license information is emitted under `info`, GPLv3 is advertised, and generated API-key and Bearer schemes are preserved.
 

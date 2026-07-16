@@ -168,25 +168,46 @@ class VideoEncodingHandler(BaseTaskHandler):
     def _fill_empty_streams_from_encoding_log(
         self, script_result: Dict[str, Any], output_dir: Path
     ) -> Dict[str, Any]:
-        """Fallback to `encoding.log` for empty streams and failed scripts."""
+        """Merge `encoding.log` into stdout when the encoding runtime produced it."""
         if not isinstance(script_result, dict):
             return script_result
 
-        stdout_text = str(script_result.get("stdout") or "").strip()
-        if stdout_text and script_result.get("success", False):
-            return script_result
+        enriched_result = dict(script_result)
+        stdout_text = self._filter_encoding_startup_output(script_result.get("stdout"))
+        stderr_text = self._filter_encoding_startup_output(script_result.get("stderr"))
+
+        if "stdout" in script_result:
+            enriched_result["stdout"] = stdout_text
+        if "stderr" in script_result:
+            enriched_result["stderr"] = stderr_text
 
         encoding_log = output_dir / "encoding.log"
         log_tail = self._read_log_tail(encoding_log).strip()
         if not log_tail:
-            return script_result
+            return enriched_result
 
-        enriched_result = dict(script_result)
-        if stdout_text and log_tail not in stdout_text:
+        if log_tail in stdout_text:
+            return enriched_result
+
+        if stdout_text:
             enriched_result["stdout"] = f"{stdout_text}\n\n===== encoding.log =====\n{log_tail}"
         else:
-            enriched_result["stdout"] = stdout_text or log_tail
+            enriched_result["stdout"] = log_tail
         return enriched_result
+
+    def _filter_encoding_startup_output(self, output: Any) -> str:
+        """Remove runner initialization lines unrelated to encoding progress."""
+        kept_lines = []
+        for line in str(output or "").splitlines():
+            stripped_line = line.strip()
+            is_environment_notice = stripped_line.startswith("Loaded environment variables from:")
+            is_storage_notice = (
+                "[storage_manager:_ensure_directory_exists:" in stripped_line
+                and "Storage directory initialized:" in stripped_line
+            )
+            if not is_environment_notice and not is_storage_notice:
+                kept_lines.append(line)
+        return "\n".join(kept_lines).strip()
 
     def _build_script_arguments(
         self, parameters: Dict[str, Any], base_dir: str, input_file: str, work_dir: str

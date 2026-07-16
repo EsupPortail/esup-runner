@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored task callback delivery/retries, Runner reservation and deduplicated dispatch, and local/remote task-result access into dedicated services while preserving the existing API route contracts.
 - Updated the Bootstrap JavaScript bundle to `5.3.3` across the manager administration, credentials, documentation, statistics, and task pages.
 - Restricted runner completion notifications to terminal statuses (`completed`, `failed`, `timeout`) and aligned the manager API documentation.
+- Modernized Python package licensing metadata to PEP 639 with the `GPL-3.0-only` SPDX expression and explicit license-file inclusion.
 
 ### Fixed
 

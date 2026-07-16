@@ -267,12 +267,10 @@ def get_config():
     global _CONFIG_ENV_LOADED, _CONFIG_INSTANCE
 
     if _CONFIG_INSTANCE is None:
-        # Load .env file only if not already loaded
         if not _CONFIG_ENV_LOADED:
             _load_environment_variables()
             _CONFIG_ENV_LOADED = True
 
-        # Create configuration instance
         _CONFIG_INSTANCE = Config()
 
     return _CONFIG_INSTANCE
@@ -437,6 +435,15 @@ class Config:
         self._configuration_errors: List[str] = []
         self._configuration_validated = False
 
+        self._load_network_configuration()
+        self._load_security_configuration()
+        self._load_storage_configuration()
+        self._load_notification_configuration()
+        self._load_business_configuration()
+
+    def _load_network_configuration(self) -> None:
+        """Load manager addressing and CORS settings."""
+
         # Manager configuration
         self.MANAGER_PROTOCOL: str = (os.getenv("MANAGER_PROTOCOL", "http") or "").strip().lower()
         manager_host = (os.getenv("MANAGER_HOST", "0.0.0.0") or "").strip()
@@ -451,107 +458,8 @@ class Config:
             self.MANAGER_HOST
         )
         self.MANAGER_PORT: int = self._read_int("MANAGER_PORT", 8081, min_value=1, max_value=65535)
-        # Generate Manager URL
         url_host = f"[{self.MANAGER_HOST}]" if ":" in self.MANAGER_HOST else self.MANAGER_HOST
         self.MANAGER_URL = f"{self.MANAGER_PROTOCOL}://{url_host}:{self.MANAGER_PORT}"
-
-        # API token authentication: authorized tokens for clients and runners
-        self.AUTHORIZED_TOKENS: Dict[str, str] = self._load_authorized_tokens()
-
-        # Production settings (development/production)
-        self.ENVIRONMENT: str = (os.getenv("ENVIRONMENT", "development") or "").strip().lower()
-        # Number of Uvicorn workers (for Gunicorn, production mode)
-        self.UVICORN_WORKERS: int = self._read_int("UVICORN_WORKERS", 4, min_value=1)
-
-        # Remove task files older than specified number of days
-        self.CLEANUP_TASK_FILES_DAYS: int = self._read_int(
-            "CLEANUP_TASK_FILES_DAYS", 60, min_value=0
-        )
-
-        # Directory to store log files.
-        # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.
-        log_dir = _first_env_value("LOG_DIR", "LOG_DIRECTORY", default="/var/log/esup-runner")
-        if not log_dir.strip():
-            self._record_configuration_error("LOG_DIR must not be empty")
-            log_dir = "/var/log/esup-runner"
-        # Add slash at end if missing
-        if not log_dir.endswith("/"):
-            log_dir += "/"
-        self.LOG_DIR: str = log_dir
-        self.LOG_DIRECTORY: str = log_dir
-
-        # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
-
-        # Runner shared storage (optional)
-        self.RUNNERS_STORAGE_ENABLED: bool = self._read_bool("RUNNERS_STORAGE_ENABLED", False)
-        runners_storage_dir = _first_env_value(
-            "RUNNERS_STORAGE_DIR",
-            "RUNNERS_STORAGE_PATH",
-            default="/tmp/esup-runner",
-        )
-        self.RUNNERS_STORAGE_DIR: str = runners_storage_dir
-        # Backward-compatible alias used across existing code/tests.
-        self.RUNNERS_STORAGE_PATH: str = runners_storage_dir
-
-        # Shared cache root used for local cacheable artifacts (including uv cache).
-        cache_dir = os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
-        if not cache_dir.strip():
-            self._record_configuration_error("CACHE_DIR must not be empty")
-            cache_dir = "/home/esup-runner/.cache/esup-runner"
-        self.CACHE_DIR: str = cache_dir
-        uv_cache_dir = os.getenv("UV_CACHE_DIR", os.path.join(self.CACHE_DIR, "uv"))
-        if not uv_cache_dir.strip():
-            self._record_configuration_error("UV_CACHE_DIR must not be empty")
-            uv_cache_dir = os.path.join(self.CACHE_DIR, "uv")
-        self.UV_CACHE_DIR: str = uv_cache_dir
-
-        # Visibility of the API documentation (options: public, private -> requires token authentication)
-        self.API_DOCS_VISIBILITY: str = (
-            (os.getenv("API_DOCS_VISIBILITY", "public") or "").strip().lower()
-        )
-        print(f"API documentation visibility set to: {self.API_DOCS_VISIBILITY}")
-
-        # Domain-based priorities (optional)
-        # If enabled, the manager can reserve runner capacity for a priority domain.
-        self.PRIORITIES_ENABLED: bool = self._read_bool("PRIORITIES_ENABLED", False)
-        # Priority domain (suffix match)
-        self.PRIORITY_DOMAIN: str = os.getenv("PRIORITY_DOMAIN", "").strip().lower()
-        # Maximum percentage of non-priority tasks allowed concurrently
-        self.MAX_OTHER_DOMAIN_TASK_PERCENT: int = self._read_int(
-            "MAX_OTHER_DOMAIN_TASK_PERCENT",
-            100,
-            min_value=0,
-            max_value=100,
-        )
-
-        # Completion notify retry settings
-        self.COMPLETION_NOTIFY_MAX_RETRIES: int = self._read_int(
-            "COMPLETION_NOTIFY_MAX_RETRIES",
-            5,
-            min_value=0,
-        )
-        # Delay between notify callback retries in seconds
-        self.COMPLETION_NOTIFY_RETRY_DELAY_SECONDS: int = self._read_int(
-            "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS",
-            60,
-            min_value=0,
-        )
-        # Backoff factor for notify callback retries
-        self.COMPLETION_NOTIFY_BACKOFF_FACTOR: float = self._read_float(
-            "COMPLETION_NOTIFY_BACKOFF_FACTOR",
-            1.5,
-            min_value=1.0,
-        )
-
-        # SMTP configuration for warning emails (optional)
-        self.SMTP_SERVER: str = os.getenv("SMTP_SERVER", "")
-        self.SMTP_PORT: int = self._read_int("SMTP_PORT", 25, min_value=1, max_value=65535)
-        self.SMTP_USE_TLS: bool = self._read_bool("SMTP_USE_TLS", False)
-        self.SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
-        self.SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
-        self.SMTP_SENDER: str = os.getenv("SMTP_SENDER", "")
-        self.MANAGER_EMAIL: str = os.getenv("MANAGER_EMAIL", "")
 
         # CORS configuration
         # Comma-separated list of allowed origins; use "*" only when allow_credentials is False.
@@ -566,6 +474,18 @@ class Config:
         self.CORS_ALLOW_HEADERS = [
             h.strip() for h in (os.getenv("CORS_ALLOW_HEADERS", "*") or "").split(",") if h.strip()
         ] or ["*"]
+
+    def _load_security_configuration(self) -> None:
+        """Load authentication and outbound request security settings."""
+
+        # API token authentication: authorized tokens for clients and runners
+        self.AUTHORIZED_TOKENS: Dict[str, str] = self._load_authorized_tokens()
+
+        # Visibility of the API documentation (options: public, private -> requires token authentication)
+        self.API_DOCS_VISIBILITY: str = (
+            (os.getenv("API_DOCS_VISIBILITY", "public") or "").strip().lower()
+        )
+        print(f"API documentation visibility set to: {self.API_DOCS_VISIBILITY}")
 
         # Outbound notify_url callback hardening
         # Optional allowlist of notify_url hostnames (comma-separated).
@@ -618,8 +538,104 @@ class Config:
         # Admin users configuration
         self.ADMIN_USERS: Dict[str, str] = self._load_admin_users()
 
-        # Initialize password hashing context
         self.pwd_context = BcryptPasswordContext()
+
+    def _load_storage_configuration(self) -> None:
+        """Load log, shared storage, and cache paths."""
+
+        # Directory to store log files.
+        # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.
+        log_dir = _first_env_value("LOG_DIR", "LOG_DIRECTORY", default="/var/log/esup-runner")
+        if not log_dir.strip():
+            self._record_configuration_error("LOG_DIR must not be empty")
+            log_dir = "/var/log/esup-runner"
+        if not log_dir.endswith("/"):
+            log_dir += "/"
+        self.LOG_DIR: str = log_dir
+        self.LOG_DIRECTORY: str = log_dir
+
+        # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+
+        # Runner shared storage (optional)
+        self.RUNNERS_STORAGE_ENABLED: bool = self._read_bool("RUNNERS_STORAGE_ENABLED", False)
+        runners_storage_dir = _first_env_value(
+            "RUNNERS_STORAGE_DIR",
+            "RUNNERS_STORAGE_PATH",
+            default="/tmp/esup-runner",
+        )
+        self.RUNNERS_STORAGE_DIR: str = runners_storage_dir
+        # Backward-compatible alias used across existing code/tests.
+        self.RUNNERS_STORAGE_PATH: str = runners_storage_dir
+
+        # Shared cache root used for local cacheable artifacts (including uv cache).
+        cache_dir = os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
+        if not cache_dir.strip():
+            self._record_configuration_error("CACHE_DIR must not be empty")
+            cache_dir = "/home/esup-runner/.cache/esup-runner"
+        self.CACHE_DIR: str = cache_dir
+        uv_cache_dir = os.getenv("UV_CACHE_DIR", os.path.join(self.CACHE_DIR, "uv"))
+        if not uv_cache_dir.strip():
+            self._record_configuration_error("UV_CACHE_DIR must not be empty")
+            uv_cache_dir = os.path.join(self.CACHE_DIR, "uv")
+        self.UV_CACHE_DIR: str = uv_cache_dir
+
+    def _load_notification_configuration(self) -> None:
+        """Load callback retry and email notification settings."""
+
+        # Completion notify retry settings
+        self.COMPLETION_NOTIFY_MAX_RETRIES: int = self._read_int(
+            "COMPLETION_NOTIFY_MAX_RETRIES",
+            5,
+            min_value=0,
+        )
+        # Delay between notify callback retries in seconds
+        self.COMPLETION_NOTIFY_RETRY_DELAY_SECONDS: int = self._read_int(
+            "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS",
+            60,
+            min_value=0,
+        )
+        # Backoff factor for notify callback retries
+        self.COMPLETION_NOTIFY_BACKOFF_FACTOR: float = self._read_float(
+            "COMPLETION_NOTIFY_BACKOFF_FACTOR",
+            1.5,
+            min_value=1.0,
+        )
+
+        # SMTP configuration for warning emails (optional)
+        self.SMTP_SERVER: str = os.getenv("SMTP_SERVER", "")
+        self.SMTP_PORT: int = self._read_int("SMTP_PORT", 25, min_value=1, max_value=65535)
+        self.SMTP_USE_TLS: bool = self._read_bool("SMTP_USE_TLS", False)
+        self.SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
+        self.SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+        self.SMTP_SENDER: str = os.getenv("SMTP_SENDER", "")
+        self.MANAGER_EMAIL: str = os.getenv("MANAGER_EMAIL", "")
+
+    def _load_business_configuration(self) -> None:
+        """Load runtime and task-priority business settings."""
+
+        # Production settings (development/production)
+        self.ENVIRONMENT: str = (os.getenv("ENVIRONMENT", "development") or "").strip().lower()
+        # Number of Uvicorn workers (for Gunicorn, production mode)
+        self.UVICORN_WORKERS: int = self._read_int("UVICORN_WORKERS", 4, min_value=1)
+
+        # Remove task files older than specified number of days
+        self.CLEANUP_TASK_FILES_DAYS: int = self._read_int(
+            "CLEANUP_TASK_FILES_DAYS", 60, min_value=0
+        )
+
+        # Domain-based priorities (optional)
+        # If enabled, the manager can reserve runner capacity for a priority domain.
+        self.PRIORITIES_ENABLED: bool = self._read_bool("PRIORITIES_ENABLED", False)
+        # Priority domain (suffix match)
+        self.PRIORITY_DOMAIN: str = os.getenv("PRIORITY_DOMAIN", "").strip().lower()
+        # Maximum percentage of non-priority tasks allowed concurrently
+        self.MAX_OTHER_DOMAIN_TASK_PERCENT: int = self._read_int(
+            "MAX_OTHER_DOMAIN_TASK_PERCENT",
+            100,
+            min_value=0,
+            max_value=100,
+        )
 
     def _load_authorized_tokens(self) -> Dict[str, str]:
         """
@@ -657,7 +673,6 @@ class Config:
         if not self.AUTHORIZED_TOKENS:
             print("WARNING: No AUTHORIZED_TOKENS configured - API will be inaccessible")
 
-        # Validate admin users
         if not self.ADMIN_USERS:
             print("WARNING: No admin users configured - admin interface will be inaccessible")
 
@@ -818,7 +833,6 @@ class Config:
 
 _CONFIG_RELOAD_MARKER_MTIME_NS = _read_config_reload_marker_mtime_ns()
 
-# Create global config instance using the factory function
 config: "Config" = get_config()
 
 

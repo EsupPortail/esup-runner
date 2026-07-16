@@ -791,6 +791,22 @@ def test_encoding_handler_fill_empty_streams_from_encoding_log_fallback_branches
         == already_has_stdout
     )
 
+    (output_dir / "encoding.log").write_text(
+        "ERROR ENCODING mp4 FOR FILE iphone.mov\n",
+        encoding="utf-8",
+    )
+    failed_with_stdout = {
+        "success": False,
+        "returncode": 1,
+        "stdout": "Loaded environment variables",
+        "stderr": "Encoding failed",
+    }
+    enriched_failure = handler._fill_empty_streams_from_encoding_log(failed_with_stdout, output_dir)
+    assert "Loaded environment variables" in enriched_failure["stdout"]
+    assert "===== encoding.log =====" in enriched_failure["stdout"]
+    assert "ERROR ENCODING mp4" in enriched_failure["stdout"]
+
+    (output_dir / "encoding.log").unlink()
     empty_streams_result = {"success": True, "stdout": "", "stderr": ""}
     assert (
         handler._fill_empty_streams_from_encoding_log(empty_streams_result, output_dir)

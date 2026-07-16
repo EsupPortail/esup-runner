@@ -133,12 +133,10 @@ def get_config():
     global _CONFIG_ENV_LOADED, _CONFIG_INSTANCE
 
     if _CONFIG_INSTANCE is None:
-        # Load .env file only if not already loaded
         if not _CONFIG_ENV_LOADED:
             _load_environment_variables()
             _CONFIG_ENV_LOADED = True
 
-        # Create configuration instance
         _CONFIG_INSTANCE = Config()
 
     return _CONFIG_INSTANCE
@@ -353,8 +351,14 @@ class Config:
 
         self._configuration_errors: List[str] = []
 
-        # DEBUG mode
-        self.DEBUG: bool = self._read_bool("DEBUG", False)
+        self._load_network_configuration()
+        self._load_security_configuration()
+        self._load_storage_configuration()
+        self._load_notification_configuration()
+        self._load_business_configuration()
+
+    def _load_network_configuration(self) -> None:
+        """Load runner and manager network addressing settings."""
 
         # Runner/Multi-instance configuration
         self.RUNNER_PROTOCOL: str = os.getenv("RUNNER_PROTOCOL", "http")
@@ -364,29 +368,95 @@ class Config:
             "RUNNER_BASE_PORT", 8082, min_value=80, max_value=65535
         )
 
-        runner_instances_env = os.getenv("RUNNER_INSTANCES")
-        runner_task_types_spec = os.getenv("RUNNER_TASK_TYPES", "encoding,studio")
-
-        # Task types managed by this runner.
-        #
-        # Supported syntaxes:
-        # - Legacy:   RUNNER_INSTANCES=2 and RUNNER_TASK_TYPES=encoding,studio,transcription
-        #            => all instances handle the same set.
-        # - Grouped:  RUNNER_TASK_TYPES=[2x(encoding,studio,transcription),1x(encoding,studio),1x(transcription)]
-        #            => total instances is derived from the sum of the multipliers.
-        self._configure_runner_task_types(runner_instances_env, runner_task_types_spec)
-
-        # Monitor instances and automatically restart failed ones
-        self.RUNNER_MONITORING: bool = self._read_bool("RUNNER_MONITORING", False)
-
-        # API token authentication: access token for this runner (must match an authorised token in the manager)
-        self.RUNNER_TOKEN: str = os.getenv("RUNNER_TOKEN", "default-runner-token")
-
         # Manager URL configuration
         manager_url_env = os.getenv("MANAGER_URL")
         if manager_url_env is not None and not manager_url_env.strip():
             self._record_configuration_error("MANAGER_URL must not be empty")
         self.MANAGER_URL: str = _normalize_base_url(manager_url_env, "http://localhost:8081")
+
+    def _load_security_configuration(self) -> None:
+        """Load authentication and request security settings."""
+
+        # API token authentication: access token for this runner (must match an authorised token in the manager)
+        self.RUNNER_TOKEN: str = os.getenv("RUNNER_TOKEN", "default-runner-token")
+
+        # CORS configuration
+        cors_origins_raw = os.getenv("CORS_ALLOW_ORIGINS", "*")
+        self.CORS_ALLOW_ORIGINS = [
+            o.strip() for o in (cors_origins_raw or "").split(",") if o.strip()
+        ] or ["*"]
+        self.CORS_ALLOW_CREDENTIALS: bool = self._read_bool("CORS_ALLOW_CREDENTIALS", False)
+        self.CORS_ALLOW_METHODS = [
+            m.strip() for m in (os.getenv("CORS_ALLOW_METHODS", "*") or "").split(",") if m.strip()
+        ] or ["*"]
+        self.CORS_ALLOW_HEADERS = [
+            h.strip() for h in (os.getenv("CORS_ALLOW_HEADERS", "*") or "").split(",") if h.strip()
+        ] or ["*"]
+
+        # Outbound downloads (assets, sources)
+        # Default keeps compatibility with internal Opencast deployments.
+        self.DOWNLOAD_ALLOWED_HOSTS = [
+            h.strip().lower()
+            for h in (os.getenv("DOWNLOAD_ALLOWED_HOSTS", "") or "").split(",")
+            if h.strip()
+        ]
+        self.DOWNLOAD_ALLOW_PRIVATE_NETWORKS: bool = self._read_bool(
+            "DOWNLOAD_ALLOW_PRIVATE_NETWORKS", True
+        )
+
+    def _load_storage_configuration(self) -> None:
+        """Load log, workspace, status, and cache paths."""
+
+        # Log directory.
+        # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.
+        log_dir = _first_env_value("LOG_DIR", "LOG_DIRECTORY", default="/var/log/esup-runner")
+        if not log_dir.strip():
+            self._record_configuration_error("LOG_DIR must not be empty")
+            log_dir = "/var/log/esup-runner"
+        if not log_dir.endswith("/"):
+            log_dir += "/"
+        self.LOG_DIR: str = log_dir
+        self.LOG_DIRECTORY: str = log_dir
+
+        # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+
+        # Workspace and storage configuration
+        self.STORAGE_DIR: str = os.getenv("STORAGE_DIR", "/tmp/esup-runner")
+
+        # Persistent runner-side task status file (used for restart recovery)
+        configured_task_status_file = (os.getenv("RUNNER_TASK_STATUS_FILE") or "").strip()
+        if configured_task_status_file:
+            self.RUNNER_TASK_STATUS_FILE: str = str(Path(configured_task_status_file))
+        else:
+            self.RUNNER_TASK_STATUS_FILE = str(Path(self.STORAGE_DIR) / "runner_task_statuses.json")
+
+        # Maximum age of files in storage in days (0 for unlimited)
+        self.MAX_FILE_AGE_DAYS: int = self._read_int("MAX_FILE_AGE_DAYS", 0, min_value=0)
+
+        # Interval for periodic cleanup in hours
+        self.CLEANUP_INTERVAL_HOURS: int = self._read_int("CLEANUP_INTERVAL_HOURS", 24, min_value=1)
+
+        # Shared cache root for transcription models and uv cache.
+        cache_dir_raw = os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
+        if not cache_dir_raw.strip():
+            self._record_configuration_error("CACHE_DIR must not be empty")
+            cache_dir_raw = "/home/esup-runner/.cache/esup-runner"
+        cache_dir = Path(cache_dir_raw)
+        self.CACHE_DIR: str = str(cache_dir)
+        # Directory where whisper models (.gguf/.bin) are stored
+        self.WHISPER_MODELS_DIR: str = os.getenv(
+            "WHISPER_MODELS_DIR", str(cache_dir / "whisper-models")
+        )
+        # Directory where Hugging Face translation models are cached
+        self.HUGGINGFACE_MODELS_DIR: str = os.getenv(
+            "HUGGINGFACE_MODELS_DIR", str(cache_dir / "huggingface")
+        )
+        # Directory where uv stores package cache artifacts.
+        self.UV_CACHE_DIR: str = os.getenv("UV_CACHE_DIR", str(cache_dir / "uv"))
+
+    def _load_notification_configuration(self) -> None:
+        """Load email and task-completion notification settings."""
 
         # SMTP configuration for failure notifications
         self.SMTP_SERVER: str = os.getenv("SMTP_SERVER", "")
@@ -418,54 +488,24 @@ class Config:
             min_value=1.0,
         )
 
-        # CORS configuration
-        cors_origins_raw = os.getenv("CORS_ALLOW_ORIGINS", "*")
-        self.CORS_ALLOW_ORIGINS = [
-            o.strip() for o in (cors_origins_raw or "").split(",") if o.strip()
-        ] or ["*"]
-        self.CORS_ALLOW_CREDENTIALS: bool = self._read_bool("CORS_ALLOW_CREDENTIALS", False)
-        self.CORS_ALLOW_METHODS = [
-            m.strip() for m in (os.getenv("CORS_ALLOW_METHODS", "*") or "").split(",") if m.strip()
-        ] or ["*"]
-        self.CORS_ALLOW_HEADERS = [
-            h.strip() for h in (os.getenv("CORS_ALLOW_HEADERS", "*") or "").split(",") if h.strip()
-        ] or ["*"]
+    def _load_business_configuration(self) -> None:
+        """Load runner execution and media-processing settings."""
 
-        # Outbound downloads (assets, sources)
-        # Default keeps compatibility with internal Opencast deployments.
-        self.DOWNLOAD_ALLOWED_HOSTS = [
-            h.strip().lower()
-            for h in (os.getenv("DOWNLOAD_ALLOWED_HOSTS", "") or "").split(",")
-            if h.strip()
-        ]
-        self.DOWNLOAD_ALLOW_PRIVATE_NETWORKS: bool = self._read_bool(
-            "DOWNLOAD_ALLOW_PRIVATE_NETWORKS", True
-        )
+        self.DEBUG: bool = self._read_bool("DEBUG", False)
 
-        # Log directory.
-        # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.
-        log_dir = _first_env_value("LOG_DIR", "LOG_DIRECTORY", default="/var/log/esup-runner")
-        if not log_dir.strip():
-            self._record_configuration_error("LOG_DIR must not be empty")
-            log_dir = "/var/log/esup-runner"
-        # Add slash at end if missing
-        if not log_dir.endswith("/"):
-            log_dir += "/"
-        self.LOG_DIR: str = log_dir
-        self.LOG_DIRECTORY: str = log_dir
+        runner_instances_env = os.getenv("RUNNER_INSTANCES")
+        runner_task_types_spec = os.getenv("RUNNER_TASK_TYPES", "encoding,studio")
 
-        # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+        # Task types managed by this runner.
+        #
+        # Supported syntaxes:
+        # - Legacy:   RUNNER_INSTANCES=2 and RUNNER_TASK_TYPES=encoding,studio,transcription
+        #            => all instances handle the same set.
+        # - Grouped:  RUNNER_TASK_TYPES=[2x(encoding,studio,transcription),1x(encoding,studio),1x(transcription)]
+        #            => total instances is derived from the sum of the multipliers.
+        self._configure_runner_task_types(runner_instances_env, runner_task_types_spec)
 
-        # Workspace and storage configuration
-        self.STORAGE_DIR: str = os.getenv("STORAGE_DIR", "/tmp/esup-runner")
-
-        # Persistent runner-side task status file (used for restart recovery)
-        configured_task_status_file = (os.getenv("RUNNER_TASK_STATUS_FILE") or "").strip()
-        if configured_task_status_file:
-            self.RUNNER_TASK_STATUS_FILE: str = str(Path(configured_task_status_file))
-        else:
-            self.RUNNER_TASK_STATUS_FILE = str(Path(self.STORAGE_DIR) / "runner_task_statuses.json")
+        self.RUNNER_MONITORING: bool = self._read_bool("RUNNER_MONITORING", False)
 
         # Maximum video size in GB for processing (0 for unlimited)
         self.MAX_VIDEO_SIZE_GB: int = self._read_int("MAX_VIDEO_SIZE_GB", 0, min_value=0)
@@ -475,12 +515,6 @@ class Config:
         self.MEDIA_CODEC_DENYLIST = [
             item.strip().lower() for item in media_codec_denylist_raw.split(",") if item.strip()
         ]
-
-        # Maximum age of files in storage in days (0 for unlimited)
-        self.MAX_FILE_AGE_DAYS: int = self._read_int("MAX_FILE_AGE_DAYS", 0, min_value=0)
-
-        # Interval for periodic cleanup in hours
-        self.CLEANUP_INTERVAL_HOURS: int = self._read_int("CLEANUP_INTERVAL_HOURS", 24, min_value=1)
 
         # Maximum duration (seconds) allowed for external task scripts
         # (encoding/studio/transcription handlers)
@@ -514,23 +548,6 @@ class Config:
         # # # Transcription (Whisper) settings # # #
         # Logical whisper model (small|medium|large|turbo)
         self.WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "small").lower()
-        # Shared cache root for transcription models and uv cache.
-        cache_dir_raw = os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
-        if not cache_dir_raw.strip():
-            self._record_configuration_error("CACHE_DIR must not be empty")
-            cache_dir_raw = "/home/esup-runner/.cache/esup-runner"
-        cache_dir = Path(cache_dir_raw)
-        self.CACHE_DIR: str = str(cache_dir)
-        # Directory where whisper models (.gguf/.bin) are stored
-        self.WHISPER_MODELS_DIR: str = os.getenv(
-            "WHISPER_MODELS_DIR", str(cache_dir / "whisper-models")
-        )
-        # Directory where Hugging Face translation models are cached
-        self.HUGGINGFACE_MODELS_DIR: str = os.getenv(
-            "HUGGINGFACE_MODELS_DIR", str(cache_dir / "huggingface")
-        )
-        # Directory where uv stores package cache artifacts.
-        self.UV_CACHE_DIR: str = os.getenv("UV_CACHE_DIR", str(cache_dir / "uv"))
         # Default language (e.g., 'auto', 'fr', 'en')
         self.WHISPER_LANGUAGE: str = os.getenv("WHISPER_LANGUAGE", "auto")
 
@@ -813,7 +830,6 @@ def _parse_grouped_task_types_spec(spec: str) -> Optional[List[Set[str]]]:
     return _expand_grouped_task_types(raw)
 
 
-# Create global config instance using the factory function
 config = get_config()
 
 

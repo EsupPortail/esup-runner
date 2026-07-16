@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.routes import task as task_module
+from app.services import task_recovery
 
 
 @pytest.fixture(autouse=True)
@@ -18,6 +19,27 @@ def clear_recovery_monitors(tmp_path, monkeypatch):
     task_module._RECOVERY_MONITORS.clear()
     yield
     task_module._RECOVERY_MONITORS.clear()
+
+
+@pytest.mark.asyncio
+async def test_task_recovery_route_wrappers_delegate_with_compatibility_runtime(monkeypatch):
+    """Validate recovery lifecycle names delegate while retaining route monkeypatch hooks."""
+    calls: list[tuple[str, object]] = []
+
+    async def _recover(*, runtime):
+        calls.append(("recover", runtime))
+
+    async def _stop(*, runtime):
+        calls.append(("stop", runtime))
+
+    monkeypatch.setattr(task_recovery, "recover_running_tasks_after_restart", _recover)
+    monkeypatch.setattr(task_recovery, "stop_recovery_monitors", _stop)
+
+    await task_module.recover_running_tasks_after_restart()
+    await task_module.stop_recovery_monitors()
+
+    assert calls == [("recover", task_module), ("stop", task_module)]
+    assert task_module._RECOVERY_MONITORS is task_recovery.RECOVERY_MONITORS
 
 
 def test_task_helpers_parse_pid_and_is_process_alive_branches(monkeypatch):

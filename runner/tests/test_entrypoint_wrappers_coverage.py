@@ -2,9 +2,12 @@
 
 import importlib
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 
 def _load_entrypoint_from_path(relative_path: str, module_name: str) -> ModuleType:
@@ -26,57 +29,62 @@ def _assert_package_entrypoint(module_name: str) -> ModuleType:
     return module
 
 
-def _exercise_core_eviction(entrypoint: ModuleType, monkeypatch, tmp_path) -> None:
-    monkeypatch.delitem(sys.modules, "core", raising=False)
+@pytest.mark.parametrize(
+    ("handler_name", "main_module"),
+    [
+        ("encoding", "app.task_handlers.encoding.core.main_runtime_utils"),
+        ("studio", "app.task_handlers.studio.core.main_runtime_utils"),
+        ("transcription", "app.task_handlers.transcription.core.main_runtime_utils"),
+    ],
+)
+def test_task_entrypoint_supports_normal_package_import(
+    monkeypatch, handler_name: str, main_module: str
+):
+    """Package imports leave unrelated modules and the import path untouched."""
+    unrelated_core = ModuleType("core")
+    monkeypatch.setitem(sys.modules, "core", unrelated_core)
+    original_path = list(sys.path)
 
-    entrypoint._evict_mismatched_core_package()
+    entrypoint = _assert_package_entrypoint(f"app.task_handlers.{handler_name}.{handler_name}")
 
-    assert "core" not in sys.modules
-
-    matching_core = ModuleType("core")
-    matching_core.__file__ = str(entrypoint._CORE_DIR / "__init__.py")
-    monkeypatch.setitem(sys.modules, "core", matching_core)
-
-    entrypoint._evict_mismatched_core_package()
-
-    assert sys.modules["core"] is matching_core
-
-    stale_core = ModuleType("core")
-    stale_core.__file__ = str(tmp_path / "other" / "core" / "__init__.py")
-    stale_child = ModuleType("core.child")
-    monkeypatch.setitem(sys.modules, "core", stale_core)
-    monkeypatch.setitem(sys.modules, "core.child", stale_child)
-
-    entrypoint._evict_mismatched_core_package()
-
-    assert "core" not in sys.modules
-    assert "core.child" not in sys.modules
-
-
-def test_task_entrypoints_support_package_import_and_core_eviction(monkeypatch, tmp_path):
-    """Validate entrypoint wrappers package import and stale core eviction."""
-    module_names = [
-        "app.task_handlers.encoding.encoding",
-        "app.task_handlers.transcription.transcription",
-        "app.task_handlers.studio.studio",
-    ]
-
-    for module_name in module_names:
-        entrypoint = _assert_package_entrypoint(module_name)
-        _exercise_core_eviction(entrypoint, monkeypatch, tmp_path)
+    assert sys.modules["core"] is unrelated_core
+    assert sys.path == original_path
+    assert entrypoint.main.__module__ == main_module
+    assert entrypoint.parse_args.__module__ == (
+        f"app.task_handlers.{handler_name}.core.runtime_args_utils"
+    )
 
 
-def test_studio_entrypoint_supports_direct_script_import(monkeypatch):
-    """Validate Studio entrypoint direct script import branch."""
-    monkeypatch.delitem(sys.modules, "core", raising=False)
-    script_dir = str(Path(__file__).resolve().parents[1] / "app" / "task_handlers" / "studio")
-    monkeypatch.setattr(sys, "path", [path for path in sys.path if path != script_dir])
+@pytest.mark.parametrize("handler_name", ["encoding", "studio", "transcription"])
+def test_task_entrypoint_supports_direct_script_import(monkeypatch, handler_name: str):
+    """Validate each entrypoint direct-script import branch."""
+    runner_root = str(Path(__file__).resolve().parents[1])
+    monkeypatch.setattr(sys, "path", [path for path in sys.path if path != runner_root])
 
     module = _load_entrypoint_from_path(
-        "app/task_handlers/studio/studio.py",
-        "studio_entrypoint_direct_coverage",
+        f"app/task_handlers/{handler_name}/{handler_name}.py",
+        f"{handler_name}_entrypoint_direct_coverage",
     )
 
     assert callable(module.main)
     assert callable(module.parse_args)
     assert module.__all__ == ["main", "parse_args"]
+    assert sys.path[0] == runner_root
+
+
+@pytest.mark.parametrize("handler_name", ["encoding", "studio", "transcription"])
+def test_task_entrypoint_supports_direct_script_execution(tmp_path, handler_name: str):
+    """Run each script directly from outside the project and exercise its CLI."""
+    runner_root = Path(__file__).resolve().parents[1]
+    script_path = runner_root / "app" / "task_handlers" / handler_name / f"{handler_name}.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), "--help"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout

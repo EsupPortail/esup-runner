@@ -194,6 +194,30 @@ def test_config_warns_when_grouped_task_types_override_runner_instances(monkeypa
     assert any("RUNNER_INSTANCES is ignored" in str(w.message) for w in caught)
 
 
+def test_config_constructor_delegates_to_coherent_loaders(monkeypatch):
+    """Validate the constructor delegates each configuration area in order."""
+    loader_names = (
+        "_load_network_configuration",
+        "_load_security_configuration",
+        "_load_storage_configuration",
+        "_load_notification_configuration",
+        "_load_business_configuration",
+    )
+    calls = []
+
+    for loader_name in loader_names:
+        monkeypatch.setattr(
+            config_module.Config,
+            loader_name,
+            lambda _self, name=loader_name: calls.append(name),
+        )
+
+    config = config_module.Config()
+
+    assert calls == list(loader_names)
+    assert config._configuration_errors == []
+
+
 def test_config_warn_grouped_instances_override_ignores_missing_env():
     """Validate Config warn grouped instances override ignores missing env."""
     cfg = object.__new__(config_module.Config)

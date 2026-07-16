@@ -1,5 +1,6 @@
 """Validates transcription parameter validation and video identification metadata support."""
 
+import importlib
 import importlib.util
 import os
 import sys
@@ -32,16 +33,8 @@ def _load_transcription_script_module():
 
 
 def _load_transcription_core_module(module_name: str):
-    repo_root = Path(__file__).resolve().parents[1]
-    module_path = (
-        repo_root / "app" / "task_handlers" / "transcription" / "core" / f"{module_name}.py"
-    )
-    spec = importlib.util.spec_from_file_location(f"transcription_core_{module_name}", module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load module spec from {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    module = importlib.import_module(f"app.task_handlers.transcription.core.{module_name}")
+    return importlib.reload(module)
 
 
 def _postprocess_vtt_content_with_core_utils(

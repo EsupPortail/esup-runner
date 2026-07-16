@@ -1,20 +1,14 @@
-"""Validates encoding flow branches and transcription runtime CLI command building."""
+"""Validates encoding core flow, runtime, media, and overview branches."""
 
 import importlib
 import json
 import shutil
 import subprocess
 import types
-from pathlib import Path
 
 
 def _load_encoding_core_module(module_name: str):
     module = importlib.import_module(f"app.task_handlers.encoding.core.{module_name}")
-    return importlib.reload(module)
-
-
-def _load_transcription_core_module(module_name: str):
-    module = importlib.import_module(f"app.task_handlers.transcription.core.{module_name}")
     return importlib.reload(module)
 
 
@@ -962,8 +956,8 @@ def test_overview_utils_missing_noexclude_branches(monkeypatch, tmp_path):
     assert "Overview generation complete" in msg
 
 
-def test_runtime_args_dressing_and_gap_repair_remaining_lines(monkeypatch):
-    """Validate Runtime args dressing and gap repair remaining lines."""
+def test_runtime_args_and_dressing_remaining_lines():
+    """Validate remaining runtime args and dressing branches."""
     runtime_args = _load_encoding_core_module("runtime_args_utils")
     args = runtime_args.parse_args(
         [
@@ -1004,13 +998,3 @@ def test_runtime_args_dressing_and_gap_repair_remaining_lines(monkeypatch):
     )
     assert same_name == "input.mp4"
     assert "No dressing operations detected" in msg
-
-    gap_runtime = _load_transcription_core_module("gap_repair_runtime_utils")
-    expected = Path("/tmp/generated.vtt")
-    monkeypatch.setattr(
-        gap_runtime.output_validation_flow_utils,
-        "find_generated_vtt",
-        lambda *_a, **_k: expected,
-    )
-    found = gap_runtime._find_generated_vtt(Path("/tmp/audio.mp3"), Path("/tmp"))
-    assert found == expected

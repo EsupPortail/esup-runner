@@ -168,12 +168,12 @@ class VideoEncodingHandler(BaseTaskHandler):
     def _fill_empty_streams_from_encoding_log(
         self, script_result: Dict[str, Any], output_dir: Path
     ) -> Dict[str, Any]:
-        """Fallback to `encoding.log` when external script streams are empty."""
+        """Fallback to `encoding.log` for empty streams and failed scripts."""
         if not isinstance(script_result, dict):
             return script_result
 
         stdout_text = str(script_result.get("stdout") or "").strip()
-        if stdout_text:
+        if stdout_text and script_result.get("success", False):
             return script_result
 
         encoding_log = output_dir / "encoding.log"
@@ -182,7 +182,10 @@ class VideoEncodingHandler(BaseTaskHandler):
             return script_result
 
         enriched_result = dict(script_result)
-        enriched_result["stdout"] = log_tail
+        if stdout_text and log_tail not in stdout_text:
+            enriched_result["stdout"] = f"{stdout_text}\n\n===== encoding.log =====\n{log_tail}"
+        else:
+            enriched_result["stdout"] = stdout_text or log_tail
         return enriched_result
 
     def _build_script_arguments(

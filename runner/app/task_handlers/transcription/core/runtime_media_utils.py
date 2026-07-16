@@ -6,15 +6,10 @@ Keeps media I/O details isolated from orchestration and business flow code.
 """
 
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-_CORE_DIR = Path(__file__).resolve().parent
-if str(_CORE_DIR) not in sys.path:
-    sys.path.insert(0, str(_CORE_DIR))
-
-import runtime_cli_utils
+from . import runtime_cli_utils
 
 
 def probe_duration_seconds(

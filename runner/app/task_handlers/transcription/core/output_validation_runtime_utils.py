@@ -5,28 +5,17 @@ Supplies default threshold constants used by final output quality checks.
 Provides a thin runtime facade for callers that avoid manual dependency wiring.
 """
 
-import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
-_CORE_DIR = Path(__file__).resolve().parent
-_CORE_DIR_STR = str(_CORE_DIR)
-if _CORE_DIR_STR in sys.path:
-    sys.path.remove(_CORE_DIR_STR)
-sys.path.insert(0, _CORE_DIR_STR)
-
-_RUNTIME_ARGS_MODULE = sys.modules.get("runtime_args_utils")
-if _RUNTIME_ARGS_MODULE is not None:
-    _runtime_args_file = getattr(_RUNTIME_ARGS_MODULE, "__file__", "")
-    if not _runtime_args_file or Path(_runtime_args_file).resolve().parent != _CORE_DIR:
-        sys.modules.pop("runtime_args_utils", None)
-
-import gap_repair_runtime_utils
-import output_validation_flow_utils
-import runtime_media_utils
-import vtt_postprocess_utils
-import vtt_validation_utils
-from runtime_args_utils import (
+from . import (
+    gap_repair_runtime_utils,
+    output_validation_flow_utils,
+    runtime_media_utils,
+    vtt_postprocess_utils,
+    vtt_validation_utils,
+)
+from .runtime_args_utils import (
     _MAX_VTT_FINAL_GAP_SECONDS,
     _MAX_VTT_INTERNAL_GAP_COUNT,
     _MAX_VTT_INTERNAL_GAP_SECONDS,

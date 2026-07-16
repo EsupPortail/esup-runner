@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Changed the admin dashboard `Needs attention` task list to order incidents by creation date, newest first, and display their creation timestamp instead of their last update timestamp.
+- Made the admin dashboard shortcut cards fully clickable and keyboard-focusable, with explicit accessible labels and clearer hover/focus states.
+- Refactored task callback delivery/retries, Runner reservation and deduplicated dispatch, and local/remote task-result access into dedicated services while preserving the existing API route contracts.
 - Updated the Bootstrap JavaScript bundle to `5.3.3` across the manager administration, credentials, documentation, statistics, and task pages.
 - Restricted runner completion notifications to terminal statuses (`completed`, `failed`, `timeout`) and aligned the manager API documentation.
 
@@ -29,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the generated OpenAPI contract so authentication schemes match each route (`Bearer`, `X-API-Token`, or Basic), public endpoints remain unsecured, and `X-Runner-Version` is documented as required while preserving the explicit missing-header `400` response.
 - Fixed manager wheel and container packaging so all `app` subpackages, templates, static assets, and package metadata work when the manager is launched outside the source directory.
 - Fixed manager-side `notify_url` callbacks to accept every successful HTTP `2xx` response and use bounded connection, read, write, and pool timeouts.
+- Fixed local task-result manifest retrieval blocking concurrent async requests by moving shared-storage reads to a worker thread.
 - Improved `scripts/check_pipeline_tasks.py` status polling to retry transient transport failures within the task deadline, bound in-flight requests and sleeps, and treat runner `timeout` as terminal.
 
 ## [1.6.0] - 2026-07-10

@@ -1088,6 +1088,16 @@ def test_transcription_handler_validate_input_media_with_ffprobe_paths(monkeypat
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: _ProbeOK())
     assert handler._validate_input_media_with_ffprobe(input_path) is None
 
+    class _ProbeNoAudio:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: _ProbeNoAudio())
+    assert handler._validate_input_media_with_ffprobe(input_path) == (
+        f"Input media contains no audio stream: {input_path}"
+    )
+
     class _ProbeFail:
         returncode = 1
         stdout = ""

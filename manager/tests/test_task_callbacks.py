@@ -286,6 +286,44 @@ async def test_send_notify_callback_non_2xx_returns_error(monkeypatch, task_modu
 
 
 @pytest.mark.asyncio
+async def test_send_notify_callback_read_timeout_stops_retries(
+    monkeypatch, task_module, clean_state
+):
+    """Treat an ambiguous read timeout as delivered to prevent duplicate processing."""
+    runners["r1"] = _runner("r1")
+    tasks["t1"] = _task("t1", "r1", status="completed", notify_url="https://example.com/notify")
+
+    notification = TaskCompletionNotification(
+        task_id="t1",
+        status="completed",
+        error_message=None,
+        script_output=None,
+    )
+
+    class FakeAsyncClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url: str, **_kwargs):
+            request = task_module.httpx.Request("POST", url)
+            raise task_module.httpx.ReadTimeout("read timed out", request=request)
+
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(task_module, "_resolve_host_ips", _fake_resolve_public_ips)
+
+    ok, err = await task_module._send_notify_callback(tasks["t1"], notification)
+
+    assert ok is True
+    assert err is None
+
+
+@pytest.mark.asyncio
 async def test_retry_notify_callback_returns_when_task_missing(task_module, clean_state):
     """Validate Retry notify callback returns when task missing."""
     await task_module._retry_notify_callback(

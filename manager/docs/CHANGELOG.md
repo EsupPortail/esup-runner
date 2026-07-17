@@ -7,10 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.7.1] - 2026-07-17
+
 ### Fixed
 
 - Prevented duplicate processing by not retrying `notify_url` callbacks after an ambiguous HTTP read timeout, while preserving retries for connection failures and non-success HTTP responses.
-
 
 ## [1.7.0] - 2026-07-16
 

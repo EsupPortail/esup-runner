@@ -143,8 +143,20 @@ async def send_notify_callback(
     if client_token:
         headers["Authorization"] = f"Bearer {client_token}"
 
-    async with context.httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(task.notify_url, content=body, headers=headers)
+    try:
+        async with context.httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(task.notify_url, content=body, headers=headers)
+    except httpx.ReadTimeout:
+        # The request was sent but the receiver did not answer in time. Retrying
+        # this ambiguous outcome can execute a non-idempotent callback twice
+        # (notably Pod 4.3 result imports), so keep the terminal task status and
+        # deliberately stop the retry chain.
+        context.logger.warning(
+            "Notify URL callback response timed out for task %s; "
+            "not retrying to avoid duplicate processing",
+            notification.task_id,
+        )
+        return True, None
 
     if 200 <= response.status_code < 300:
         context.logger.info(

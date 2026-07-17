@@ -153,17 +153,19 @@ class TranscriptionHandler(BaseTaskHandler):
             return {"success": False, "error": str(e), "task_type": self.task_type}
 
     def _validate_input_media_with_ffprobe(self, input_path: Path) -> str | None:
-        """Return an error when ffprobe cannot read the downloaded media."""
+        """Return an error when the media is unreadable or has no audio stream."""
         import subprocess
 
         cmd = [
             "ffprobe",
             "-v",
             "error",
+            "-select_streams",
+            "a",
             "-show_entries",
-            "format=duration",
+            "stream=index",
             "-of",
-            "default=nokey=1:noprint_wrappers=1",
+            "csv=p=0",
             str(input_path),
         ]
         try:
@@ -176,8 +178,10 @@ class TranscriptionHandler(BaseTaskHandler):
         except Exception as exc:
             return f"Input media pre-check failed for {input_path}: {exc}"
 
-        if probe.returncode == 0:
+        if probe.returncode == 0 and (probe.stdout or "").strip():
             return None
+        if probe.returncode == 0:
+            return f"Input media contains no audio stream: {input_path}"
 
         details = (probe.stderr or probe.stdout or "").strip()
         if details:

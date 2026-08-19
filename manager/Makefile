@@ -43,6 +43,8 @@
 # - Optional deps not installed: use `make sync EXTRAS=dev` explicitly.
 # - After lock update, refresh env with `make sync`.
 
+include .env
+
 UV      ?= uv
 PYTHON  ?= $(UV) run python
 UV_LINK_MODE ?= copy

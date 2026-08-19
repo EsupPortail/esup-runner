@@ -40,6 +40,8 @@
 # - GPU transcription not available at runtime: run `uv run scripts/check_gpu.py`.
 # - Need a CUDA 12-compatible lock: run `make lock-upgrade-gpu-12`.
 
+include .env
+
 UV      ?= uv
 PYTHON  ?= $(UV) run python
 UV_LINK_MODE ?= copy

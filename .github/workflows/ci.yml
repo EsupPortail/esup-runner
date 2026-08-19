@@ -29,8 +29,9 @@ jobs:
       - name: Create default .env file
         working-directory: ${{ matrix.project }}
         run: |
-          cp .env.example .env
-          source .env
+          export DEFAULT_CACHE="/home/esup-runner/.cache/esup-runner/uv"
+          export CI_CACHE="/home/runner/work/_temp/setup-uv-cache"
+          sed -e "s|$DEFAULT_CACHE|$CI_CACHE|g" .env.example > .env
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7

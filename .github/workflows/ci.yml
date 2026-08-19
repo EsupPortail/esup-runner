@@ -30,6 +30,7 @@ jobs:
         working-directory: ${{ matrix.project }}
         run: |
           cp .env.example .env
+          source .env
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7

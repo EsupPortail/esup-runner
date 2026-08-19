@@ -26,6 +26,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Create default .env file
+        working-directory: ${{ matrix.project }}
+        run: |
+          cp .env.example .env
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -44,11 +49,6 @@ jobs:
         working-directory: ${{ matrix.project }}
         run: |
           uv sync --locked --extra dev
-
-      - name: Create default .env file
-        working-directory: ${{ matrix.project }}
-        run: |
-          cp .env.example .env
 
       - name: Format check (black + isort)
         working-directory: ${{ matrix.project }}

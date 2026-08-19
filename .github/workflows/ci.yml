@@ -45,6 +45,11 @@ jobs:
         run: |
           uv sync --locked --extra dev
 
+      - name: Create default .env file
+        working-directory: ${{ matrix.project }}
+        run: |
+          cp .env.example .env
+
       - name: Format check (black + isort)
         working-directory: ${{ matrix.project }}
         run: |

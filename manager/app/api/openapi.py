@@ -12,6 +12,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app.__version__ import __author__, __email__, __version__
+from app.core.url_paths import cookie_path, prefixed_path, request_root_path
 
 
 def _set_openapi_auth_cookie_if_needed(
@@ -42,7 +43,7 @@ def _set_openapi_auth_cookie_if_needed(
         httponly=True,
         secure=request.url.scheme == "https",
         samesite="lax",
-        path="/",
+        path=cookie_path(request),
     )
 
 
@@ -66,6 +67,7 @@ def custom_openapi(app: FastAPI) -> Callable[[], Dict]:
             version=app.version,
             description=app.description,
             routes=app.routes,
+            servers=app.servers,
             contact=app.contact,
             license_info=app.license_info,
         )
@@ -87,6 +89,22 @@ def custom_openapi(app: FastAPI) -> Callable[[], Dict]:
         return app.openapi_schema
 
     return _custom_openapi
+
+
+def _openapi_schema_for_request(app: FastAPI, request: Request) -> Dict:
+    """Return an OpenAPI schema whose first server matches the request root path."""
+    schema = app.openapi()
+    root_path = request_root_path(request)
+    if not root_path or not app.root_path_in_servers:
+        return schema
+
+    server_urls = {server.get("url") for server in schema.get("servers", [])}
+    if root_path in server_urls:
+        return schema
+
+    prefixed_schema = dict(schema)
+    prefixed_schema["servers"] = [{"url": root_path}, *schema.get("servers", [])]
+    return prefixed_schema
 
 
 def _get_openapi_tags() -> List[Dict]:
@@ -247,9 +265,13 @@ def setup_protected_openapi_routes(app: FastAPI) -> None:
     ):
         """Protected Swagger UI documentation."""
         response = get_swagger_ui_html(
-            openapi_url=openapi_url,
+            openapi_url=prefixed_path(request, openapi_url),
             title=app.title + " - Swagger UI",
-            oauth2_redirect_url=app.swagger_ui_oauth2_redirect_url,
+            oauth2_redirect_url=(
+                prefixed_path(request, app.swagger_ui_oauth2_redirect_url)
+                if app.swagger_ui_oauth2_redirect_url
+                else None
+            ),
             swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
             swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
         )
@@ -274,7 +296,7 @@ def setup_protected_openapi_routes(app: FastAPI) -> None:
     ):
         """Protected ReDoc documentation."""
         response = get_redoc_html(
-            openapi_url=openapi_url,
+            openapi_url=prefixed_path(request, openapi_url),
             title=app.title + " - ReDoc",
             redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js",
         )
@@ -298,7 +320,7 @@ def setup_protected_openapi_routes(app: FastAPI) -> None:
         token_cookie: Annotated[Optional[str], Cookie(alias=OPENAPI_TOKEN_COOKIE_NAME)] = None,
     ):
         """Protected OpenAPI schema."""
-        response = JSONResponse(app.openapi())
+        response = JSONResponse(_openapi_schema_for_request(app, request))
         _set_openapi_auth_cookie_if_needed(
             response=response,
             request=request,

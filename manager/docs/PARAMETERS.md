@@ -8,6 +8,7 @@ MANAGER_PROTOCOL=http
 MANAGER_HOST=0.0.0.0
 MANAGER_BIND_HOST=
 MANAGER_PORT=8081
+MANAGER_ROOT_PATH=
 ENVIRONMENT=production
 UVICORN_WORKERS=2
 AUTHORIZED_TOKENS__runners=CHANGE_ME_RUNNERS_TOKEN
@@ -32,7 +33,8 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 - `MANAGER_BIND_HOST` (default computed): Socket bind host used by Uvicorn/Gunicorn.
   - If unset and `MANAGER_HOST` is an IP literal, bind uses `MANAGER_HOST`.
   - If unset and `MANAGER_HOST` is a DNS hostname, bind uses `0.0.0.0`.
-- `MANAGER_URL` is computed automatically as `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT`.
+- `MANAGER_ROOT_PATH` (default empty): Optional public URL prefix used when the Manager is exposed below a reverse-proxy subpath (for example `/manager`). It must start with `/`, must not end with `/`, and requires a restart when changed. Internal routes remain unchanged; for example, `/api/health` is published as `/manager/api/health` with this prefix.
+- `MANAGER_URL` is computed automatically as `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT + MANAGER_ROOT_PATH`.
 - `ENVIRONMENT` (default `development`): Environment name used by runtime/deployment wrappers.
 - `UVICORN_WORKERS` (int, default `4`): Worker count for production process managers.
 - `CLEANUP_TASK_FILES_DAYS` (int, default `60`): Retention for all tasks managed by cleanup services, regardless of status. Set `0` to disable age-based cleanup.

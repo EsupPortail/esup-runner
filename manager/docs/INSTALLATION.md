@@ -260,7 +260,7 @@ uv run scripts/check_runtime.py
 
 ```bash
 curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
-  "http://127.0.0.1:<MANAGER_PORT>/manager/health"
+  "http://127.0.0.1:<MANAGER_PORT>/api/health"
 ```
 
 4) Check the API version endpoint:
@@ -334,6 +334,43 @@ Recommendations:
 - Keep the manager service on a private interface, or localhost only when possible.
 - Forward admin endpoints (`/admin`, `/tasks`…) and API routes through the proxy.
 - Avoid direct public access to the manager process on `MANAGER_PORT`.
+
+### Publish the Manager below a URL prefix
+
+Set the public prefix when the Manager is exposed below a subpath such as `/manager`:
+
+```properties
+MANAGER_ROOT_PATH=/manager
+```
+
+Restart the Manager after changing this startup setting. Any reverse proxy can be used as long as it removes the public prefix before forwarding requests to the Manager. The following configuration is an example for Nginx:
+
+```nginx
+location = /manager {
+    return 308 /manager/;
+}
+
+location /manager/ {
+    proxy_pass http://127.0.0.1:8081/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+The trailing slash in `proxy_pass` maps `/manager/admin` to the Manager's internal `/admin` route, `/manager/api/health` to `/api/health`, and `/manager/static/...` to `/static/...`. This avoids claiming the host's root-level `/static` location.
+
+`MANAGER_ROOT_PATH` does not rename the Manager's internal routes. A Runner must set `MANAGER_URL` to the base URL it actually uses to reach the Manager:
+
+```properties
+# Direct access to the Manager process or its internal service
+MANAGER_URL=http://localhost:8081
+
+# Or access through the reverse proxy configured above
+# MANAGER_URL=https://example.org/manager
+```
+
+The Runner appends stable route paths such as `/api/health`, `/runner/register`, and `/runner/heartbeat/...` to this base URL. Configure only one of the two values above, according to the network path used by the Runner.
 
 Notes:
 

@@ -32,13 +32,15 @@ MANAGER_PROTOCOL=http
 MANAGER_HOST=0.0.0.0
 MANAGER_BIND_HOST=
 MANAGER_PORT=8081
+MANAGER_ROOT_PATH=
 ENVIRONMENT=production
 UVICORN_WORKERS=2
 CLEANUP_TASK_FILES_DAYS=60
 ```
 
 Behavior:
-- `MANAGER_URL` is computed automatically as `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT`.
+- `MANAGER_ROOT_PATH` is the optional public URL prefix used when the complete Manager is exposed below a reverse-proxy subpath (for example `/manager`). It must start with `/`, must not end with `/`, and changing it requires a Manager restart. It does not rename internal routes: `/api/health` remains `/api/health`, while its public URL through the proxy becomes `/manager/api/health`.
+- `MANAGER_URL` is computed automatically as `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT + MANAGER_ROOT_PATH`.
 - `MANAGER_BIND_HOST` controls the socket bind interface.
   - If unset and `MANAGER_HOST` is an IP (`127.0.0.1`, `10.x.x.x`, `::1`, etc.), manager binds on that IP.
   - If unset and `MANAGER_HOST` is a DNS hostname, manager binds on `0.0.0.0` for reliability.
@@ -236,6 +238,7 @@ MANAGER_PROTOCOL=http
 MANAGER_HOST=0.0.0.0
 MANAGER_BIND_HOST=
 MANAGER_PORT=8081
+MANAGER_ROOT_PATH=
 
 # Production/development settings
 ENVIRONMENT=production

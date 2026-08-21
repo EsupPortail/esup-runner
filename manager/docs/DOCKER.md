@@ -303,7 +303,7 @@ Health check example:
 
 ```bash
 curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
-  "http://127.0.0.1:8081/manager/health"
+  "http://127.0.0.1:8081/api/health"
 ```
 
 Replace `<AUTHORIZED_TOKEN>` with one of your `AUTHORIZED_TOKENS__*` values.

@@ -34,7 +34,7 @@ This token can be provisioned either from the admin UI (`/admin/credentials`) or
 
 ```bash
 curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
-  "http://127.0.0.1:<MANAGER_PORT>/manager/health"
+  "http://127.0.0.1:<MANAGER_PORT>/api/health"
 
 curl -H "X-API-Token: <AUTHORIZED_TOKEN>" \
   "http://127.0.0.1:<MANAGER_PORT>/api/version"

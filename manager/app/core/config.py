@@ -71,6 +71,7 @@ _CONFIG_ENV_KEYS = [
     "MANAGER_HOST",
     "MANAGER_BIND_HOST",
     "MANAGER_PORT",
+    "MANAGER_ROOT_PATH",
     "ENVIRONMENT",
     "UVICORN_WORKERS",
     "CLEANUP_TASK_FILES_DAYS",
@@ -458,8 +459,11 @@ class Config:
             self.MANAGER_HOST
         )
         self.MANAGER_PORT: int = self._read_int("MANAGER_PORT", 8081, min_value=1, max_value=65535)
+        self.MANAGER_ROOT_PATH: str = (os.getenv("MANAGER_ROOT_PATH", "") or "").strip()
         url_host = f"[{self.MANAGER_HOST}]" if ":" in self.MANAGER_HOST else self.MANAGER_HOST
-        self.MANAGER_URL = f"{self.MANAGER_PROTOCOL}://{url_host}:{self.MANAGER_PORT}"
+        self.MANAGER_URL = (
+            f"{self.MANAGER_PROTOCOL}://{url_host}:{self.MANAGER_PORT}{self.MANAGER_ROOT_PATH}"
+        )
 
         # CORS configuration
         # Comma-separated list of allowed origins; use "*" only when allow_credentials is False.
@@ -710,6 +714,19 @@ class Config:
                 errors.append(f"{name} must not be empty")
             elif any(character.isspace() for character in value) or "/" in value:
                 errors.append(f"{name} must contain a hostname or IP address only")
+
+        root_path = self.MANAGER_ROOT_PATH
+        if root_path:
+            if not root_path.startswith("/"):
+                errors.append("MANAGER_ROOT_PATH must start with '/'")
+            if root_path.endswith("/"):
+                errors.append("MANAGER_ROOT_PATH must not end with '/'")
+            if any(character.isspace() for character in root_path):
+                errors.append("MANAGER_ROOT_PATH must not contain whitespace")
+            if "?" in root_path or "#" in root_path or "\\" in root_path:
+                errors.append("MANAGER_ROOT_PATH must contain URL path segments only")
+            if any(segment in {"", ".", ".."} for segment in root_path.split("/")[1:]):
+                errors.append("MANAGER_ROOT_PATH must not contain empty, '.' or '..' segments")
         _raise_validation_errors(errors)
 
     def _validate_enums(self) -> None:

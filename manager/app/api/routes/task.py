@@ -29,6 +29,7 @@ from app.core.setup_logging import setup_default_logging
 from app.core.state import delete_task as delete_task_from_state
 from app.core.state import get_task as get_task_from_state
 from app.core.state import get_tasks_snapshot, runners, save_tasks, tasks  # noqa: F401
+from app.core.url_paths import request_root_path
 from app.models.models import (
     Runner,
     Task,
@@ -375,6 +376,7 @@ async def view_tasks(
         "now": datetime.now(),
         "version": __version__,
         "dark_mode_enabled": dark_mode,
+        "root_path": request_root_path(request),
     }
 
     return templates.TemplateResponse(request, "tasks.html", context)

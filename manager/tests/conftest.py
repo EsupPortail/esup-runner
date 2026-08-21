@@ -174,6 +174,15 @@ from app.core.config import config
 
 
 @pytest.fixture(autouse=True)
+def isolate_application_root_path(monkeypatch):
+    """Keep ordinary route tests independent from the developer's reverse-proxy prefix."""
+    from app.main import app
+
+    monkeypatch.setattr(app, "root_path", "")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def ensure_test_tokens(monkeypatch):
     """Ensure at least one authorized token exists for tests."""
 
@@ -238,8 +247,13 @@ def client(monkeypatch):
         """Replace background service startup/shutdown with a no-op."""
         return None
 
+    async def _run_to_thread_inline(func: Any, *args: Any, **kwargs: Any) -> Any:
+        """Keep stdlib thread offloading compatible with the thread-free test client."""
+        return func(*args, **kwargs)
+
     monkeypatch.setattr(background_service.background_manager, "start_all_services", _noop)
     monkeypatch.setattr(background_service.background_manager, "stop_all_services", _noop)
+    monkeypatch.setattr(asyncio, "to_thread", _run_to_thread_inline)
 
     with TestClient(app) as test_client:
         yield test_client

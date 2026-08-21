@@ -16,7 +16,7 @@ from app.core.state import get_tasks_snapshot, runners
 logger = setup_default_logging()
 
 # Create API router
-router = APIRouter(prefix="/manager", tags=["Manager"])
+router = APIRouter(prefix="/api", tags=["Manager"])
 
 # ======================================================
 # Endpoints

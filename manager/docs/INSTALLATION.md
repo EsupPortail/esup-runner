@@ -364,7 +364,7 @@ The trailing slash in `proxy_pass` maps `/manager/admin` to the Manager's intern
 
 ```properties
 # Direct access to the Manager process or its internal service
-MANAGER_URL=http://localhost:8081
+MANAGER_URL=http://127.0.0.1:8081
 
 # Or access through the reverse proxy configured above
 # MANAGER_URL=https://example.org/manager

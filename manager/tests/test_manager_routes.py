@@ -5,8 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.api.routes.manager import router as manager_router
 from app.core import state as state_module
 from app.core.auth import verify_token
 from app.core.state import runners, tasks
@@ -83,7 +85,7 @@ def test_manager_health_includes_counts(client, clean_state):
         script_output=None,
     )
 
-    resp = client.get("/manager/health")
+    resp = client.get("/api/health")
     assert resp.status_code == 200
 
     payload = resp.json()
@@ -91,3 +93,13 @@ def test_manager_health_includes_counts(client, clean_state):
     assert payload["runners"] == 1
     assert payload["tasks"] == 1
     assert isinstance(payload["timestamp"], str)
+
+
+def test_manager_health_openapi_path_with_root_path():
+    """Keep the API path distinct from the public Manager prefix."""
+    test_app = FastAPI(root_path="/manager")
+    test_app.include_router(manager_router)
+
+    paths = test_app.openapi()["paths"]
+    assert "/api/health" in paths
+    assert f"{test_app.root_path}/api/health" == "/manager/api/health"

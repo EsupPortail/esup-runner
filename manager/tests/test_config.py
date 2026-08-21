@@ -427,6 +427,45 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     assert cfg7.MANAGER_BIND_HOST == "0.0.0.0"
 
 
+def test_manager_root_path_is_optional_and_part_of_manager_url(monkeypatch):
+    """Build the public Manager URL with an optional validated deployment prefix."""
+    from app.core.config import Config
+
+    default_config = Config()
+    assert default_config.MANAGER_ROOT_PATH == ""
+    assert default_config.MANAGER_URL == "http://0.0.0.0:8081"
+
+    monkeypatch.setenv("MANAGER_HOST", "manager.example.org")
+    monkeypatch.setenv("MANAGER_ROOT_PATH", "/manager/nested")
+    prefixed_config = Config()
+    prefixed_config.validate_configuration()
+
+    assert prefixed_config.MANAGER_ROOT_PATH == "/manager/nested"
+    assert prefixed_config.MANAGER_URL == "http://manager.example.org:8081/manager/nested"
+
+
+@pytest.mark.parametrize(
+    "root_path,expected_error",
+    [
+        ("manager", "must start with '/'"),
+        ("/manager/", "must not end with '/'"),
+        ("/manager//nested", "must not contain empty"),
+        ("/manager path", "must not contain whitespace"),
+        ("/manager?debug=true", "must contain URL path segments only"),
+        ("/manager/../admin", "must not contain empty, '.' or '..' segments"),
+    ],
+)
+def test_manager_root_path_rejects_invalid_values(monkeypatch, root_path, expected_error):
+    """Reject prefixes that cannot safely represent one ASGI deployment root path."""
+    from app.core.config import Config, ConfigValidationError
+
+    monkeypatch.setenv("MANAGER_ROOT_PATH", root_path)
+    invalid_config = Config()
+
+    with pytest.raises(ConfigValidationError, match=expected_error):
+        invalid_config.validate_configuration()
+
+
 def test_validate_configuration_rejects_wildcard_origins_with_credentials(monkeypatch):
     """Validate Validate configuration rejects wildcard origins with credentials."""
     from app.core.config import Config

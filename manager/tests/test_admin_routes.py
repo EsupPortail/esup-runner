@@ -96,7 +96,7 @@ def _make_task(
     )
 
 
-def _render_task_detail_template(status: str) -> str:
+def _render_task_detail_template(status: str, root_path: str = "") -> str:
     task = SimpleNamespace(
         task_id="detail-task",
         runner_id="runner-1",
@@ -122,10 +122,11 @@ def _render_task_detail_template(status: str) -> str:
         task=task,
         task_actions=admin_routes._build_task_detail_actions(task),
         last_update="2026-01-01 00:00:00",
+        root_path=root_path,
     )
 
 
-def _render_tasks_template() -> str:
+def _render_tasks_template(root_path: str = "") -> str:
     env = Environment(loader=FileSystemLoader("app/web/templates"))
     template = env.get_template("tasks.html")
     return template.render(
@@ -144,10 +145,11 @@ def _render_tasks_template() -> str:
         tasks=[],
         total_tasks=0,
         now=datetime(2026, 1, 1, 0, 0, 0),
+        root_path=root_path,
     )
 
 
-def _render_credentials_template() -> str:
+def _render_credentials_template(root_path: str = "") -> str:
     env = Environment(loader=FileSystemLoader("app/web/templates"))
     template = env.get_template("credentials.html")
     return template.render(
@@ -158,6 +160,7 @@ def _render_credentials_template() -> str:
         feedback_level="info",
         admin_users=[{"name": "alice", "preview": "hash...", "value": "admin-hash"}],
         authorized_tokens=[{"name": "client_1", "preview": "token...", "value": "token-value"}],
+        root_path=root_path,
     )
 
 
@@ -526,7 +529,7 @@ def test_task_detail_template_renders_delete_and_restart_actions():
     assert "/tasks/delete-selected" in html
     assert "/tasks/restart-selected" in html
     assert "/tasks/stop-selected" in html
-    assert "redirectUrl: '/admin'" in html
+    assert "redirectUrl: `${managerRootPath}/admin`" in html
     assert "Delete this task? This cannot be undone." in html
     assert "await window.esupConfirm(options.confirmOptions)" in html
     assert "This task will be permanently removed from the manager history." in html
@@ -564,6 +567,26 @@ def test_credentials_template_uses_visual_delete_confirmations():
     assert 'data-confirm-subject="client_1"' in html
     assert 'data-confirm-subject-label="Authorized token"' in html
     assert "onsubmit=" not in html
+
+
+def test_templates_render_manager_root_path_without_testclient():
+    """Prefix static assets, navigation, forms, and JavaScript in direct Jinja renders."""
+    task_detail_html = _render_task_detail_template("failed", root_path="/manager")
+    tasks_html = _render_tasks_template(root_path="/manager")
+    credentials_html = _render_credentials_template(root_path="/manager")
+
+    assert 'href="/manager/static/esup-runner.css?version=test"' in task_detail_html
+    assert 'href="/manager/admin"' in task_detail_html
+    assert 'const managerRootPath = "/manager";' in task_detail_html
+    assert "`${managerRootPath}/tasks/delete-selected`" in task_detail_html
+
+    assert 'src="/manager/static/esup-runner.js?version=test"' in tasks_html
+    assert 'href="/manager/admin"' in tasks_html
+    assert "`${managerRootPath}/tasks/api/" in tasks_html
+
+    assert 'action="/manager/admin/credentials/admins"' in credentials_html
+    assert 'action="/manager/admin/credentials/tokens/client_1/delete"' in credentials_html
+    assert "`${managerRootPath}/admin/reload-config`" in credentials_html
 
 
 def test_task_detail_template_disables_actions_for_pending_task():
@@ -785,6 +808,7 @@ def test_admin_template_renders_copy_task_id_controls():
             }
         ],
         last_update="2026-01-01 00:00:00",
+        root_path="",
     )
 
     assert 'id="copy-task-feedback"' in html
@@ -956,6 +980,41 @@ def test_toggle_theme_redirects_and_sets_cookie(admin_client):
     resp2 = admin_client.post("/admin/toggle-theme", follow_redirects=False)
     assert resp2.status_code == 303
     assert "theme=dark" in resp2.headers.get("set-cookie", "")
+
+
+def test_admin_routes_honor_reverse_proxy_root_path(monkeypatch):
+    """Prefix rendered URLs, redirects, and cookies below a reverse-proxy subpath."""
+
+    async def _noop(*_, **__):
+        return None
+
+    monkeypatch.setattr(background_service.background_manager, "start_all_services", _noop)
+    monkeypatch.setattr(background_service.background_manager, "stop_all_services", _noop)
+    app.dependency_overrides[verify_admin] = lambda: True
+
+    try:
+        with TestClient(app, root_path="/manager") as client:
+            dashboard = client.get("/admin")
+            theme = client.post("/admin/toggle-theme", follow_redirects=False)
+            credentials_redirect = client.post(
+                "/admin/credentials/tokens",
+                data={"token_name": "invalid-label"},
+                follow_redirects=False,
+            )
+    finally:
+        app.dependency_overrides.pop(verify_admin, None)
+
+    assert dashboard.status_code == 200
+    assert 'href="/manager/static/esup-runner.css?' in dashboard.text
+    assert 'src="/manager/static/logo.png?' in dashboard.text
+    assert 'href="/manager/admin/credentials"' in dashboard.text
+    assert 'const managerRootPath = "/manager";' in dashboard.text
+
+    assert theme.headers["location"] == "/manager/admin"
+    assert "Path=/manager" in theme.headers["set-cookie"]
+    assert credentials_redirect.headers["location"] == (
+        "/manager/admin/credentials?feedback=token_invalid"
+    )
 
 
 def test_credentials_page_renders_token_previews(admin_client, monkeypatch):

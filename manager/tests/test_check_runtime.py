@@ -60,7 +60,7 @@ def test_run_checks_success_with_token_and_runners(monkeypatch):
         if url.endswith("/api/version"):
             assert token == "token-abcdef"
             return 200, '{"version":"1.1.0"}'
-        if url.endswith("/manager/health"):
+        if url.endswith("/api/health"):
             return 200, '{"status":"healthy"}'
         if url.endswith("/api/runners"):
             return 200, '{"runners":[{"id":"r1"},{"id":"r2"}]}'

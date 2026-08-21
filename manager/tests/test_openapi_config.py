@@ -13,6 +13,7 @@ from app.api.openapi import (
     _enhance_schemas_with_examples,
     _get_openapi_tags,
     _mark_runner_version_headers_required,
+    _openapi_schema_for_request,
     custom_openapi,
     setup_openapi_config,
     setup_protected_openapi_routes,
@@ -216,6 +217,49 @@ def test_setup_openapi_config_assigns_openapi_callable():
     assert "openapi" in schema
 
 
+def test_custom_openapi_preserves_configured_servers():
+    """Keep servers configured on the application in the custom schema."""
+    app = FastAPI(servers=[{"url": "/manager"}])
+    setup_openapi_config(app)
+
+    assert app.openapi()["servers"][0] == {"url": "/manager"}
+
+
+def test_public_openapi_route_honors_root_path():
+    """Expose the request root path as the first server in public mode."""
+    app = FastAPI(root_path="/manager")
+    setup_openapi_config(app)
+
+    with TestClient(app) as client:
+        response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    assert response.json()["servers"][0] == {"url": "/manager"}
+
+
+def test_openapi_schema_for_request_reuses_existing_root_path_server():
+    """Avoid duplicating a root-path server already present in the schema."""
+    app = FastAPI(root_path="/manager")
+    schema = {"openapi": "3.1.0", "servers": [{"url": "/manager"}]}
+    app.openapi = lambda: schema  # type: ignore[method-assign]
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "https",
+            "path": "/openapi.json",
+            "root_path": "/manager",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 443),
+        }
+    )
+
+    assert _openapi_schema_for_request(app, request) is schema
+
+
 def test_set_openapi_auth_cookie_if_needed_skips_when_builder_returns_none():
     """Validate Set openapi auth cookie if needed skips when builder returns none."""
     from app.api import openapi as openapi_module
@@ -341,6 +385,33 @@ def test_setup_protected_openapi_routes_without_token_keeps_plain_openapi_url_an
         schema = client.get("/openapi.json")
         assert schema.status_code == 200
         assert schema.json()["openapi"]
+
+
+def test_protected_openapi_routes_honor_root_path(monkeypatch):
+    """Prefix the protected schema URL and scope its authentication cookie."""
+    app = FastAPI(root_path="/manager", openapi_url=None, docs_url=None, redoc_url=None)
+    setup_protected_openapi_routes(app)
+
+    from app.core.auth import verify_openapi_token
+
+    monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"docs": "root-path-token"})
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_SECRET", "unit-test-secret")
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_MAX_AGE_SECONDS", 900)
+    app.dependency_overrides[verify_openapi_token] = lambda: "root-path-token"
+
+    with TestClient(app) as client:
+        docs = client.get("/docs")
+        redoc = client.get("/redoc")
+        schema = client.get("/openapi.json")
+
+    assert docs.status_code == 200
+    assert "/manager/openapi.json" in docs.text
+    assert "Path=/manager" in docs.headers["set-cookie"]
+    assert redoc.status_code == 200
+    assert "/manager/openapi.json" in redoc.text
+    assert "Path=/manager" in redoc.headers["set-cookie"]
+    assert schema.status_code == 200
+    assert schema.json()["servers"][0] == {"url": "/manager"}
 
 
 def test_openapi_config_get_fastapi_config_has_expected_keys():

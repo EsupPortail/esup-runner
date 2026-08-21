@@ -345,7 +345,7 @@ docker logs --tail 50 esup-runner-manager
 docker logs --tail 50 esup-runner-runner
 
 curl -H "X-API-Token: esup-runner-local-dev-token" \
-  http://127.0.0.1:8081/manager/health
+  http://127.0.0.1:8081/api/health
 curl http://127.0.0.1:8082/runner/ping
 ```
 

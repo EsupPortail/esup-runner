@@ -14,7 +14,7 @@ It handles:
 import signal
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -27,6 +27,7 @@ from app.api.openapi import OpenAPIConfig, setup_openapi_config, setup_protected
 from app.core import config as config_module
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
+from app.core.url_paths import prefixed_path
 from app.services.background_service import background_manager
 
 # Configure logging
@@ -104,7 +105,7 @@ if config.API_DOCS_VISIBILITY == "private":
     openapi_config["redoc_url"] = None
     openapi_config["openapi_url"] = None
 
-app = FastAPI(lifespan=lifespan, **openapi_config)
+app = FastAPI(lifespan=lifespan, root_path=config.MANAGER_ROOT_PATH, **openapi_config)
 
 # Rate limiting configuration
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
@@ -134,7 +135,7 @@ app.mount("/static", StaticFiles(packages=[("app", "web/static")]), name="static
     description="Health check endpoint to verify manager is running properly",
     tags=["Manager"],
 )
-async def root():
+async def root(request: Request):
     """
     Root endpoint with API information and links. Not protected, always available.
 
@@ -144,8 +145,12 @@ async def root():
     return {
         "message": "Runner Manager",
         "version": __version__,
-        "health_check": "/manager/health",
-        "admin_dashboard": "/admin",
+        "health_check": prefixed_path(request, "/api/health"),
+        "admin_dashboard": prefixed_path(request, "/admin"),
         "api_docs_visibility": config.API_DOCS_VISIBILITY,
-        "documentation": {"swagger": "/docs", "redoc": "/redoc", "openapi": "/openapi.json"},
+        "documentation": {
+            "swagger": prefixed_path(request, "/docs"),
+            "redoc": prefixed_path(request, "/redoc"),
+            "openapi": prefixed_path(request, "/openapi.json"),
+        },
     }

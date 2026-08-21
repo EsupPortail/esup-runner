@@ -273,7 +273,7 @@ def run_checks() -> tuple[list[CheckResult], dict[str, Any]]:
             )
 
             health_code, health_details = _request_status(
-                client, f"{manager_url}/manager/health", token
+                client, f"{manager_url}/api/health", token
             )
             results.append(
                 CheckResult(

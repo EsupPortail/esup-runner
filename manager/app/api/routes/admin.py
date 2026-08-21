@@ -33,6 +33,7 @@ from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_task as get_task_from_state
 from app.core.state import get_tasks_snapshot, runners
+from app.core.url_paths import cookie_path, prefixed_path, request_root_path
 
 # Configure logging
 logger = setup_default_logging()
@@ -234,6 +235,7 @@ def _delete_admin_user_from_env(admin_name: str) -> bool:
 
 
 def _credentials_redirect(
+    request: Request,
     feedback: str,
     token_name: str = "",
     admin_name: str = "",
@@ -246,7 +248,8 @@ def _credentials_redirect(
         query_params["admin_name"] = admin_name
     query = urlencode(query_params)
     return RedirectResponse(
-        url=f"/admin/credentials?{query}", status_code=status.HTTP_303_SEE_OTHER
+        url=f"{prefixed_path(request, '/admin/credentials')}?{query}",
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -670,6 +673,7 @@ async def admin_dashboard(request: Request):
             "dark_mode_enabled": dark_mode,
             "last_update": now.strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,
+            "root_path": request_root_path(request),
         },
     )
 
@@ -710,6 +714,7 @@ async def get_task_detail(request: Request, task_id: str):
             "dark_mode_enabled": dark_mode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,
+            "root_path": request_root_path(request),
         },
     )
 
@@ -757,6 +762,7 @@ async def get_runner_detail(request: Request, runner_id: str):
             "dark_mode_enabled": dark_mode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,
+            "root_path": request_root_path(request),
         },
     )
 
@@ -825,6 +831,7 @@ async def admin_tasks(request: Request) -> Any:
             "now": datetime.now(),
             "version": __version__,
             "dark_mode_enabled": dark_mode,
+            "root_path": request_root_path(request),
         },
     )
 
@@ -839,9 +846,14 @@ def toggle_theme(request: Request):
     """Toggle the admin UI theme cookie and redirect to the dashboard."""
     current = request.cookies.get("theme")
     new_theme = "light" if current == "dark" else "dark"
-    resp = RedirectResponse(url="/admin", status_code=303)
+    resp = RedirectResponse(url=prefixed_path(request, "/admin"), status_code=303)
     # 30 days
-    resp.set_cookie(key="theme", value=new_theme, max_age=60 * 60 * 24 * 30)
+    resp.set_cookie(
+        key="theme",
+        value=new_theme,
+        max_age=60 * 60 * 24 * 30,
+        path=cookie_path(request),
+    )
     return resp
 
 
@@ -908,6 +920,7 @@ async def credentials_page(request: Request):
             "dark_mode_enabled": dark_mode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,
+            "root_path": request_root_path(request),
         },
     )
 
@@ -919,6 +932,7 @@ async def credentials_page(request: Request):
     description="Hash admin password, persist a new ADMIN_USERS entry in .env, and reload config",
 )
 async def create_admin_user(
+    request: Request,
     admin_name: str = Form(...),
     admin_password: str = Form(""),
     admin_password_confirm: str = Form(""),
@@ -930,27 +944,27 @@ async def create_admin_user(
     password_confirm = str(admin_password_confirm or "")
 
     if not _is_valid_admin_label(normalized_name):
-        return _credentials_redirect("admin_invalid")
+        return _credentials_redirect(request, "admin_invalid")
 
     if not password.strip():
-        return _credentials_redirect("admin_password_empty", admin_name=normalized_name)
+        return _credentials_redirect(request, "admin_password_empty", admin_name=normalized_name)
 
     if password != password_confirm:
-        return _credentials_redirect("admin_password_mismatch", admin_name=normalized_name)
+        return _credentials_redirect(request, "admin_password_mismatch", admin_name=normalized_name)
 
     if normalized_name in config.ADMIN_USERS:
-        return _credentials_redirect("admin_exists", admin_name=normalized_name)
+        return _credentials_redirect(request, "admin_exists", admin_name=normalized_name)
 
     hashed_password = _hash_admin_password(password)
     try:
         _upsert_admin_user_in_env(normalized_name, hashed_password)
     except OSError as exc:
         logger.error(f"Failed to write generated admin '{normalized_name}' to .env: {exc}")
-        return _credentials_redirect("admin_write_failed", admin_name=normalized_name)
+        return _credentials_redirect(request, "admin_write_failed", admin_name=normalized_name)
 
     config_module.reload_config_env()
     config_module.publish_config_reload_event()
-    return _credentials_redirect("admin_created", admin_name=normalized_name)
+    return _credentials_redirect(request, "admin_created", admin_name=normalized_name)
 
 
 @router.post(
@@ -959,24 +973,24 @@ async def create_admin_user(
     include_in_schema=False,
     description="Delete one ADMIN_USERS entry from .env and reload config",
 )
-async def delete_admin_user(admin_name: str, _: bool = Depends(verify_admin)):
+async def delete_admin_user(request: Request, admin_name: str, _: bool = Depends(verify_admin)):
     """Delete one admin user from .env from the credentials page."""
     normalized_name = str(admin_name or "").strip()
     if not _is_valid_admin_label(normalized_name):
-        return _credentials_redirect("admin_invalid")
+        return _credentials_redirect(request, "admin_invalid")
 
     try:
         admin_deleted = _delete_admin_user_from_env(normalized_name)
     except OSError as exc:
         logger.error(f"Failed to delete admin '{normalized_name}' from .env: {exc}")
-        return _credentials_redirect("admin_write_failed", admin_name=normalized_name)
+        return _credentials_redirect(request, "admin_write_failed", admin_name=normalized_name)
 
     if not admin_deleted:
-        return _credentials_redirect("admin_missing", admin_name=normalized_name)
+        return _credentials_redirect(request, "admin_missing", admin_name=normalized_name)
 
     config_module.reload_config_env()
     config_module.publish_config_reload_event()
-    return _credentials_redirect("admin_deleted", admin_name=normalized_name)
+    return _credentials_redirect(request, "admin_deleted", admin_name=normalized_name)
 
 
 @router.post(
@@ -986,6 +1000,7 @@ async def delete_admin_user(admin_name: str, _: bool = Depends(verify_admin)):
     description="Generate a new AUTHORIZED_TOKENS entry, persist it in .env, and reload config",
 )
 async def create_authorized_token(
+    request: Request,
     token_name: str = Form(...),
     token_length: int = Form(_DEFAULT_GENERATED_TOKEN_LENGTH),
     _: bool = Depends(verify_admin),
@@ -993,21 +1008,21 @@ async def create_authorized_token(
     """Generate and persist one API token in .env from the admin credentials page."""
     normalized_name = str(token_name or "").strip()
     if not _is_valid_token_label(normalized_name):
-        return _credentials_redirect("token_invalid")
+        return _credentials_redirect(request, "token_invalid")
 
     if normalized_name in config.AUTHORIZED_TOKENS:
-        return _credentials_redirect("token_exists", normalized_name)
+        return _credentials_redirect(request, "token_exists", normalized_name)
 
     generated_token = _generate_authorized_token(token_length)
     try:
         _upsert_authorized_token_in_env(normalized_name, generated_token)
     except OSError as exc:
         logger.error(f"Failed to write generated token '{normalized_name}' to .env: {exc}")
-        return _credentials_redirect("token_write_failed", normalized_name)
+        return _credentials_redirect(request, "token_write_failed", normalized_name)
 
     config_module.reload_config_env()
     config_module.publish_config_reload_event()
-    return _credentials_redirect("token_created", normalized_name)
+    return _credentials_redirect(request, "token_created", normalized_name)
 
 
 @router.post(
@@ -1016,24 +1031,26 @@ async def create_authorized_token(
     include_in_schema=False,
     description="Delete one AUTHORIZED_TOKENS entry from .env and reload config",
 )
-async def delete_authorized_token(token_name: str, _: bool = Depends(verify_admin)):
+async def delete_authorized_token(
+    request: Request, token_name: str, _: bool = Depends(verify_admin)
+):
     """Delete one API token from .env from the admin credentials page."""
     normalized_name = str(token_name or "").strip()
     if not _is_valid_token_label(normalized_name):
-        return _credentials_redirect("token_invalid")
+        return _credentials_redirect(request, "token_invalid")
 
     try:
         token_deleted = _delete_authorized_token_from_env(normalized_name)
     except OSError as exc:
         logger.error(f"Failed to delete token '{normalized_name}' from .env: {exc}")
-        return _credentials_redirect("token_write_failed", normalized_name)
+        return _credentials_redirect(request, "token_write_failed", normalized_name)
 
     if not token_deleted:
-        return _credentials_redirect("token_missing", normalized_name)
+        return _credentials_redirect(request, "token_missing", normalized_name)
 
     config_module.reload_config_env()
     config_module.publish_config_reload_event()
-    return _credentials_redirect("token_deleted", normalized_name)
+    return _credentials_redirect(request, "token_deleted", normalized_name)
 
 
 @router.post(
@@ -1097,6 +1114,7 @@ async def documentation_page(request: Request):
             "dark_mode_enabled": dark_mode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,
+            "root_path": request_root_path(request),
         },
     )
     if api_token:
@@ -1109,10 +1127,10 @@ async def documentation_page(request: Request):
                 httponly=True,
                 secure=request.url.scheme == "https",
                 samesite="lax",
-                path="/",
+                path=cookie_path(request),
             )
         else:
-            response.delete_cookie(key=OPENAPI_TOKEN_COOKIE_NAME, path="/")
+            response.delete_cookie(key=OPENAPI_TOKEN_COOKIE_NAME, path=cookie_path(request))
     else:
-        response.delete_cookie(key=OPENAPI_TOKEN_COOKIE_NAME, path="/")
+        response.delete_cookie(key=OPENAPI_TOKEN_COOKIE_NAME, path=cookie_path(request))
     return response

@@ -185,7 +185,7 @@ async def check_manager_health():
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(
-                f"{config.MANAGER_URL}/manager/health",
+                f"{config.MANAGER_URL}/api/health",
                 headers={
                     "Accept": "application/json",
                     "Authorization": f"Bearer {config.RUNNER_TOKEN}",

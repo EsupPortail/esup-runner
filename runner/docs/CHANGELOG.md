@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated Manager health checks to use the stable `/api/health` endpoint and documented how `MANAGER_URL` can include a reverse-proxy prefix such as `/manager`.
+- Updated `make init` to load the optional `.env` file before invoking uv, so initialization honors the configured `UV_CACHE_DIR`.
+- Refreshed the dependency lockfile.
+
 ## [1.7.1] - 2026-07-17
 
 ### Fixed

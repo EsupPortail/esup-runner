@@ -111,7 +111,7 @@ def test_runner_model_validation():
     # Valid runner should be created successfully
     valid_runner = Runner(
         id="valid_runner",
-        url="http://localhost:8081",
+        url="http://127.0.0.1:8081",
         task_types=["test", "video"],
         last_heartbeat=datetime.now(),
         token="valid_token",

@@ -386,6 +386,43 @@ run_checked_as_root_in_dir() {
   die "Root privileges required for: ${description}"
 }
 
+run_component_make_in_dir() {
+  # Run make with the component cache settings, without sourcing the whole .env.
+  local privilege="$1"
+  local directory="$2"
+  local env_file="$3"
+  local description="$4"
+  shift 4
+
+  local cache_dir uv_cache_dir
+  local make_command=()
+  local make_env=()
+
+  cache_dir="$(read_env_var "${env_file}" "CACHE_DIR" || true)"
+  uv_cache_dir="$(read_env_var "${env_file}" "UV_CACHE_DIR" || true)"
+
+  [[ -n "${cache_dir}" ]] && make_env+=("CACHE_DIR=${cache_dir}")
+  [[ -n "${uv_cache_dir}" ]] && make_env+=("UV_CACHE_DIR=${uv_cache_dir}")
+
+  if [[ "${#make_env[@]}" -gt 0 ]]; then
+    make_command=(env "${make_env[@]}" make "$@")
+  else
+    make_command=(make "$@")
+  fi
+
+  case "${privilege}" in
+    root)
+      run_checked_as_root_in_dir "${directory}" "${description}" "${make_command[@]}"
+      ;;
+    current)
+      run_checked_in_dir "${directory}" "${description}" "${make_command[@]}"
+      ;;
+    *)
+      die "Unsupported make privilege mode: ${privilege}"
+      ;;
+  esac
+}
+
 read_env_var() {
   # Read one variable from a .env-like file without sourcing it.
   local env_file="$1"
@@ -739,12 +776,14 @@ infer_runner_sync_mode() {
 update_manager() {
   # Manager update flow: optional init, sync deps, conditional service restart.
   if [[ "${RUN_INIT}" -eq 1 ]]; then
-    run_checked_as_root_in_dir "${MANAGER_DIR}" "Manager init (make init)" make init
+    run_component_make_in_dir root "${MANAGER_DIR}" "${MANAGER_ENV_FILE}" \
+      "Manager init (make init)" init
   else
     log "Manager init skipped (enable with --with-init)."
   fi
 
-  run_checked_in_dir "${MANAGER_DIR}" "Manager dependency sync (make sync)" make sync
+  run_component_make_in_dir current "${MANAGER_DIR}" "${MANAGER_ENV_FILE}" \
+    "Manager dependency sync (make sync)" sync
 
   case "${RESTART_POLICY}" in
     always)
@@ -770,17 +809,20 @@ update_runner() {
   local mode="$1"
 
   if [[ "${RUN_INIT}" -eq 1 ]]; then
-    run_checked_as_root_in_dir "${RUNNER_DIR}" "Runner init (make init)" make init
+    run_component_make_in_dir root "${RUNNER_DIR}" "${RUNNER_ENV_FILE}" \
+      "Runner init (make init)" init
   else
     log "Runner init skipped (enable with --with-init)."
   fi
 
   case "${mode}" in
     base)
-      run_checked_in_dir "${RUNNER_DIR}" "Runner dependency sync (make sync)" make sync
+      run_component_make_in_dir current "${RUNNER_DIR}" "${RUNNER_ENV_FILE}" \
+        "Runner dependency sync (make sync)" sync
       ;;
     transcription-cpu)
-      run_checked_in_dir "${RUNNER_DIR}" "Runner dependency sync (make sync-transcription-cpu)" make sync-transcription-cpu
+      run_component_make_in_dir current "${RUNNER_DIR}" "${RUNNER_ENV_FILE}" \
+        "Runner dependency sync (make sync-transcription-cpu)" sync-transcription-cpu
       ;;
     transcription-gpu)
       local gpu_sync_target="sync-transcription-gpu"
@@ -788,21 +830,24 @@ update_runner() {
         cuda12)
           # Explicit GPU lock refresh: this updates runner/uv.lock for CUDA12.
           log "GPU lock profile: cuda12 (make lock-upgrade-gpu-12)"
-          run_checked_in_dir "${RUNNER_DIR}" "Runner lock refresh for CUDA12" make lock-upgrade-gpu-12
+          run_component_make_in_dir current "${RUNNER_DIR}" "${RUNNER_ENV_FILE}" \
+            "Runner lock refresh for CUDA12" lock-upgrade-gpu-12
           gpu_sync_target="sync-transcription-gpu-cuda12"
           RUNNER_RESTART_REQUIRED=1
           ;;
         latest)
           # Explicit GPU lock refresh: this updates runner/uv.lock to latest GPU stack.
           log "GPU lock profile: latest (make lock-upgrade-gpu-latest)"
-          run_checked_in_dir "${RUNNER_DIR}" "Runner lock refresh for latest GPU stack" make lock-upgrade-gpu-latest
+          run_component_make_in_dir current "${RUNNER_DIR}" "${RUNNER_ENV_FILE}" \
+            "Runner lock refresh for latest GPU stack" lock-upgrade-gpu-latest
           RUNNER_RESTART_REQUIRED=1
           ;;
         none)
           :
           ;;
       esac
-      run_checked_in_dir "${RUNNER_DIR}" "Runner dependency sync (make ${gpu_sync_target})" make "${gpu_sync_target}"
+      run_component_make_in_dir current "${RUNNER_DIR}" "${RUNNER_ENV_FILE}" \
+        "Runner dependency sync (make ${gpu_sync_target})" "${gpu_sync_target}"
       ;;
     *)
       die "Unsupported runner sync mode: ${mode}"

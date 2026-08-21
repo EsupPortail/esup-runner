@@ -40,6 +40,13 @@
 # - GPU transcription not available at runtime: run `uv run scripts/check_gpu.py`.
 # - Need a CUDA 12-compatible lock: run `make lock-upgrade-gpu-12`.
 
+# `scripts/init.py` reads .env directly, and uv must use the same cache while
+# starting it. Keep the dotenv file optional and scoped to the init target so
+# regular development and CI targets do not depend on a local configuration.
+ifneq ($(filter init,$(MAKECMDGOALS)),)
+-include .env
+endif
+
 UV      ?= uv
 PYTHON  ?= $(UV) run python
 UV_LINK_MODE ?= copy

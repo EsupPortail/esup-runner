@@ -170,15 +170,24 @@ async def test_send_heartbeat_not_registered(monkeypatch):
 async def test_check_manager_health(monkeypatch):
     """Validate Check manager health."""
 
-    async def responder():
+    captured = {}
+
+    async def responder(url, **_kwargs):
+        captured["url"] = url
         return FakeResponse(200, json_data={"status": "healthy"})
 
+    class HealthAsyncClient(FakeAsyncClient):
+        async def get(self, url, **kwargs):
+            return await self.responder(url, **kwargs)
+
+    monkeypatch.setattr(manager_service.config, "MANAGER_URL", "https://example.org/manager")
     monkeypatch.setattr(
-        manager_service.httpx, "AsyncClient", lambda *_, **__: FakeAsyncClient(responder)
+        manager_service.httpx, "AsyncClient", lambda *_, **__: HealthAsyncClient(responder)
     )
 
     healthy = await manager_service.check_manager_health()
     assert healthy is True
+    assert captured["url"] == "https://example.org/manager/api/health"
 
 
 @pytest.mark.asyncio

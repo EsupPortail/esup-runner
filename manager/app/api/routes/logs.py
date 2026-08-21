@@ -13,6 +13,7 @@ from app.core.auth import verify_admin
 from app.core.config import config
 from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.setup_logging import setup_default_logging
+from app.core.url_paths import request_root_path
 
 # Configure logging
 logger = setup_default_logging()
@@ -236,6 +237,7 @@ async def view_logs(
             "dark_mode_enabled": dark_mode,
             "now": datetime.now(),
             "version": __version__,
+            "root_path": request_root_path(request),
         }
 
         return templates.TemplateResponse(request, "logs.html", context)

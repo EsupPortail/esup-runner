@@ -372,7 +372,7 @@ class Config:
         manager_url_env = os.getenv("MANAGER_URL")
         if manager_url_env is not None and not manager_url_env.strip():
             self._record_configuration_error("MANAGER_URL must not be empty")
-        self.MANAGER_URL: str = _normalize_base_url(manager_url_env, "http://localhost:8081")
+        self.MANAGER_URL: str = _normalize_base_url(manager_url_env, "http://127.0.0.1:8081")
 
     def _load_security_configuration(self) -> None:
         """Load authentication and request security settings."""

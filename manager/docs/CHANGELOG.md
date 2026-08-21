@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added validated `MANAGER_ROOT_PATH` support for publishing the complete Manager below a reverse-proxy subpath, including root-path-aware administration pages, static assets, redirects, cookies, forms, JavaScript requests, and protected OpenAPI documentation.
+
+### Changed
+
+- Moved the authenticated Manager health endpoint from `/manager/health` to `/api/health` and updated runtime checks and deployment documentation accordingly.
+- Updated `make init` to load the optional `.env` file before invoking uv, so initialization honors the configured `UV_CACHE_DIR`.
+- Refreshed the dependency lockfile.
 
 ## [1.7.1] - 2026-07-17
 

@@ -46,11 +46,11 @@ def test_parse_helpers_cover_defaults_invalid_values_and_bounds(monkeypatch):
     assert config_module._parse_float("-1.0", 0.0, min_value=0.5) == 0.5
     assert config_module._parse_float("9.0", 0.0, max_value=3.0) == 3.0
     assert (
-        config_module._normalize_base_url("http://1.2.3.4:8000/", "http://localhost:8081")
+        config_module._normalize_base_url("http://1.2.3.4:8000/", "http://127.0.0.1:8081")
         == "http://1.2.3.4:8000"
     )
     assert (
-        config_module._normalize_base_url("   ", "http://localhost:8081") == "http://localhost:8081"
+        config_module._normalize_base_url("   ", "http://127.0.0.1:8081") == "http://127.0.0.1:8081"
     )
 
     key_a = "__ESUP_RUNNER_TEST_MISSING_A__"
@@ -352,7 +352,7 @@ def test_config_collects_invalid_grouped_syntax_and_empty_values(monkeypatch):
     cfg = config_module.Config()
 
     assert cfg.RUNNER_TASK_TYPES == set(config_module.SUPPORTED_TASK_TYPES)
-    assert cfg.MANAGER_URL == "http://localhost:8081"
+    assert cfg.MANAGER_URL == "http://127.0.0.1:8081"
     assert cfg.LOG_DIR == "/var/log/esup-runner/"
     assert cfg.CACHE_DIR == "/home/esup-runner/.cache/esup-runner"
 

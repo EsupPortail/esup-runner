@@ -20,6 +20,7 @@ from app.__version__ import __version__
 from app.core.auth import verify_admin
 from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.setup_logging import setup_default_logging
+from app.core.url_paths import request_root_path
 
 logger = setup_default_logging()
 
@@ -241,6 +242,7 @@ async def statistics_dashboard(
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,
             "dark_mode_enabled": dark_mode,
+            "root_path": request_root_path(request),
             "csv_path": str(csv_path),
             "statistics_url": request.url_for("statistics_dashboard"),
             "download_csv_url": _build_filtered_csv_url(

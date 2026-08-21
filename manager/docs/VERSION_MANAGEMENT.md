@@ -123,7 +123,7 @@ print(__version__)  # 1.0.0
 Default local port is `8081` (`MANAGER_PORT` in `.env.example`).
 
 ```bash
-curl -H "X-API-Token: YOUR_TOKEN" http://localhost:8081/api/version
+curl -H "X-API-Token: YOUR_TOKEN" http://127.0.0.1:8081/api/version
 ```
 
 Response:

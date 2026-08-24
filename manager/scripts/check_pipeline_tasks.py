@@ -10,7 +10,7 @@ cloning the project can do a quick manual test.
 Configuration source
 --------------------
 This script auto-loads:
-1) manager URL from `app.core.config` (`MANAGER_URL`)
+1) private manager API URL from `app.core.config` (`MANAGER_URL`)
 2) token from the first configured `AUTHORIZED_TOKENS__*` value in `.env`
 
 Optional overrides are still available through:
@@ -183,7 +183,8 @@ def _load_runtime_settings() -> tuple[str, str]:
 
     if not manager_url:
         raise SystemExit(
-            "MANAGER_URL is empty in configuration. Set MANAGER_PROTOCOL/MANAGER_HOST/MANAGER_PORT in manager/.env."
+            "MANAGER_URL is empty in configuration. Check "
+            "MANAGER_PROTOCOL/MANAGER_HOST/MANAGER_PORT in manager/.env."
         )
     if not token:
         raise SystemExit(

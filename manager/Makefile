@@ -255,6 +255,7 @@ create-service:
 	@echo "==> install systemd user service ($(SYSTEMD_USER_UNIT))"
 	mkdir -p "$(SYSTEMD_USER_DIR)"
 	cp -f production/esup-runner-manager.service "$(SYSTEMD_USER_UNIT)"
+	sed -i 's|@SERVICE_HOME@|$(SERVICE_HOME)|g' "$(SYSTEMD_USER_UNIT)"
 	@if systemctl --user show-environment >/dev/null 2>&1; then \
 		systemctl --user daemon-reload; \
 		systemctl --user enable --now esup-runner-manager.service; \

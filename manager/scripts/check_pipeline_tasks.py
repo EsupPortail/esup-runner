@@ -18,6 +18,9 @@ Optional overrides are still available through:
 - `RUNNER_MANAGER_URL`
 - `RUNNER_NOTIFY_URL` (only if you explicitly want to test a client callback)
 
+Downloaded verification copies are stored in the configured task workspace:
+`<RUNNERS_STORAGE_DIR>/<task_id>/downloads/`.
+
 What this script does
 ---------------------
 1) Calls `GET /api/version` to confirm authentication works.
@@ -130,8 +133,10 @@ TRANSCRIPTION_TRANSLATION_DELAY_SECONDS = 5
 # Optional: automatically download the first file listed in the manifest.
 DOWNLOAD_FIRST_FILE = True
 
-# Where to save the downloaded file (default: current directory).
-OUTPUT_DIR = Path(".")
+# Downloaded verification copies live outside the source tree, alongside the
+# corresponding task workspace. A dedicated subdirectory avoids overwriting the
+# original result while the Manager streams it from shared storage.
+DOWNLOADS_DIR_NAME = "downloads"
 
 # Keep failure logs useful but bounded for terminal output.
 SCRIPT_OUTPUT_EXCERPT_CHARS = 4000
@@ -192,6 +197,18 @@ def _load_runtime_settings() -> tuple[str, str]:
             "or set RUNNER_API_TOKEN."
         )
     return manager_url, token
+
+
+def _resolve_task_download_dir(task_id: str) -> Path:
+    """Return the download directory inside the configured task workspace."""
+    config = _load_config()
+    storage_dir = str(getattr(config, "RUNNERS_STORAGE_DIR", "") or "").strip()
+    if not storage_dir:
+        raise SystemExit(
+            "RUNNERS_STORAGE_DIR is empty in configuration; cannot store downloaded results."
+        )
+
+    return Path(storage_dir).expanduser() / _safe_filename(task_id) / DOWNLOADS_DIR_NAME
 
 
 def _normalize_base_url(base_url: str) -> str:
@@ -752,7 +769,7 @@ async def maybe_download_first_file(
         return
 
     local_name = _safe_filename(first)
-    output_path = OUTPUT_DIR / local_name
+    output_path = _resolve_task_download_dir(task_id) / local_name
     print(format_status(f"Downloading first file: {first!r} -> {str(output_path)!r}", level="info"))
     await download_result_file(client, base_url, token, task_id, first, output_path)
     print(format_status("Download OK", level="info"))

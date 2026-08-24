@@ -41,16 +41,21 @@
 # - Need a CUDA 12-compatible lock: run `make lock-upgrade-gpu-12`.
 
 # `scripts/init.py` reads .env directly, and uv must use the same cache while
-# starting it. Keep the dotenv file optional and scoped to the init target so
+# starting it. Keep the dotenv file optional and scoped to deployment targets so
 # regular development and CI targets do not depend on a local configuration.
-ifneq ($(filter init,$(MAKECMDGOALS)),)
+ifneq ($(filter init create-service docker-build docker-fix-perms,$(MAKECMDGOALS)),)
 -include .env
 endif
 
 UV      ?= uv
 PYTHON  ?= $(UV) run python
 UV_LINK_MODE ?= copy
-CACHE_DIR ?= /home/esup-runner/.cache/esup-runner
+# Read only the non-sensitive account name for regular uv commands; deployment
+# targets above still include the complete optional .env file.
+DOTENV_SERVICE_USER := $(strip $(shell awk -F= '$$1 == "SERVICE_USER" { gsub(/["\047[:space:]]/, "", $$2); print $$2; exit }' .env 2>/dev/null))
+SERVICE_USER ?= $(if $(DOTENV_SERVICE_USER),$(DOTENV_SERVICE_USER),esup-runner)
+SERVICE_HOME ?= /home/$(SERVICE_USER)
+CACHE_DIR ?= $(SERVICE_HOME)/.cache/esup-runner
 UV_CACHE_DIR ?= $(CACHE_DIR)/uv
 # Fallback to a writable tmp cache when the default user cache is unavailable
 # (common in restricted/sandboxed environments).
@@ -81,7 +86,7 @@ DOCKER_STORAGE_VOLUME ?= esup-runner-storage
 DOCKER_CACHE_VOLUME ?= esup-runner-cache
 DOCKER_LOGS_PATH ?= /var/log/esup-runner
 DOCKER_STORAGE_PATH ?= /tmp/esup-runner
-DOCKER_CACHE_PATH ?= /home/esup-runner/.cache/esup-runner
+DOCKER_CACHE_PATH ?= $(CACHE_DIR)
 
 # Builds the --extra ... arguments from EXTRAS=dev,transcription-gpu,transcription-gpu-cuda12,transcription-cpu
 comma := ,
@@ -238,13 +243,18 @@ init:
 	fi
 
 create-service:
-	@if [ -n "$$SUDO_USER" ] || [ "$$(id -u)" -eq 0 ]; then \
-		echo "==> run 'make create-service' as the service user (without sudo/root)."; \
+	@if ! id -u "$(SERVICE_USER)" >/dev/null 2>&1; then \
+		echo "==> configured SERVICE_USER does not exist: $(SERVICE_USER)"; \
+		exit 1; \
+	fi
+	@if [ -n "$$SUDO_USER" ] || [ "$$(id -u)" -eq 0 ] || [ "$$(id -un)" != "$(SERVICE_USER)" ]; then \
+		echo "==> run 'make create-service' as SERVICE_USER=$(SERVICE_USER) (without sudo/root)."; \
 		exit 1; \
 	fi
 	@echo "==> install systemd user service ($(SYSTEMD_USER_UNIT))"
 	mkdir -p "$(SYSTEMD_USER_DIR)"
 	cp -f production/esup-runner-runner.service "$(SYSTEMD_USER_UNIT)"
+	sed -i 's|@SERVICE_HOME@|$(SERVICE_HOME)|g' "$(SYSTEMD_USER_UNIT)"
 	@if systemctl --user show-environment >/dev/null 2>&1; then \
 		systemctl --user daemon-reload; \
 		systemctl --user enable --now esup-runner-runner.service; \
@@ -326,6 +336,7 @@ release-dry-run:
 docker-build:
 	@echo "==> docker build $(DOCKER_IMAGE):$(DOCKER_TAG)"
 	$(DOCKER) build $(if $(strip $(DOCKER_BUILD_NETWORK)),--network $(DOCKER_BUILD_NETWORK),) $(DOCKER_BUILD_OPTS) -f $(DOCKERFILE) \
+		--build-arg SERVICE_USER=$(SERVICE_USER) \
 		--build-arg ESUP_RUNNER_UID=$(ESUP_RUNNER_UID) \
 		--build-arg ESUP_RUNNER_GID=$(ESUP_RUNNER_GID) \
 		$(if $(strip $(DOCKER_RUNNER_EXTRA)),--build-arg RUNNER_EXTRA=$(DOCKER_RUNNER_EXTRA),) \

@@ -360,6 +360,9 @@ Quick check:
 systemctl --user is-active --quiet esup-runner-manager && echo "OK: service is running"
 ```
 
+During `make create-service`, the `@SERVICE_HOME@` marker in the service template
+is replaced by the configured `SERVICE_HOME`.
+
 Installed unit path: `~/.config/systemd/user/esup-runner-manager.service`.
 
 ## 4.1) Production hardening: reverse proxy + HTTPS

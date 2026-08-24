@@ -4,6 +4,7 @@ This page summarizes the environment variables consumed by the manager. Values a
 
 ## Quick start (.env snippet)
 ```properties
+SERVICE_USER=esup-runner
 MANAGER_PROTOCOL=http
 MANAGER_HOST=127.0.0.1
 MANAGER_PUBLIC_URL=http://127.0.0.1:8081
@@ -16,7 +17,6 @@ ADMIN_USERS__admin="CHANGE_ME_BCRYPT_HASH"
 LOG_DIR=/var/log/esup-runner
 RUNNERS_STORAGE_ENABLED=false
 RUNNERS_STORAGE_DIR=/tmp/esup-runner
-CACHE_DIR=/home/esup-runner/.cache/esup-runner
 API_DOCS_VISIBILITY=private
 OPENAPI_ALLOW_QUERY_TOKEN=false
 NOTIFY_URL_ALLOW_PRIVATE_NETWORKS=false
@@ -29,6 +29,7 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 - If no override is set, the default file is `manager/.env`.
 
 ## Core manager
+- `SERVICE_USER` (optional, default `esup-runner`): Unix account that owns runtime directories and runs the systemd user service. It also defines the default cache root.
 - `MANAGER_PROTOCOL` (default `http`): Scheme used to build the private Manager API URL. Allowed values are `http` and `https`. It does not enable TLS in Uvicorn/Gunicorn; choose `https` only when the private network path terminates TLS for this URL.
 - `MANAGER_HOST` (default `127.0.0.1`): Private DNS name or IP through which Runners reach the Manager. It becomes the host in the computed `MANAGER_URL` and is also used as a fallback domain for manager notification senders. It must be reachable from every Runner; `0.0.0.0` is a bind wildcard, not a reachable destination.
 - `MANAGER_PORT` (default `8081`): Uvicorn/Gunicorn listening port and port included in the computed private `MANAGER_URL`. It is not necessarily the public reverse-proxy port recorded in `MANAGER_PUBLIC_URL`.
@@ -57,8 +58,11 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 - `LOG_DIR` (default `/var/log/esup-runner/`): Log directory; trailing slash is normalized automatically.
 - Legacy alias: `LOG_DIRECTORY`.
 - `LOG_LEVEL` (default `INFO`): `DEBUG|INFO|WARNING|ERROR|CRITICAL`.
-- `CACHE_DIR` (default `/home/esup-runner/.cache/esup-runner`): Shared cache root.
+- `CACHE_DIR` (default `/home/{SERVICE_USER}/.cache/esup-runner`): Shared cache root.
 - `UV_CACHE_DIR` (default `CACHE_DIR/uv`): uv package cache directory.
+
+An explicit `CACHE_DIR` or `UV_CACHE_DIR` remains authoritative. Remove or update
+old `/home/esup-runner/...` overrides when changing `SERVICE_USER`.
 
 ## Shared storage
 - `RUNNERS_STORAGE_ENABLED` (bool, default `false`): Enables manager-side shared storage reads.

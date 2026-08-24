@@ -159,6 +159,10 @@ Defaults:
 - tag: `latest`
 - container user/group: `esup-runner`
 
+To customize the container account too, set `SERVICE_USER` in `.env` (or pass
+`SERVICE_USER=<name>` to `make docker-build`). The UID/GID options continue to
+control the numeric ownership used by mounted volumes.
+
 Custom image/tag example:
 
 ```bash

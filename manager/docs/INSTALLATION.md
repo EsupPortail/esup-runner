@@ -44,7 +44,7 @@ sudo apt install -y curl ca-certificates git make
 
 ### Install `uv`
 
-Install `uv` as `esup-runner`:
+Install `uv` as the service account (`esup-runner` by default):
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -245,7 +245,8 @@ Credentials can be provisioned in two ways:
 
 ### Initialize required directories
 
-This creates directories from `.env` (notably `LOG_DIR`, `RUNNERS_STORAGE_DIR`, `CACHE_DIR`, and `UV_CACHE_DIR` when set) and assigns ownership to the invoking user.
+This creates the configured runtime directories and assigns ownership to `SERVICE_USER`
+(`esup-runner` by default). The command fails if that Unix account does not exist.
 
 ```bash
 sudo make init
@@ -333,13 +334,17 @@ Install and start the systemd user service:
 make create-service
 ```
 
-Do not run this target with `sudo`: it must install the unit in the service user's home.
+Do not run this target with `sudo`: it must be run as the account configured by
+`SERVICE_USER` and installs the unit in that account's home. For a custom account,
+set the same `SERVICE_USER` in `manager/.env`, switch to that account, then run the target.
 
 If this service must start at boot without an interactive login session, enable lingering once (as `root`):
 
 ```bash
 sudo loginctl enable-linger esup-runner
 ```
+
+Replace `esup-runner` with the configured `SERVICE_USER` when customized.
 
 Useful commands:
 

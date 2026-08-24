@@ -149,15 +149,18 @@ openssl rand -hex 32
 ## Logging and cache directories
 
 ```properties
+SERVICE_USER=esup-runner
 LOG_DIR=/var/log/esup-runner
 LOG_LEVEL=INFO
-CACHE_DIR=/home/esup-runner/.cache/esup-runner
-UV_CACHE_DIR=/home/esup-runner/.cache/esup-runner/uv
+# CACHE_DIR=/srv/esup-runner/cache
+# UV_CACHE_DIR=/srv/esup-runner/cache/uv
 ```
 
 Notes:
 - Legacy alias `LOG_DIRECTORY` is still supported.
 - `LOG_DIR` is normalized with a trailing slash internally.
+- `SERVICE_USER` is optional and defaults to `esup-runner`.
+- If `CACHE_DIR` is not set, its default is `/home/{SERVICE_USER}/.cache/esup-runner`.
 - If `UV_CACHE_DIR` is not set, default is `CACHE_DIR/uv`.
 
 ## Shared storage mode
@@ -286,8 +289,9 @@ RUNNERS_STORAGE_ENABLED=false
 RUNNERS_STORAGE_DIR=/tmp/esup-runner
 
 # Shared cache directories
-CACHE_DIR=/home/esup-runner/.cache/esup-runner
-UV_CACHE_DIR=/home/esup-runner/.cache/esup-runner/uv
+# Defaults derive from SERVICE_USER when omitted
+# CACHE_DIR=/srv/esup-runner/cache
+# UV_CACHE_DIR=/srv/esup-runner/cache/uv
 
 # Optional domain-based priorities
 PRIORITIES_ENABLED=false

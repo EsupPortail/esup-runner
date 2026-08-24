@@ -58,9 +58,13 @@ Before any upgrade:
 - Backup logs if needed:
   - the `LOG_DIR` directory defined in `.env` (default: `/var/log/esup-runner`)
 - Optional (to keep local uv cache warm):
-  - `CACHE_DIR` from `.env` (default: `/home/esup-runner/.cache/esup-runner`)
+  - `CACHE_DIR` from `.env` (default: `/home/{SERVICE_USER}/.cache/esup-runner`)
 
 Compatibility note: legacy names `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` are still accepted.
+
+When adopting a custom `SERVICE_USER`, remove or update explicit `CACHE_DIR` and
+`UV_CACHE_DIR` values left from older `.env` files. Explicit paths always take
+precedence over defaults derived from `SERVICE_USER`.
 
 ---
 

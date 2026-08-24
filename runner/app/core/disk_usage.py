@@ -60,8 +60,9 @@ def _worst_status(statuses: list[str]) -> str:
 def _configured_directories(cfg: Any) -> dict[str, dict[str, str]]:
     """Return runtime directories worth exposing in runner status."""
     storage_dir = str(Path(str(getattr(cfg, "STORAGE_DIR", "/tmp/esup-runner"))).expanduser())
+    service_user = str(getattr(cfg, "SERVICE_USER", "esup-runner"))
     cache_dir = Path(
-        str(getattr(cfg, "CACHE_DIR", "/home/esup-runner/.cache/esup-runner"))
+        str(getattr(cfg, "CACHE_DIR", f"/home/{service_user}/.cache/esup-runner"))
     ).expanduser()
     return {
         "STORAGE_DIR": {

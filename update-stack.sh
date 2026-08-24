@@ -874,7 +874,7 @@ update_runner() {
 }
 
 build_manager_url_from_manager_env() {
-  # Build a local manager URL fallback when runner/.env MANAGER_URL is missing.
+  # Build the private Manager API URL used by Runners and pipeline tests.
   local manager_protocol manager_host manager_port
   manager_protocol="$(read_env_var "${MANAGER_ENV_FILE}" "MANAGER_PROTOCOL" || true)"
   manager_host="$(read_env_var "${MANAGER_ENV_FILE}" "MANAGER_HOST" || true)"
@@ -889,6 +889,17 @@ build_manager_url_from_manager_env() {
   fi
 
   printf '%s://%s:%s\n' "${manager_protocol}" "${manager_host}" "${manager_port}"
+}
+
+read_manager_public_url_from_manager_env() {
+  # Resolve the public admin URL independently from the private Manager API URL.
+  local manager_public_url
+  manager_public_url="$(read_env_var "${MANAGER_ENV_FILE}" "MANAGER_PUBLIC_URL" || true)"
+  if [[ -n "${manager_public_url}" ]]; then
+    printf '%s\n' "${manager_public_url}"
+  else
+    build_manager_url_from_manager_env
+  fi
 }
 
 normalize_manager_admin_url() {
@@ -911,15 +922,15 @@ normalize_manager_admin_url() {
 }
 
 resolve_manager_admin_url() {
-  # Resolve the best manager admin URL from runner or manager environment files.
+  # Prefer the public admin URL; fall back to the Runner's private Manager URL.
   local manager_url=""
 
-  if [[ -f "${RUNNER_ENV_FILE}" ]]; then
-    manager_url="$(read_env_var "${RUNNER_ENV_FILE}" "MANAGER_URL" || true)"
+  if [[ -f "${MANAGER_ENV_FILE}" ]]; then
+    manager_url="$(read_manager_public_url_from_manager_env)"
   fi
 
-  if [[ -z "${manager_url}" && -f "${MANAGER_ENV_FILE}" ]]; then
-    manager_url="$(build_manager_url_from_manager_env)"
+  if [[ -z "${manager_url}" && -f "${RUNNER_ENV_FILE}" ]]; then
+    manager_url="$(read_env_var "${RUNNER_ENV_FILE}" "MANAGER_URL" || true)"
   fi
 
   normalize_manager_admin_url "${manager_url}"

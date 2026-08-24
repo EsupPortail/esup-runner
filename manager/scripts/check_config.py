@@ -24,7 +24,11 @@ MANAGER_ROOT = Path(__file__).resolve().parents[1]
 if str(MANAGER_ROOT) not in sys.path:
     sys.path.insert(0, str(MANAGER_ROOT))
 
-from app.core._check_output import format_status
+from app.core._check_output import (
+    format_configuration_rows,
+    format_status,
+    manager_configuration_rows,
+)
 
 ConfigLoadResult = Tuple[Optional[Any], Tuple[str, ...]]
 
@@ -52,14 +56,17 @@ def _load_and_validate_config() -> ConfigLoadResult:
 def _print_summary(config: Any) -> None:
     """Print a concise summary containing only non-sensitive effective values."""
     storage_status = "enabled" if config.RUNNERS_STORAGE_ENABLED else "disabled"
-    print(f"  Environment: {config.ENVIRONMENT}")
-    print(f"  Manager URL: {config.MANAGER_URL}")
-    print(f"  Bind address: {config.MANAGER_BIND_HOST}:{config.MANAGER_PORT}")
-    print(f"  Uvicorn workers: {config.UVICORN_WORKERS}")
-    print(f"  API docs visibility: {config.API_DOCS_VISIBILITY}")
-    print(f"  Authorized tokens: {len(config.AUTHORIZED_TOKENS)}")
-    print(f"  Admin users: {len(config.ADMIN_USERS)}")
-    print(f"  Shared runner storage: {storage_status}")
+    print("\nManager configuration:")
+    for line in format_configuration_rows(manager_configuration_rows(config)):
+        print(line)
+
+    print("\nApplication configuration:")
+    print(f"  ENVIRONMENT             : {config.ENVIRONMENT}")
+    print(f"  UVICORN_WORKERS         : {config.UVICORN_WORKERS}")
+    print(f"  API_DOCS_VISIBILITY     : {config.API_DOCS_VISIBILITY}")
+    print(f"  AUTHORIZED_TOKENS__*    : {len(config.AUTHORIZED_TOKENS)} configured")
+    print(f"  ADMIN_USERS__*          : {len(config.ADMIN_USERS)} configured")
+    print(f"  RUNNERS_STORAGE_ENABLED : {storage_status}")
 
 
 def main() -> int:

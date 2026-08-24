@@ -366,6 +366,41 @@ def test_config_collects_invalid_grouped_syntax_and_empty_values(monkeypatch):
     assert "CACHE_DIR must not be empty" in message
 
 
+def test_cache_defaults_follow_service_user(monkeypatch):
+    """Validate cache defaults derive from the configured service account."""
+    monkeypatch.setenv("SERVICE_USER", "media-runner")
+    monkeypatch.delenv("CACHE_DIR", raising=False)
+    monkeypatch.delenv("WHISPER_MODELS_DIR", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_MODELS_DIR", raising=False)
+    monkeypatch.delenv("UV_CACHE_DIR", raising=False)
+
+    cfg = config_module.Config()
+
+    assert cfg.SERVICE_USER == "media-runner"
+    assert cfg.CACHE_DIR == "/home/media-runner/.cache/esup-runner"
+    assert cfg.WHISPER_MODELS_DIR == f"{cfg.CACHE_DIR}/whisper-models"
+    assert cfg.HUGGINGFACE_MODELS_DIR == f"{cfg.CACHE_DIR}/huggingface"
+    assert cfg.UV_CACHE_DIR == f"{cfg.CACHE_DIR}/uv"
+
+
+@pytest.mark.parametrize(
+    ("service_user", "expected_error"),
+    [
+        ("", "SERVICE_USER must not be empty"),
+        ("invalid/user", "SERVICE_USER must be a valid local account name"),
+    ],
+)
+def test_invalid_service_user_falls_back_to_default(monkeypatch, service_user, expected_error):
+    """Validate invalid service accounts fail safely with the compatible default."""
+    monkeypatch.setenv("SERVICE_USER", service_user)
+    monkeypatch.delenv("CACHE_DIR", raising=False)
+
+    cfg = config_module.Config()
+
+    assert cfg.SERVICE_USER == config_module.DEFAULT_SERVICE_USER
+    assert expected_error in cfg._configuration_errors
+
+
 def test_config_validation_aggregates_schema_errors(monkeypatch):
     """Validate Independent schema violations are returned in one actionable error."""
     monkeypatch.setenv("RUNNER_TOKEN", "secure-token")

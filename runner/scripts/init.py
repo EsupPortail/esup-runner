@@ -2,7 +2,7 @@
 """Initialize required directories from environment, .env, and defaults.
 
 Creates LOG_DIR, STORAGE_DIR, CACHE_DIR and derived cache subdirectories
-for Whisper/Hugging Face/uv, then assigns ownership to the invoking user/group.
+for Whisper/Hugging Face/uv, then assigns ownership to SERVICE_USER.
 Legacy alias is accepted for compatibility (LOG_DIRECTORY).
 
 Must be run with sudo to set ownership correctly, but will fall back to current user if not.
@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import pwd
 from pathlib import Path
 from typing import Dict, Iterable, Mapping
 
@@ -39,8 +40,8 @@ ENV_KEY_ALIASES = {
 DEFAULT_DIRECTORY_VALUES = {
     "LOG_DIR": "/var/log/esup-runner",
     "STORAGE_DIR": "/tmp/esup-runner",
-    "CACHE_DIR": "/home/esup-runner/.cache/esup-runner",
 }
+DEFAULT_SERVICE_USER = "esup-runner"
 
 DEFAULT_CACHE_SUBDIRS = {
     "WHISPER_MODELS_DIR": "whisper-models",
@@ -76,16 +77,20 @@ def read_env_file(env_path: Path) -> Dict[str, str]:
     return data
 
 
-def resolve_target_uid_gid() -> tuple[int, int]:
-    # When called via sudo, prefer the original user's uid/gid.
-    sudo_uid = os.environ.get("SUDO_UID")
-    sudo_gid = os.environ.get("SUDO_GID")
-    if sudo_uid and sudo_gid:
-        try:
-            return int(sudo_uid), int(sudo_gid)
-        except ValueError:
-            pass
-    return os.getuid(), os.getgid()
+def resolve_service_user(
+    env: Dict[str, str],
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    """Resolve the account configured to own and run the service."""
+    if environ is None:
+        environ = os.environ
+    return (environ.get("SERVICE_USER") or env.get("SERVICE_USER") or DEFAULT_SERVICE_USER).strip()
+
+
+def resolve_target_uid_gid(service_user: str = DEFAULT_SERVICE_USER) -> tuple[int, int]:
+    """Resolve the configured service account's primary uid and gid."""
+    account = pwd.getpwnam(service_user)
+    return account.pw_uid, account.pw_gid
 
 
 def resolve_directory_value(
@@ -111,6 +116,10 @@ def resolve_directory_value(
     if key in DEFAULT_CACHE_SUBDIRS:
         cache_dir = resolve_directory_value("CACHE_DIR", env, environ)
         return str(Path(cache_dir).expanduser() / DEFAULT_CACHE_SUBDIRS[key])
+
+    if key == "CACHE_DIR":
+        service_user = resolve_service_user(env, environ)
+        return f"/home/{service_user}/.cache/esup-runner"
 
     return DEFAULT_DIRECTORY_VALUES.get(key, "")
 
@@ -150,8 +159,12 @@ def main() -> int:
         print(f"No directories found in {env_path}.")
         return 0
 
-    # Apply ownership to the calling user/group (or current if not sudo).
-    uid, gid = resolve_target_uid_gid()
+    service_user = resolve_service_user(env)
+    try:
+        uid, gid = resolve_target_uid_gid(service_user)
+    except KeyError:
+        print(f"ERROR: configured SERVICE_USER does not exist: {service_user}")
+        return 1
 
     # Create directories and report status.
     for directory in dirs:

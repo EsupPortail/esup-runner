@@ -2,7 +2,7 @@
 """Initialize required directories from .env.
 
 Creates LOG_DIR plus optional storage/cache directories
-defined in .env, then assigns ownership to the invoking user/group.
+defined in .env, then assigns ownership to SERVICE_USER.
 Legacy aliases are accepted for compatibility (LOG_DIRECTORY, RUNNERS_STORAGE_PATH).
 
 Must be run with sudo to set ownership correctly, but will fall back to current user if not.
@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import pwd
 from pathlib import Path
 from typing import Dict, Iterable, Mapping
 
@@ -24,6 +25,12 @@ ENV_KEYS = ("LOG_DIR", "RUNNERS_STORAGE_DIR", "CACHE_DIR", "UV_CACHE_DIR")
 ENV_KEY_ALIASES = {
     "LOG_DIR": ("LOG_DIR", "LOG_DIRECTORY"),
     "RUNNERS_STORAGE_DIR": ("RUNNERS_STORAGE_DIR", "RUNNERS_STORAGE_PATH"),
+}
+
+DEFAULT_SERVICE_USER = "esup-runner"
+DEFAULT_DIRECTORY_VALUES = {
+    "LOG_DIR": "/var/log/esup-runner",
+    "RUNNERS_STORAGE_DIR": "/tmp/esup-runner",
 }
 
 
@@ -54,16 +61,20 @@ def read_env_file(env_path: Path) -> Dict[str, str]:
     return data
 
 
-def resolve_target_uid_gid() -> tuple[int, int]:
-    # When called via sudo, prefer the original user's uid/gid.
-    sudo_uid = os.environ.get("SUDO_UID")
-    sudo_gid = os.environ.get("SUDO_GID")
-    if sudo_uid and sudo_gid:
-        try:
-            return int(sudo_uid), int(sudo_gid)
-        except ValueError:
-            pass
-    return os.getuid(), os.getgid()
+def resolve_service_user(
+    env: Dict[str, str],
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    """Resolve the account configured to own and run the service."""
+    if environ is None:
+        environ = os.environ
+    return (environ.get("SERVICE_USER") or env.get("SERVICE_USER") or DEFAULT_SERVICE_USER).strip()
+
+
+def resolve_target_uid_gid(service_user: str = DEFAULT_SERVICE_USER) -> tuple[int, int]:
+    """Resolve the configured service account's primary uid and gid."""
+    account = pwd.getpwnam(service_user)
+    return account.pw_uid, account.pw_gid
 
 
 def _resolve_env_value(
@@ -84,7 +95,14 @@ def _resolve_env_value(
         value = env.get(alias)
         if value:
             return value
-    return ""
+
+    if key == "CACHE_DIR":
+        service_user = resolve_service_user(env, environ)
+        return f"/home/{service_user}/.cache/esup-runner"
+    if key == "UV_CACHE_DIR":
+        cache_dir = _resolve_env_value("CACHE_DIR", env, environ)
+        return str(Path(cache_dir) / "uv")
+    return DEFAULT_DIRECTORY_VALUES.get(key, "")
 
 
 def collect_directories(
@@ -117,8 +135,12 @@ def main() -> int:
         print(f"No directories found in {env_path}.")
         return 0
 
-    # Apply ownership to the calling user/group (or current if not sudo).
-    uid, gid = resolve_target_uid_gid()
+    service_user = resolve_service_user(env)
+    try:
+        uid, gid = resolve_target_uid_gid(service_user)
+    except KeyError:
+        print(f"ERROR: configured SERVICE_USER does not exist: {service_user}")
+        return 1
 
     # Create directories and report status.
     for directory in dirs:

@@ -27,7 +27,7 @@ from app.api.openapi import OpenAPIConfig, setup_openapi_config, setup_protected
 from app.core import config as config_module
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
-from app.core.url_paths import prefixed_path
+from app.core.url_paths import RootPathProxyCompatibilityMiddleware, prefixed_path
 from app.services.background_service import background_manager
 
 # Configure logging
@@ -124,6 +124,11 @@ app.add_middleware(
     allow_methods=config.CORS_ALLOW_METHODS,
     allow_headers=config.CORS_ALLOW_HEADERS,
 )
+
+# Some reverse proxies keep the public prefix while others strip it. Starlette
+# mounted applications (including StaticFiles) need the prefix in scope["path"]
+# whenever scope["root_path"] is set, so normalize both proxy modes here.
+app.add_middleware(RootPathProxyCompatibilityMiddleware)
 
 # Static files bundled with the installed package
 app.mount("/static", StaticFiles(packages=[("app", "web/static")]), name="static")

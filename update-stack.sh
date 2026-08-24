@@ -72,6 +72,7 @@ EMAIL_STATUS="skipped"
 EXIT_CODE=0
 MANAGER_RESTART_REQUIRED=0
 RUNNER_RESTART_REQUIRED=0
+UV_UPDATED_USERS=""
 
 MANAGER_DIR=""
 RUNNER_DIR=""
@@ -394,13 +395,15 @@ run_component_make_in_dir() {
   local description="$4"
   shift 4
 
-  local cache_dir uv_cache_dir
+  local service_user cache_dir uv_cache_dir
   local make_command=()
   local make_env=()
 
+  service_user="$(read_env_var "${env_file}" "SERVICE_USER" || true)"
   cache_dir="$(read_env_var "${env_file}" "CACHE_DIR" || true)"
   uv_cache_dir="$(read_env_var "${env_file}" "UV_CACHE_DIR" || true)"
 
+  [[ -n "${service_user}" ]] && make_env+=("SERVICE_USER=${service_user}")
   [[ -n "${cache_dir}" ]] && make_env+=("CACHE_DIR=${cache_dir}")
   [[ -n "${uv_cache_dir}" ]] && make_env+=("UV_CACHE_DIR=${uv_cache_dir}")
 
@@ -538,12 +541,30 @@ acquire_lock() {
 
 resolve_service_user() {
   # Resolve the non-root account used for user-level operations (uv/systemd --user).
+  local service_name="${1:-}"
   local configured_user repo_owner current_user
 
-  configured_user="$(read_env_var "${MANAGER_ENV_FILE}" "SERVICE_USER" || true)"
-  if [[ -n "${configured_user}" ]] && id -u "${configured_user}" >/dev/null 2>&1; then
-    printf '%s\n' "${configured_user}"
-    return 0
+  case "${service_name}" in
+    esup-runner-manager)
+      configured_user="$(read_env_var "${MANAGER_ENV_FILE}" "SERVICE_USER" || true)"
+      ;;
+    esup-runner-runner)
+      configured_user="$(read_env_var "${RUNNER_ENV_FILE}" "SERVICE_USER" || true)"
+      ;;
+    *)
+      configured_user="$(read_env_var "${MANAGER_ENV_FILE}" "SERVICE_USER" || true)"
+      if [[ -z "${configured_user}" ]]; then
+        configured_user="$(read_env_var "${RUNNER_ENV_FILE}" "SERVICE_USER" || true)"
+      fi
+      ;;
+  esac
+  if [[ -n "${configured_user}" ]]; then
+    if id -u "${configured_user}" >/dev/null 2>&1; then
+      printf '%s\n' "${configured_user}"
+      return 0
+    fi
+    warn "Configured SERVICE_USER does not exist: ${configured_user}"
+    return 1
   fi
 
   if id -u "${SERVICE_USER_HINT}" >/dev/null 2>&1; then
@@ -607,7 +628,7 @@ restart_service_if_present() {
     return 0
   fi
 
-  service_user="$(resolve_service_user || true)"
+  service_user="$(resolve_service_user "${service_name}" || true)"
   if [[ -n "${service_user}" ]] && run_systemctl_user "${service_user}" cat "${service_name}.service" >/dev/null 2>&1; then
     log_action "Restart ${service_name}.service via systemd --user (${service_user})"
     if [[ "${DRY_RUN}" -eq 1 ]]; then
@@ -639,30 +660,32 @@ restart_service_if_present() {
 }
 
 update_uv() {
-  # Update uv for the current/service user while avoiding root-owned installs.
+  # Update uv for a component's service user while avoiding root-owned installs.
+  local service_name="${1:-}"
   local current_user target_user installer_cmd
 
   installer_cmd="curl -LsSf https://astral.sh/uv/install.sh | sh"
   current_user="$(id -un 2>/dev/null || true)"
 
-  if [[ "${EUID}" -ne 0 ]]; then
-    run_shell_checked "Update uv for current user (${current_user})" "${installer_cmd}"
-    return 0
-  fi
-
-  target_user="$(resolve_service_user || true)"
+  target_user="$(resolve_service_user "${service_name}" || true)"
   if [[ -z "${target_user}" || "${target_user}" == "root" ]]; then
     warn "Skipping uv update: no non-root service user could be resolved."
     warn "Hint: set SERVICE_USER in manager/.env or ESUP_RUNNER_USER (for example: esup-runner)."
     return 0
   fi
 
+  if [[ ",${UV_UPDATED_USERS}," == *",${target_user},"* ]]; then
+    log "uv already updated for service user ${target_user}; duplicate update skipped."
+    return 0
+  fi
+  UV_UPDATED_USERS="${UV_UPDATED_USERS:+${UV_UPDATED_USERS},}${target_user}"
+
   if [[ "${target_user}" == "${current_user}" ]]; then
     run_shell_checked "Update uv for service user (${target_user})" "${installer_cmd}"
     return 0
   fi
 
-  if command -v runuser >/dev/null 2>&1; then
+  if [[ "${EUID}" -eq 0 ]] && command -v runuser >/dev/null 2>&1; then
     log_action "Update uv for service user (${target_user})"
     if [[ "${DRY_RUN}" -eq 1 ]]; then
       print_dry_run_command "DRY-RUN:" runuser -u "${target_user}" -- bash -lc "${installer_cmd}"
@@ -1718,7 +1741,12 @@ main() {
 
   if [[ "${RUN_UV_UPDATE}" -eq 1 ]]; then
     print_step_banner "Update uv installer"
-    update_uv
+    if [[ "${do_manager}" -eq 1 ]]; then
+      update_uv "esup-runner-manager"
+    fi
+    if [[ "${do_runner}" -eq 1 ]]; then
+      update_uv "esup-runner-runner"
+    fi
   else
     print_step_banner "Update uv installer"
     log "uv update skipped (--skip-uv-update)"

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Added optional `SERVICE_USER` configuration (default `esup-runner`) for cache paths, directory ownership, Docker builds, stack updates, and systemd user-service installation.
 - Removed the external `time` wrapper from FFmpeg encoding, audio extraction and thumbnail commands, and dropped the corresponding system package from Runner installation and container requirements.
 - Updated Manager health checks to use the stable private `/api/health` endpoint and clarified that `MANAGER_URL` must target the private Manager API rather than the public administration proxy.
 - Updated `make init` to load the optional `.env` file before invoking uv, so initialization honors the configured `UV_CACHE_DIR`.

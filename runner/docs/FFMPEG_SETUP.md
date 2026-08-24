@@ -16,6 +16,7 @@ sudo apt install -y ffmpeg
 NVIDIA/CUDA platform pages:
 - Debian 11 + CUDA 12.4: [gpu/DEBIAN11_CUDA12_4.md](gpu/DEBIAN11_CUDA12_4.md)
 - Debian 12 + CUDA 13.2: [gpu/DEBIAN12_CUDA13_2.md](gpu/DEBIAN12_CUDA13_2.md)
+- Debian 13 + CUDA 13.3: [gpu/DEBIAN13_CUDA13_3.md](gpu/DEBIAN13_CUDA13_3.md)
 
 FFmpeg deployment methods:
 - Build from source: [gpu/FFMPEG_SOURCE.md](gpu/FFMPEG_SOURCE.md)

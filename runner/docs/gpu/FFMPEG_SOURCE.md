@@ -11,9 +11,10 @@ Build and install a GPU-capable FFmpeg binary on the host system.
 ## Prerequisites
 
 - NVIDIA driver and CUDA installed and working (`nvidia-smi`).
-- One validated CUDA stack page completed:
+- One matching CUDA stack page completed:
   - [DEBIAN11_CUDA12_4.md](DEBIAN11_CUDA12_4.md)
   - [DEBIAN12_CUDA13_2.md](DEBIAN12_CUDA13_2.md)
+  - [DEBIAN13_CUDA13_3.md](DEBIAN13_CUDA13_3.md)
 
 ## 1) Create a dedicated prerequisites directory
 

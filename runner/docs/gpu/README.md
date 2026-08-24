@@ -14,6 +14,7 @@ This directory contains installation documentation for NVIDIA driver/CUDA and GP
 |---|---|---|---|
 | NVIDIA + CUDA | Debian 11 + CUDA 12.4 | [DEBIAN11_CUDA12_4.md](DEBIAN11_CUDA12_4.md) | Validated |
 | NVIDIA + CUDA | Debian 12 + CUDA 13.2 | [DEBIAN12_CUDA13_2.md](DEBIAN12_CUDA13_2.md) | Validated |
+| NVIDIA + CUDA | Debian 13 + CUDA 13.3 | [DEBIAN13_CUDA13_3.md](DEBIAN13_CUDA13_3.md) | Draft / to be validated |
 | FFmpeg method | Build from source | [FFMPEG_SOURCE.md](FFMPEG_SOURCE.md) | Validated |
 | FFmpeg method | Install prebuilt package | [FFMPEG_PREBUILT.md](FFMPEG_PREBUILT.md) | Draft / to be validated |
 | FFmpeg method | Docker wrapper binaries | [FFMPEG_DOCKER.md](FFMPEG_DOCKER.md) | Draft / to be validated |

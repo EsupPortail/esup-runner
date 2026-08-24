@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added the Debian 13 and CUDA 13.3 GPU installation guide.
+
 ### Changed
 
 - Added optional `SERVICE_USER` configuration (default `esup-runner`) for cache paths, directory ownership, Docker builds, stack updates, and systemd user-service installation.

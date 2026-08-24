@@ -2,10 +2,10 @@
 """
 Runtime checks for ESUP Runner Manager.
 
-This script intentionally has no CLI parameters.
-It reads manager settings from manager/.env (via app.core.config):
-- MANAGER_URL (computed from MANAGER_PROTOCOL/HOST/PORT)
-- one AUTHORIZED_TOKENS__* value for authenticated endpoints
+This script intentionally has no CLI parameters. It displays the effective,
+non-sensitive MANAGER_* settings loaded from manager/.env via app.core.config,
+plus the computed private API and public administration URLs. One
+AUTHORIZED_TOKENS__* value is used for authenticated checks but remains hidden.
 
 Usage:
   uv run scripts/check_runtime.py
@@ -32,7 +32,12 @@ MANAGER_ROOT = Path(__file__).resolve().parents[1]
 if str(MANAGER_ROOT) not in sys.path:
     sys.path.insert(0, str(MANAGER_ROOT))
 
-from app.core._check_output import format_check, format_status
+from app.core._check_output import (
+    format_check,
+    format_configuration_rows,
+    format_status,
+    manager_configuration_rows,
+)
 
 
 @dataclass
@@ -115,7 +120,7 @@ def _request_status(client: httpx.Client, url: str, token: Optional[str] = None)
 
 
 def _check_manager_url_host(manager_url: str) -> list[CheckResult]:
-    """Validate MANAGER_URL host semantics and DNS reachability."""
+    """Validate private MANAGER_URL host semantics and DNS reachability."""
     results: list[CheckResult] = []
     parts = urlsplit(manager_url)
     host = (parts.hostname or "").strip().lower()
@@ -148,7 +153,9 @@ def _check_manager_url_host(manager_url: str) -> list[CheckResult]:
                 name="Manager URL Host Reachability",
                 ok=False,
                 required=False,
-                details="MANAGER_URL uses localhost; remote runners on other machines cannot reach it",
+                details=(
+                    "MANAGER_URL uses localhost; remote runners on other machines cannot reach it"
+                ),
             )
         )
         return results
@@ -203,19 +210,20 @@ def run_checks() -> tuple[list[CheckResult], dict[str, Any]]:
     """Run all runtime checks and return both results and display context."""
     config = _load_config()
     manager_url = str(getattr(config, "MANAGER_URL", "") or "").strip().rstrip("/")
-    manager_host = str(getattr(config, "MANAGER_HOST", "") or "").strip()
+    manager_public_url = str(getattr(config, "MANAGER_PUBLIC_URL", "") or "").strip().rstrip("/")
     manager_bind_host = str(getattr(config, "MANAGER_BIND_HOST", "") or "").strip()
     manager_port = str(getattr(config, "MANAGER_PORT", "") or "").strip()
     token = _first_token(config)
 
     context: dict[str, Any] = {
+        "manager_configuration_rows": manager_configuration_rows(config),
         "manager_url": manager_url,
-        "manager_host": manager_host,
+        "manager_public_url": manager_public_url,
         "manager_bind_host": manager_bind_host,
         "manager_port": manager_port,
         "token_masked": _mask_secret(token) if token else "(missing)",
         "manager_url_status": "configured" if manager_url else "missing",
-        "manager_host_status": "configured" if manager_host else "missing",
+        "manager_public_url_status": "configured" if manager_public_url else "missing",
         "manager_bind_host_status": "configured" if manager_bind_host else "missing",
         "manager_port_status": "configured" if manager_port else "missing",
         "api_token_status": "configured" if token else "missing",
@@ -236,6 +244,17 @@ def run_checks() -> tuple[list[CheckResult], dict[str, Any]]:
 
     results.extend(_check_manager_url_host(manager_url))
 
+    if not manager_public_url:
+        results.append(
+            CheckResult(
+                name="Manager Public Admin URL Configured",
+                ok=False,
+                required=True,
+                details="MANAGER_PUBLIC_URL is empty",
+            )
+        )
+        return results, context
+
     if not token:
         results.append(
             CheckResult(
@@ -248,7 +267,7 @@ def run_checks() -> tuple[list[CheckResult], dict[str, Any]]:
 
     timeout = httpx.Timeout(5.0, connect=5.0)
     with httpx.Client(timeout=timeout, follow_redirects=False) as client:
-        admin_code, admin_details = _request_status(client, f"{manager_url}/admin")
+        admin_code, admin_details = _request_status(client, f"{manager_public_url}/admin")
         admin_ok_codes = {200, 401, 301, 302, 303, 307, 308}
         results.append(
             CheckResult(
@@ -325,10 +344,6 @@ def print_report(results: list[CheckResult], context: dict[str, Any]) -> None:
     """Print a human-readable report in a style similar to check_version.py."""
     width = 60
 
-    manager_url_set = bool(str(context.get("manager_url", "") or "").strip())
-    manager_host_set = bool(str(context.get("manager_host", "") or "").strip())
-    manager_bind_host_set = bool(str(context.get("manager_bind_host", "") or "").strip())
-    manager_port_set = bool(str(context.get("manager_port", "") or "").strip())
     token_set = str(context.get("token_masked", "") or "").strip() not in {"", "(missing)"}
 
     print("=" * width)
@@ -338,30 +353,13 @@ def print_report(results: list[CheckResult], context: dict[str, Any]) -> None:
 
     print("Running: Configuration")
     print("-" * width)
+    configuration_rows = context.get("manager_configuration_rows", ())
+    for line in format_configuration_rows(configuration_rows):
+        print(line)
     print(
-        "MANAGER_URL       : configured (value hidden)"
-        if manager_url_set
-        else "MANAGER_URL       : missing"
-    )
-    print(
-        "MANAGER_HOST      : configured (value hidden)"
-        if manager_host_set
-        else "MANAGER_HOST      : missing"
-    )
-    print(
-        "MANAGER_BIND_HOST : configured (value hidden)"
-        if manager_bind_host_set
-        else "MANAGER_BIND_HOST : missing"
-    )
-    print(
-        "MANAGER_PORT      : configured (value hidden)"
-        if manager_port_set
-        else "MANAGER_PORT      : missing"
-    )
-    print(
-        "API token         : configured (value hidden)"
+        "  AUTHORIZED_TOKENS__* : configured (value hidden)"
         if token_set
-        else "API token         : missing"
+        else "  AUTHORIZED_TOKENS__* : missing"
     )
 
     for result in results:

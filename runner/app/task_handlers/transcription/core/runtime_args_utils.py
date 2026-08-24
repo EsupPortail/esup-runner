@@ -39,9 +39,7 @@ _GPU_CHUNK_THRESHOLD_SECONDS = 1800
 # knob, even though the CLI still exposes them for ad hoc maintenance runs.
 _DEFAULT_CHUNK_DURATION_SECONDS = 300
 _DEFAULT_CHUNK_OVERLAP_SECONDS = 3
-_DEFAULT_CACHE_DIR = "/home/esup-runner/.cache/esup-runner"
-_DEFAULT_WHISPER_MODELS_DIR = f"{_DEFAULT_CACHE_DIR}/whisper-models"
-_DEFAULT_HUGGINGFACE_MODELS_DIR = f"{_DEFAULT_CACHE_DIR}/huggingface"
+_DEFAULT_SERVICE_USER = "esup-runner"
 
 # Translation remains intentionally internal for now: the public API keeps a
 # single `language` parameter, which expresses the final subtitle language. When
@@ -84,7 +82,10 @@ _TRANSLATION_BACKEND_WHISPER_LEGACY = "whisper_legacy_fallback"
 
 def _resolve_default_cache_subdir(subdir: str) -> str:
     """Resolve a default cache subdirectory from CACHE_DIR or the built-in root."""
-    cache_dir = os.getenv("CACHE_DIR", _DEFAULT_CACHE_DIR)
+    service_user = (os.getenv("SERVICE_USER", _DEFAULT_SERVICE_USER) or "").strip()
+    service_user = service_user or _DEFAULT_SERVICE_USER
+    default_cache_dir = f"/home/{service_user}/.cache/esup-runner"
+    cache_dir = os.getenv("CACHE_DIR", default_cache_dir)
     return str((Path(cache_dir).expanduser() / subdir))
 
 

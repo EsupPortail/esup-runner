@@ -659,6 +659,41 @@ def test_config_validation_rejects_placeholders_empty_credentials_and_paths(monk
     assert "OPENAPI_COOKIE_SECRET uses a documented placeholder" in capsys.readouterr().out
 
 
+def test_cache_defaults_follow_service_user(monkeypatch):
+    """Validate cache defaults derive from the configured service account."""
+    from app.core.config import Config
+
+    monkeypatch.setenv("SERVICE_USER", "media-manager")
+    monkeypatch.delenv("CACHE_DIR", raising=False)
+    monkeypatch.delenv("UV_CACHE_DIR", raising=False)
+
+    config = Config()
+
+    assert config.SERVICE_USER == "media-manager"
+    assert config.CACHE_DIR == "/home/media-manager/.cache/esup-runner"
+    assert config.UV_CACHE_DIR == "/home/media-manager/.cache/esup-runner/uv"
+
+
+@pytest.mark.parametrize(
+    ("service_user", "expected_error"),
+    [
+        ("", "SERVICE_USER must not be empty"),
+        ("invalid/user", "SERVICE_USER must be a valid local account name"),
+    ],
+)
+def test_invalid_service_user_falls_back_to_default(monkeypatch, service_user, expected_error):
+    """Validate invalid service accounts fail safely with the compatible default."""
+    from app.core import config as config_module
+
+    monkeypatch.setenv("SERVICE_USER", service_user)
+    monkeypatch.delenv("CACHE_DIR", raising=False)
+
+    config = config_module.Config()
+
+    assert config.SERVICE_USER == config_module.DEFAULT_SERVICE_USER
+    assert expected_error in config._configuration_errors
+
+
 def test_openapi_cookie_secret_placeholder_is_warning_only(monkeypatch, capsys):
     """Validate the optional example cookie secret does not block startup."""
     from app.core import _check_output

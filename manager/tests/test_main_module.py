@@ -23,6 +23,26 @@ def test_register_sighup_reload_handles_failure(monkeypatch):
     main._register_sighup_reload()
 
 
+@pytest.mark.parametrize(
+    "request_path",
+    [
+        "/runner-manager/static/favicon.png?version=1.7.1",
+        "/static/favicon.png?version=1.7.1",
+        "/static/logo.png?version=1.7.1",
+    ],
+)
+def test_static_assets_are_served_with_configured_root_path(monkeypatch, request_path):
+    """Serve bundled static assets whether the proxy keeps or strips the prefix."""
+    monkeypatch.setattr(main.app, "root_path", "/runner-manager")
+
+    with TestClient(main.app) as client:
+        response = client.get(request_path)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+
 def test_lifespan_adds_protected_openapi_when_private(monkeypatch):
     """Validate Lifespan adds protected openapi when private."""
     orig_visibility = config.API_DOCS_VISIBILITY

@@ -1,12 +1,63 @@
 """Validates manager pipeline smoke-check task payload helpers."""
 
 import asyncio
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import ANY, AsyncMock
 
 import httpx
 import pytest
 
 import scripts.check_pipeline_tasks as pipeline
+
+
+def test_resolve_task_download_dir_uses_configured_workspace(monkeypatch, tmp_path):
+    """Store downloaded checks in the task workspace, not the current directory."""
+    monkeypatch.setattr(
+        pipeline,
+        "_load_config",
+        lambda: SimpleNamespace(RUNNERS_STORAGE_DIR=str(tmp_path)),
+    )
+
+    download_dir = pipeline._resolve_task_download_dir("task-1")
+
+    assert download_dir == tmp_path / "task-1" / "downloads"
+
+
+def test_resolve_task_download_dir_rejects_empty_storage(monkeypatch):
+    """Fail clearly when no workspace is configured."""
+    monkeypatch.setattr(pipeline, "_load_config", lambda: SimpleNamespace())
+
+    with pytest.raises(SystemExit, match="RUNNERS_STORAGE_DIR is empty"):
+        pipeline._resolve_task_download_dir("task-1")
+
+
+@pytest.mark.asyncio
+async def test_maybe_download_first_file_targets_task_workspace(monkeypatch, tmp_path):
+    """Download the manifest file below its task workspace."""
+    download = AsyncMock()
+    monkeypatch.setattr(
+        pipeline,
+        "_load_config",
+        lambda: SimpleNamespace(RUNNERS_STORAGE_DIR=str(tmp_path)),
+    )
+    monkeypatch.setattr(pipeline, "download_result_file", download)
+
+    await pipeline.maybe_download_first_file(
+        AsyncMock(),
+        "http://manager",
+        "token",
+        "task-1",
+        ["nested/result.vtt"],
+    )
+
+    download.assert_awaited_once_with(
+        ANY,
+        "http://manager",
+        "token",
+        "task-1",
+        "nested/result.vtt",
+        tmp_path / "task-1" / "downloads" / "nested_result.vtt",
+    )
 
 
 def test_build_task_request_disables_notify_callback_by_default(monkeypatch):

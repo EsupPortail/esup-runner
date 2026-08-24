@@ -44,16 +44,21 @@
 # - After lock update, refresh env with `make sync`.
 
 # `scripts/init.py` reads .env directly, and uv must use the same cache while
-# starting it. Keep the dotenv file optional and scoped to the init target so
+# starting it. Keep the dotenv file optional and scoped to deployment targets so
 # regular development and CI targets do not depend on a local configuration.
-ifneq ($(filter init,$(MAKECMDGOALS)),)
+ifneq ($(filter init create-service docker-build docker-fix-perms,$(MAKECMDGOALS)),)
 -include .env
 endif
 
 UV      ?= uv
 PYTHON  ?= $(UV) run python
 UV_LINK_MODE ?= copy
-CACHE_DIR ?= /home/esup-runner/.cache/esup-runner
+# Read only the non-sensitive account name for regular uv commands; deployment
+# targets above still include the complete optional .env file.
+DOTENV_SERVICE_USER := $(strip $(shell awk -F= '$$1 == "SERVICE_USER" { gsub(/["\047[:space:]]/, "", $$2); print $$2; exit }' .env 2>/dev/null))
+SERVICE_USER ?= $(if $(DOTENV_SERVICE_USER),$(DOTENV_SERVICE_USER),esup-runner)
+SERVICE_HOME ?= /home/$(SERVICE_USER)
+CACHE_DIR ?= $(SERVICE_HOME)/.cache/esup-runner
 UV_CACHE_DIR ?= $(CACHE_DIR)/uv
 XDG_CONFIG_HOME ?= $(HOME)/.config
 SYSTEMD_USER_DIR ?= $(XDG_CONFIG_HOME)/systemd/user
@@ -239,8 +244,12 @@ clean:
 	rm -rf .venv .pytest_cache .mypy_cache .ruff_cache dist build
 
 create-service:
-	@if [ -n "$$SUDO_USER" ] || [ "$$(id -u)" -eq 0 ]; then \
-		echo "==> run 'make create-service' as the service user (without sudo/root)."; \
+	@if ! id -u "$(SERVICE_USER)" >/dev/null 2>&1; then \
+		echo "==> configured SERVICE_USER does not exist: $(SERVICE_USER)"; \
+		exit 1; \
+	fi
+	@if [ -n "$$SUDO_USER" ] || [ "$$(id -u)" -eq 0 ] || [ "$$(id -un)" != "$(SERVICE_USER)" ]; then \
+		echo "==> run 'make create-service' as SERVICE_USER=$(SERVICE_USER) (without sudo/root)."; \
 		exit 1; \
 	fi
 	@echo "==> install systemd user service ($(SYSTEMD_USER_UNIT))"
@@ -331,6 +340,7 @@ release-dry-run:
 docker-build:
 	@echo "==> docker build $(DOCKER_IMAGE):$(DOCKER_TAG)"
 	$(DOCKER) build $(if $(strip $(DOCKER_BUILD_NETWORK)),--network $(DOCKER_BUILD_NETWORK),) $(DOCKER_BUILD_OPTS) -f $(DOCKERFILE) \
+		--build-arg SERVICE_USER=$(SERVICE_USER) \
 		--build-arg ESUP_RUNNER_UID=$(ESUP_RUNNER_UID) \
 		--build-arg ESUP_RUNNER_GID=$(ESUP_RUNNER_GID) \
 		-t $(DOCKER_IMAGE):$(DOCKER_TAG) .

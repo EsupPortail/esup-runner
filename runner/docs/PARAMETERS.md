@@ -4,6 +4,7 @@ This page summarizes the environment variables consumed by the runner. Values ar
 
 ## Quick start (.env snippet)
 ```properties
+SERVICE_USER=esup-runner
 DEBUG=false
 RUNNER_PROTOCOL=http
 RUNNER_HOST=127.0.0.1
@@ -20,11 +21,11 @@ MEDIA_CODEC_DENYLIST=magicyuv
 ENCODING_TYPE=CPU
 GPU_CUDA_PATH=/usr/local/cuda-13.2
 WHISPER_MODEL=turbo
-CACHE_DIR=/home/esup-runner/.cache/esup-runner
 WHISPER_LANGUAGE=auto
 ```
 
 ## Core runner
+- `SERVICE_USER` (optional, default `esup-runner`): Unix account that owns runtime directories and runs the systemd user service. It also defines the default cache root.
 - `DEBUG` (bool, default `False`): Enables verbose logging and debug flags passed to scripts.
 - `RUNNER_PROTOCOL` (default `http`), `RUNNER_HOST` (default `localhost`), `RUNNER_BASE_PORT` (default `8082`), `RUNNER_BASE_NAME` (default `default-runner`): Base URL components. The launcher offsets the port per instance.
 - `RUNNER_INSTANCES` (int, default `1`): Number of instances when using legacy task-type syntax.
@@ -60,13 +61,17 @@ WHISPER_LANGUAGE=auto
 
 ## Transcription / Whisper
 - `WHISPER_MODEL` (default `small`): Logical whisper model (`small|medium|large|turbo`). Turbo recommended.
-- `CACHE_DIR` (default `/home/esup-runner/.cache/esup-runner`): Shared cache root.
+- `CACHE_DIR` (default `/home/{SERVICE_USER}/.cache/esup-runner`): Shared cache root.
 - `WHISPER_MODELS_DIR` (default `CACHE_DIR/whisper-models`): Optional override for Whisper model cache directory.
 - `HUGGINGFACE_MODELS_DIR` (default `CACHE_DIR/huggingface`): Optional override for Hugging Face translation model cache.
 - `HF_TOKEN` (optional): Hugging Face access token used for authenticated model downloads (recommended to reduce rate-limit warnings and improve download reliability/speed).
 - `UV_CACHE_DIR` (default `CACHE_DIR/uv`): Optional override for uv package cache directory.
 - `WHISPER_LANGUAGE` (default `auto`): Default final subtitle language; `auto` keeps the detected spoken language, while an explicit `fr`/`en` target can trigger subtitle translation after transcription.
 - `WHISPER_CHUNK_THRESHOLD_SECONDS` (optional override): If unset, the runner chooses a hardware-aware default: `800` on CPU and `1800` on GPU.
+
+An explicit `CACHE_DIR`, `WHISPER_MODELS_DIR`, `HUGGINGFACE_MODELS_DIR`, or
+`UV_CACHE_DIR` remains authoritative. Remove or update old `/home/esup-runner/...`
+overrides when changing `SERVICE_USER`.
 
 Current built-in translation support:
 - `fr -> en`

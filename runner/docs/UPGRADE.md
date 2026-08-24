@@ -55,6 +55,11 @@ Before any upgrade:
 
 Compatibility note: legacy variable `LOG_DIRECTORY` is still accepted.
 
+When adopting a custom `SERVICE_USER`, remove or update explicit cache paths left
+from older `.env` files (notably `CACHE_DIR`, `WHISPER_MODELS_DIR`,
+`HUGGINGFACE_MODELS_DIR`, and `UV_CACHE_DIR`). Explicit paths always take precedence
+over defaults derived from `SERVICE_USER`.
+
 ---
 
 ## 3) Update sources

@@ -175,6 +175,10 @@ Defaults:
 - container user/group: `esup-runner`
 - install profile: base dependencies (encoding/studio)
 
+To customize the container account too, set `SERVICE_USER` in `.env` (or pass
+`SERVICE_USER=<name>` to `make docker-build`). The UID/GID options continue to
+control the numeric ownership used by mounted volumes.
+
 Build with transcription extra:
 
 ```bash

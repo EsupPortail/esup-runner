@@ -51,7 +51,7 @@ sudo apt install -y imagemagick
 
 ### Install `uv`
 
-Install `uv` as `esup-runner`:
+Install `uv` as the service account (`esup-runner` by default):
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -221,13 +221,17 @@ Install and start the service:
 make create-service
 ```
 
-Do not run this target with `sudo`: it must install the unit in the service user's home.
+Do not run this target with `sudo`: it must be run as the account configured by
+`SERVICE_USER` and installs the unit in that account's home. For a custom account,
+set the same `SERVICE_USER` in `runner/.env`, switch to that account, then run the target.
 
 If this service must start at boot without an interactive login session, enable lingering once (as `root`):
 
 ```bash
 sudo loginctl enable-linger esup-runner
 ```
+
+Replace `esup-runner` with the configured `SERVICE_USER` when customized.
 
 Check status and logs:
 
@@ -243,7 +247,9 @@ Quick check:
 systemctl --user is-active --quiet esup-runner-runner && echo "OK: service is running"
 ```
 
-The provided unit sets a `PATH` that includes `/home/esup-runner/.local/bin` and starts `uv` via `/usr/bin/env`.
+The provided unit starts `uv` via `/usr/bin/env`. During `make create-service`,
+the `@SERVICE_HOME@` marker in its `PATH` is replaced by the configured
+`SERVICE_HOME`.
 If your `uv` is installed elsewhere, edit the unit accordingly:
 
 - Service template: `production/esup-runner-runner.service`

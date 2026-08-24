@@ -52,6 +52,7 @@ cd runner
 # 5) Configure
 cp .env.example .env
 nano .env
+# Optional: set SERVICE_USER to a different existing Unix account.
 
 # 6) Install Python dependencies
 # Default encoding or studio tasks
@@ -67,6 +68,9 @@ make create-service
 # Optional (boot without interactive login)
 # sudo loginctl enable-linger esup-runner
 ```
+
+`SERVICE_USER` defaults to `esup-runner`. When customized, use that same account
+for source ownership, `uv` installation, `make create-service`, and `loginctl enable-linger`.
 
 ## Local pre-PR checks
 

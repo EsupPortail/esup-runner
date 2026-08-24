@@ -105,6 +105,9 @@ MANAGER_URL=http://127.0.0.1:8081
 # API token authentication
 RUNNER_TOKEN=change-me-runner-token
 
+# Optional service account (default: esup-runner)
+SERVICE_USER=esup-runner
+
 # Logs
 LOG_DIR=/var/log/esup-runner
 LOG_LEVEL=INFO
@@ -122,7 +125,8 @@ ENCODING_TYPE=CPU
 
 # Transcription (Whisper) settings
 WHISPER_MODEL=turbo
-CACHE_DIR=/home/esup-runner/.cache/esup-runner
+# Optional; defaults to /home/{SERVICE_USER}/.cache/esup-runner
+# CACHE_DIR=/srv/esup-runner/cache
 WHISPER_LANGUAGE=auto
 # HF_TOKEN=hf_xxx
 ```
@@ -135,7 +139,9 @@ The built-in subtitle translation currently supports:
 - `fr -> en`
 - `en -> fr`
 
-`CACHE_DIR` controls the shared cache root used by Whisper models (`CACHE_DIR/whisper-models`),
+`SERVICE_USER` selects the Unix account used by `make init`, `make create-service`, and
+`update-stack.sh`. It defaults to `esup-runner`. `CACHE_DIR` defaults to
+`/home/{SERVICE_USER}/.cache/esup-runner` and controls the shared cache root used by Whisper models (`CACHE_DIR/whisper-models`),
 local translation models (`CACHE_DIR/huggingface`), and uv (`CACHE_DIR/uv`).
 `HF_TOKEN` is optional but recommended on production runners: it enables authenticated Hugging Face downloads, which reduces rate-limit warnings and can speed up model retrieval.
 

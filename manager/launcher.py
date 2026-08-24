@@ -40,14 +40,14 @@ def run_dev():
 
     log_config = get_uvicorn_log_config(json_format=False)
 
-    manager_host = os.getenv("MANAGER_HOST", config.MANAGER_HOST)
     manager_bind_host = os.getenv("MANAGER_BIND_HOST", config.MANAGER_BIND_HOST)
     manager_port = int(os.getenv("MANAGER_PORT", "8081"))
 
     print(f"[DEV] Starting Runner Manager on {manager_bind_host}:{manager_port}")
-    print(f"Public host: {manager_host}")
-    print(f"Admin Dashboard: {config.MANAGER_URL}/admin")
-    print(f"API Documentation: {config.MANAGER_URL}/docs")
+    print(f"Private API URL: {config.MANAGER_URL}")
+    print(f"Public admin URL: {config.MANAGER_PUBLIC_URL}")
+    print(f"Admin Dashboard: {config.MANAGER_PUBLIC_URL}/admin")
+    print(f"API Documentation: {config.MANAGER_PUBLIC_URL}/docs")
 
     uvicorn.run(
         "app.main:app",
@@ -64,7 +64,6 @@ def run_prod():
     """
     Run the FastAPI application with Gunicorn + Uvicorn workers in production mode.
     """
-    manager_host = os.getenv("MANAGER_HOST", config.MANAGER_HOST)
     manager_bind_host = os.getenv("MANAGER_BIND_HOST", config.MANAGER_BIND_HOST)
     manager_port = int(os.getenv("MANAGER_PORT", config.MANAGER_PORT))
     workers = int(os.getenv("UVICORN_WORKERS", config.UVICORN_WORKERS))
@@ -85,7 +84,8 @@ def run_prod():
     ]
 
     print(f"[PROD] Launching Gunicorn with {workers} workers on {manager_bind_host}:{manager_port}")
-    print(f"Public host: {manager_host}")
+    print(f"Private API URL: {config.MANAGER_URL}")
+    print(f"Public admin URL: {config.MANAGER_PUBLIC_URL}")
     subprocess.run(gunicorn_cmd, check=True)
 
 

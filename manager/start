@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-exec /home/esup-runner/.local/bin/uv run launcher.py
+exec /usr/bin/env uv run launcher.py

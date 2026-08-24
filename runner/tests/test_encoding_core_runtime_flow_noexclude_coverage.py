@@ -39,6 +39,17 @@ def test_runtime_flow_wrapper_and_conversion_branches(monkeypatch, tmp_path):
     """Validate Runtime flow wrapper and conversion branches."""
     runtime_flow = _load_core_module("runtime_flow_utils")
 
+    ffmpeg_command_templates = (
+        runtime_flow.MP3,
+        runtime_flow.M4A,
+        runtime_flow.EXTRACT_THUMBNAIL_0,
+        runtime_flow.EXTRACT_THUMBNAIL_1,
+        runtime_flow.EXTRACT_THUMBNAIL_2,
+        runtime_flow.CPU,
+        runtime_flow.GPU,
+    )
+    assert all(template.startswith("ffmpeg ") for template in ffmpeg_command_templates)
+
     assert runtime_flow.timestamp_to_seconds("01:02:03") == 3723
     assert runtime_flow.timestamp_to_seconds("02:03") == 123
     assert runtime_flow.timestamp_to_seconds("17") == 17

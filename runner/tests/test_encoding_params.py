@@ -1047,6 +1047,35 @@ def test_process_encoding_rejects_invalid_source_video_file(tmp_path):
     enc.launch_encode.assert_not_called()
 
 
+def test_process_encoding_reports_ffprobe_execution_error(tmp_path):
+    """Expose a concrete ffprobe failure instead of an invalid-video fallback."""
+    enc = _load_encoding_script_module()
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "encoding.log").write_text("")
+
+    enc._VIDEOS_OUTPUT_DIR = str(output_dir)
+    enc._prepare_input_file = Mock(return_value=("input.mp4", "input prepared\n"))
+    enc.get_info_video = Mock(
+        return_value={
+            "_probe_error": (
+                "ffprobe executable was not found in the runner service PATH "
+                "(current PATH: /usr/bin:/bin)."
+            )
+        }
+    )
+    enc.launch_encode = Mock()
+
+    with pytest.raises(
+        enc.EncodingValidationError,
+        match="ffprobe executable was not found in the runner service PATH",
+    ):
+        enc._process_encoding(args=Mock())
+
+    enc.launch_encode.assert_not_called()
+
+
 def test_process_encoding_rejects_zero_second_effective_duration_after_cut(tmp_path):
     """Validate Process encoding rejects zero second effective duration after cut."""
     enc = _load_encoding_script_module()

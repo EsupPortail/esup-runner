@@ -610,7 +610,8 @@ def test_media_probe_utils_missing_noexclude_branches(monkeypatch, capsys, tmp_p
         "ffprobe -show_streams input.mp4", subprocess_module=_ProbeCalledErrorSubprocess
     )
     assert info is None
-    assert "Runtime Error" in msg
+    assert "ffprobe failed to analyze the source media" in msg
+    assert "exit code 1" in msg
 
     class _ProbeOSErrorSubprocess:
         PIPE = object()
@@ -626,6 +627,77 @@ def test_media_probe_utils_missing_noexclude_branches(monkeypatch, capsys, tmp_p
     )
     assert info is None
     assert "OS error" in msg
+
+    class _ProbeMissingSubprocess:
+        PIPE = object()
+        STDOUT = object()
+        CalledProcessError = subprocess.CalledProcessError
+
+        @staticmethod
+        def check_output(*_a, **_k):
+            raise FileNotFoundError(2, "No such file or directory", "ffprobe")
+
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    info, msg = media_probe.get_info_from_video(
+        "ffprobe -show_streams input.mp4", subprocess_module=_ProbeMissingSubprocess
+    )
+    assert info is None
+    assert "ffprobe executable was not found in the runner service PATH" in msg
+    assert "current PATH: /usr/bin:/bin" in msg
+
+    class _ProbePermissionSubprocess:
+        PIPE = object()
+        STDOUT = object()
+        CalledProcessError = subprocess.CalledProcessError
+
+        @staticmethod
+        def check_output(*_a, **_k):
+            raise PermissionError(13, "Permission denied", "ffprobe")
+
+    info, msg = media_probe.get_info_from_video(
+        "ffprobe -show_streams input.mp4", subprocess_module=_ProbePermissionSubprocess
+    )
+    assert info is None
+    assert "ffprobe could not be executed because access was denied" in msg
+
+    class _ProbeDetailedErrorSubprocess:
+        PIPE = object()
+        STDOUT = object()
+        CalledProcessError = subprocess.CalledProcessError
+
+        @staticmethod
+        def check_output(*_a, **_k):
+            raise subprocess.CalledProcessError(
+                7,
+                "ffprobe",
+                stderr=b"/media/input.mp4: Permission denied\n",
+            )
+
+    info, msg = media_probe.get_info_from_video(
+        "ffprobe -show_streams input.mp4", subprocess_module=_ProbeDetailedErrorSubprocess
+    )
+    assert info is None
+    assert "exit code 7" in msg
+    assert "/media/input.mp4: Permission denied" in msg
+
+    class _ProbeInvalidJsonSubprocess:
+        PIPE = object()
+        STDOUT = object()
+        CalledProcessError = subprocess.CalledProcessError
+
+        @staticmethod
+        def check_output(*_a, **_k):
+            return b"not-json"
+
+    info, msg = media_probe.get_info_from_video(
+        "ffprobe -show_streams input.mp4", subprocess_module=_ProbeInvalidJsonSubprocess
+    )
+    assert info is None
+    assert "ffprobe returned invalid JSON" in msg
+    assert "Output: not-json" in msg
+
+    assert media_probe._bounded_probe_diagnostic(" first\nsecond ") == "first second"
+    assert media_probe._bounded_probe_diagnostic("x" * 2001) == "x" * 2000
 
     logs = []
     result = media_probe.get_info_video(
@@ -649,10 +721,39 @@ def test_media_probe_utils_missing_noexclude_branches(monkeypatch, capsys, tmp_p
         refine_source_fps_fn=lambda **_k: (0.0, ""),
         probe_packet_based_fps_fn=lambda *_a: 0.0,
     )
-    assert result == {}
+    assert result == {media_probe.PROBE_ERROR_KEY: "probe-failed"}
+    assert "probe-failed" in logs[-1]
     debug_out = capsys.readouterr().out
     assert "Probe_cmd :" in debug_out
     assert "return_msg : probe-failed" in debug_out
+
+    logs.clear()
+    result = media_probe.get_info_video(
+        "input.mp4",
+        debug=False,
+        videos_dir=str(tmp_path),
+        image_codecs=["png"],
+        webm_video_codecs={"vp9"},
+        encode_log_fn=logs.append,
+        get_info_from_video_fn=lambda _cmd: (None, ""),
+        analyze_streams_fn=lambda _streams, image_codecs: (
+            False,
+            False,
+            False,
+            "",
+            0,
+            0.0,
+            "",
+        ),
+        extract_duration_from_probe_fn=lambda _info: 0,
+        refine_source_fps_fn=lambda **_k: (0.0, ""),
+        probe_packet_based_fps_fn=lambda *_a: 0.0,
+    )
+    assert result == {
+        media_probe.PROBE_ERROR_KEY: (
+            "ffprobe failed to return media information for an unknown reason."
+        )
+    }
 
     logs.clear()
     result = media_probe.get_info_video(

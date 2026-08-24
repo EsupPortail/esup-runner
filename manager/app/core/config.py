@@ -10,6 +10,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import SplitResult, unquote, urlsplit
 
 from app.core._check_output import format_status
 from app.core.passwords import BcryptPasswordContext
@@ -69,9 +70,9 @@ _CONFIG_ENV_PREFIXES = ["AUTHORIZED_TOKENS__", "ADMIN_USERS__"]
 _CONFIG_ENV_KEYS = [
     "MANAGER_PROTOCOL",
     "MANAGER_HOST",
+    "MANAGER_PUBLIC_URL",
     "MANAGER_BIND_HOST",
     "MANAGER_PORT",
-    "MANAGER_ROOT_PATH",
     "ENVIRONMENT",
     "UVICORN_WORKERS",
     "CLEANUP_TASK_FILES_DAYS",
@@ -198,12 +199,7 @@ def _is_ip_literal(value: str) -> bool:
 
 
 def _default_manager_bind_host(manager_host: str) -> str:
-    """Compute default socket bind host from MANAGER_HOST.
-
-    MANAGER_HOST is also used to build MANAGER_URL, so a DNS name is valid there.
-    But binding directly on a DNS hostname may fail or bind unexpectedly depending
-    on DNS resolution order. In that case, default to 0.0.0.0 for reliability.
-    """
+    """Choose a reliable socket bind address independently from the public admin URL."""
     host = (manager_host or "").strip()
     if not host:
         return "0.0.0.0"
@@ -212,6 +208,75 @@ def _default_manager_bind_host(manager_host: str) -> str:
     if _is_ip_literal(host):
         return host
     return "0.0.0.0"
+
+
+def _normalize_manager_public_url(value: str) -> str:
+    """Trim whitespace and one optional trailing slash from the public base URL."""
+    normalized = (value or "").strip()
+    if normalized.endswith("/") and not normalized.endswith("://"):
+        normalized = normalized[:-1]
+    return normalized
+
+
+def _root_path_from_public_url(public_url: str) -> str:
+    """Derive the ASGI deployment prefix from a normalized public URL."""
+    try:
+        path = urlsplit(public_url).path
+    except ValueError:
+        return ""
+    if not path or path == "/":
+        return ""
+    return unquote(path)
+
+
+def _parse_manager_public_url(public_url: str) -> tuple[Optional[SplitResult], List[str]]:
+    """Parse the public URL and return preliminary validation errors."""
+    errors: List[str] = []
+    if not public_url:
+        return None, ["MANAGER_PUBLIC_URL must not be empty"]
+    if any(character.isspace() for character in public_url):
+        return None, ["MANAGER_PUBLIC_URL must not contain whitespace"]
+    if "\\" in public_url:
+        return None, ["MANAGER_PUBLIC_URL must not contain backslashes"]
+
+    try:
+        parsed_url = urlsplit(public_url)
+        parsed_url.port
+    except ValueError:
+        errors.append("MANAGER_PUBLIC_URL must be a valid absolute URL")
+        return None, errors
+    return parsed_url, errors
+
+
+def _manager_public_url_validation_errors(public_url: str, root_path: str) -> List[str]:
+    """Return every public URL error without raising early."""
+    parsed_url, errors = _parse_manager_public_url(public_url.strip())
+    if parsed_url is None:
+        return errors
+
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname:
+        errors.append("MANAGER_PUBLIC_URL must be an absolute HTTP(S) URL")
+    if parsed_url.username is not None or parsed_url.password is not None:
+        errors.append("MANAGER_PUBLIC_URL must not contain user credentials")
+    if parsed_url.query or parsed_url.fragment:
+        errors.append("MANAGER_PUBLIC_URL must not contain a query string or fragment")
+
+    decoded_path = unquote(parsed_url.path)
+    if parsed_url.path == "/" or public_url.endswith("/"):
+        errors.append("MANAGER_PUBLIC_URL must contain at most one trailing slash")
+    elif any(character.isspace() for character in decoded_path) or any(
+        character in decoded_path for character in "?#\\"
+    ):
+        errors.append("MANAGER_PUBLIC_URL path contains an unsafe encoded character")
+    elif decoded_path and any(
+        segment in {"", ".", ".."} for segment in decoded_path.split("/")[1:]
+    ):
+        errors.append("MANAGER_PUBLIC_URL path must not contain empty, '.' or '..' segments")
+
+    expected_root_path = "" if decoded_path in {"", "/"} else decoded_path
+    if root_path != expected_root_path:
+        errors.append("MANAGER_ROOT_PATH must be derived from MANAGER_PUBLIC_URL")
+    return errors
 
 
 def reload_config_env():
@@ -447,10 +512,10 @@ class Config:
 
         # Manager configuration
         self.MANAGER_PROTOCOL: str = (os.getenv("MANAGER_PROTOCOL", "http") or "").strip().lower()
-        manager_host = (os.getenv("MANAGER_HOST", "0.0.0.0") or "").strip()
+        manager_host = (os.getenv("MANAGER_HOST", "127.0.0.1") or "").strip()
         if not manager_host:
             self._record_configuration_error("MANAGER_HOST must not be empty")
-            manager_host = "0.0.0.0"
+            manager_host = "127.0.0.1"
         self.MANAGER_HOST: str = manager_host
         manager_bind_host = _first_env_value(
             "MANAGER_BIND_HOST", default=_default_manager_bind_host(self.MANAGER_HOST)
@@ -459,11 +524,16 @@ class Config:
             self.MANAGER_HOST
         )
         self.MANAGER_PORT: int = self._read_int("MANAGER_PORT", 8081, min_value=1, max_value=65535)
-        self.MANAGER_ROOT_PATH: str = (os.getenv("MANAGER_ROOT_PATH", "") or "").strip()
         url_host = f"[{self.MANAGER_HOST}]" if ":" in self.MANAGER_HOST else self.MANAGER_HOST
-        self.MANAGER_URL = (
-            f"{self.MANAGER_PROTOCOL}://{url_host}:{self.MANAGER_PORT}{self.MANAGER_ROOT_PATH}"
-        )
+        self.MANAGER_URL = f"{self.MANAGER_PROTOCOL}://{url_host}:{self.MANAGER_PORT}"
+        manager_public_url = os.getenv("MANAGER_PUBLIC_URL")
+        if manager_public_url is None:
+            manager_public_url = self.MANAGER_URL
+        elif not manager_public_url.strip():
+            self._record_configuration_error("MANAGER_PUBLIC_URL must not be empty")
+            manager_public_url = self.MANAGER_URL
+        self.MANAGER_PUBLIC_URL: str = _normalize_manager_public_url(manager_public_url)
+        self.MANAGER_ROOT_PATH: str = _root_path_from_public_url(self.MANAGER_PUBLIC_URL)
 
         # CORS configuration
         # Comma-separated list of allowed origins; use "*" only when allow_credentials is False.
@@ -704,8 +774,11 @@ class Config:
         self._configuration_validated = True
 
     def _validate_network_identity(self) -> None:
-        """Validate manager URL components and the socket bind host."""
-        errors: List[str] = []
+        """Validate the public Manager URL and the socket bind host."""
+        errors = _manager_public_url_validation_errors(
+            self.MANAGER_PUBLIC_URL, self.MANAGER_ROOT_PATH
+        )
+
         for name, value in (
             ("MANAGER_HOST", self.MANAGER_HOST),
             ("MANAGER_BIND_HOST", self.MANAGER_BIND_HOST),
@@ -714,19 +787,6 @@ class Config:
                 errors.append(f"{name} must not be empty")
             elif any(character.isspace() for character in value) or "/" in value:
                 errors.append(f"{name} must contain a hostname or IP address only")
-
-        root_path = self.MANAGER_ROOT_PATH
-        if root_path:
-            if not root_path.startswith("/"):
-                errors.append("MANAGER_ROOT_PATH must start with '/'")
-            if root_path.endswith("/"):
-                errors.append("MANAGER_ROOT_PATH must not end with '/'")
-            if any(character.isspace() for character in root_path):
-                errors.append("MANAGER_ROOT_PATH must not contain whitespace")
-            if "?" in root_path or "#" in root_path or "\\" in root_path:
-                errors.append("MANAGER_ROOT_PATH must contain URL path segments only")
-            if any(segment in {"", ".", ".."} for segment in root_path.split("/")[1:]):
-                errors.append("MANAGER_ROOT_PATH must not contain empty, '.' or '..' segments")
         _raise_validation_errors(errors)
 
     def _validate_enums(self) -> None:

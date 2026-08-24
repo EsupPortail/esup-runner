@@ -13,6 +13,20 @@ import subprocess
 from typing import Any, Dict, Optional, Union
 
 DurationValue = Union[str, int, float, None]
+PROBE_ERROR_KEY = "_probe_error"
+_PROBE_DIAGNOSTIC_MAX_CHARS = 2000
+
+
+def _bounded_probe_diagnostic(value: Any) -> str:
+    """Return readable, bounded ffprobe output for task-facing diagnostics."""
+    if isinstance(value, bytes):
+        text = value.decode("utf-8", errors="replace")
+    else:
+        text = str(value or "")
+    normalized = " ".join(text.split())
+    if len(normalized) <= _PROBE_DIAGNOSTIC_MAX_CHARS:
+        return normalized
+    return normalized[-_PROBE_DIAGNOSTIC_MAX_CHARS:]
 
 
 def get_info_from_video(
@@ -29,11 +43,36 @@ def get_info_from_video(
         )
         info = json.loads(output)
     except subprocess_module.CalledProcessError as e:
-        msg += 20 * "////" + "\n"
-        msg += "Runtime Error: {0}\n".format(e)
+        detail = _bounded_probe_diagnostic(getattr(e, "stderr", ""))
+        msg = f"ffprobe failed to analyze the source media (exit code {e.returncode})"
+        if detail:
+            msg += f": {detail}"
+        else:
+            msg += ". No diagnostic output was returned by ffprobe"
+        msg += "."
+    except FileNotFoundError as err:
+        current_path = os.environ.get("PATH") or "<empty>"
+        msg = (
+            "ffprobe executable was not found in the runner service PATH. "
+            "Install FFmpeg/ffprobe or add its bin directory to the systemd service PATH "
+            f"(current PATH: {current_path}). OS error: {err}."
+        )
+    except PermissionError as err:
+        msg = (
+            "ffprobe could not be executed because access was denied. "
+            "Check the executable permissions and service security policy. "
+            f"OS error: {err}."
+        )
     except OSError as err:
-        msg += 20 * "////" + "\n"
-        msg += "OS error: {0}\n".format(err)
+        msg = (
+            "ffprobe could not be executed. Check the FFmpeg installation and the runner "
+            f"service PATH. OS error: {err}."
+        )
+    except json.JSONDecodeError as err:
+        detail = _bounded_probe_diagnostic(output)
+        msg = f"ffprobe returned invalid JSON: {err}."
+        if detail:
+            msg += f" Output: {detail}"
     return info, msg
 
 
@@ -356,7 +395,7 @@ def get_info_video(
 
     msg = "--> get_info_video\n"
     probe_cmd = (
-        "ffprobe -v quiet -show_format -show_streams " "-print_format json -i {}/{}"
+        "ffprobe -v error -show_format -show_streams " "-print_format json -i {}/{}"
     ).format(videos_dir, file)
     msg += probe_cmd + "\n"
 
@@ -370,7 +409,11 @@ def get_info_video(
 
     if info is None:
         msg += "\nError: Failed to get video information\n"
-        return {}
+        encode_log_fn(msg)
+        probe_error = return_msg.strip() or (
+            "ffprobe failed to return media information for an unknown reason."
+        )
+        return {PROBE_ERROR_KEY: probe_error}
 
     duration = extract_duration_from_probe_fn(info)
     video_duration = extract_primary_video_duration_from_probe_fn(

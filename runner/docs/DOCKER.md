@@ -437,7 +437,7 @@ docker rm -f esup-runner-runner
 
 ## Notes
 
-- The image includes CPU FFmpeg support and the `time` binary required by encoding scripts.
+- The image includes CPU FFmpeg support required by encoding scripts.
 - Keep runner tokens and manager URLs only in `.env` and do not commit this file.
 - For production, place manager and runner behind network controls and limit exposed ports.
 

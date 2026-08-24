@@ -40,7 +40,7 @@ su - esup-runner
 
 ```bash
 sudo apt update
-sudo apt install -y curl ca-certificates git make time
+sudo apt install -y curl ca-certificates git make
 ```
 
 Optional (only if you hit FFmpeg/PNG fallbacks that require ImageMagick):

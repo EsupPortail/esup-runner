@@ -28,7 +28,7 @@ sudo adduser esup-runner sudo
 
 # 2) Install base packages
 sudo apt update
-sudo apt install -y curl ca-certificates git make time ffmpeg
+sudo apt install -y curl ca-certificates git make ffmpeg
 
 # Optional (only if you hit FFmpeg/PNG fallbacks that require ImageMagick)
 # sudo apt install -y imagemagick

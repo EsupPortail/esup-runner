@@ -9,9 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Updated Manager health checks to use the stable `/api/health` endpoint and documented how `MANAGER_URL` can include a reverse-proxy prefix such as `/manager`.
+- Removed the external `time` wrapper from FFmpeg encoding, audio extraction and thumbnail commands, and dropped the corresponding system package from Runner installation and container requirements.
+- Updated Manager health checks to use the stable private `/api/health` endpoint and clarified that `MANAGER_URL` must target the private Manager API rather than the public administration proxy.
 - Updated `make init` to load the optional `.env` file before invoking uv, so initialization honors the configured `UV_CACHE_DIR`.
 - Refreshed the dependency lockfile.
+
+### Fixed
+
+- Improved encoding source probing so missing or inaccessible `ffprobe`, execution failures and invalid JSON return bounded actionable diagnostics and abort encoding with the concrete probe error instead of a generic invalid-video message.
 
 ## [1.7.1] - 2026-07-17
 

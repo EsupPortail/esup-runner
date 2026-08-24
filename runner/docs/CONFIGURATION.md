@@ -98,9 +98,8 @@ RUNNER_INSTANCES=4
 # Monitor instances and automatically restart failed ones
 RUNNER_MONITORING=false
 
-# Manager base URL used by this Runner.
-# Default/direct access on the same host: http://127.0.0.1:8081
-# Reverse-proxy example with MANAGER_ROOT_PATH=/manager: https://example.org/manager
+# Private Manager API URL used by this Runner.
+# It must use MANAGER_PROTOCOL/HOST/PORT from the Manager, never MANAGER_PUBLIC_URL.
 MANAGER_URL=http://127.0.0.1:8081
 
 # API token authentication

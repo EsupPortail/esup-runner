@@ -33,7 +33,7 @@ WHISPER_LANGUAGE=auto
 
 ## Networking and auth
 - `RUNNER_TOKEN` (required): Token used to authenticate runner <-> manager calls in both directions.
-- `MANAGER_URL` (default `http://127.0.0.1:8081`): Manager base URL used for registration, health checks, and callbacks. Keep this default when the Runner contacts a Manager on the same host, or include the public prefix (for example `https://example.org/manager`) when it connects through a reverse proxy configured with `MANAGER_ROOT_PATH=/manager`. Route paths such as `/api/health` are appended automatically.
+- `MANAGER_URL` (default `http://127.0.0.1:8081`): Private Manager API URL used for registration, health checks and callbacks. It must match the Manager's `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`; do not use the public administration `MANAGER_PUBLIC_URL`. Route paths such as `/api/health` are appended automatically.
 
 ## Storage and cleanup
 - `STORAGE_DIR` (runtime default `/tmp/esup-runner`): Root workspace for task data.

@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 SUPPORTED_TASK_TYPES = frozenset({"encoding", "studio", "transcription"})
 SUPPORTED_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+DEFAULT_SERVICE_USER = "esup-runner"
 SUPPORTED_STUDIO_PRESETS = frozenset(
     {
         "ultrafast",
@@ -407,6 +408,15 @@ class Config:
     def _load_storage_configuration(self) -> None:
         """Load log, workspace, status, and cache paths."""
 
+        service_user = (os.getenv("SERVICE_USER", DEFAULT_SERVICE_USER) or "").strip()
+        if not service_user:
+            self._record_configuration_error("SERVICE_USER must not be empty")
+            service_user = DEFAULT_SERVICE_USER
+        elif not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*\$?", service_user):
+            self._record_configuration_error("SERVICE_USER must be a valid local account name")
+            service_user = DEFAULT_SERVICE_USER
+        self.SERVICE_USER: str = service_user
+
         # Log directory.
         # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.
         log_dir = _first_env_value("LOG_DIR", "LOG_DIRECTORY", default="/var/log/esup-runner")
@@ -438,10 +448,11 @@ class Config:
         self.CLEANUP_INTERVAL_HOURS: int = self._read_int("CLEANUP_INTERVAL_HOURS", 24, min_value=1)
 
         # Shared cache root for transcription models and uv cache.
-        cache_dir_raw = os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
+        default_cache_dir = f"/home/{self.SERVICE_USER}/.cache/esup-runner"
+        cache_dir_raw = os.getenv("CACHE_DIR", default_cache_dir)
         if not cache_dir_raw.strip():
             self._record_configuration_error("CACHE_DIR must not be empty")
-            cache_dir_raw = "/home/esup-runner/.cache/esup-runner"
+            cache_dir_raw = default_cache_dir
         cache_dir = Path(cache_dir_raw)
         self.CACHE_DIR: str = str(cache_dir)
         # Directory where whisper models (.gguf/.bin) are stored

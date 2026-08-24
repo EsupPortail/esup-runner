@@ -18,6 +18,7 @@ from app.core.passwords import BcryptPasswordContext
 SUPPORTED_API_DOCS_VISIBILITIES = frozenset({"private", "public"})
 SUPPORTED_ENVIRONMENTS = frozenset({"development", "production"})
 SUPPORTED_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+DEFAULT_SERVICE_USER = "esup-runner"
 DOCUMENTED_PLACEHOLDER_VALUES = frozenset(
     {
         "CHANGE_ME_APP_TOKEN",
@@ -68,6 +69,7 @@ _CONFIG_RELOAD_MARKER_PATH = _MANAGER_ROOT / "data" / ".config_reload"
 # Keys/prefixes managed by this config; cleared on reload to reflect deletions in .env
 _CONFIG_ENV_PREFIXES = ["AUTHORIZED_TOKENS__", "ADMIN_USERS__"]
 _CONFIG_ENV_KEYS = [
+    "SERVICE_USER",
     "MANAGER_PROTOCOL",
     "MANAGER_HOST",
     "MANAGER_PUBLIC_URL",
@@ -617,6 +619,15 @@ class Config:
     def _load_storage_configuration(self) -> None:
         """Load log, shared storage, and cache paths."""
 
+        service_user = (os.getenv("SERVICE_USER", DEFAULT_SERVICE_USER) or "").strip()
+        if not service_user:
+            self._record_configuration_error("SERVICE_USER must not be empty")
+            service_user = DEFAULT_SERVICE_USER
+        elif not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*\$?", service_user):
+            self._record_configuration_error("SERVICE_USER must be a valid local account name")
+            service_user = DEFAULT_SERVICE_USER
+        self.SERVICE_USER: str = service_user
+
         # Directory to store log files.
         # Prefer LOG_DIR, keep LOG_DIRECTORY for backward compatibility.
         log_dir = _first_env_value("LOG_DIR", "LOG_DIRECTORY", default="/var/log/esup-runner")
@@ -643,10 +654,11 @@ class Config:
         self.RUNNERS_STORAGE_PATH: str = runners_storage_dir
 
         # Shared cache root used for local cacheable artifacts (including uv cache).
-        cache_dir = os.getenv("CACHE_DIR", "/home/esup-runner/.cache/esup-runner")
+        default_cache_dir = f"/home/{self.SERVICE_USER}/.cache/esup-runner"
+        cache_dir = os.getenv("CACHE_DIR", default_cache_dir)
         if not cache_dir.strip():
             self._record_configuration_error("CACHE_DIR must not be empty")
-            cache_dir = "/home/esup-runner/.cache/esup-runner"
+            cache_dir = default_cache_dir
         self.CACHE_DIR: str = cache_dir
         uv_cache_dir = os.getenv("UV_CACHE_DIR", os.path.join(self.CACHE_DIR, "uv"))
         if not uv_cache_dir.strip():

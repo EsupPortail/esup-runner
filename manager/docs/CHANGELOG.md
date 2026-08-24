@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added validated `MANAGER_ROOT_PATH` support for publishing the complete Manager below a reverse-proxy subpath, including root-path-aware administration pages, static assets, redirects, cookies, forms, JavaScript requests, and protected OpenAPI documentation.
+- Added validated `MANAGER_PUBLIC_URL` for the public administration interface. Its optional path is automatically used as FastAPI's `root_path` for root-path-aware administration pages, static assets, redirects, cookies, forms, JavaScript requests and protected OpenAPI documentation, while the Manager API and Runner callbacks keep using the private `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT` address. If the new variable is absent, it falls back to that private URL for compatibility with existing installations.
 
 ### Changed
 
+- Separated the Manager's network identities: `MANAGER_HOST` now advertises the private API (defaulting to `127.0.0.1`), `MANAGER_BIND_HOST` controls the listening interface (defaulting to `0.0.0.0`), and launch/configuration/runtime checks now display and validate the effective private and public URLs independently.
+- Updated `update-stack.sh` to use `MANAGER_PUBLIC_URL` for administration links in update emails, with fallbacks to the computed private Manager URL and the Runner configuration.
 - Moved the authenticated Manager health endpoint from `/manager/health` to `/api/health` and updated runtime checks and deployment documentation accordingly.
 - Updated `make init` to load the optional `.env` file before invoking uv, so initialization honors the configured `UV_CACHE_DIR`.
 - Refreshed the dependency lockfile.

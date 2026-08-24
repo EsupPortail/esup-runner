@@ -1128,7 +1128,7 @@ def test_upsert_authorized_token_in_env_updates_and_appends(monkeypatch, tmp_pat
     """Validate .env token upsert updates existing labels and appends new labels."""
     env_path = tmp_path / ".env"
     env_path.write_text(
-        "MANAGER_HOST=localhost\n"
+        "MANAGER_PUBLIC_URL=http://localhost:8081\n"
         "AUTHORIZED_TOKENS__existing=old-value\n"
         "ADMIN_USERS__admin=hash\n",
         encoding="utf-8",
@@ -1166,7 +1166,7 @@ def test_upsert_admin_user_in_env_updates_and_appends(monkeypatch, tmp_path):
     """Validate .env admin upsert updates existing labels and appends new labels."""
     env_path = tmp_path / ".env"
     env_path.write_text(
-        "MANAGER_HOST=localhost\n"
+        "MANAGER_PUBLIC_URL=http://localhost:8081\n"
         'ADMIN_USERS__existing="old-hash"\n'
         "AUTHORIZED_TOKENS__client=token\n",
         encoding="utf-8",

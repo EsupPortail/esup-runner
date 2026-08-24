@@ -14,10 +14,14 @@ from scripts import check_config
 def _valid_config():
     """Return a minimal valid-looking configuration summary fixture."""
     return SimpleNamespace(
+        MANAGER_PROTOCOL="http",
+        MANAGER_HOST="manager.internal",
         ENVIRONMENT="production",
-        MANAGER_URL="https://manager.example.org:8081",
+        MANAGER_URL="http://manager.internal:8081",
+        MANAGER_PUBLIC_URL="https://admin.example.org/runner-manager",
         MANAGER_BIND_HOST="0.0.0.0",
         MANAGER_PORT=8081,
+        MANAGER_EMAIL="ops@example.org",
         UVICORN_WORKERS=2,
         API_DOCS_VISIBILITY="private",
         AUTHORIZED_TOKENS={"runners": "never-print-this-token"},
@@ -50,14 +54,20 @@ def test_main_reports_valid_non_sensitive_summary(monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert "✓ INFO: Manager configuration loaded and validated." in output
-    assert "Environment: production" in output
-    assert "Manager URL: https://manager.example.org:8081" in output
-    assert "Bind address: 0.0.0.0:8081" in output
-    assert "Uvicorn workers: 2" in output
-    assert "API docs visibility: private" in output
-    assert "Authorized tokens: 1" in output
-    assert "Admin users: 1" in output
-    assert "Shared runner storage: enabled" in output
+    assert "MANAGER_PROTOCOL         : http" in output
+    assert "MANAGER_HOST             : manager.internal" in output
+    assert "MANAGER_PUBLIC_URL       : https://admin.example.org/runner-manager" in output
+    assert "MANAGER_BIND_HOST        : 0.0.0.0" in output
+    assert "MANAGER_PORT             : 8081" in output
+    assert "MANAGER_EMAIL            : ops@example.org" in output
+    assert "MANAGER_URL              : http://manager.internal:8081" in output
+    assert "Manager public admin URL : https://admin.example.org/runner-manager/admin" in output
+    assert "ENVIRONMENT             : production" in output
+    assert "UVICORN_WORKERS         : 2" in output
+    assert "API_DOCS_VISIBILITY     : private" in output
+    assert "AUTHORIZED_TOKENS__*    : 1 configured" in output
+    assert "ADMIN_USERS__*          : 1 configured" in output
+    assert "RUNNERS_STORAGE_ENABLED : enabled" in output
     assert "never-print-this-token" not in output
     assert "never-print-this-hash" not in output
 
@@ -69,7 +79,7 @@ def test_print_summary_reports_disabled_storage(capsys):
 
     check_config._print_summary(config)
 
-    assert "Shared runner storage: disabled" in capsys.readouterr().out
+    assert "RUNNERS_STORAGE_ENABLED : disabled" in capsys.readouterr().out
 
 
 def test_main_reports_each_validation_error(monkeypatch, capsys):

@@ -33,10 +33,13 @@ def test_request_status_returns_zero_on_network_error():
 def test_run_checks_success_with_token_and_runners(monkeypatch):
     """Validate Run checks success with token and runners."""
     cfg = SimpleNamespace(
-        MANAGER_URL="http://manager.example.org:8081",
-        MANAGER_HOST="manager.example.org",
+        MANAGER_PROTOCOL="http",
+        MANAGER_HOST="manager.internal",
+        MANAGER_URL="http://manager.internal:8081",
+        MANAGER_PUBLIC_URL="https://admin.example.org/runner-manager",
         MANAGER_BIND_HOST="0.0.0.0",
         MANAGER_PORT=8081,
+        MANAGER_EMAIL="ops@example.org",
         AUTHORIZED_TOKENS={"runners": "token-abcdef"},
     )
 
@@ -56,8 +59,10 @@ def test_run_checks_success_with_token_and_runners(monkeypatch):
 
     def _fake_request(_client, url, token=None):
         if url.endswith("/admin"):
+            assert url == "https://admin.example.org/runner-manager/admin"
             return 401, '{"detail":"Not authenticated"}'
         if url.endswith("/api/version"):
+            assert url == "http://manager.internal:8081/api/version"
             assert token == "token-abcdef"
             return 200, '{"version":"1.1.0"}'
         if url.endswith("/api/health"):
@@ -71,7 +76,8 @@ def test_run_checks_success_with_token_and_runners(monkeypatch):
     results, context = runtime.run_checks()
     by_name = {r.name: r for r in results}
 
-    assert context["manager_url"] == "http://manager.example.org:8081"
+    assert context["manager_url"] == "http://manager.internal:8081"
+    assert context["manager_public_url"] == "https://admin.example.org/runner-manager"
     assert context["token_masked"] == "toke***cdef"
     assert by_name["Admin Endpoint Reachability"].ok is True
     assert by_name["API Version Endpoint"].ok is True
@@ -81,11 +87,41 @@ def test_run_checks_success_with_token_and_runners(monkeypatch):
     assert "registered_runners=2" in by_name["At Least One Runner Registered"].details
 
 
+def test_print_report_displays_effective_manager_values(capsys):
+    """Use the same Manager labels and values as the configuration check."""
+    cfg = SimpleNamespace(
+        MANAGER_PROTOCOL="https",
+        MANAGER_HOST="manager.internal",
+        MANAGER_PUBLIC_URL="https://admin.example.org/runner-manager",
+        MANAGER_BIND_HOST="0.0.0.0",
+        MANAGER_PORT=8443,
+        MANAGER_EMAIL="ops@example.org",
+        MANAGER_URL="https://manager.internal:8443",
+    )
+    context = {
+        "manager_configuration_rows": runtime.manager_configuration_rows(cfg),
+        "token_masked": "toke***cdef",
+    }
+
+    runtime.print_report([], context)
+
+    output = capsys.readouterr().out
+    assert "MANAGER_PROTOCOL         : https" in output
+    assert "MANAGER_HOST             : manager.internal" in output
+    assert "MANAGER_PUBLIC_URL       : https://admin.example.org/runner-manager" in output
+    assert "MANAGER_BIND_HOST        : 0.0.0.0" in output
+    assert "MANAGER_PORT             : 8443" in output
+    assert "MANAGER_EMAIL            : ops@example.org" in output
+    assert "MANAGER_URL              : https://manager.internal:8443" in output
+    assert "Manager public admin URL : https://admin.example.org/runner-manager/admin" in output
+    assert "AUTHORIZED_TOKENS__* : configured (value hidden)" in output
+
+
 def test_run_checks_without_token_skips_authenticated_endpoints(monkeypatch):
     """Validate Run checks without token skips authenticated endpoints."""
     cfg = SimpleNamespace(
         MANAGER_URL="http://127.0.0.1:8081",
-        MANAGER_HOST="127.0.0.1",
+        MANAGER_PUBLIC_URL="http://127.0.0.1:8081",
         MANAGER_BIND_HOST="127.0.0.1",
         MANAGER_PORT=8081,
         AUTHORIZED_TOKENS={},
@@ -123,7 +159,7 @@ def test_run_checks_missing_manager_url_short_circuit(monkeypatch):
     """Validate Run checks missing manager url short circuit."""
     cfg = SimpleNamespace(
         MANAGER_URL="",
-        MANAGER_HOST="0.0.0.0",
+        MANAGER_PUBLIC_URL="https://admin.example.org/manager",
         MANAGER_BIND_HOST="0.0.0.0",
         MANAGER_PORT=8081,
         AUTHORIZED_TOKENS={"runners": "token-abcdef"},
@@ -137,6 +173,27 @@ def test_run_checks_missing_manager_url_short_circuit(monkeypatch):
     assert results[0].name == "Manager URL Configured"
     assert results[0].ok is False
     assert context["manager_url"] == ""
+
+
+def test_run_checks_missing_public_admin_url_short_circuit(monkeypatch):
+    """Reject a missing public admin URL independently from the private API URL."""
+    cfg = SimpleNamespace(
+        MANAGER_URL="http://manager.internal:8081",
+        MANAGER_PUBLIC_URL="",
+        MANAGER_BIND_HOST="0.0.0.0",
+        MANAGER_PORT=8081,
+        AUTHORIZED_TOKENS={"runners": "token-abcdef"},
+    )
+
+    monkeypatch.setattr(runtime, "_load_config", lambda: cfg)
+    monkeypatch.setattr(runtime, "_check_manager_url_host", lambda _url: [])
+
+    results, context = runtime.run_checks()
+
+    assert len(results) == 1
+    assert results[0].name == "Manager Public Admin URL Configured"
+    assert results[0].ok is False
+    assert context["manager_public_url"] == ""
 
 
 def test_main_exit_codes(monkeypatch):

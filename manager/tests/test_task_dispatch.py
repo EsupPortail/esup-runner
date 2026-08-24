@@ -769,6 +769,7 @@ async def test_execute_task_async_background_success_sets_runner_busy(
     """Validate Execute task async background success sets runner busy."""
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t1"] = _task("t1", "r1", status="pending")
+    captured: dict[str, Any] = {}
 
     class FakeResponse:
         status_code = 200
@@ -784,10 +785,15 @@ async def test_execute_task_async_background_success_sets_runner_busy(
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, *_a, **_k):
+        async def post(self, *_a, **kwargs):
+            captured.update(kwargs["json"])
             return FakeResponse()
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(task_module.config, "MANAGER_URL", "http://manager.internal:8081")
+    monkeypatch.setattr(
+        task_module.config, "MANAGER_PUBLIC_URL", "https://admin.example.org/runner-manager"
+    )
 
     from app.models.models import TaskRequest
 
@@ -804,6 +810,7 @@ async def test_execute_task_async_background_success_sets_runner_busy(
 
     await task_module.execute_task_async_background("t1", runners["r1"], req)
     assert runners["r1"].availability == "busy"
+    assert captured["completion_callback"] == "http://manager.internal:8081/task/completion"
 
 
 @pytest.mark.asyncio

@@ -30,7 +30,8 @@ def test_manager_configuration():
     """
     Test manager configuration is properly loaded.
     """
-    assert config.MANAGER_URL is not None, "Manager URL should be configured."
+    assert config.MANAGER_URL is not None, "Manager private API URL should be configured."
+    assert config.MANAGER_PUBLIC_URL is not None, "Manager public URL should be configured."
     assert len(config.AUTHORIZED_TOKENS) > 0, "Manager should have at least one authorized token."
 
 
@@ -186,9 +187,16 @@ def test_manager_url_configuration():
     """
     Test manager URL configuration.
     """
-    assert config.MANAGER_URL is not None, "Manager URL should be configured."
-    assert isinstance(config.MANAGER_URL, str), "Manager URL should be a string."
-    assert config.MANAGER_URL.startswith("http"), "Manager URL should start with http/https."
+    assert config.MANAGER_URL is not None, "Manager private API URL should be configured."
+    assert isinstance(config.MANAGER_URL, str), "Manager private API URL should be a string."
+    assert config.MANAGER_URL.startswith(
+        "http"
+    ), "Manager private API URL should start with http/https."
+    assert config.MANAGER_PUBLIC_URL is not None, "Manager public URL should be configured."
+    assert isinstance(config.MANAGER_PUBLIC_URL, str), "Manager public URL should be a string."
+    assert config.MANAGER_PUBLIC_URL.startswith(
+        "http"
+    ), "Manager public URL should start with http/https."
 
 
 def test_password_context_configuration():

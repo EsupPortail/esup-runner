@@ -49,18 +49,36 @@ def test_parse_helpers_cover_edge_cases():
     assert cfg._is_ip_literal("  ") is False
     assert cfg._is_ip_literal("example.org") is False
     assert cfg._default_manager_bind_host("") == "0.0.0.0"
-    assert cfg._default_manager_bind_host("localhost") == "localhost"
     assert cfg._default_manager_bind_host("127.0.0.1") == "127.0.0.1"
-    assert cfg._default_manager_bind_host("::1") == "::1"
-    assert cfg._default_manager_bind_host("example.org") == "0.0.0.0"
-    assert cfg._default_manager_bind_host("ns31777550.ip-1-2-3.eu") == "0.0.0.0"
+    assert cfg._default_manager_bind_host("manager.internal") == "0.0.0.0"
+
+    assert cfg._normalize_manager_public_url(" https://example.org/manager/ ") == (
+        "https://example.org/manager"
+    )
+    assert cfg._normalize_manager_public_url("https://example.org//") == "https://example.org/"
+    assert cfg._normalize_manager_public_url("https://") == "https://"
+    assert cfg._root_path_from_public_url("https://example.org/manager") == "/manager"
+    assert cfg._root_path_from_public_url("http://127.0.0.1:8081") == ""
+    assert cfg._root_path_from_public_url("http://[invalid") == ""
+    assert cfg._parse_manager_public_url("") == (
+        None,
+        ["MANAGER_PUBLIC_URL must not be empty"],
+    )
+    assert any(
+        "MANAGER_ROOT_PATH must be derived" in error
+        for error in cfg._manager_public_url_validation_errors(
+            "https://example.org/manager", "/other"
+        )
+    )
 
 
 def test_clear_config_env_vars_removes_only_managed(monkeypatch):
     """Validate Clear config env vars removes only managed."""
     from app.core import config as cfg
 
-    monkeypatch.setenv("MANAGER_HOST", "example")
+    monkeypatch.setenv("MANAGER_PUBLIC_URL", "https://example.org/manager")
+    monkeypatch.setenv("MANAGER_PROTOCOL", "http")
+    monkeypatch.setenv("MANAGER_HOST", "manager.internal")
     monkeypatch.setenv("MANAGER_BIND_HOST", "127.0.0.1")
     monkeypatch.setenv("LOG_DIR", "/tmp/logs")
     monkeypatch.setenv("RUNNERS_STORAGE_DIR", "/tmp/storage")
@@ -71,6 +89,8 @@ def test_clear_config_env_vars_removes_only_managed(monkeypatch):
     cfg._clear_config_env_vars()
 
     assert "SOME_OTHER" in cfg.os.environ
+    assert "MANAGER_PUBLIC_URL" not in cfg.os.environ
+    assert "MANAGER_PROTOCOL" not in cfg.os.environ
     assert "MANAGER_HOST" not in cfg.os.environ
     assert "MANAGER_BIND_HOST" not in cfg.os.environ
     assert "LOG_DIR" not in cfg.os.environ
@@ -191,7 +211,7 @@ def test_reload_config_env_updates_shared_object(monkeypatch):
     # be re-injected after the clear step. The real implementation does this via
     # loading the .env file.
     def fake_load_env():
-        cfg.os.environ["MANAGER_HOST"] = "reload-example"
+        cfg.os.environ["MANAGER_PUBLIC_URL"] = "https://reload.example/manager"
 
     monkeypatch.setattr(cfg, "_load_environment_variables", fake_load_env)
 
@@ -201,7 +221,7 @@ def test_reload_config_env_updates_shared_object(monkeypatch):
 
     assert updated is original_config_obj
     assert cfg.config is original_config_obj
-    assert cfg.config.MANAGER_HOST == "reload-example"
+    assert cfg.config.MANAGER_PUBLIC_URL == "https://reload.example/manager"
     assert cfg._CONFIG_INSTANCE is not None
 
     # Also cover the branch where `config` is missing from globals
@@ -354,7 +374,8 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     from app.core.config import Config
 
     monkeypatch.setenv("MANAGER_PROTOCOL", "https")
-    monkeypatch.setenv("MANAGER_HOST", "example.org")
+    monkeypatch.setenv("MANAGER_HOST", "manager.internal")
+    monkeypatch.setenv("MANAGER_PUBLIC_URL", "https://admin.example.org/runner-manager")
     monkeypatch.delenv("MANAGER_BIND_HOST", raising=False)
     monkeypatch.setenv("MANAGER_PORT", "1234")
     monkeypatch.setenv("LOG_DIR", "/tmp/esup-logs")
@@ -371,7 +392,8 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     monkeypatch.setenv("ADMIN_USERS__admin", valid_bcrypt_hash)
 
     cfg = Config()
-    assert cfg.MANAGER_URL == "https://example.org:1234"
+    assert cfg.MANAGER_URL == "https://manager.internal:1234"
+    assert cfg.MANAGER_PUBLIC_URL == "https://admin.example.org/runner-manager"
     assert cfg.MANAGER_BIND_HOST == "0.0.0.0"
     assert cfg.LOG_DIR.endswith("/")
     assert cfg.LOG_DIRECTORY.endswith("/")
@@ -416,7 +438,7 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     assert cfg5.RUNNERS_STORAGE_DIR == "/tmp/esup-legacy-storage"
     assert cfg5.RUNNERS_STORAGE_PATH == "/tmp/esup-legacy-storage"
 
-    # Explicit bind host override for DNS MANAGER_HOST.
+    # Explicit bind host override for the private API host.
     monkeypatch.setenv("MANAGER_BIND_HOST", "127.0.0.1")
     cfg6 = Config()
     assert cfg6.MANAGER_BIND_HOST == "127.0.0.1"
@@ -427,39 +449,65 @@ def test_config_initialization_and_validation_branches(monkeypatch):
     assert cfg7.MANAGER_BIND_HOST == "0.0.0.0"
 
 
-def test_manager_root_path_is_optional_and_part_of_manager_url(monkeypatch):
-    """Build the public Manager URL with an optional validated deployment prefix."""
+def test_manager_root_path_is_derived_from_public_url(monkeypatch):
+    """Derive the FastAPI deployment prefix from the validated public URL."""
     from app.core.config import Config
 
     default_config = Config()
     assert default_config.MANAGER_ROOT_PATH == ""
-    assert default_config.MANAGER_URL == "http://0.0.0.0:8081"
+    assert default_config.MANAGER_URL == "http://127.0.0.1:8081"
+    assert default_config.MANAGER_PUBLIC_URL == "http://127.0.0.1:8081"
 
-    monkeypatch.setenv("MANAGER_HOST", "manager.example.org")
-    monkeypatch.setenv("MANAGER_ROOT_PATH", "/manager/nested")
+    monkeypatch.setenv("MANAGER_PUBLIC_URL", "https://manager.example.org/manager/nested/")
     prefixed_config = Config()
     prefixed_config.validate_configuration()
 
     assert prefixed_config.MANAGER_ROOT_PATH == "/manager/nested"
-    assert prefixed_config.MANAGER_URL == "http://manager.example.org:8081/manager/nested"
+    assert prefixed_config.MANAGER_PUBLIC_URL == "https://manager.example.org/manager/nested"
+    assert prefixed_config.MANAGER_URL == "http://127.0.0.1:8081"
+
+
+def test_manager_public_url_falls_back_to_private_url_when_absent(monkeypatch):
+    """Keep installations without MANAGER_PUBLIC_URL operational."""
+    from app.core.config import Config
+
+    monkeypatch.setenv("MANAGER_PROTOCOL", "https")
+    monkeypatch.setenv("MANAGER_HOST", "manager.internal")
+    monkeypatch.setenv("MANAGER_PORT", "9443")
+    monkeypatch.delenv("MANAGER_PUBLIC_URL", raising=False)
+
+    legacy_config = Config()
+    legacy_config.validate_configuration()
+
+    assert legacy_config.MANAGER_URL == "https://manager.internal:9443"
+    assert legacy_config.MANAGER_PUBLIC_URL == legacy_config.MANAGER_URL
+    assert legacy_config.MANAGER_ROOT_PATH == ""
 
 
 @pytest.mark.parametrize(
-    "root_path,expected_error",
+    "public_url,expected_error",
     [
-        ("manager", "must start with '/'"),
-        ("/manager/", "must not end with '/'"),
-        ("/manager//nested", "must not contain empty"),
-        ("/manager path", "must not contain whitespace"),
-        ("/manager?debug=true", "must contain URL path segments only"),
-        ("/manager/../admin", "must not contain empty, '.' or '..' segments"),
+        ("manager.example.org", "absolute HTTP.* URL"),
+        ("ftp://manager.example.org", "absolute HTTP.* URL"),
+        ("https://manager.example.org//", "at most one trailing slash"),
+        ("https://manager.example.org/manager//nested", "must not contain empty"),
+        ("https://manager example.org/path", "must not contain whitespace"),
+        ("https://manager.example.org/path?debug=true", "query string or fragment"),
+        ("https://manager.example.org/path#section", "query string or fragment"),
+        ("https://user:secret@manager.example.org", "must not contain user credentials"),
+        ("https://manager.example.org/manager/../admin", "must not contain empty, '.' or '..'"),
+        ("https://manager.example.org/manager%2F%2Fadmin", "must not contain empty"),
+        ("https://manager.example.org/manager%23admin", "unsafe encoded character"),
+        ("https://manager.example.org/manager%20admin", "unsafe encoded character"),
+        ("https://manager.example.org:invalid", "valid absolute URL"),
+        ("https://manager.example.org/manager\\admin", "must not contain backslashes"),
     ],
 )
-def test_manager_root_path_rejects_invalid_values(monkeypatch, root_path, expected_error):
-    """Reject prefixes that cannot safely represent one ASGI deployment root path."""
+def test_manager_public_url_rejects_invalid_values(monkeypatch, public_url, expected_error):
+    """Reject public URLs that cannot safely define the Manager base URL."""
     from app.core.config import Config, ConfigValidationError
 
-    monkeypatch.setenv("MANAGER_ROOT_PATH", root_path)
+    monkeypatch.setenv("MANAGER_PUBLIC_URL", public_url)
     invalid_config = Config()
 
     with pytest.raises(ConfigValidationError, match=expected_error):
@@ -546,6 +594,7 @@ def test_config_validation_aggregates_schema_errors(monkeypatch):
 
     monkeypatch.setenv("MANAGER_PROTOCOL", "ftp")
     monkeypatch.setenv("MANAGER_HOST", "bad host/path")
+    monkeypatch.setenv("MANAGER_PUBLIC_URL", "ftp://bad host/path")
     monkeypatch.setenv("MANAGER_BIND_HOST", "bad bind/path")
     monkeypatch.setenv("ENVIRONMENT", "staging")
     monkeypatch.setenv("LOG_LEVEL", "verbose")
@@ -558,9 +607,10 @@ def test_config_validation_aggregates_schema_errors(monkeypatch):
         config.validate_configuration()
 
     message = str(raised.value)
-    assert "MANAGER_HOST must contain" in message
-    assert "MANAGER_BIND_HOST must contain" in message
     assert "MANAGER_PROTOCOL" in message
+    assert "MANAGER_HOST must contain" in message
+    assert "MANAGER_PUBLIC_URL must not contain whitespace" in message
+    assert "MANAGER_BIND_HOST must contain" in message
     assert "ENVIRONMENT" in message
     assert "LOG_LEVEL" in message
     assert "API_DOCS_VISIBILITY" in message
@@ -572,6 +622,7 @@ def test_config_validation_rejects_placeholders_empty_credentials_and_paths(monk
     from app.core.config import Config, ConfigValidationError
 
     monkeypatch.setenv("MANAGER_HOST", "")
+    monkeypatch.setenv("MANAGER_PUBLIC_URL", "")
     monkeypatch.setenv("LOG_DIR", "")
     monkeypatch.setenv("CACHE_DIR", "")
     monkeypatch.setenv("UV_CACHE_DIR", "")
@@ -584,7 +635,8 @@ def test_config_validation_rejects_placeholders_empty_credentials_and_paths(monk
 
     config = Config()
 
-    assert config.MANAGER_HOST == "0.0.0.0"
+    assert config.MANAGER_HOST == "127.0.0.1"
+    assert config.MANAGER_PUBLIC_URL == "http://127.0.0.1:8081"
     assert config.LOG_DIR == "/var/log/esup-runner/"
     assert config.CACHE_DIR == "/home/esup-runner/.cache/esup-runner"
     assert config.UV_CACHE_DIR == "/home/esup-runner/.cache/esup-runner/uv"
@@ -594,6 +646,7 @@ def test_config_validation_rejects_placeholders_empty_credentials_and_paths(monk
 
     message = str(raised.value)
     assert "MANAGER_HOST must not be empty" in message
+    assert "MANAGER_PUBLIC_URL must not be empty" in message
     assert "LOG_DIR must not be empty" in message
     assert "CACHE_DIR must not be empty" in message
     assert "UV_CACHE_DIR must not be empty" in message
@@ -624,7 +677,7 @@ def test_openapi_cookie_secret_placeholder_is_warning_only(monkeypatch, capsys):
 
 
 def test_semantic_validators_cover_mutated_numeric_paths_and_ipv6(monkeypatch):
-    """Validate semantic checks protect post-load mutations and IPv6 URL formatting."""
+    """Validate semantic checks protect post-load mutations and IPv6 private API URLs."""
     from app.core.config import Config, ConfigValidationError
 
     monkeypatch.setenv("MANAGER_HOST", "::1")
@@ -667,11 +720,11 @@ def test_reload_config_env_rejects_invalid_config_without_mutating_shared_state(
     monkeypatch.setattr(config_module, "config", stable_config)
     monkeypatch.setattr(config_module, "_CONFIG_INSTANCE", stable_config)
     monkeypatch.setattr(config_module, "_CONFIG_ENV_LOADED", True)
-    monkeypatch.setenv("MANAGER_HOST", "stable.example.org")
+    monkeypatch.setenv("MANAGER_PUBLIC_URL", "https://stable.example.org")
 
     def load_invalid_environment():
         """Simulate a newly loaded .env containing an invalid port."""
-        config_module.os.environ["MANAGER_HOST"] = "invalid.example.org"
+        config_module.os.environ["MANAGER_PUBLIC_URL"] = "https://invalid.example.org"
         config_module.os.environ["MANAGER_PORT"] = "invalid"
 
     monkeypatch.setattr(config_module, "_load_environment_variables", load_invalid_environment)
@@ -682,7 +735,7 @@ def test_reload_config_env_rejects_invalid_config_without_mutating_shared_state(
     assert config_module.config is stable_config
     assert config_module._CONFIG_INSTANCE is stable_config
     assert stable_config.stable_value == "kept"
-    assert os.environ["MANAGER_HOST"] == "stable.example.org"
+    assert os.environ["MANAGER_PUBLIC_URL"] == "https://stable.example.org"
     assert "MANAGER_PORT" not in os.environ
 
 
@@ -694,6 +747,7 @@ def test_config_module_auto_validates_outside_pytest(monkeypatch, tmp_path):
     env_path.write_text(
         "MANAGER_PROTOCOL=http\n"
         "MANAGER_HOST=localhost\n"
+        "MANAGER_PUBLIC_URL=http://localhost:8081\n"
         "MANAGER_PORT=8081\n"
         "OPENAPI_COOKIE_SECRET=unit-test-secret\n",
         encoding="utf-8",
@@ -714,5 +768,6 @@ def test_config_module_auto_validates_outside_pytest(monkeypatch, tmp_path):
         if pytest_module is not None:
             sys.modules["pytest"] = pytest_module
 
-    assert module.config.MANAGER_HOST == "localhost"
+    assert module.config.MANAGER_URL == "http://localhost:8081"
+    assert module.config.MANAGER_PUBLIC_URL == "http://localhost:8081"
     module.config.validate_configuration()

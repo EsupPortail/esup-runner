@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added optional `SERVICE_USER` configuration (default `esup-runner`) for cache paths, directory ownership, Docker builds, stack updates, and systemd user-service installation.
 - Added validated `MANAGER_PUBLIC_URL` for the public administration interface. Its optional path is automatically used as FastAPI's `root_path` for root-path-aware administration pages, static assets, redirects, cookies, forms, JavaScript requests and protected OpenAPI documentation, while the Manager API and Runner callbacks keep using the private `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT` address. If the new variable is absent, it falls back to that private URL for compatibility with existing installations.
 
 ### Changed
@@ -18,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved the authenticated Manager health endpoint from `/manager/health` to `/api/health` and updated runtime checks and deployment documentation accordingly.
 - Updated `make init` to load the optional `.env` file before invoking uv, so initialization honors the configured `UV_CACHE_DIR`.
 - Refreshed the dependency lockfile.
+
+### Fixed
+
+- Fixed favicon, logo, and other bundled static assets returning `404` when `MANAGER_PUBLIC_URL` defines a path prefix and the reverse proxy strips that prefix, while preserving support for proxies that forward it unchanged.
+- Fixed `scripts/check_pipeline_tasks.py` result downloads to store verification copies under `<RUNNERS_STORAGE_DIR>/<task_id>/downloads/` instead of creating files in the Manager source directory.
 
 ## [1.7.1] - 2026-07-17
 

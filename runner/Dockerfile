@@ -36,6 +36,10 @@ WORKDIR /app
 # Align container UID/GID with host user when needed (mounted volumes).
 ARG ESUP_RUNNER_UID=1000
 ARG ESUP_RUNNER_GID=1000
+ARG SERVICE_USER=esup-runner
+
+ENV SERVICE_USER=${SERVICE_USER} \
+    HOME=/home/${SERVICE_USER}
 
 # Runtime defaults (can be overridden via --env-file and/or -e flags).
 ENV PATH="/app/.venv/bin:${PATH}" \
@@ -45,7 +49,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     RUNNER_BASE_PORT=8082 \
     LOG_DIR=/var/log/esup-runner \
     STORAGE_DIR=/tmp/esup-runner \
-    CACHE_DIR=/home/esup-runner/.cache/esup-runner \
+    CACHE_DIR=${HOME}/.cache/esup-runner \
     WHISPER_MODELS_DIR=${CACHE_DIR}/whisper-models \
     HUGGINGFACE_MODELS_DIR=${CACHE_DIR}/huggingface \
     UV_CACHE_DIR=${CACHE_DIR}/uv \
@@ -57,15 +61,15 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Create dedicated non-root user and writable runtime directories.
-RUN groupadd --gid "${ESUP_RUNNER_GID}" esup-runner && \
-    useradd --uid "${ESUP_RUNNER_UID}" --gid "${ESUP_RUNNER_GID}" --home-dir /home/esup-runner --create-home --shell /usr/sbin/nologin esup-runner && \
-    mkdir -p /var/log/esup-runner /tmp/esup-runner /home/esup-runner/.cache/esup-runner/whisper-models /home/esup-runner/.cache/esup-runner/huggingface /home/esup-runner/.cache/esup-runner/uv && \
-    chown -R esup-runner:esup-runner /var/log/esup-runner /tmp/esup-runner /home/esup-runner /app
+RUN groupadd --gid "${ESUP_RUNNER_GID}" "${SERVICE_USER}" && \
+    useradd --uid "${ESUP_RUNNER_UID}" --gid "${ESUP_RUNNER_GID}" --home-dir "${HOME}" --create-home --shell /usr/sbin/nologin "${SERVICE_USER}" && \
+    mkdir -p /var/log/esup-runner /tmp/esup-runner "${CACHE_DIR}/whisper-models" "${CACHE_DIR}/huggingface" "${UV_CACHE_DIR}" && \
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" /var/log/esup-runner /tmp/esup-runner "${HOME}" /app
 
 # Copy the built app and virtual environment with correct ownership.
-COPY --from=build --chown=esup-runner:esup-runner /app /app
+COPY --from=build --chown=${SERVICE_USER}:${SERVICE_USER} /app /app
 
-USER esup-runner
+USER ${SERVICE_USER}
 
 EXPOSE 8082
 

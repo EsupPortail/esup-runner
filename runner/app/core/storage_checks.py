@@ -129,7 +129,8 @@ def _is_within_path(path: Path, parent: Path) -> bool:
 
 def _configured_cache_paths(cfg: Any) -> dict[str, str]:
     """Return configured cache paths derived from runner config."""
-    cache_dir = str(getattr(cfg, "CACHE_DIR", "/home/esup-runner/.cache/esup-runner"))
+    service_user = str(getattr(cfg, "SERVICE_USER", "esup-runner"))
+    cache_dir = str(getattr(cfg, "CACHE_DIR", f"/home/{service_user}/.cache/esup-runner"))
     cache_path = Path(cache_dir).expanduser()
     return {
         "cache_dir": str(cache_path),

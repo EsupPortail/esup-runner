@@ -53,7 +53,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
 
 # Runtime dependencies (CPU FFmpeg tools).
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg ca-certificates time && \
+    apt-get install -y --no-install-recommends ffmpeg ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Create dedicated non-root user and writable runtime directories.

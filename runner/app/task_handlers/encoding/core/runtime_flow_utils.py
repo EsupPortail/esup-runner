@@ -106,12 +106,12 @@ _AUDIO_STREAM_MAP = _FALLBACK_AUDIO_STREAM_MAP
 
 # Audio encoding templates
 MP3 = (
-    "time ffmpeg -i {input} -hide_banner -y {subtime}-c:a libmp3lame -q:a 2 "
+    "ffmpeg -i {input} -hide_banner -y {subtime}-c:a libmp3lame -q:a 2 "
     '-ar 44100 -vn -threads 0 "{output_dir}/audio_192k_{output}.mp3"'
 )
 
 M4A = (
-    "time ffmpeg -i {input} -hide_banner -y {subtime}-c:a aac -ar 44100 "
+    "ffmpeg -i {input} -hide_banner -y {subtime}-c:a aac -ar 44100 "
     '-q:a 2 -vn -threads 0 "{output_dir}/audio_192k_{output}.m4a"'
 )
 
@@ -120,27 +120,27 @@ _THUMBNAIL_MAX_SCALE_FILTER = (
     "-vf \"scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease\" "
 )
 EXTRACT_THUMBNAIL_0 = (
-    "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y "
+    "ffmpeg -ss {timestamp} -i {input} -hide_banner -y "
     + _THUMBNAIL_MAX_SCALE_FILTER
     + "-vframes 1 {output_dir}/{filename}_0.{ext}"
 )
 EXTRACT_THUMBNAIL_1 = (
-    "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y "
+    "ffmpeg -ss {timestamp} -i {input} -hide_banner -y "
     + _THUMBNAIL_MAX_SCALE_FILTER
     + "-vframes 1 {output_dir}/{filename}_1.{ext}"
 )
 EXTRACT_THUMBNAIL_2 = (
-    "time ffmpeg -ss {timestamp} -i {input} -hide_banner -y "
+    "ffmpeg -ss {timestamp} -i {input} -hide_banner -y "
     + _THUMBNAIL_MAX_SCALE_FILTER
     + "-vframes 1 {output_dir}/{filename}_2.{ext}"
 )
 
 # CPU encoding base command
-CPU = f"time ffmpeg -hide_banner -y {_INPUT_PROBE} -i {{input}} "
+CPU = f"ffmpeg -hide_banner -y {_INPUT_PROBE} -i {{input}} "
 
 # GPU encoding base command (using CUDA)
 GPU = (
-    "time ffmpeg -y -hwaccel_device {hwaccel_device} "
+    "ffmpeg -y -hwaccel_device {hwaccel_device} "
     "-hwaccel cuda -hwaccel_output_format cuda "
     f"{_INPUT_PROBE} -c:v:0 {{codec}}_cuvid -i {{input}} "
 )
@@ -1394,6 +1394,11 @@ def _compute_working_duration(info_video: dict) -> tuple[int, str]:
 
 def _validate_source_media_info(info_video: dict) -> None:
     """Validate that probed media metadata describes a readable source file."""
+    if isinstance(info_video, dict):
+        probe_error = str(info_video.get(media_probe_utils.PROBE_ERROR_KEY) or "").strip()
+        if probe_error:
+            raise EncodingValidationError(f"Encoding aborted: {probe_error}")
+
     if not isinstance(info_video, dict) or not info_video:
         raise EncodingValidationError(
             "Encoding aborted: source file does not appear to be a valid video file."

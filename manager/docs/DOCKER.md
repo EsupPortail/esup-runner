@@ -99,7 +99,8 @@ If you skipped step 4, create an env file in a path of your choice (example: `/o
 
 At minimum, review:
 
-- `MANAGER_HOST`, `MANAGER_PORT`
+- `MANAGER_PROTOCOL`, `MANAGER_HOST`, `MANAGER_PORT`
+- `MANAGER_PUBLIC_URL`, `MANAGER_BIND_HOST`
 - `AUTHORIZED_TOKENS__*`
 - `ADMIN_USERS__*`
 - `LOG_DIR`
@@ -118,16 +119,23 @@ valid themselves.
 
 Compatibility note: legacy names `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` are still accepted.
 
-For Docker deployment with a shared Docker network, set:
+With `RUNNERS_STORAGE_ENABLED=true`, the Manager's `RUNNERS_STORAGE_DIR` and
+every Runner's `STORAGE_DIR` must point to the same generated-files workspace.
+Mount the same Docker volume in both containers (for example,
+`esup-runner-storage:/tmp/esup-runner`) and configure both paths accordingly.
+
+For a Docker deployment with Runners on the shared Docker network, set the private API host:
 
 - `MANAGER_HOST=esup-runner-manager`
 
 Important:
 
-- `MANAGER_HOST` is used to build `MANAGER_URL`.
-- `MANAGER_BIND_HOST` controls the server bind interface (leave empty for default auto behavior).
-- `MANAGER_URL` is injected into runner tasks as `completion_callback` (`/task/completion`).
-- If `MANAGER_HOST=0.0.0.0`, callbacks from runner may fail in Docker (`http://0.0.0.0:...` points to the runner container itself, not the manager).
+- `MANAGER_PROTOCOL` selects the scheme used by Runner containers for the private API. It does not enable TLS in the Manager container by itself.
+- `MANAGER_HOST` is the destination advertised to Runners. Use the Manager container/service DNS name, never the `0.0.0.0` listening wildcard.
+- `MANAGER_PORT` is both the container listening port and the port in the private API URL. A published host port or the public reverse-proxy port may differ.
+- `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT` is the private API URL injected into Runner tasks as the base of `completion_callback` (`/task/completion`). It must be reachable from Runner containers but must not be published by the reverse proxy.
+- `MANAGER_PUBLIC_URL` configures only the administration URL. If omitted, it falls back to the private URL built from `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`, which keeps older environment files operational. With a reverse proxy, set its complete external admin URL explicitly, for example `https://example.org/manager`; the `/manager` path becomes FastAPI's `root_path` automatically.
+- `MANAGER_BIND_HOST` controls the server bind interface and normally remains `0.0.0.0` inside the container.
 
 ## 6) Choose how to get the manager image
 
@@ -319,7 +327,7 @@ uv run scripts/check_pipeline_tasks.py --with-transcription-translation
 
 Before running this script:
 
-- The script auto-loads `MANAGER_URL` and the first configured `AUTHORIZED_TOKENS__*` value from `manager/.env`.
+- The script auto-loads the private `MANAGER_URL` built from `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`, plus the first configured `AUTHORIZED_TOKENS__*` value from `manager/.env`.
 - Optional overrides remain available through `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL`.
 - The smoke test leaves `notify_url` empty by default so it does not depend on an external webhook service; set `RUNNER_NOTIFY_URL` to test a callback endpoint explicitly.
 - If the script runs from another server, avoid `127.0.0.1`; use the real manager host/IP.

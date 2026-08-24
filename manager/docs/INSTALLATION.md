@@ -100,7 +100,8 @@ nano .env
 
 At minimum, review:
 
-- `MANAGER_HOST`, `MANAGER_PORT`
+- `MANAGER_PROTOCOL`, `MANAGER_HOST`, `MANAGER_PORT`
+- `MANAGER_PUBLIC_URL`, `MANAGER_BIND_HOST`
 - `AUTHORIZED_TOKENS__*` (clients and runners)
 - `ADMIN_USERS__*` (for the `/admin` dashboard)
 - `LOG_DIR`
@@ -110,7 +111,39 @@ At minimum, review:
 
 Compatibility note: legacy names `LOG_DIRECTORY` and `RUNNERS_STORAGE_PATH` are still accepted.
 
+If `RUNNERS_STORAGE_ENABLED=true`, configure `RUNNERS_STORAGE_DIR` to use the
+same generated-files workspace as `STORAGE_DIR` on every Runner. The Manager
+must be able to access files written there by the Runners; for separate hosts or
+containers, mount the same shared filesystem or volume in both services.
+
 Full configuration reference: see [CONFIGURATION.md](CONFIGURATION.md) and [PARAMETERS.md](PARAMETERS.md).
+
+The Manager has three distinct network views:
+
+- The private advertised address, built from `MANAGER_PROTOCOL`,
+  `MANAGER_HOST` and `MANAGER_PORT`, must be reachable by every Runner.
+- The local listening socket is selected by `MANAGER_BIND_HOST` and
+  `MANAGER_PORT`. A wildcard such as `0.0.0.0` is valid here, but not as the
+  advertised `MANAGER_HOST`.
+- The browser-facing administration address is `MANAGER_PUBLIC_URL`. It can use
+  a different host, HTTPS, port `443` or a path prefix supplied by a reverse
+  proxy, and is never used for Runner communication.
+
+For example, with remote Runners on a private network and an administration UI
+published through an HTTPS reverse proxy:
+
+```properties
+MANAGER_PROTOCOL=http
+MANAGER_HOST=manager.internal
+MANAGER_PUBLIC_URL=https://admin.example.org/runner-manager
+MANAGER_BIND_HOST=0.0.0.0
+MANAGER_PORT=8081
+```
+
+Here, Runners use `http://manager.internal:8081`, the process listens on port
+`8081` on every IPv4 interface, and administrators open
+`https://admin.example.org/runner-manager`. Setting `MANAGER_PROTOCOL=https`
+would not by itself enable TLS on the Manager process.
 
 #### `notify_url` callback restrictions
 
@@ -281,7 +314,7 @@ uv run scripts/check_pipeline_tasks.py --with-transcription-translation
 
 Notes:
 
-- The script auto-loads `MANAGER_URL` and the first configured `AUTHORIZED_TOKENS__*` value from `manager/.env`.
+- The script auto-loads the private `MANAGER_URL` and the first configured `AUTHORIZED_TOKENS__*` value from `manager/.env`.
 - Optional overrides are still available with `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL`.
 - The smoke test disables the optional client callback by default; set `RUNNER_NOTIFY_URL` only if you also want to validate a reachable `notify_url` endpoint.
 - If the script runs from another server, avoid `127.0.0.1`; use the reachable manager host/IP.
@@ -332,45 +365,59 @@ Recommendations:
 
 - Expose only the reverse proxy publicly on `443` (HTTPS).
 - Keep the manager service on a private interface, or localhost only when possible.
-- Forward admin endpoints (`/admin`, `/tasks`…) and API routes through the proxy.
+- Forward only admin endpoints (`/admin`, `/tasks`, `/logs`, `/statistics`, `/static` and protected documentation routes) through the proxy.
+- Keep private API namespaces (`/api`, `/runner`, `/task`) inaccessible from the public proxy.
 - Avoid direct public access to the manager process on `MANAGER_PORT`.
 
 ### Publish the Manager below a URL prefix
 
-Set the public prefix when the Manager is exposed below a subpath such as `/manager`:
+Set the complete public URL when the Manager is exposed below a subpath such as `/manager`:
 
 ```properties
-MANAGER_ROOT_PATH=/manager
+MANAGER_PUBLIC_URL=https://example.org/manager
+API_DOCS_VISIBILITY=private
 ```
 
-Restart the Manager after changing this startup setting. Any reverse proxy can be used as long as it removes the public prefix before forwarding requests to the Manager. The following configuration is an example for Nginx:
+The Manager validates this absolute HTTP(S) URL and derives FastAPI's `root_path` (`/manager` here) from its path. Credentials, query strings, fragments and unsafe path segments are rejected; one trailing slash is accepted and removed. Restart the Manager after changing this startup setting.
+
+For compatibility with installations whose `.env` predates this setting, an absent `MANAGER_PUBLIC_URL` falls back to `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT`. This fallback has no public path; configure the variable explicitly for any reverse-proxy deployment.
+
+Any reverse proxy can be used as long as it removes the public prefix before forwarding requests to the Manager. The following configuration is an example for Nginx:
 
 ```nginx
 location = /manager {
     return 308 /manager/;
 }
 
-location /manager/ {
-    proxy_pass http://127.0.0.1:8081/;
+location = /manager/ {
+    return 302 /manager/admin;
+}
+
+# Allow only administration pages, assets and protected API documentation.
+location ~ ^/manager/(?:admin|tasks|logs|statistics|static|docs|redoc)(?:/|$)|^/manager/openapi\.json$ {
+    rewrite ^/manager(/.*)$ $1 break;
+    proxy_pass http://127.0.0.1:8081;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
+
+# Everything else below the public prefix stays private.
+location /manager/ {
+    return 404;
+}
 ```
 
-The trailing slash in `proxy_pass` maps `/manager/admin` to the Manager's internal `/admin` route, `/manager/api/health` to `/api/health`, and `/manager/static/...` to `/static/...`. This avoids claiming the host's root-level `/static` location.
+The rewrite maps `/manager/admin` to the Manager's internal `/admin` route and `/manager/static/...` to `/static/...`. No public location matches the private namespaces `/api`, `/runner` or `/task`; they receive a `404`. Keep the Manager listening port restricted to the private network as a second layer of protection.
 
-`MANAGER_ROOT_PATH` does not rename the Manager's internal routes. A Runner must set `MANAGER_URL` to the base URL it actually uses to reach the Manager:
+The path derived from `MANAGER_PUBLIC_URL` does not rename the Manager's internal routes. A Runner must use the private API base URL built from the Manager's `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`:
 
 ```properties
-# Direct access to the Manager process or its internal service
-MANAGER_URL=http://127.0.0.1:8081
-
-# Or access through the reverse proxy configured above
-# MANAGER_URL=https://example.org/manager
+# runner/.env: private DNS name or IP reachable from the Runner
+MANAGER_URL=http://manager.internal:8081
 ```
 
-The Runner appends stable route paths such as `/api/health`, `/runner/register`, and `/runner/heartbeat/...` to this base URL. Configure only one of the two values above, according to the network path used by the Runner.
+The Runner appends stable route paths such as `/api/health`, `/runner/register`, and `/runner/heartbeat/...` to this private base URL. The Manager also uses its private `MANAGER_URL` for `/task/completion` callbacks. Runners do not need access to `MANAGER_PUBLIC_URL`.
 
 Notes:
 

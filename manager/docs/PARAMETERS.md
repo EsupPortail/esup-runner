@@ -5,10 +5,10 @@ This page summarizes the environment variables consumed by the manager. Values a
 ## Quick start (.env snippet)
 ```properties
 MANAGER_PROTOCOL=http
-MANAGER_HOST=0.0.0.0
-MANAGER_BIND_HOST=
+MANAGER_HOST=127.0.0.1
+MANAGER_PUBLIC_URL=http://127.0.0.1:8081
+MANAGER_BIND_HOST=0.0.0.0
 MANAGER_PORT=8081
-MANAGER_ROOT_PATH=
 ENVIRONMENT=production
 UVICORN_WORKERS=2
 AUTHORIZED_TOKENS__runners=CHANGE_ME_RUNNERS_TOKEN
@@ -17,7 +17,7 @@ LOG_DIR=/var/log/esup-runner
 RUNNERS_STORAGE_ENABLED=false
 RUNNERS_STORAGE_DIR=/tmp/esup-runner
 CACHE_DIR=/home/esup-runner/.cache/esup-runner
-API_DOCS_VISIBILITY=public
+API_DOCS_VISIBILITY=private
 OPENAPI_ALLOW_QUERY_TOKEN=false
 NOTIFY_URL_ALLOW_PRIVATE_NETWORKS=false
 RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
@@ -29,12 +29,13 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 - If no override is set, the default file is `manager/.env`.
 
 ## Core manager
-- `MANAGER_PROTOCOL` (default `http`), `MANAGER_HOST` (default `0.0.0.0`), `MANAGER_PORT` (default `8081`): Base URL components.
-- `MANAGER_BIND_HOST` (default computed): Socket bind host used by Uvicorn/Gunicorn.
-  - If unset and `MANAGER_HOST` is an IP literal, bind uses `MANAGER_HOST`.
-  - If unset and `MANAGER_HOST` is a DNS hostname, bind uses `0.0.0.0`.
-- `MANAGER_ROOT_PATH` (default empty): Optional public URL prefix used when the Manager is exposed below a reverse-proxy subpath (for example `/manager`). It must start with `/`, must not end with `/`, and requires a restart when changed. Internal routes remain unchanged; for example, `/api/health` is published as `/manager/api/health` with this prefix.
-- `MANAGER_URL` is computed automatically as `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT + MANAGER_ROOT_PATH`.
+- `MANAGER_PROTOCOL` (default `http`): Scheme used to build the private Manager API URL. Allowed values are `http` and `https`. It does not enable TLS in Uvicorn/Gunicorn; choose `https` only when the private network path terminates TLS for this URL.
+- `MANAGER_HOST` (default `127.0.0.1`): Private DNS name or IP through which Runners reach the Manager. It becomes the host in the computed `MANAGER_URL` and is also used as a fallback domain for manager notification senders. It must be reachable from every Runner; `0.0.0.0` is a bind wildcard, not a reachable destination.
+- `MANAGER_PORT` (default `8081`): Uvicorn/Gunicorn listening port and port included in the computed private `MANAGER_URL`. It is not necessarily the public reverse-proxy port recorded in `MANAGER_PUBLIC_URL`.
+- `MANAGER_BIND_HOST` (default computed from `MANAGER_HOST`): Local socket interface used by Uvicorn/Gunicorn. `127.0.0.1` restricts access to the local host, a specific local IP restricts it to that interface, and `0.0.0.0` listens on every IPv4 interface. It never becomes part of an advertised URL.
+- `MANAGER_PUBLIC_URL` (default computed from `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT`): Complete browser-facing HTTP(S) URL of the administration interface. It does not configure the socket and is never used by Runners. Set it explicitly when a reverse proxy changes the public scheme, host, port or path. Credentials, query strings and fragments are rejected. One trailing slash is normalized away; the optional path becomes FastAPI's `root_path`. Changing it requires a Manager restart.
+- `MANAGER_URL` (computed, not an environment variable of the Manager): Private API base URL assembled from `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`. It is used for task completion callbacks. The `MANAGER_URL` configured in each Runner must point to this same private API address.
+- `MANAGER_ROOT_PATH` (computed, not an environment variable): FastAPI deployment prefix derived from the path in `MANAGER_PUBLIC_URL`.
 - `ENVIRONMENT` (default `development`): Environment name used by runtime/deployment wrappers.
 - `UVICORN_WORKERS` (int, default `4`): Worker count for production process managers.
 - `CLEANUP_TASK_FILES_DAYS` (int, default `60`): Retention for all tasks managed by cleanup services, regardless of status. Set `0` to disable age-based cleanup.
@@ -61,7 +62,9 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 
 ## Shared storage
 - `RUNNERS_STORAGE_ENABLED` (bool, default `false`): Enables manager-side shared storage reads.
-- `RUNNERS_STORAGE_DIR` (default `/tmp/esup-runner`): Shared storage root.
+- `RUNNERS_STORAGE_DIR` (default `/tmp/esup-runner`): Shared storage root. When
+  shared storage is enabled, it must point to the same generated-files workspace
+  as `STORAGE_DIR` on every Runner (the same shared filesystem or volume).
 - Legacy alias: `RUNNERS_STORAGE_PATH`.
 
 ## Domain-based priorities
@@ -95,7 +98,9 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 - Explicit invalid boolean, integer, and floating-point values are rejected instead of being silently replaced or clamped.
 - At startup, the manager validates URL components, supported environment/log/docs modes, numeric bounds, non-empty required paths, credential entries (including bcrypt hash structure), CORS compatibility, and priority settings.
 - `CORS_ALLOW_CREDENTIALS=true` is invalid when `CORS_ALLOW_ORIGINS=*` (startup error).
-- `RUNNERS_STORAGE_ENABLED=true` requires a non-empty `RUNNERS_STORAGE_DIR`/`RUNNERS_STORAGE_PATH`.
+- `RUNNERS_STORAGE_ENABLED=true` requires a non-empty
+  `RUNNERS_STORAGE_DIR`/`RUNNERS_STORAGE_PATH` pointing to the same
+  generated-files workspace as each Runner's `STORAGE_DIR`.
 - `PRIORITIES_ENABLED=true` requires a non-empty hostname-only `PRIORITY_DOMAIN`.
 - Documented `CHANGE_ME_*` token/admin values are rejected. The optional `change-me-with-a-long-random-secret` OpenAPI cookie value emits a warning only; replace it in production or leave it empty to use the derived fallback. Empty token/admin collections remain allowed with an explicit warning because they intentionally disable the corresponding access.
 - Boolean values accept common forms: `true/false`, `1/0`, `yes/no`, `on/off`.

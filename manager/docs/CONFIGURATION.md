@@ -29,21 +29,46 @@ startup and before a hot-reloaded configuration replaces the live one.
 
 ```properties
 MANAGER_PROTOCOL=http
-MANAGER_HOST=0.0.0.0
-MANAGER_BIND_HOST=
+MANAGER_HOST=127.0.0.1
+MANAGER_PUBLIC_URL=http://127.0.0.1:8081
+MANAGER_BIND_HOST=0.0.0.0
 MANAGER_PORT=8081
-MANAGER_ROOT_PATH=
 ENVIRONMENT=production
 UVICORN_WORKERS=2
 CLEANUP_TASK_FILES_DAYS=60
 ```
 
-Behavior:
-- `MANAGER_ROOT_PATH` is the optional public URL prefix used when the complete Manager is exposed below a reverse-proxy subpath (for example `/manager`). It must start with `/`, must not end with `/`, and changing it requires a Manager restart. It does not rename internal routes: `/api/health` remains `/api/health`, while its public URL through the proxy becomes `/manager/api/health`.
-- `MANAGER_URL` is computed automatically as `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT + MANAGER_ROOT_PATH`.
-- `MANAGER_BIND_HOST` controls the socket bind interface.
-  - If unset and `MANAGER_HOST` is an IP (`127.0.0.1`, `10.x.x.x`, `::1`, etc.), manager binds on that IP.
-  - If unset and `MANAGER_HOST` is a DNS hostname, manager binds on `0.0.0.0` for reliability.
+The five addressing variables deliberately describe three different network
+views of the same Manager:
+
+| Variable | Purpose | How to choose it |
+| --- | --- | --- |
+| `MANAGER_PROTOCOL` | Scheme of the private Manager API URL (`http` or `https`). | Use the protocol through which Runners actually reach the private API. This setting only builds URLs; it does not enable TLS in Uvicorn/Gunicorn. |
+| `MANAGER_HOST` | Private DNS name or IP advertised for Runner-to-Manager communication. | Use a value resolvable and reachable from every Runner, such as `manager.internal` or a private IP. Never advertise `0.0.0.0`; use `127.0.0.1` only when every Runner is on the same host. |
+| `MANAGER_PORT` | Port of the private API and local Uvicorn/Gunicorn listening socket. | Use the port on which the Manager process listens, normally `8081`. A public reverse proxy can expose another port, commonly `443`. |
+| `MANAGER_BIND_HOST` | Local interface on which Uvicorn/Gunicorn accepts connections. | Use `127.0.0.1` for same-host access only, a specific local interface address to restrict listening, or `0.0.0.0` for every IPv4 interface. This value is never advertised to Runners. |
+| `MANAGER_PUBLIC_URL` | Complete browser-facing URL of the administration interface. | Set it to the external reverse-proxy URL, including its scheme, optional non-default port and optional path prefix. Runners never use this URL. |
+
+`MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT` are combined into the
+computed private `MANAGER_URL`. The Manager puts
+`MANAGER_URL/task/completion` in dispatched tasks; Runners must be able to call
+that address. A Runner's own `MANAGER_URL` must identify the same private API so
+that registration, heartbeats and health checks use the private network.
+
+`MANAGER_PUBLIC_URL` does not change the listening socket. If it is absent, it
+falls back to `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT`. Set it explicitly
+whenever administrators use a different origin, protocol, port or reverse-proxy
+path. Its optional path is decoded and used as FastAPI's `root_path`; for
+example, `https://example.org/manager` publishes `/admin` as
+`https://example.org/manager/admin` through a proxy that removes `/manager`
+before forwarding the request. Credentials, query strings and fragments are
+rejected, one trailing slash is normalized away, and changing the value
+requires a Manager restart.
+
+The important distinction is that `MANAGER_HOST` answers “where can a Runner
+reach the Manager?”, while `MANAGER_BIND_HOST` answers “on which local network
+interface does the process listen?”. They can be equal, but do not need to be.
+
 - `CLEANUP_TASK_FILES_DAYS` controls cleanup retention for all task files (all statuses). Set `0` to disable age-based cleanup.
 - `UVICORN_WORKERS` is used in production process setups (Gunicorn/Uvicorn workers).
 
@@ -84,7 +109,7 @@ Admin password hashes can be generated/managed from `/admin/credentials` (UI) or
 OpenAPI/docs can be public or token-protected:
 
 ```properties
-API_DOCS_VISIBILITY=public
+API_DOCS_VISIBILITY=private
 OPENAPI_ALLOW_QUERY_TOKEN=false
 OPENAPI_COOKIE_SECRET=
 ```
@@ -145,6 +170,9 @@ RUNNERS_STORAGE_DIR=/tmp/esup-runner
 Behavior:
 - `RUNNERS_STORAGE_ENABLED=false` (default): manager proxies result access via runners.
 - `RUNNERS_STORAGE_ENABLED=true`: manager reads manifests/files from shared storage.
+- When enabled, `RUNNERS_STORAGE_DIR` on the Manager and `STORAGE_DIR` on every
+  Runner must point to the same generated-files workspace. On separate hosts or
+  in containers, expose the same shared filesystem or volume to both services.
 - Expected manifest location: `<RUNNERS_STORAGE_DIR>/<task_id>/manifest.json`.
 - Legacy alias `RUNNERS_STORAGE_PATH` is still supported.
 - If shared storage is enabled and directory is empty, startup validation raises an error.
@@ -235,10 +263,10 @@ Email notifications are active only when required SMTP fields are configured.
 ```properties
 # Manager URL configuration
 MANAGER_PROTOCOL=http
-MANAGER_HOST=0.0.0.0
-MANAGER_BIND_HOST=
+MANAGER_HOST=127.0.0.1
+MANAGER_PUBLIC_URL=http://127.0.0.1:8081
+MANAGER_BIND_HOST=0.0.0.0
 MANAGER_PORT=8081
-MANAGER_ROOT_PATH=
 
 # Production/development settings
 ENVIRONMENT=production
@@ -267,7 +295,7 @@ PRIORITY_DOMAIN=example.org
 MAX_OTHER_DOMAIN_TASK_PERCENT=25
 
 # OpenAPI visibility and token handling
-API_DOCS_VISIBILITY=public
+API_DOCS_VISIBILITY=private
 OPENAPI_ALLOW_QUERY_TOKEN=false
 
 # CORS

@@ -56,7 +56,7 @@ Run `check_config.py` first after editing `.env` and before restarting the
 service. It validates the effective configuration, reports all detected errors
 together without printing secrets, and returns `2` when invalid.
 
-`check_pipeline_tasks.py` reads `MANAGER_URL` and manager tokens from `.env` by default; `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL` remain available as optional overrides. The optional client callback is disabled by default; set `RUNNER_NOTIFY_URL` only when you want the smoke test to exercise a reachable `notify_url`.
+`check_pipeline_tasks.py` reads the private `MANAGER_URL` and manager tokens from `.env` by default; `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL` remain available as optional overrides. The optional client callback is disabled by default; set `RUNNER_NOTIFY_URL` only when you want the smoke test to exercise a reachable `notify_url`.
 
 ## Admin UI runbook
 

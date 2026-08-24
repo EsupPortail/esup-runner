@@ -108,6 +108,20 @@ diff -u .env.example .env || true
 - Add any new missing variables to `.env`.
 - Do not accidentally remove your existing tokens.
 
+### Configure the Manager public URL when needed
+
+Existing installations can keep using `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`: if `MANAGER_PUBLIC_URL` is absent, the Manager computes it from these three values. Configure the complete public administration URL explicitly when using a reverse proxy:
+
+```properties
+MANAGER_PROTOCOL=http
+MANAGER_HOST=manager.internal
+MANAGER_PUBLIC_URL=https://server.univ.fr/runner-manager
+MANAGER_BIND_HOST=0.0.0.0
+MANAGER_PORT=8081
+```
+
+The path `/runner-manager` is automatically used as FastAPI's `root_path`. Runners and completion callbacks continue to use the private `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT` address and never need access to `MANAGER_PUBLIC_URL`. Configure the reverse proxy to expose only administration routes. The automatic fallback preserves direct, unprefixed access only; it cannot infer an external reverse-proxy origin or path.
+
 ---
 
 ## 5) Update Python dependencies

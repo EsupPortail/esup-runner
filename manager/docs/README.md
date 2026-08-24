@@ -153,7 +153,9 @@ Current note:
 
 Notes:
 
-- If `RUNNERS_STORAGE_ENABLED` is set, the manager reads manifests/files from shared storage.
+- If `RUNNERS_STORAGE_ENABLED=true`, the manager reads manifests/files from
+  shared storage. `RUNNERS_STORAGE_DIR` on the Manager and `STORAGE_DIR` on
+  every Runner must point to the same generated-files workspace.
 - In shared storage mode, manifests are expected at `<RUNNERS_STORAGE_DIR>/<task_id>/manifest.json`.
 - Legacy alias: `RUNNERS_STORAGE_PATH`.
 - Otherwise, the manager proxy-streams results from the runner.

@@ -7,7 +7,8 @@ Install NVIDIA drivers and CUDA on Debian 13 for runner GPU mode.
 ## Status
 
 - Targets CUDA 13.3 Update 1, the latest release published by NVIDIA at the time of writing.
-- Procedure based on the current NVIDIA documentation; to be validated on a target host.
+- Validated on a Debian 13 target host on 2026-08-25.
+- Validation included the runner NVENC and `scale_cuda` GPU preflight checks.
 
 ## Prerequisites
 
@@ -148,6 +149,6 @@ GPU_CUDA_PATH=/usr/local/cuda-13.3
 
 Then proceed with one FFmpeg method:
 
-- [FFMPEG_SOURCE.md](FFMPEG_SOURCE.md)
+- [FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md](FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md)
 - [FFMPEG_PREBUILT.md](FFMPEG_PREBUILT.md)
 - [FFMPEG_DOCKER.md](FFMPEG_DOCKER.md)

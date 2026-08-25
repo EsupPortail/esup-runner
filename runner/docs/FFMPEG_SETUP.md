@@ -20,6 +20,9 @@ NVIDIA/CUDA platform pages:
 
 FFmpeg deployment methods:
 - Build from source: [gpu/FFMPEG_SOURCE.md](gpu/FFMPEG_SOURCE.md)
+  - Debian 11 + CUDA 12.4: [gpu/FFMPEG_SOURCE_DEBIAN11_CUDA12_4.md](gpu/FFMPEG_SOURCE_DEBIAN11_CUDA12_4.md)
+  - Debian 12 + CUDA 13.2: [gpu/FFMPEG_SOURCE_DEBIAN12_CUDA13_2.md](gpu/FFMPEG_SOURCE_DEBIAN12_CUDA13_2.md)
+  - Debian 13 + CUDA 13.3: [gpu/FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md](gpu/FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md)
 - Install prebuilt package: [gpu/FFMPEG_PREBUILT.md](gpu/FFMPEG_PREBUILT.md)
 - Use Docker wrappers: [gpu/FFMPEG_DOCKER.md](gpu/FFMPEG_DOCKER.md)
 

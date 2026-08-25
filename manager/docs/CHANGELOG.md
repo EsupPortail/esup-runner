@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.8.0] - 2026-08-25
+
 ### Added
 
 - Added optional `SERVICE_USER` configuration (default `esup-runner`) for cache paths, directory ownership, Docker builds, stack updates, and systemd user-service installation.

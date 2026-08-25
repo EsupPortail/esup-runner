@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.8.0] - 2026-08-25
+
 ### Added
 
 - Added the Debian 13 and CUDA 13.3 GPU installation guide.

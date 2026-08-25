@@ -3,19 +3,21 @@
 from scripts import check_ffmpeg as cff
 
 
-def test_parse_filters_accepts_three_and_four_flag_formats() -> None:
-    """Validate Parse filters accepts three and four flag formats."""
+def test_parse_filters_accepts_two_three_and_four_flag_formats() -> None:
+    """Validate filter parsing across FFmpeg capability flag formats."""
     text = """
 Filters:
   T.. = Timeline support
+  T. overlay_cuda      VV->V      Overlay one video on top of another using CUDA
   ... scale_cuda        V->V       GPU accelerated video resizer
   .S.C hwupload_cuda    V->V       Upload system memory frames to a CUDA device.
-  TSCX overlay_cuda     VV->V      Overlay one video on top of another using CUDA.
+  TSCX colorspace_cuda  V->V       CUDA video color converter.
 """
     parsed = cff._parse_filters(text)
+    assert "overlay_cuda" in parsed
     assert "scale_cuda" in parsed
     assert "hwupload_cuda" in parsed
-    assert "overlay_cuda" in parsed
+    assert "colorspace_cuda" in parsed
 
 
 def test_parse_filters_ignores_ansi_sequences() -> None:

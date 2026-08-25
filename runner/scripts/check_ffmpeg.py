@@ -146,7 +146,7 @@ def _parse_filters(filters_text: str) -> set[str]:
         # Newer FFmpeg versions may expose 4+ capability flags in this column.
         if (
             len(parts) >= 2
-            and re.match(r"^[A-Za-z.|]{3,8}$", parts[0])
+            and re.match(r"^[A-Za-z.|]{2,8}$", parts[0])
             and re.match(r"^[A-Za-z0-9_]+$", parts[1])
         ):
             filters.add(parts[1])

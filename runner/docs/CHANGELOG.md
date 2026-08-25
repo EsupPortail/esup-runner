@@ -10,9 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added the Debian 13 and CUDA 13.3 GPU installation guide.
+- Added separate FFmpeg source-build procedures for Debian 11/CUDA 12.4, Debian 12/CUDA 13.2 and
+  Debian 13/CUDA 13.3.
 
 ### Changed
 
+- Reworked the common FFmpeg source-build page into a navigation and validation reference, and made
+  each platform-specific procedure expose its actual validation status and source-revision limits.
+- Validated the NVIDIA driver and CUDA 13.3 installation procedure on a Debian 13 target host,
+  including the runner NVENC and `scale_cuda` GPU preflight checks.
+- Validated the Debian 13/CUDA 13.3 FFmpeg source-build procedure with FFmpeg `n9.0.1` and
+  `nv-codec-headers` `n13.1.15.0`, including NVENC, CUVID and the required CUDA filters.
 - Added optional `SERVICE_USER` configuration (default `esup-runner`) for cache paths, directory ownership, Docker builds, stack updates, and systemd user-service installation.
 - Removed the external `time` wrapper from FFmpeg encoding, audio extraction and thumbnail commands, and dropped the corresponding system package from Runner installation and container requirements.
 - Updated Manager health checks to use the stable private `/api/health` endpoint and clarified that `MANAGER_URL` must target the private Manager API rather than the public administration proxy.
@@ -21,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed FFmpeg 9 filter capability parsing so two-character flags such as `T.` no longer report
+  compiled CUDA filters like `overlay_cuda` as missing, while preserving older FFmpeg formats.
 - Improved encoding source probing so missing or inaccessible `ffprobe`, execution failures and invalid JSON return bounded actionable diagnostics and abort encoding with the concrete probe error instead of a generic invalid-video message.
 
 ## [1.7.1] - 2026-07-17

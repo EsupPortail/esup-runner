@@ -637,7 +637,9 @@ def test_state_helpers_cover_attempts_urls_heartbeat_and_uptime():
         state_module.set_startup_time()
         startup = state_module.get_startup_time()
         assert isinstance(startup, float)
-        assert state_module.get_uptime() >= 0
+        uptime = state_module.get_uptime()
+        assert uptime is not None
+        assert uptime >= 0
 
         state_module._RUNNER_STATE["startup_time"] = None
         assert state_module.get_uptime() is None
@@ -670,7 +672,9 @@ def test_state_task_status_helpers_cover_early_returns_and_clear():
 
         # clear_task_status: dict branch including pop (lines 283-285)
         state_module.set_task_status("task-2", "running")
-        assert state_module.get_task_status("task-2")["status"] == "running"
+        payload = state_module.get_task_status("task-2")
+        assert payload is not None
+        assert payload["status"] == "running"
         state_module.clear_task_status("task-2")
         assert state_module.get_task_status("task-2") is None
 
@@ -697,6 +701,7 @@ def test_state_metadata_and_running_helpers(tmp_path, monkeypatch):
             "task-meta",
             completion_callback="http://manager.example.org/task/completion",
             process_pid=4321,
+            process_pgid=4321,
         )
 
         payload = state_module.get_task_status("task-meta")
@@ -704,6 +709,7 @@ def test_state_metadata_and_running_helpers(tmp_path, monkeypatch):
         assert payload["status"] == "running"
         assert payload["completion_callback"].startswith("http://manager")
         assert payload["process_pid"] == 4321
+        assert payload["process_pgid"] == 4321
 
         running = state_module.get_running_task_statuses()
         assert "task-meta" in running
@@ -712,7 +718,9 @@ def test_state_metadata_and_running_helpers(tmp_path, monkeypatch):
         completed_payload = state_module.get_task_status("task-meta")
         assert completed_payload is not None
         assert completed_payload["status"] == "completed"
+        # Terminal tasks must not retain identifiers that can be reused by the OS.
         assert "process_pid" not in completed_payload
+        assert "process_pgid" not in completed_payload
         assert state_module.get_running_task_statuses() == {}
         assert not state_file.exists()
     finally:

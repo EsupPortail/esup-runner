@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Cleared persisted process group IDs together with process IDs when tasks reach a terminal status,
+  preventing recovery or stop flows from reusing stale operating-system process identifiers.
 
 ## [1.8.0] - 2026-08-25
 

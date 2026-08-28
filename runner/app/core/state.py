@@ -528,7 +528,10 @@ def set_task_status(
             payload["script_output"] = str(script_output)
 
         if normalized_status in _TERMINAL_TASK_STATUSES:
+            # PID and PGID only identify the process while the task is running.
+            # Purge both together so recovery never reuses a stale process group.
             payload.pop("process_pid", None)
+            payload.pop("process_pgid", None)
 
         task_statuses[normalized_task_id] = payload
 

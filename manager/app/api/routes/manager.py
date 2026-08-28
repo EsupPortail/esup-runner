@@ -16,7 +16,7 @@ from app.core.state import get_tasks_snapshot, runners
 logger = setup_default_logging()
 
 # Create API router
-router = APIRouter(prefix="/api", tags=["Manager"])
+router = APIRouter(tags=["Manager"])
 
 # ======================================================
 # Endpoints
@@ -24,7 +24,12 @@ router = APIRouter(prefix="/api", tags=["Manager"])
 
 
 @router.get(
-    "/health",
+    "/manager/health",
+    include_in_schema=False,
+    dependencies=[Depends(verify_token)],
+)
+@router.get(
+    "/api/health",
     summary="Health endpoint",
     description="Health check endpoint to verify manager is running properly",
     tags=["Manager"],

@@ -52,8 +52,9 @@ def clean_state(monkeypatch):
     tasks.update(original_tasks)
 
 
-def test_manager_health_includes_counts(client, clean_state):
-    """Validate Manager health includes counts."""
+@pytest.mark.parametrize("path", ["/api/health", "/manager/health"])
+def test_manager_health_includes_counts(client, clean_state, path):
+    """Validate both Manager health paths include the same counts."""
     runners["r1"] = Runner(
         id="r1",
         url="http://r1.example",
@@ -85,7 +86,7 @@ def test_manager_health_includes_counts(client, clean_state):
         script_output=None,
     )
 
-    resp = client.get("/api/health")
+    resp = client.get(path)
     assert resp.status_code == 200
 
     payload = resp.json()
@@ -102,4 +103,5 @@ def test_manager_health_openapi_path_with_root_path():
 
     paths = test_app.openapi()["paths"]
     assert "/api/health" in paths
+    assert "/manager/health" not in paths
     assert f"{test_app.root_path}/api/health" == "/manager/api/health"

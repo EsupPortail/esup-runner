@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Restored `/manager/health` as a backward-compatible alias of the authenticated `/api/health` endpoint for Esup-Pod integrations.
 
 ## [1.8.0] - 2026-08-25
 

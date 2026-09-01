@@ -60,12 +60,59 @@ sudo apt -V install -y nvidia-driver-cuda nvidia-kernel-dkms
 
 Do not install both kernel module variants.
 
-## 3) Install CUDA 13.3 toolkit
+## 3) Check NVIDIA after a kernel update
+
+After a Debian kernel update, verify that the NVIDIA module has been built correctly:
+
+```bash
+sudo dkms status
+modinfo -k "$(uname -r)" nvidia
+```
+
+After reboot:
+
+```bash
+nvidia-smi
+```
+
+If `nvidia-smi` fails with:
+
+```text
+modprobe: FATAL: Module nvidia not found
+```
+
+rebuild the NVIDIA DKMS module for the current kernel:
+
+```bash
+sudo dkms uninstall nvidia/610.57.04 -k "$(uname -r)"
+sudo dkms install nvidia/610.57.04 -k "$(uname -r)" --force
+sudo depmod -a
+sudo modprobe nvidia
+nvidia-smi
+```
+
+Adapt `610.57.04` to the version shown by:
+
+```bash
+sudo dkms status
+```
+
+> If NVIDIA is unavailable, Esup-Runner may fall back to CPU encoding and generate a very high CPU load.
+
+
+## 4) Install CUDA 13.3 toolkit
 
 To keep a version-pinned CUDA 13.3 line, install `cuda-toolkit-13-3`:
 
 ```bash
 sudo apt install -y cuda-toolkit-13-3
+```
+
+Verify:
+
+```bash
+sudo dkms status
+modinfo -k "$(uname -r)" nvidia
 ```
 
 Then reboot:
@@ -74,13 +121,13 @@ Then reboot:
 sudo reboot
 ```
 
-## 4) Enable persistence mode
+## 5) Enable persistence mode
 
 ```bash
-sudo systemctl enable nvidia-persistenced
+sudo systemctl enable --now nvidia-persistenced
 ```
 
-## 5) Configure CUDA environment for the service user
+## 6) Configure CUDA environment for interactive shell use
 
 As `esup-runner` (or your service account), update shell profile:
 
@@ -108,7 +155,9 @@ Apply changes:
 source .bashrc
 ```
 
-## 6) Verification
+These variables in .bashrc apply to interactive shells. The Esup-Runner service configuration is controlled separately through its .env and systemd configuration.
+
+## 7) Verification
 
 ```bash
 nvidia-smi
@@ -135,7 +184,7 @@ cd /opt/esup-runner/runner
 make sync-transcription-gpu
 ```
 
-## 7) Runner `.env` alignment
+## 8) Runner `.env` alignment
 
 Use consistent values in `/opt/esup-runner/runner/.env`:
 

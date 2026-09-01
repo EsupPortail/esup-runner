@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Improved the Debian 13/CUDA 13.3 GPU guide with DKMS recovery and service configuration guidance.
+
 ### Fixed
 
 - Cleared persisted process group IDs together with process IDs when tasks reach a terminal status,

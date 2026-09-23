@@ -13,7 +13,7 @@ NVIDIA codec headers and minimum driver requirements vary between stacks.
 |---|---|---|
 | Debian 11 + CUDA 12.4 | [FFMPEG_SOURCE_DEBIAN11_CUDA12_4.md](FFMPEG_SOURCE_DEBIAN11_CUDA12_4.md) | Historically validated; source revisions were not recorded |
 | Debian 12 + CUDA 13.2 | [FFMPEG_SOURCE_DEBIAN12_CUDA13_2.md](FFMPEG_SOURCE_DEBIAN12_CUDA13_2.md) | Historically validated; source revisions were not recorded |
-| Debian 13 + CUDA 13.3 | [FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md](FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md) | Validated with FFmpeg `n9.0.1` and `nv-codec-headers` `n13.1.15.0` |
+| Debian 13 + CUDA 13.3 | [FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md](FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md) | Stay on stable FFmpeg 8 (`n8.1.3`); `n9.0.2` appears to fix the regression but remains unvalidated |
 
 ## Common requirements
 

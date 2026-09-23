@@ -42,6 +42,9 @@ ENV SERVICE_USER=${SERVICE_USER} \
     HOME=/home/${SERVICE_USER}
 
 # Runtime defaults (can be overridden via --env-file and/or -e flags).
+# Define the cache root in a separate instruction before expanding it below.
+ENV CACHE_DIR=${HOME}/.cache/esup-runner
+
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -49,7 +52,6 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     RUNNER_BASE_PORT=8082 \
     LOG_DIR=/var/log/esup-runner \
     STORAGE_DIR=/tmp/esup-runner \
-    CACHE_DIR=${HOME}/.cache/esup-runner \
     WHISPER_MODELS_DIR=${CACHE_DIR}/whisper-models \
     HUGGINGFACE_MODELS_DIR=${CACHE_DIR}/huggingface \
     UV_CACHE_DIR=${CACHE_DIR}/uv \

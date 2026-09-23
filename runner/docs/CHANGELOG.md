@@ -10,11 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Improved the Debian 13/CUDA 13.3 GPU guide with DKMS recovery and service configuration guidance.
+- Updated the Debian 13/CUDA 13.3 FFmpeg guide to stay on the latest stable FFmpeg 8 release
+  (pinned `n8.1.3`) and document the `n9.0.1` stream-truncation regression. FFmpeg `n9.0.2`
+  appears to fix it but remains unvalidated with ESUP-Runner; deployment and validation steps
+  are documented.
+- Refreshed the dependency lockfile, including the transcription CPU/GPU stack and development tools.
+- Added a targeted pytest warning filter for the deprecated AnyIO `BlockingPortal` alias used by
+  Starlette's `TestClient`.
 
 ### Fixed
 
+- Fixed Docker cache defaults so Whisper, Hugging Face, and uv use writable directories under
+  `/home/<SERVICE_USER>/.cache/esup-runner` without cache overrides in `.env`.
 - Cleared persisted process group IDs together with process IDs when tasks reach a terminal status,
   preventing recovery or stop flows from reusing stale operating-system process identifiers.
+- Added post-encoding `ffprobe` validation of HLS and MP4 outputs so missing or empty files,
+  missing streams, and audio/video stream truncation beyond a five-second tolerance fail the task
+  even when FFmpeg exits successfully. Expected durations account for individual source stream
+  lengths and the requested cut window.
 
 ## [1.8.0] - 2026-08-25
 

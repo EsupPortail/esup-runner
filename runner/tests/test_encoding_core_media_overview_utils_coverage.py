@@ -67,6 +67,23 @@ def test_media_probe_utils_missing_lines_coverage():
         )
         == 0.533333
     )
+    assert media_probe.extract_audio_stream_durations_from_probe(probe_info) == [5.601333]
+    assert media_probe.extract_audio_stream_durations_from_probe("invalid") == []
+    assert media_probe.extract_audio_stream_durations_from_probe({"streams": "invalid"}) == []
+    assert media_probe.extract_audio_stream_durations_from_probe(
+        {
+            "streams": [
+                "invalid",
+                {"codec_type": "video", "duration": "10"},
+                {"codec_type": "audio", "codec_name": "unknown", "duration": "10"},
+                {
+                    "codec_type": "audio",
+                    "codec_name": "aac",
+                    "tags": {"DURATION": "00:00:04.250"},
+                },
+            ]
+        }
+    ) == [4.25]
 
 
 def test_overview_utils_missing_lines_coverage(monkeypatch, tmp_path):

@@ -440,6 +440,7 @@ def test_get_info_video_handles_missing_format_duration(tmp_path):
 
     assert info["duration"] == 12
     assert info["video_duration"] == 12.5
+    assert info["audio_durations"] == [12.0]
     assert info["codec"] == "h264"
     assert info["height"] == 720
     assert info["has_stream_video"] is True

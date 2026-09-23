@@ -378,6 +378,46 @@ def test_launch_encode_uses_video_duration_for_thumbnail_timestamps():
     assert overview_calls == [5]
 
 
+def test_launch_encode_rejects_outputs_when_ffprobe_validation_fails():
+    """Validate orchestration includes the post-encode output check."""
+    flow = _load_encoding_core_module("encoding_flow_utils")
+    logs = []
+    validation_calls = []
+
+    result = flow.launch_encode(
+        {
+            "has_stream_video": True,
+            "has_stream_thumbnail": False,
+            "has_stream_audio": False,
+            "duration": 120,
+        },
+        "video.mp4",
+        encode_fn=lambda *_a: True,
+        launch_encode_video_fn=lambda *_a: (True, True),
+        launch_encode_audio_fn=lambda *_a: (True, ""),
+        generate_overview_fn=lambda *_a: (True, "overview-ok\n"),
+        add_info_video_fn=lambda *_a, **_k: None,
+        encode_log_fn=logs.append,
+        validate_video_outputs_fn=lambda *args: (
+            validation_calls.append(args) or (False, "ffprobe-validation-failed\n")
+        ),
+    )
+
+    assert result is False
+    assert validation_calls == [
+        (
+            {
+                "has_stream_video": True,
+                "has_stream_thumbnail": False,
+                "has_stream_audio": False,
+                "duration": 120,
+            },
+            "video.mp4",
+        )
+    ]
+    assert "ffprobe-validation-failed" in logs[-1]
+
+
 def test_encode_thumbnail_fails_when_ffmpeg_writes_no_png(tmp_path):
     """Validate thumbnail encode does not report success without an actual PNG."""
     flow = _load_encoding_core_module("encoding_flow_utils")

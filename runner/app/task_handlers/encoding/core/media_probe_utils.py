@@ -229,6 +229,34 @@ def extract_primary_video_duration_from_probe(
     return 0.0
 
 
+def extract_audio_stream_durations_from_probe(info: Dict[str, Any]) -> list[float]:
+    """Extract audio stream durations in ffprobe stream order."""
+    if not isinstance(info, dict):
+        return []
+
+    streams = info.get("streams")
+    if not isinstance(streams, list):
+        return []
+
+    durations: list[float] = []
+    for stream in streams:
+        if not isinstance(stream, dict) or stream.get("codec_type") != "audio":
+            continue
+        codec_name = str(stream.get("codec_name") or "").strip().lower()
+        if codec_name in {"", "none", "unknown"}:
+            continue
+        candidates: list[DurationValue] = [stream.get("duration")]
+        tags = stream.get("tags")
+        if isinstance(tags, dict):
+            candidates.append(tags.get("DURATION"))
+            candidates.append(tags.get("duration"))
+        durations.append(
+            max((duration_seconds_from_value(value) for value in candidates), default=0.0)
+        )
+
+    return durations
+
+
 def is_image_codec_name(codec_name: str, *, image_codecs: list[str]) -> bool:
     """Return whether a codec name should be treated as image-only."""
     codec_text = str(codec_name or "").lower()
@@ -420,6 +448,8 @@ def get_info_video(
         info,
         image_codecs=image_codecs,
     )
+    audio_durations = extract_audio_stream_durations_from_probe(info)
+    audio_durations = [value if value > 0 else float(duration) for value in audio_durations]
     if duration <= 0:
         msg += "Warning: duration unavailable in ffprobe metadata; defaulting to 0\n"
 
@@ -439,6 +469,8 @@ def get_info_video(
     )
     audio_stream_indices = extract_recognized_audio_stream_indices(info.get("streams", []))
     if has_stream_audio:
+        if not audio_durations:
+            audio_durations = [float(duration)]
         if audio_stream_indices:
             msg += f"recognized audio stream indices: {audio_stream_indices}\n"
         else:
@@ -466,6 +498,7 @@ def get_info_video(
         "height": height,
         "duration": duration,
         "video_duration": video_duration,
+        "audio_durations": audio_durations,
         "source_fps": source_fps,
         "profile": video_profile,
         "pix_fmt": pix_fmt,

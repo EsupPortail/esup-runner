@@ -18,9 +18,7 @@ from task_routes_helpers import (
 from task_routes_helpers import fake_resolve_public_ips as _fake_resolve_public_ips
 from task_routes_helpers import make_runner as _runner
 from task_routes_helpers import make_task as _task
-from task_routes_helpers import (
-    task_module,
-)
+from task_routes_helpers import task_module
 
 from app.core.state import runners, tasks
 from app.models.models import Task, TaskRequest

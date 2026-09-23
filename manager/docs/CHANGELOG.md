@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed the dependency lockfile and aligned task-route test imports with the updated
+  formatting tools.
+- Added a targeted pytest warning filter for the deprecated AnyIO `BlockingPortal` alias used by
+  Starlette's `TestClient`.
+
 ### Fixed
 
 - Restored `/manager/health` as a backward-compatible alias of the authenticated `/api/health` endpoint for Esup-Pod integrations.

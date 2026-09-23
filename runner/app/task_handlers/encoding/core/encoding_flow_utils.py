@@ -289,13 +289,17 @@ def launch_encode(
     generate_overview_fn,
     add_info_video_fn,
     encode_log_fn,
+    validate_video_outputs_fn=None,
 ) -> bool:
     """Orchestrate end-to-end encoding jobs."""
     msg = "--> launch_encode\n"
 
-    encode_m3u8 = encode_mp4 = True
+    encode_m3u8 = encode_mp4 = video_outputs_valid = True
     if info_video.get("has_stream_video", False):
         encode_m3u8, encode_mp4 = launch_encode_video_fn(info_video, file)
+        if encode_m3u8 and encode_mp4 and validate_video_outputs_fn is not None:
+            video_outputs_valid, validation_msg = validate_video_outputs_fn(info_video, file)
+            msg += validation_msg
 
     encode_thumbnail = True
     if info_video.get("has_stream_thumbnail", False):
@@ -330,4 +334,13 @@ def launch_encode(
         msg += return_msg
 
     encode_log_fn(msg)
-    return all([encode_audio, encode_thumbnail, encode_overview, encode_m3u8, encode_mp4])
+    return all(
+        [
+            encode_audio,
+            encode_thumbnail,
+            encode_overview,
+            encode_m3u8,
+            encode_mp4,
+            video_outputs_valid,
+        ]
+    )

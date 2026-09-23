@@ -17,7 +17,7 @@ This directory contains installation documentation for NVIDIA driver/CUDA and GP
 | NVIDIA + CUDA | Debian 13 + CUDA 13.3 | [DEBIAN13_CUDA13_3.md](DEBIAN13_CUDA13_3.md) | Validated |
 | FFmpeg source | Debian 11 + CUDA 12.4 | [FFMPEG_SOURCE_DEBIAN11_CUDA12_4.md](FFMPEG_SOURCE_DEBIAN11_CUDA12_4.md) | Historically validated; source revisions not recorded |
 | FFmpeg source | Debian 12 + CUDA 13.2 | [FFMPEG_SOURCE_DEBIAN12_CUDA13_2.md](FFMPEG_SOURCE_DEBIAN12_CUDA13_2.md) | Historically validated; source revisions not recorded |
-| FFmpeg source | Debian 13 + CUDA 13.3 | [FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md](FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md) | Validated with FFmpeg `n9.0.1` and `nv-codec-headers` `n13.1.15.0` |
+| FFmpeg source | Debian 13 + CUDA 13.3 | [FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md](FFMPEG_SOURCE_DEBIAN13_CUDA13_3.md) | Stay on stable FFmpeg 8 (`n8.1.3`); `n9.0.2` appears to fix the regression but remains unvalidated |
 | FFmpeg method | Install prebuilt package | [FFMPEG_PREBUILT.md](FFMPEG_PREBUILT.md) | Draft / to be validated |
 | FFmpeg method | Docker wrapper binaries | [FFMPEG_DOCKER.md](FFMPEG_DOCKER.md) | Draft / to be validated |
 

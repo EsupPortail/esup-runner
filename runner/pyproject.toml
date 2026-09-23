@@ -177,4 +177,7 @@ timeout = 30
 timeout_method = "thread"
 filterwarnings = [
     "ignore::DeprecationWarning:passlib.*:",
+    # Starlette 1.6.0 still uses this deprecated AnyIO alias in TestClient typing.
+    # Remove this filter once Starlette uses anyio.from_thread.BlockingPortal.
+    'ignore:^The anyio\.abc\.BlockingPortal alias is deprecated, use anyio\.from_thread\.BlockingPortal instead\.$:DeprecationWarning:^starlette\.testclient$',
 ]

@@ -1166,6 +1166,71 @@ def launch_encode_audio(info_video: dict, file: str) -> tuple[bool, str]:
     return encoding_flow_utils.launch_encode_audio(info_video, file, encode_fn=encode)
 
 
+def _video_output_validation_targets(info_video: dict, file: str) -> list[tuple[str, str]]:
+    """Return ``(published path, ffprobe path)`` pairs for selected renditions."""
+    output_basename = sanitize_filename(os.path.splitext(os.path.basename(file))[0])
+    source_height = int(info_video.get("height") or 0)
+    targets: list[tuple[str, str]] = []
+
+    for output_format in ("m3u8", "mp4"):
+        entries = _build_video_metadata_entries(
+            output_format=output_format,
+            source_height=source_height,
+            output_basename=output_basename,
+        )
+        for entry in entries:
+            filename = str(entry["filename"])
+            output_path = os.path.join(_VIDEOS_OUTPUT_DIR, filename)
+            probe_path = (
+                os.path.splitext(output_path)[0] + ".ts" if output_format == "m3u8" else output_path
+            )
+            targets.append((output_path, probe_path))
+
+    return targets
+
+
+def _expected_output_stream_duration(source_duration: object, output_duration: float) -> float:
+    """Return the expected encoded overlap for one source stream."""
+    try:
+        source_duration_seconds = float(str(source_duration or 0))
+    except (TypeError, ValueError):
+        source_duration_seconds = 0.0
+    if source_duration_seconds <= 0:
+        return output_duration
+
+    cut_start = 0
+    if SUBTIME.strip() and _CUT_CONFIG.get("start") and _CUT_CONFIG.get("end"):
+        cut_start = timestamp_to_seconds(str(_CUT_CONFIG["start"]))
+    return min(output_duration, max(0.0, source_duration_seconds - cut_start))
+
+
+def validate_video_outputs(info_video: dict, file: str) -> tuple[bool, str]:
+    """Use ffprobe to reject missing streams and silently truncated renditions."""
+    output_duration = float(info_video.get("effective_duration") or info_video.get("duration") or 0)
+    video_duration = _expected_output_stream_duration(
+        info_video.get("video_duration"),
+        output_duration,
+    )
+    source_audio_durations = info_video.get("audio_durations")
+    if not isinstance(source_audio_durations, list):
+        source_audio_durations = []
+    if info_video.get("has_stream_audio", False) and not source_audio_durations:
+        source_audio_durations = [output_duration]
+    audio_durations = []
+    for source_duration in source_audio_durations:
+        expected = _expected_output_stream_duration(source_duration, output_duration)
+        if expected > 0:
+            audio_durations.append(expected)
+    return ffmpeg_runtime_utils.validate_video_outputs(
+        _video_output_validation_targets(info_video, file),
+        expected_stream_durations={
+            "video": [video_duration],
+            "audio": audio_durations,
+        },
+        subprocess_module=subprocess,
+    )
+
+
 def launch_encode(info_video: dict, file: str) -> bool:
     """Launch the full encode workflow for the prepared input."""
     return encoding_flow_utils.launch_encode(
@@ -1177,6 +1242,7 @@ def launch_encode(info_video: dict, file: str) -> bool:
         generate_overview_fn=generate_overview,
         add_info_video_fn=add_info_video,
         encode_log_fn=encode_log,
+        validate_video_outputs_fn=validate_video_outputs,
     )
 
 

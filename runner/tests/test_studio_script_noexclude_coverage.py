@@ -3,6 +3,7 @@
 import argparse
 import builtins
 import importlib.util
+import io
 import os
 import socket
 import sys
@@ -188,15 +189,14 @@ def test_studio_download_and_materialize_helpers(monkeypatch, tmp_path):
     ) == str(existing)
 
     class _FakeResponse:
+        def __init__(self):
+            self.read = io.BytesIO(b"binary-data").read
+
         def __enter__(self):
             return self
 
         def __exit__(self, exc_type, exc, tb):
             return False
-
-        @staticmethod
-        def read():
-            return b"binary-data"
 
     monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: _FakeResponse())
     downloaded = studio._download_http_source(

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Enforce `MAX_VIDEO_SIZE_GB` against received bytes, including Studio and dressing
+  downloads; stream media in bounded chunks and discard oversized partial files.
 - Validate task identifiers and workspaces before scheduling or executing tasks;
   reject traversal and symbolic task/output directories.
 

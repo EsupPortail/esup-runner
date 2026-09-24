@@ -14,6 +14,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Optional
 
+from app.core.download_limits import save_download, validate_download_size
+
 
 def safe_filename_from_url(url: str, *, sanitize_filename_fn) -> str:
     """Return a sanitized filename derived from a URL."""
@@ -109,13 +111,12 @@ def download_url_to_dir(
     local_path = os.path.join(target_dir, local_name)
 
     if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+        validate_download_size(os.path.getsize(local_path))
         return local_path
 
     req = urllib.request.Request(url, headers={"User-Agent": "esup-runner-ffmpeg/1.0"})
     with urllib.request.urlopen(req, timeout=30) as resp:
-        data = resp.read()
-    with open(local_path, "wb") as f:
-        f.write(data)
+        save_download(iter(lambda: resp.read(1024 * 1024), b""), local_path)
     return local_path
 
 

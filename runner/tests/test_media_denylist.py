@@ -1,5 +1,7 @@
 """Validates application-level media codec denylist helpers."""
 
+import io
+
 import pytest
 
 from app.core.media_denylist import (
@@ -97,9 +99,8 @@ def test_studio_download_http_source_rejects_downloaded_denied_media(monkeypatch
     """Validate Studio download rejects a newly downloaded denied source."""
 
     class _Response:
-        @staticmethod
-        def read():
-            return b"downloaded"
+        def __init__(self):
+            self.read = io.BytesIO(b"downloaded").read
 
         def __enter__(self):
             return self

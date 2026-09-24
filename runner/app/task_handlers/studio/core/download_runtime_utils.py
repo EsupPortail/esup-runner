@@ -8,6 +8,7 @@ import urllib.request
 from typing import Callable
 
 from app.core.config import config
+from app.core.download_limits import DownloadSizeExceeded, save_download, validate_download_size
 from app.core.media_denylist import MediaDeniedError, validate_media_against_denylist
 
 
@@ -89,20 +90,18 @@ def download_http_source(
     base = base.split("?")[0] or f"{label}.mp4"
     local_path = os.path.join(work_dir, base)
 
-    if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-        if source_matches_media_denylist(local_path):
-            return None
-        return local_path
-
     try:
+        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+            validate_download_size(os.path.getsize(local_path))
+            if source_matches_media_denylist(local_path):
+                return None
+            return local_path
         with urllib.request.urlopen(url, timeout=60) as resp:
-            data = resp.read()
-        with open(local_path, "wb") as file_handle:
-            file_handle.write(data)
+            save_download(iter(lambda: resp.read(1024 * 1024), b""), local_path)
         validate_media_against_denylist(local_path, config.MEDIA_CODEC_DENYLIST)
         print(f"Downloaded remote source to {local_path}")
         return local_path
-    except MediaDeniedError as exc:
+    except (MediaDeniedError, DownloadSizeExceeded) as exc:
         print(str(exc))
         return None
     except Exception as exc:

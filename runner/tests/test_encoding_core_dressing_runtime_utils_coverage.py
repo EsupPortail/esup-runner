@@ -1,6 +1,7 @@
 """Validates asset URL validation, host allowlist checking, and IP resolution validation."""
 
 import importlib
+import io
 from pathlib import Path
 
 import pytest
@@ -125,10 +126,10 @@ def test_download_url_to_dir_validations_and_success(monkeypatch, tmp_path):
 
     class _Resp:
         def __init__(self, payload: bytes):
-            self.payload = payload
+            self.payload = io.BytesIO(payload)
 
-        def read(self) -> bytes:
-            return self.payload
+        def read(self, size=-1) -> bytes:
+            return self.payload.read(size)
 
         def __enter__(self):
             return self

@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 import requests  # type: ignore[import-untyped]
 
 from app.core.config import config
+from app.core.download_limits import DownloadSizeExceeded, limited_download_chunks
 from app.core.media_denylist import validate_media_against_denylist
 from app.core.setup_logging import setup_default_logging
 from app.models.models import TaskRequest
@@ -550,7 +551,7 @@ class BaseTaskHandler(ABC):
         """Write streamed response body to a temporary file and return written bytes."""
         bytes_written = 0
         with open(part_path, "wb") as file:
-            for chunk in response.iter_content(chunk_size=chunk_size):
+            for chunk in limited_download_chunks(response.iter_content(chunk_size=chunk_size)):
                 if not chunk:
                     continue
                 file.write(chunk)
@@ -678,6 +679,11 @@ class BaseTaskHandler(ABC):
 
                     os.replace(part_path, destination)
                     return {"success": True, "file_path": str(destination)}
+                except DownloadSizeExceeded as e:
+                    return {
+                        "success": False,
+                        "error": self._download_failure_message(source_url, str(e)),
+                    }
                 except Exception as e:
                     last_error = str(e)
                     if isinstance(e, _SourceTemporarilyUnavailableError):

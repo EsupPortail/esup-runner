@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Validate task identifiers and workspaces before scheduling or executing tasks;
+  reject traversal and symbolic task/output directories.
+
 ### Changed
 
 - Improved the Debian 13/CUDA 13.3 GPU guide with DKMS recovery and service configuration guidance.

@@ -14,6 +14,7 @@ from app.core.setup_logging import setup_default_logging
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest
 from app.services.result_manifest import collect_manifest_output_files
+from app.services.task_results import resolve_task_workspace
 from app.task_handlers import task_handler_manager
 
 logger = setup_default_logging()
@@ -72,7 +73,7 @@ class TaskDispatcher:
                     ),
                 }
 
-            workspace = Path(storage_manager.base_path) / task_id
+            workspace = resolve_task_workspace(task_id, storage_manager.base_path)
             workspace.mkdir(parents=True, exist_ok=True)
             # Output directory inside workspace (already created in prepare_workspace)
             work_dir = "output"

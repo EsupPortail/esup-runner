@@ -52,6 +52,19 @@ def resolve_storage_base_path(storage_base_path: str | Path) -> Path:
     return Path(storage_base_path).resolve()
 
 
+def resolve_task_workspace(task_id: str, storage_base_path: str | Path) -> Path:
+    """Validate a workspace before creating it or handing it to a task handler."""
+    safe_task_id = validate_task_id(task_id)
+    if safe_task_id != task_id:
+        raise _file_not_found()
+    base_path = resolve_storage_base_path(storage_base_path)
+    workspace = base_path / safe_task_id
+    for candidate, parent in ((workspace, base_path), (workspace / "output", workspace)):
+        if candidate.is_symlink() or candidate.resolve(strict=False).parent != parent:
+            raise _file_not_found()
+    return workspace
+
+
 def find_direct_child_entry(directory: Path, entry_name: str) -> Path | None:
     """Find a direct child entry by name without composing a user-controlled path."""
     try:

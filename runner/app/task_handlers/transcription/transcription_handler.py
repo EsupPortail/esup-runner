@@ -23,6 +23,7 @@ from urllib.parse import unquote, urlparse
 from app.core.config import config
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest
+from app.services.task_results import resolve_task_workspace
 from app.task_handlers.base_handler import BaseTaskHandler
 
 
@@ -86,7 +87,7 @@ class TranscriptionHandler(BaseTaskHandler):
             self.logger.info(f"Starting transcription task {task_id}")
 
             # Prepare workspace directory, one per task
-            self.workspace_dir = Path(storage_manager.base_path) / task_id
+            self.workspace_dir = resolve_task_workspace(task_id, storage_manager.base_path)
             workspace = self.prepare_workspace()
             work_dir = "output"
             output_dir = workspace / work_dir

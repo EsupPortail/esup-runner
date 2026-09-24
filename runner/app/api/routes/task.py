@@ -903,6 +903,11 @@ async def run_task(
     if not is_available():
         raise HTTPException(status_code=400, detail="Runner is busy")
 
+    try:
+        task_results.resolve_task_workspace(task_request.task_id, storage_manager.base_path)
+    except (HTTPException, OSError, RuntimeError):
+        raise HTTPException(status_code=400, detail="Invalid task workspace")
+
     set_available(False)
     set_task_status(task_request.task_id, "running")
     set_task_metadata(

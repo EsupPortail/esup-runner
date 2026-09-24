@@ -11,6 +11,7 @@ from typing import Any, Dict
 from app.core.config import config
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest
+from app.services.task_results import resolve_task_workspace
 from app.task_handlers.base_handler import BaseTaskHandler
 
 
@@ -50,7 +51,7 @@ class StudioEncodingHandler(BaseTaskHandler):
         try:
             self.logger.info(f"Starting studio encoding task {task_id} {task_request}")
 
-            self.workspace_dir = Path(storage_manager.base_path) / task_id
+            self.workspace_dir = resolve_task_workspace(task_id, storage_manager.base_path)
             workspace = self.prepare_workspace()
             work_dir = "output"
             output_dir = workspace / work_dir

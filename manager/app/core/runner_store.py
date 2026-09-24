@@ -8,10 +8,12 @@ JSON file protected by filelock in that mode.
 In development, it falls back to an in-memory dictionary.
 """
 
+import hmac
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
+from threading import RLock
 from typing import Any, Callable, Dict, Iterator, MutableMapping, Optional, TypeVar, cast, overload
 from uuid import uuid4
 
@@ -37,6 +39,7 @@ class RunnerStore(MutableMapping[str, Runner]):
     ):
         self.shared_enabled = shared_enabled
         self._memory: Dict[str, Runner] = {}
+        self._memory_lock = RLock()
         self._state_file = self._resolve_state_file(state_file)
         self._lock: Optional[FileLock] = None
 
@@ -62,7 +65,8 @@ class RunnerStore(MutableMapping[str, Runner]):
 
     def _with_lock(self, operation: Callable[[], _T]) -> _T:
         if not self.shared_enabled:
-            return operation()
+            with self._memory_lock:
+                return operation()
 
         assert self._lock is not None
         try:
@@ -172,6 +176,29 @@ class RunnerStore(MutableMapping[str, Runner]):
             self._write_disk(data)
 
         self._with_lock(_operation)
+
+    def register(self, runner: Runner) -> bool:
+        """Register or refresh a runner only with its existing owner's token.
+
+        Ownership verification and the write share one lock, including across
+        manager workers. A rejected registration leaves the stored entry intact.
+        Internal state updates continue to use the mapping interface.
+        """
+
+        def _operation() -> bool:
+            data = self._read_disk() if self.shared_enabled else self._memory
+            existing = data.get(runner.id)
+            if not runner.token or (
+                existing is not None
+                and (not existing.token or not hmac.compare_digest(existing.token, runner.token))
+            ):
+                return False
+            data[runner.id] = runner
+            if self.shared_enabled:
+                self._write_disk(data)
+            return True
+
+        return self._with_lock(_operation)
 
     def __delitem__(self, key: str) -> None:
         if not self.shared_enabled:

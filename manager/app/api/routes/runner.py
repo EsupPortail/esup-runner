@@ -178,11 +178,11 @@ def _validate_and_normalize_runner_url(url: str) -> str:
     "/register",
     response_model=dict,
     summary="Register a runner",
-    description="Register a new runner with the manager",
+    description="Register a runner or refresh it using the same authenticated token",
     tags=["Runner"],
     responses={
         200: {"description": "Runner registered successfully"},
-        403: {"description": "Token not authorized to register runners"},
+        403: {"description": "Token not authorized for this runner"},
     },
 )
 async def register_runner(
@@ -191,7 +191,7 @@ async def register_runner(
     current_version: str = Depends(verify_runner_version),
 ) -> dict:
     """
-    Register a new runner with the manager.
+    Register a runner, preserving token ownership on re-registration.
 
     Args:
         runner: Runner instance to register
@@ -208,7 +208,10 @@ async def register_runner(
     runner.last_heartbeat = datetime.now()
     runner.token = current_token
     runner.version = current_version
-    runners[runner.id] = runner
+    if not runners.register(runner):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Token not authorized for this runner"
+        )
 
     logger.info(f"Runner v{runner.version} registered: {runner.id} - {runner.url}")
     return {"status": "registered"}

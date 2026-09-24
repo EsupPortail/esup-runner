@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Protect administration forms and task actions against CSRF with signed tokens
   and origin checks against `MANAGER_PUBLIC_URL`, including reverse-proxy prefixes.
+- Reject runner re-registration with a different authorized token, checking
+  ownership and persisting the update under the same RunnerStore lock across
+  Manager workers. Preserve same-token restart registration.
 
 ### Changed
 

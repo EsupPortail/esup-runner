@@ -8,12 +8,12 @@ Includes persistence with filelock for multi-worker safety.
 import atexit
 import logging
 from datetime import datetime
-from typing import Any, Dict, MutableMapping, Optional
+from typing import Any, Dict, Optional
 
 from app.core.config import config
 from app.core.persistence import SafeDailyJSONPersistence
 from app.core.runner_store import RunnerStore
-from app.models.models import Runner, Task
+from app.models.models import Task
 
 logger = logging.getLogger(__name__)
 IS_PRODUCTION = config.ENVIRONMENT.lower() == "production"
@@ -39,7 +39,7 @@ _persistence_directory = _resolve_persistence_directory(persistence)
 logger.info(f"Task persistence directory resolved to: {_persistence_directory}")
 
 # Stores runners and tasks to avoid circular imports
-runners: MutableMapping[str, Runner] = RunnerStore(
+runners = RunnerStore(
     shared_enabled=config.ENVIRONMENT.lower() == "production",
 )
 

@@ -91,6 +91,10 @@ Notes:
 - Suffix (for example `runners`, `app`) is just a label.
 - If no token is configured, the manager logs a warning and protected API access will fail.
 - Token entries can be generated/managed from `/admin/credentials` (UI) or via `scripts/generate_token.py` (CLI).
+- Registering an existing runner ID requires the same token value as its current
+  registration. A different authorized token receives `403` without changing the
+  stored runner; the request body's `token` cannot override the authenticated
+  token. A restart with the same token may refresh the URL and capabilities.
 
 ### Admin users (`ADMIN_USERS__*`)
 

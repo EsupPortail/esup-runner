@@ -6,10 +6,11 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.core.auth import verify_runner_version, verify_token
+from app.core.runner_store import RunnerStore
 from app.core.state import runners
 from app.main import app
 from app.models.models import Runner
@@ -87,6 +88,107 @@ def test_register_runner_rejects_non_base_url(runner_client, clean_runners_state
     resp = runner_client.post("/runner/register", json=payload)
     assert resp.status_code == 400
     assert "must not include a path" in resp.json()["detail"]
+
+
+@pytest.mark.parametrize("shared_enabled", [False, True])
+@pytest.mark.parametrize("header_name", ["Authorization", "X-API-Token"])
+def test_registration_cannot_transfer_heartbeat_or_completion_ownership(
+    monkeypatch, tmp_path, runner_module, shared_enabled, header_name
+):
+    from app.__version__ import __version__
+    from app.api.routes import task as task_module
+    from app.core import auth
+    from app.models.models import Task
+
+    state_path = tmp_path / "runners.json"
+    registry = RunnerStore(shared_enabled=shared_enabled, state_file=str(state_path))
+    victim_task = Task(
+        task_id="victim-task",
+        runner_id="victim",
+        status="running",
+        etab_name="example",
+        app_name="test",
+        task_type="encoding",
+        source_url="https://media.example/video.mp4",
+        notify_url="",
+        created_at="2026-01-01",
+        updated_at="2026-01-01",
+    )
+    monkeypatch.setattr(auth.config, "AUTHORIZED_TOKENS", {"owner": "owner", "other": "other"})
+    monkeypatch.setattr(auth, "_refresh_config_if_needed", lambda: None)
+    monkeypatch.setattr(runner_module.config, "RUNNER_URL_ALLOWED_HOSTS", [])
+    monkeypatch.setattr(runner_module.config, "RUNNER_URL_ALLOW_PRIVATE_NETWORKS", True)
+    monkeypatch.setattr(runner_module, "runners", registry)
+    monkeypatch.setattr(task_module, "runners", registry)
+    monkeypatch.setattr(task_module, "get_task_from_state", lambda _: victim_task)
+    effects = []
+    monkeypatch.setattr(task_module, "save_tasks", lambda: effects.append("save"))
+    monkeypatch.setattr(task_module, "_append_task_stats_csv", lambda _: effects.append("stats"))
+
+    async def no_callback(*_):
+        effects.append("callback")
+
+    monkeypatch.setattr(task_module, "_handle_notify_callback", no_callback)
+    isolated_app = FastAPI()
+    isolated_app.include_router(runner_module.router)
+    isolated_app.include_router(task_module.router)
+
+    def headers(token):
+        value = f"Bearer {token}" if header_name == "Authorization" else token
+        return {header_name: value, "X-Runner-Version": __version__}
+
+    completion = {"task_id": "victim-task", "status": "completed", "script_output": "ok"}
+    with TestClient(isolated_app) as client:
+        response = client.post(
+            "/runner/register",
+            headers=headers("owner"),
+            json={"id": "victim", "url": "https://worker.example", "token": "ignored"},
+        )
+        assert response.status_code == 200
+        before = registry["victim"].model_dump()
+        disk_before = state_path.read_bytes() if shared_enabled else None
+        response = client.post(
+            "/runner/register",
+            headers=headers("other"),
+            json={"id": "victim", "url": "https://attacker.example", "token": "owner"},
+        )
+        assert response.status_code == 403
+        assert response.json() == {"detail": "Token not authorized for this runner"}
+        assert registry["victim"].model_dump() == before
+        if shared_enabled:
+            assert state_path.read_bytes() == disk_before
+
+        response = client.post("/runner/heartbeat/victim", headers=headers("other"))
+        assert response.status_code == 403
+        response = client.post("/task/completion", headers=headers("other"), json=completion)
+        assert response.status_code == 403
+        assert victim_task.status == "running"
+        assert effects == []
+        assert registry["victim"].model_dump() == before
+
+        # The owner can restart with an updated URL and still complete its task.
+        if shared_enabled:
+            registry = RunnerStore(shared_enabled=True, state_file=str(state_path))
+            monkeypatch.setattr(runner_module, "runners", registry)
+            monkeypatch.setattr(task_module, "runners", registry)
+        response = client.post(
+            "/runner/register",
+            headers=headers("owner"),
+            json={"id": "victim", "url": "https://restarted.example/", "availability": "busy"},
+        )
+        assert response.status_code == 200
+        assert registry["victim"].url == "https://restarted.example"
+        assert registry["victim"].token == "owner"
+        assert registry["victim"].version == __version__
+        assert registry["victim"].availability == "busy"
+        response = client.post("/runner/heartbeat/victim", headers=headers("owner"))
+        assert response.status_code == 200
+        response = client.post("/task/completion", headers=headers("owner"), json=completion)
+        assert response.status_code == 200
+        assert victim_task.status == "completed"
+        assert victim_task.script_output == "ok"
+        assert registry["victim"].availability == "available"
+        assert effects == ["save", "callback", "stats", "save"]
 
 
 def test_runner_heartbeat_ok_after_register(runner_client, clean_runners_state):

@@ -1,7 +1,10 @@
 """Shared task-result storage access and runner result proxying."""
 
 import json
+import os
+import stat
 import time
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Dict, cast
 from urllib.parse import quote
@@ -9,8 +12,9 @@ from urllib.parse import quote
 import httpx
 from fastapi import HTTPException
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from pydantic import ValidationError
 
-from app.models.models import Runner, Task
+from app.models.models import Runner, Task, TaskResultManifest
 
 
 def resolve_shared_storage_base(context: Any) -> Path:
@@ -77,27 +81,51 @@ def get_local_output_dir(context: Any, task_id: str) -> Path:
 
 def resolve_local_manifest_path(context: Any, task_dir: Path) -> Path:
     """Resolve the manifest path from a validated task directory."""
+    manifest_path = task_dir / "manifest.json"
     try:
-        return (task_dir / "manifest.json").resolve(strict=False)
+        if manifest_path.is_symlink() or manifest_path.resolve(strict=False).parent != task_dir:
+            raise ValueError("Manifest must be a direct regular file")
     except Exception:
         raise HTTPException(500, "Invalid manifest path")
+    # Keep the original path: resolving a symlink would bypass O_NOFOLLOW below.
+    return manifest_path
+
+
+def _read_manifest_file(manifest_path: Path) -> Any:
+    """Open without following symlinks, including concurrently replaced parents."""
+    with ExitStack() as stack:
+        directory_fd = None
+        for part in manifest_path.absolute().parent.parts:
+            directory_fd = os.open(
+                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory_fd
+            )
+            stack.callback(os.close, directory_fd)
+        fd = os.open(
+            manifest_path.name,
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+            dir_fd=directory_fd,
+        )
+        stack.callback(os.close, fd)
+        with os.fdopen(fd, "r", encoding="utf-8", closefd=False) as manifest_file:
+            if not stat.S_ISREG(os.fstat(manifest_file.fileno()).st_mode):
+                raise HTTPException(500, "Invalid manifest file")
+            return json.load(manifest_file)
 
 
 def read_manifest_with_retry(context: Any, manifest_resolved: Path) -> Any:
     """Read manifest JSON with short retries to absorb write races."""
-    manifest_data = None
     last_json_error = False
     for attempt in range(1, context._MANIFEST_READ_ATTEMPTS + 1):
-        if manifest_resolved.exists() and manifest_resolved.is_file():
-            try:
-                manifest_data = json.loads(manifest_resolved.read_text(encoding="utf-8"))
-                break
-            except json.JSONDecodeError:
-                last_json_error = True
+        try:
+            return _read_manifest_file(manifest_resolved)
+        except FileNotFoundError:
+            pass
+        except (json.JSONDecodeError, UnicodeError):
+            last_json_error = True
+        except OSError:
+            raise HTTPException(500, "Unable to read manifest safely")
         if attempt < context._MANIFEST_READ_ATTEMPTS:
             time.sleep(context._MANIFEST_READ_DELAY_SECONDS)
-    if manifest_data is not None:
-        return manifest_data
     if last_json_error:
         raise HTTPException(500, "Invalid manifest JSON")
     raise HTTPException(404, "Manifest not found in shared storage")
@@ -110,8 +138,14 @@ def get_local_manifest(context: Any, task: Task) -> JSONResponse:
     manifest_data = context._read_manifest_with_retry(manifest_path)
     if isinstance(manifest_data, dict):
         manifest_data.setdefault("task_id", task.task_id)
+    try:
+        manifest = TaskResultManifest.model_validate(manifest_data, strict=True)
+    except ValidationError:
+        raise HTTPException(500, "Invalid manifest content")
+    if manifest.task_id != task.task_id:
+        raise HTTPException(500, "Invalid manifest task ID")
     context._mark_warning_as_completed(task.task_id)
-    return JSONResponse(content=manifest_data, headers={"X-Task-ID": task.task_id})
+    return JSONResponse(content=manifest.model_dump(), headers={"X-Task-ID": task.task_id})
 
 
 def stream_local_file(context: Any, task: Task, file_path: str) -> FileResponse:

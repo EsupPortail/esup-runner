@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Reject shared-storage manifest symlinks, including concurrent replacements,
+  and validate manifest responses before returning them.
 - Protect administration forms and task actions against CSRF with signed tokens
   and origin checks against `MANAGER_PUBLIC_URL`, including reverse-proxy prefixes.
 - Reject runner re-registration with a different authorized token, checking

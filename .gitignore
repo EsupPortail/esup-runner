@@ -56,6 +56,5 @@ runner/data/**
 *.lock
 !uv.lock
 
-# Local assistant config/docs (do not publish)
+# Local Codex configuration (do not publish)
 /.codex
-/AGENTS.md

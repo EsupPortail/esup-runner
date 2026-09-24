@@ -21,7 +21,7 @@ def task_module():
 
 
 @pytest.fixture
-def client(monkeypatch, task_module):
+def client(monkeypatch, task_module, admin_csrf_headers):
     """Build an authenticated client without background services."""
 
     async def _noop(*_, **__):
@@ -34,7 +34,7 @@ def client(monkeypatch, task_module):
     app.dependency_overrides[verify_admin] = lambda: True
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
 
-    with TestClient(app) as test_client:
+    with TestClient(app, headers=admin_csrf_headers) as test_client:
         yield test_client
 
     app.dependency_overrides.pop(verify_token, None)

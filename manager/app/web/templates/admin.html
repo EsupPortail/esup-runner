@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Runners Monitoring</title>
   <link rel="icon" type="image/png" href="{{ root_path }}/static/favicon.png?version={{ version }}">
 
@@ -20,6 +21,7 @@
   <header>
     <!-- Light/dark toggle -->
     <form id="theme-form" method="post" action="{{ root_path }}/admin/toggle-theme" style="display: none">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="theme" id="theme-input" value="{{ dark_mode_enabled }}">
     </form>
 
@@ -790,6 +792,7 @@
           const response = await fetch(`${managerRootPath}/admin/reload-config`, {
             method: 'POST',
             headers: {
+              'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
               'Accept': 'application/json'
             }
           });

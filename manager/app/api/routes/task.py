@@ -23,6 +23,7 @@ from starlette.responses import Response
 from app.__version__ import __version__
 from app.core.auth import verify_admin, verify_token
 from app.core.config import config
+from app.core.csrf import csrf_template_context, verify_csrf
 from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.priorities import would_exceed_other_domain_quota  # noqa: F401
 from app.core.setup_logging import setup_default_logging
@@ -44,7 +45,7 @@ logger = setup_default_logging()
 
 router = APIRouter(prefix="/task", tags=["Task"])
 
-templates = Jinja2Templates(directory=WEB_TEMPLATES_DIR)
+templates = Jinja2Templates(directory=WEB_TEMPLATES_DIR, context_processors=[csrf_template_context])
 
 # ======================================================
 # Utility Functions
@@ -650,7 +651,7 @@ async def _queue_task_execution(
     summary="Delete selected tasks",
     description="Delete selected tasks from the tasks web interface",
     tags=["Task"],
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_admin), Depends(verify_csrf)],
 )
 async def delete_selected_tasks(payload: Dict[str, List[str]]) -> dict:
     """Delete selected tasks from the manager state and persistence."""
@@ -716,7 +717,7 @@ async def delete_selected_tasks(payload: Dict[str, List[str]]) -> dict:
     summary="Restart selected tasks",
     description="Restart selected tasks from the tasks web interface",
     tags=["Task"],
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_admin), Depends(verify_csrf)],
 )
 async def restart_selected_tasks(payload: Dict[str, List[str]]) -> dict:
     """Restart selected tasks in place while preserving each original task ID."""
@@ -789,7 +790,7 @@ async def restart_selected_tasks(payload: Dict[str, List[str]]) -> dict:
     summary="Stop selected running tasks",
     description="Request stop for selected running tasks from the tasks web interface",
     tags=["Task"],
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_admin), Depends(verify_csrf)],
 )
 async def stop_selected_tasks(payload: Dict[str, List[str]]) -> dict:
     """Request stop for selected running tasks without mutating their manager status."""

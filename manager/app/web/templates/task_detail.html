@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Task Details - Monitoring</title>
   <link rel="icon" type="image/png" href="{{ root_path }}/static/favicon.png?version={{ version }}">
 
@@ -310,6 +311,7 @@
         const response = await fetch(options.endpoint, {
           method: 'POST',
           headers: {
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ task_ids: [taskId] }),

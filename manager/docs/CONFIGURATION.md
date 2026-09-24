@@ -104,6 +104,11 @@ If no admin user is configured, the manager logs a warning and admin login is un
 
 Admin password hashes can be generated/managed from `/admin/credentials` (UI) or via `scripts/generate_password.py` (CLI).
 
+Administration actions are protected against CSRF. `MANAGER_PUBLIC_URL` must
+match the browser-facing URL, including behind a reverse proxy. The interface
+sends the required token automatically; refresh the page if an action reports
+an expired or invalid token.
+
 ## OpenAPI docs visibility
 
 OpenAPI/docs can be public or token-protected:

@@ -224,6 +224,19 @@ def isolate_runtime_state(monkeypatch):
 
 
 @pytest.fixture
+def admin_csrf_headers(monkeypatch):
+    """Use valid CSRF headers when route tests override only Basic authentication."""
+    from fastapi import Request
+
+    from app.core.csrf import build_csrf_token
+
+    monkeypatch.setattr(config, "MANAGER_PUBLIC_URL", "http://testserver")
+    monkeypatch.setattr(config, "OPENAPI_COOKIE_SECRET", "test-admin-csrf-secret")
+    request = Request({"type": "http", "headers": []})
+    return {"Origin": "http://testserver", "X-CSRF-Token": build_csrf_token(request)}
+
+
+@pytest.fixture
 def auth_headers() -> Dict[str, str]:
     """Return bearer and API key headers using the first configured token."""
 

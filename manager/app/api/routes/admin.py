@@ -28,6 +28,7 @@ from app.api.routes.task import (
 from app.core import config as config_module
 from app.core.auth import OPENAPI_TOKEN_COOKIE_NAME, build_openapi_cookie_value, verify_admin
 from app.core.config import config
+from app.core.csrf import csrf_template_context, verify_csrf
 from app.core.passwords import BcryptPasswordContext
 from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.setup_logging import setup_default_logging
@@ -39,14 +40,16 @@ from app.core.url_paths import cookie_path, prefixed_path, request_root_path
 logger = setup_default_logging()
 
 # Create admin router
-router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(verify_admin)])
+router = APIRouter(
+    prefix="/admin", tags=["Admin"], dependencies=[Depends(verify_admin), Depends(verify_csrf)]
+)
 
 # Rate limiter for admin endpoints. The dashboard has built-in auto-refresh, so
 # keep this above normal browsing cadence while the global limiter still applies.
 limiter = Limiter(key_func=get_remote_address)
 
 # Templates configuration
-templates = Jinja2Templates(directory=WEB_TEMPLATES_DIR)
+templates = Jinja2Templates(directory=WEB_TEMPLATES_DIR, context_processors=[csrf_template_context])
 
 _ATTENTION_TASK_STATUSES = ("failed", "warning", "timeout")
 _ATTENTION_ITEMS_LIMIT = 5

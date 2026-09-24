@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Protect administration forms and task actions against CSRF with signed tokens
+  and origin checks against `MANAGER_PUBLIC_URL`, including reverse-proxy prefixes.
+
 ### Changed
 
 - Refreshed the dependency lockfile and aligned task-route test imports with the updated

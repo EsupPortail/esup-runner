@@ -23,7 +23,7 @@ from app.services import background_service
 
 
 @pytest.fixture
-def admin_client(monkeypatch):
+def admin_client(monkeypatch, admin_csrf_headers):
     async def _noop(*_, **__):
         return None
 
@@ -32,7 +32,7 @@ def admin_client(monkeypatch):
 
     app.dependency_overrides[verify_admin] = lambda: True
 
-    with TestClient(app) as client:
+    with TestClient(app, headers=admin_csrf_headers) as client:
         yield client
 
     app.dependency_overrides.pop(verify_admin, None)
@@ -117,6 +117,7 @@ def _render_task_detail_template(status: str, root_path: str = "") -> str:
     env = Environment(loader=FileSystemLoader("app/web/templates"))
     template = env.get_template("task_detail.html")
     return template.render(
+        csrf_token="test-csrf-token",
         version="test",
         dark_mode_enabled=False,
         task=task,
@@ -130,6 +131,7 @@ def _render_tasks_template(root_path: str = "") -> str:
     env = Environment(loader=FileSystemLoader("app/web/templates"))
     template = env.get_template("tasks.html")
     return template.render(
+        csrf_token="test-csrf-token",
         version="test",
         dark_mode_enabled=False,
         available_statuses=[],
@@ -153,6 +155,7 @@ def _render_credentials_template(root_path: str = "") -> str:
     env = Environment(loader=FileSystemLoader("app/web/templates"))
     template = env.get_template("credentials.html")
     return template.render(
+        csrf_token="test-csrf-token",
         version="test",
         dark_mode_enabled=False,
         last_update="2026-01-01 00:00:00",
@@ -162,6 +165,27 @@ def _render_credentials_template(root_path: str = "") -> str:
         authorized_tokens=[{"name": "client_1", "preview": "token...", "value": "token-value"}],
         root_path=root_path,
     )
+
+
+@pytest.mark.parametrize("root_path", ["", "/manager"])
+def test_admin_action_templates_include_form_and_javascript_csrf_tokens(root_path):
+    """Render tokens into every form and every JavaScript mutation request."""
+    rendered = [
+        (_render_credentials_template(root_path), 4, 1),
+        (_render_tasks_template(root_path), 0, 3),
+        (_render_task_detail_template("completed", root_path), 0, 1),
+    ]
+    for html, forms_count, fetch_count in rendered:
+        assert '<meta name="csrf-token" content="test-csrf-token">' in html
+        forms = re.findall(r'<form\b[^>]*method="post".*?</form>', html, re.DOTALL)
+        assert len(forms) == forms_count
+        assert all('name="csrf_token" value="test-csrf-token"' in form for form in forms)
+        assert (
+            html.count(
+                "'X-CSRF-Token': document.querySelector('meta[name=\"csrf-token\"]').content"
+            )
+            == fetch_count
+        )
 
 
 def test_admin_dashboard_rate_limit_allows_auto_refresh_margin(monkeypatch):
@@ -745,6 +769,7 @@ def test_admin_template_renders_copy_task_id_controls():
     template = env.get_template("admin.html")
 
     html = template.render(
+        csrf_token="test-csrf-token",
         version="test",
         dark_mode_enabled=False,
         admin_count=1,
@@ -811,6 +836,9 @@ def test_admin_template_renders_copy_task_id_controls():
         root_path="",
     )
 
+    assert '<meta name="csrf-token" content="test-csrf-token">' in html
+    assert 'name="csrf_token" value="test-csrf-token"' in html
+    assert "'X-CSRF-Token': document.querySelector('meta[name=\"csrf-token\"]').content" in html
     assert 'id="copy-task-feedback"' in html
     assert 'id="auto-refresh-status"' in html
     assert 'id="auto-refresh-toggle"' in html
@@ -982,7 +1010,7 @@ def test_toggle_theme_redirects_and_sets_cookie(admin_client):
     assert "theme=dark" in resp2.headers.get("set-cookie", "")
 
 
-def test_admin_routes_honor_reverse_proxy_root_path(monkeypatch):
+def test_admin_routes_honor_reverse_proxy_root_path(monkeypatch, admin_csrf_headers):
     """Prefix rendered URLs, redirects, and cookies below a reverse-proxy subpath."""
 
     async def _noop(*_, **__):
@@ -993,7 +1021,7 @@ def test_admin_routes_honor_reverse_proxy_root_path(monkeypatch):
     app.dependency_overrides[verify_admin] = lambda: True
 
     try:
-        with TestClient(app, root_path="/manager") as client:
+        with TestClient(app, root_path="/manager", headers=admin_csrf_headers) as client:
             dashboard = client.get("/admin")
             theme = client.post("/admin/toggle-theme", follow_redirects=False)
             credentials_redirect = client.post(

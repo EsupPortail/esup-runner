@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from typing import Optional
 
+from .ffmpeg_command_utils import validate_audio_bitrate
+
 
 def build_arg_parser() -> argparse.ArgumentParser:
     """Build the command-line parser for the studio generator script."""
@@ -37,7 +39,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--studio-crf", required=False, help="CRF for libx264/NVENC if applicable")
     parser.add_argument("--studio-preset", required=False, help="x264 preset or NVENC preset")
-    parser.add_argument("--studio-audio-bitrate", required=False, help="Audio bitrate, e.g., 128k")
+    parser.add_argument(
+        "--studio-audio-bitrate",
+        required=False,
+        type=validate_audio_bitrate,
+        help="Audio bitrate, e.g., 128k",
+    )
     parser.add_argument(
         "--studio-allow-nvenc",
         required=False,

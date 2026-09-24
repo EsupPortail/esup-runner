@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reject traversal and symbolic task/output directories.
 - Require HTTP(S) media track URLs in remote Studio mediapackages, preventing
   XML documents from selecting local server files.
+- Validate Studio audio bitrates and preserve FFmpeg argument boundaries for
+  media paths and encoding options, preventing injected command arguments.
 
 ### Changed
 

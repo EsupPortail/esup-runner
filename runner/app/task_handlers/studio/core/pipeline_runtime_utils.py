@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import shlex
 from typing import Any, Callable
+
+from .ffmpeg_command_utils import validate_audio_bitrate
 
 
 def run_pipelines(
@@ -27,6 +30,7 @@ def run_pipelines(
     target_duration: float | None = None,
 ) -> int:
     """Execute studio pipeline attempts in fallback order until one succeeds."""
+    audio_bitrate = validate_audio_bitrate(audio_bitrate)
 
     def run_attempt(
         label: str,
@@ -49,14 +53,14 @@ def run_pipelines(
                 '-c:v libx264 -profile:v high -pix_fmt yuv420p -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*1)" ',
             )
 
-        ffmpeg_cmd = (
-            f"ffmpeg -hide_banner -y -threads 0 "
-            f"{input_args}{subtime}{sc} "
-            f"{map_opts}{vc}-c:a aac -ar 48000 -b:a {audio_bitrate} "
-            f'{output_opts}"{output_path}"'
-        )
-        print(f"[{label}] {ffmpeg_cmd}")
-        result = subprocess_run_fn(shlex_split_fn(ffmpeg_cmd))
+        ffmpeg_args = ["ffmpeg", "-hide_banner", "-y", "-threads", "0"]
+        for fragment in (input_args, subtime, sc, map_opts, vc):
+            ffmpeg_args.extend(shlex_split_fn(fragment))
+        ffmpeg_args.extend(["-c:a", "aac", "-ar", "48000", "-b:a", audio_bitrate])
+        ffmpeg_args.extend(shlex_split_fn(output_opts))
+        ffmpeg_args.append(output_path)
+        print(f"[{label}] {shlex.join(ffmpeg_args)}")
+        result = subprocess_run_fn(ffmpeg_args)
         return int(result.returncode)
 
     if not studio_allow_nvenc and (args.encoding_type or "CPU").upper() == "GPU":

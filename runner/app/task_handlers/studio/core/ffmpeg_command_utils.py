@@ -2,7 +2,28 @@
 
 from __future__ import annotations
 
+import re
+import shlex
 from typing import Any
+
+from app.task_handlers.encoding.core.rendition_utils import parse_bitrate_to_bps
+
+
+def validate_audio_bitrate(value: str) -> str:
+    """Validate a studio bitrate using the encoding bitrate syntax."""
+    # Runner configuration also supports bitrates expressed directly in bits/s.
+    if isinstance(value, str) and re.fullmatch(r"[1-9]\d*(?:\.\d+)?", value.strip()):
+        return value.strip()
+    try:
+        parse_bitrate_to_bps(value)
+    except (ValueError, OverflowError):
+        raise ValueError("Invalid studio_audio_bitrate; expected a bitrate such as 192k") from None
+    return value.strip()
+
+
+def quote_input_path(value: str) -> str:
+    """Quote one path for the existing shlex-parsed pipeline fragment interface."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def _duration_tokens(target_duration: float | None) -> tuple[str, str]:
@@ -78,9 +99,9 @@ def build_nvenc_video_codec(args: Any, *, webm_input: bool) -> str:
     """Build the NVENC video codec options string for studio encoding."""
     nvenc_preset = first_token(args.studio_preset, "p4")
     nvenc_cq = first_token(args.studio_crf, "")
-    rc_opt = f"-preset {nvenc_preset} "
+    rc_opt = f"-preset {shlex.quote(nvenc_preset)} "
     if nvenc_cq:
-        rc_opt += f"-cq {nvenc_cq} "
+        rc_opt += f"-cq {shlex.quote(nvenc_cq)} "
     if webm_input:
         rc_opt += "-rc cbr -cbr 1 -spatial-aq 1 -aq-strength 8 -temporal-aq 1 -qmin 0 -qmax 35 "
     return f"-c:v h264_nvenc {rc_opt}-profile:v high -pix_fmt yuv420p "
@@ -131,7 +152,7 @@ def build_cpu_single_source_subcmd(
         f"-c:v {cpu_encoder} "
     )
     if cpu_is_libx264:
-        subcmd += f"-preset {x264_preset} -crf {x264_crf} "
+        subcmd += f"-preset {shlex.quote(x264_preset)} -crf {shlex.quote(x264_crf)} "
     else:
         subcmd += "-q:v 23 "
     return subcmd

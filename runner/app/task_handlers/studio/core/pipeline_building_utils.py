@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import shlex
 from typing import Any, Callable, Protocol
+
+from .ffmpeg_command_utils import quote_input_path
 
 
 class BuildFullGpuFiltergraphFn(Protocol):
@@ -77,21 +80,21 @@ def _select_gpu_encode_only_single_source(
             print(
                 "Presenter source has no video stream; falling back to presentation-only pipeline"
             )
-            return f'-i "{pres_url}" ', pres_h
+            return f"-i {quote_input_path(pres_url)} ", pres_h
         if pers_h > 0:
             print(
                 "Presentation source has no video stream; falling back to presenter-only pipeline"
             )
-            return f'-i "{pers_url}" ', pers_h
+            return f"-i {quote_input_path(pers_url)} ", pers_h
         print(
             "Could not detect video dimensions for studio mix; falling back to presentation-only pipeline"
         )
-        return f'-i "{pres_url}" ', 720
+        return f"-i {quote_input_path(pres_url)} ", 720
 
     if pres_url:
-        return f'-i "{pres_url}" ', (pres_h or 720)
+        return f"-i {quote_input_path(pres_url)} ", (pres_h or 720)
     if pers_url:
-        return f'-i "{pers_url}" ', (pers_h or 720)
+        return f"-i {quote_input_path(pers_url)} ", (pers_h or 720)
     return None
 
 
@@ -107,14 +110,14 @@ def build_input_args(
     input_args = ""
     pres_h = pers_h = 0
     if pres_url and pers_url:
-        input_args = f'-i "{pres_url}" -i "{pers_url}" '
+        input_args = f"-i {quote_input_path(pres_url)} -i {quote_input_path(pers_url)} "
         pres_h = probe_height_fn(pres_url)
         pers_h = probe_height_fn(pers_url)
     elif pres_url:
-        input_args = f'-i "{pres_url}" '
+        input_args = f"-i {quote_input_path(pres_url)} "
         pres_h = probe_height_fn(pres_url)
     elif pers_url:
-        input_args = f'-i "{pers_url}" '
+        input_args = f"-i {quote_input_path(pers_url)} "
         pers_h = probe_height_fn(pers_url)
     else:
         raise ValueError("No media tracks")
@@ -166,9 +169,9 @@ def prepare_full_gpu_inputs(
     hwdev = int(args.hwaccel_device or 0)
     input_args = (
         f"-hwaccel_device {hwdev} -hwaccel cuda -hwaccel_output_format cuda "
-        f'-c:v {pres_dec} -i "{pres_url}" '
+        f"-c:v {pres_dec} -i {quote_input_path(pres_url)} "
         f"-hwaccel_device {hwdev} -hwaccel cuda -hwaccel_output_format cuda "
-        f'-c:v {pers_dec} -i "{pers_url}" '
+        f"-c:v {pers_dec} -i {quote_input_path(pers_url)} "
     )
 
     height = even_or_default_height_fn(pres_h, 720)
@@ -244,7 +247,7 @@ def build_gpu_encode_only_pipeline(
 
     map_opts = "-map 0:v -map 0:a? "
     if pres_url and pers_url and pres_h > 0 and pers_h > 0:
-        input_args = f'-i "{pres_url}" -i "{pers_url}" '
+        input_args = f"-i {quote_input_path(pres_url)} -i {quote_input_path(pers_url)} "
         subcmd = build_filter_fn(
             pres_h,
             pers_h,
@@ -276,25 +279,29 @@ def select_cpu_input_args(
     """Select CPU input args and mapping."""
     if pres_url and pers_url:
         if pres_h > 0 and pers_h > 0:
-            return f'-i "{pres_url}" -i "{pers_url}" ', '-map "[vout]" -map 0:a? ', "mixed"
+            return (
+                f"-i {quote_input_path(pres_url)} -i {quote_input_path(pers_url)} ",
+                '-map "[vout]" -map 0:a? ',
+                "mixed",
+            )
         if pres_h > 0:
             print(
                 "Presenter source has no video stream; falling back to presentation-only pipeline"
             )
-            return f'-i "{pres_url}" ', "-map 0:v -map 0:a? ", "presentation"
+            return f"-i {quote_input_path(pres_url)} ", "-map 0:v -map 0:a? ", "presentation"
         if pers_h > 0:
             print(
                 "Presentation source has no video stream; falling back to presenter-only pipeline"
             )
-            return f'-i "{pers_url}" ', "-map 0:v -map 0:a? ", "presenter"
+            return f"-i {quote_input_path(pers_url)} ", "-map 0:v -map 0:a? ", "presenter"
         print(
             "Could not detect video dimensions for studio mix; falling back to presentation-only pipeline"
         )
-        return f'-i "{pres_url}" ', "-map 0:v -map 0:a? ", "presentation"
+        return f"-i {quote_input_path(pres_url)} ", "-map 0:v -map 0:a? ", "presentation"
     if pres_url:
-        return f'-i "{pres_url}" ', "-map 0:v -map 0:a? ", "presentation"
+        return f"-i {quote_input_path(pres_url)} ", "-map 0:v -map 0:a? ", "presentation"
     if pers_url:
-        return f'-i "{pers_url}" ', "-map 0:v -map 0:a? ", "presenter"
+        return f"-i {quote_input_path(pers_url)} ", "-map 0:v -map 0:a? ", "presenter"
     raise ValueError("No media tracks")
 
 
@@ -346,7 +353,7 @@ def build_cpu_pipeline(
         x264_preset = first_token_fn(args.studio_preset, "medium")
         x264_crf = first_token_fn(args.studio_crf, "23")
         if cpu_is_libx264:
-            video_codec = f"-c:v {cpu_encoder} -preset {x264_preset} -crf {x264_crf} "
+            video_codec = f"-c:v {cpu_encoder} -preset {shlex.quote(x264_preset)} -crf {shlex.quote(x264_crf)} "
         else:
             video_codec = f"-c:v {cpu_encoder} -q:v 23 "
         return input_args, subcmd, video_codec, map_opts

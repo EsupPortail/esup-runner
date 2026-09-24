@@ -13,6 +13,7 @@ from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest
 from app.services.task_results import resolve_task_workspace
 from app.task_handlers.base_handler import BaseTaskHandler
+from app.task_handlers.studio.core.ffmpeg_command_utils import validate_audio_bitrate
 
 
 class StudioEncodingHandler(BaseTaskHandler):
@@ -44,8 +45,14 @@ class StudioEncodingHandler(BaseTaskHandler):
         return True
 
     def get_invalid_parameters(self, parameters: Dict[str, Any]) -> list[str]:
-        """Return unsupported parameter names for studio requests."""
-        return sorted([param for param in parameters if param not in self.possible_params])
+        """Return unsupported or invalid parameter names for studio requests."""
+        invalid = [param for param in parameters if param not in self.possible_params]
+        if "studio_audio_bitrate" in parameters:
+            try:
+                validate_audio_bitrate(parameters["studio_audio_bitrate"])
+            except ValueError:
+                invalid.append("studio_audio_bitrate")
+        return sorted(invalid)
 
     def execute_task(self, task_id: str, task_request: TaskRequest) -> Dict[str, Any]:
         try:
@@ -418,7 +425,7 @@ class StudioEncodingHandler(BaseTaskHandler):
         if preset:
             args.extend(["--studio-preset", str(preset)])
         if audio_bitrate:
-            args.extend(["--studio-audio-bitrate", str(audio_bitrate)])
+            args.extend(["--studio-audio-bitrate", validate_audio_bitrate(audio_bitrate)])
         if allow_nvenc is not None:
             args.extend(["--studio-allow-nvenc", str(allow_nvenc)])
         return args

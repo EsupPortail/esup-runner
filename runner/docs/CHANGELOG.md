@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   downloads; stream media in bounded chunks and discard oversized partial files.
 - Validate task identifiers and workspaces before scheduling or executing tasks;
   reject traversal and symbolic task/output directories.
+- Require HTTP(S) media track URLs in remote Studio mediapackages, preventing
+  XML documents from selecting local server files.
 
 ### Changed
 

@@ -672,12 +672,22 @@ def test_studio_parser_clip_times_run_pipelines_and_main(monkeypatch, tmp_path):
     monkeypatch.setattr(
         studio,
         "parse_mediapackage",
-        lambda _xml: ("pres.mp4", "pers.mp4", "mid", "cut.smil"),
+        lambda _xml: (
+            "https://example.org/pres.mp4",
+            "https://example.org/pers.mp4",
+            "mid",
+            "cut.smil",
+        ),
     )
     pres_url, pers_url, layout, smil_url = studio._load_mediapackage_and_layout(
         _make_args(presenter="pipb")
     )
-    assert (pres_url, pers_url, layout, smil_url) == ("pres.mp4", "pers.mp4", "pipb", "cut.smil")
+    assert (pres_url, pers_url, layout, smil_url) == (
+        "https://example.org/pres.mp4",
+        "https://example.org/pers.mp4",
+        "pipb",
+        "cut.smil",
+    )
 
     assert studio._load_clip_times(None) == (None, None)
     monkeypatch.setattr(

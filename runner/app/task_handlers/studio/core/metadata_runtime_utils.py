@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from typing import Callable
+from urllib.parse import urlparse
 
 from . import metadata_utils
 
@@ -28,6 +29,11 @@ def load_mediapackage_and_layout(
     """Load mediapackage metadata and resolve the effective presenter layout."""
     xml_text = fetch_text_fn(args.xml_url)
     pres_url, pers_url, presenter_layout, smil_url = parse_mediapackage_fn(xml_text)
+    for source in (pres_url, pers_url):
+        if source:
+            parsed = urlparse(source)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise ValueError("Studio mediapackage tracks must use HTTP(S) URLs")
     if args.presenter:
         presenter_layout = args.presenter
     return pres_url, pers_url, presenter_layout, smil_url

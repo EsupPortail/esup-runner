@@ -60,6 +60,20 @@ def test_parse_helpers_cover_defaults_invalid_values_and_bounds(monkeypatch):
     assert config_module._first_env_value(key_a, key_b, default="fallback") == "fallback"
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(value, False) for value in ("0", "false", "f", "no", "n", "off", " FALSE ")]
+    + [(value, True) for value in ("1", "true", "t", "yes", "y", "on", " TRUE ")],
+)
+def test_private_download_policy_uses_explicit_environment(monkeypatch, value, expected):
+    """An explicit environment value must override the opposite default."""
+    cfg = object.__new__(config_module.Config)
+    cfg._configuration_errors = []
+    monkeypatch.setenv("DOWNLOAD_ALLOW_PRIVATE_NETWORKS", value)
+    assert cfg._read_bool("DOWNLOAD_ALLOW_PRIVATE_NETWORKS", not expected) is expected
+    assert cfg._configuration_errors == []
+
+
 def test_get_config_loads_environment_only_once(monkeypatch):
     """Validate Get config loads environment only once."""
     calls = {"load": 0, "init": 0}

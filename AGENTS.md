@@ -42,5 +42,8 @@ Use the appropriate repository skills for significant changes; read their
   design, protocol, state, or infrastructure decisions.
 - [Security](.agents/skills/esup-runner-security/SKILL.md): requested security
   reviews or material changes to security-sensitive behavior.
+- [Commit](.agents/skills/esup-runner-commit/SKILL.md): commit preparation, message
+  suggestions, staged review, logical splitting, and explicitly requested local
+  commit creation.
 - [Release](.agents/skills/esup-runner-release/SKILL.md): release preparation,
   dry-runs, readiness checks, notes, tags, and explicitly requested publication.

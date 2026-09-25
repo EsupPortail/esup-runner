@@ -1,6 +1,8 @@
 """Validates runner registration, heartbeat communication, and manager service exception handling."""
 
+import httpx
 import pytest
+from fastapi import HTTPException
 
 import app.services.manager_service as manager_service
 
@@ -30,6 +32,83 @@ class FakeAsyncClient:
 
     async def get(self, *_, **__):
         return await self.responder()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "payload", "expected"),
+    [
+        (200, {"task_id": "task-1", "status": "failed"}, True),
+        (404, {"detail": "Task not found"}, False),
+        (404, {"detail": "Not Found"}, None),
+        (200, {"task_id": "another-task"}, None),
+        (200, [], None),
+        (401, {"detail": "Unauthorized"}, None),
+        (403, {"detail": "Forbidden"}, None),
+        (503, {"detail": "Service unavailable"}, None),
+        (302, {}, None),
+    ],
+)
+async def test_manager_task_exists_validates_response_and_request(
+    monkeypatch, status_code, payload, expected
+):
+    """Only an explicit task response can confirm existence or absence."""
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        assert request.method == "GET"
+        assert str(request.url) == "https://manager.example/prefix/task/status/task-1"
+        assert request.headers["Authorization"] == "Bearer test-runner-token"
+        assert request.headers["X-Runner-Version"] == manager_service.__version__
+        assert all(0 < value <= 5 for value in request.extensions["timeout"].values())
+        return httpx.Response(
+            status_code,
+            json=payload,
+            headers={"Location": "https://untrusted.example/"},
+        )
+
+    async_client = httpx.AsyncClient
+    monkeypatch.setattr(manager_service.config, "MANAGER_URL", "https://manager.example/prefix/")
+    monkeypatch.setattr(manager_service.config, "RUNNER_TOKEN", "test-runner-token")
+    monkeypatch.setattr(
+        manager_service.httpx,
+        "AsyncClient",
+        lambda **kwargs: async_client(transport=httpx.MockTransport(respond), **kwargs),
+    )
+
+    assert await manager_service.manager_task_exists("task-1") is expected
+    assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["timeout", "connection", "invalid-json"])
+async def test_manager_task_exists_preserves_uncertainty_on_errors(monkeypatch, failure):
+    """Transport errors and non-JSON responses must never imply deletion."""
+
+    async def respond():
+        if failure == "timeout":
+            raise httpx.ReadTimeout("unavailable")
+        if failure == "connection":
+            raise httpx.ConnectError("unavailable")
+        return httpx.Response(404, text="<html>Not found</html>")
+
+    monkeypatch.setattr(manager_service.httpx, "AsyncClient", lambda **_: FakeAsyncClient(respond))
+
+    assert await manager_service.manager_task_exists("task-1") is None
+
+
+@pytest.mark.asyncio
+async def test_manager_task_exists_rejects_unsafe_task_id(monkeypatch):
+    """Persisted task IDs cannot select another authenticated Manager URL."""
+    monkeypatch.setattr(
+        manager_service.httpx,
+        "AsyncClient",
+        lambda **_: pytest.fail("unsafe identifiers must not trigger a request"),
+    )
+
+    with pytest.raises(HTTPException):
+        await manager_service.manager_task_exists("../../runner/list")
 
 
 @pytest.mark.asyncio

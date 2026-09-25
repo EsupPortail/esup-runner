@@ -723,6 +723,25 @@ async def recover_failed_task(task_id: str, payload: dict, *, runtime: ModuleTyp
         runtime.logger.info("Skipping automatic restart for user-stopped task %s", task_id)
         return False
 
+    task_request = runtime._load_recovery_task_request(task_id, payload)
+    if payload.get("completion_callback") or (task_request and task_request.completion_callback):
+        task_exists = await runtime.manager_task_exists(task_id)
+        if task_exists is False:
+            runtime.clear_task_status(task_id)
+            runtime.logger.info(
+                "Skipping automatic restart for task %s: task no longer exists on manager; "
+                "cleared local recovery state",
+                task_id,
+            )
+            return False
+        if task_exists is None:
+            runtime.logger.warning(
+                "Skipping automatic restart for task %s: manager state could not be confirmed; "
+                "keeping local recovery state for a later restart",
+                task_id,
+            )
+            return False
+
     workspace_terminal_status = runtime._infer_workspace_terminal_status(task_id, payload)
     if workspace_terminal_status is not None:
         status, _error_message, script_output = workspace_terminal_status

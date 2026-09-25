@@ -19,8 +19,43 @@ from app.core.state import (
     set_registered,
     update_heartbeat,
 )
+from app.services.task_results import validate_task_id
 
 logger = setup_default_logging()
+
+
+async def manager_task_exists(task_id: str) -> bool | None:
+    """Check a task before recovery; None means the manager could not confirm it."""
+    safe_task_id = validate_task_id(task_id)
+    try:
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
+            response = await client.get(
+                f"{config.MANAGER_URL.rstrip('/')}/task/status/{safe_task_id}",
+                headers={
+                    "Accept": "application/json",
+                    "Authorization": f"Bearer {config.RUNNER_TOKEN}",
+                    "X-Runner-Version": __version__,
+                },
+            )
+
+        if response.status_code in {200, 404}:
+            payload = response.json()
+            if isinstance(payload, dict):
+                if response.status_code == 200 and payload.get("task_id") == safe_task_id:
+                    return True
+                if response.status_code == 404 and payload.get("detail") == "Task not found":
+                    return False
+
+        logger.warning(
+            "Could not confirm manager state for task %s (HTTP %s)",
+            task_id,
+            response.status_code,
+        )
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning(
+            "Could not confirm manager state for task %s (%s)", task_id, type(exc).__name__
+        )
+    return None
 
 
 async def register_with_manager():

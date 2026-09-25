@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   produced durations, and estimated missing duration. Keep the task failed and
   prepend a warning summary to the logs sent to the Manager, including recovery;
   retain chronological details in `encoding.log` and the five-second tolerance.
+- Check the Manager before recovering failed tasks with a completion callback,
+  preventing deleted tasks from being automatically rerun and sending failure
+  emails after a Runner restart. Keep recovery state without rerunning the task
+  when the Manager cannot confirm its existence.
 
 ## [1.9.0] - 2026-09-24
 

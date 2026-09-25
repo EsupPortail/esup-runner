@@ -26,6 +26,13 @@ def stub_lifespan(monkeypatch, request):
     monkeypatch.setattr(background_manager, "start_all_services", _noop)
     monkeypatch.setattr(background_manager, "stop_all_services", _noop)
 
+    from app.api.routes import task as task_module
+
+    async def _manager_task_exists(_task_id):
+        return True
+
+    monkeypatch.setattr(task_module, "manager_task_exists", _manager_task_exists)
+
     recovery_tests = {
         "test_recover_running_tasks_marks_completed_and_notifies",
         "test_recover_running_tasks_keeps_alive_tasks_running",
@@ -42,8 +49,6 @@ def stub_lifespan(monkeypatch, request):
     }
 
     if request.node.name not in recovery_tests:
-        from app.api.routes import task as task_module
-
         monkeypatch.setattr(task_module, "recover_running_tasks_after_restart", _noop)
         monkeypatch.setattr(task_module, "stop_recovery_monitors", _noop)
 

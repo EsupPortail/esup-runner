@@ -21,6 +21,7 @@ from app.core.auth import get_current_manager
 from app.core.config import config
 from app.core.encoding_diagnostics import INCOMPLETE_OUTPUT_PREFIX, prepend_encoding_warning
 from app.core.setup_logging import setup_default_logging
+from app.core.state import clear_task_status  # noqa: F401 - recovery runtime hook
 from app.core.state import (
     get_runner_id,
     get_runner_state,
@@ -35,6 +36,7 @@ from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest, TaskResultResponse
 from app.services import task_recovery, task_results
 from app.services.email_service import send_task_failure_email
+from app.services.manager_service import manager_task_exists  # noqa: F401 - recovery runtime hook
 from app.services.result_manifest import collect_manifest_output_files
 from app.services.task_dispatcher import task_dispatcher
 

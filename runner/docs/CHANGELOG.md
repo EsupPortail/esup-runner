@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.9.1] - 2026-09-25
+
 ### Fixed
 
 - Report incomplete HLS/MP4 outputs with the affected file/stream, expected and

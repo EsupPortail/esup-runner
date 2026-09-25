@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Explain `Invalid request origin` errors in administration actions with
+  `MANAGER_PUBLIC_URL` configuration guidance and a suggested browser-facing URL
+  when available, while preserving existing CSRF checks.
+
 ## [1.9.0] - 2026-09-24
 
 ### Security

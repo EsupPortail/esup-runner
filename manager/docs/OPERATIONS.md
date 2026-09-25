@@ -82,6 +82,20 @@ Task operations from `/tasks`:
 - Bulk restart: failed/timeout/warning/completed tasks
 - Bulk delete: non-running tasks only
 
+### Actions fail with `Invalid request origin`
+
+In `manager/.env`, set `MANAGER_PUBLIC_URL` to the browser-facing base URL,
+including the public port and proxy prefix if needed, but without `/admin` or
+`/tasks`. Check the value suggested by the error message and add any missing
+prefix. Example:
+
+```properties
+MANAGER_PUBLIC_URL=https://server.univ.fr/runner-manager
+```
+
+Validate the configuration as described above, restart the Manager with
+`systemctl --user restart esup-runner-manager`, then reload the browser page.
+
 ## Task retention behavior
 
 Task JSON persistence (`data/YYYY-MM-DD/*.json`) is automatically cleaned based on:

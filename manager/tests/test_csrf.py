@@ -205,6 +205,83 @@ def test_origin_uses_public_configuration_and_referer_only_as_fallback(
     assert bool(effects) is (expected_status == 303)
 
 
+@pytest.mark.parametrize(
+    "root_path,headers,expected_url",
+    [
+        ("", {"Origin": "https://manager.example"}, "https://manager.example"),
+        (
+            "/manager",
+            {
+                "Origin": "https://manager.example:8443",
+                "Referer": "https://other.example/admin?private-query=secret",
+                "X-Forwarded-Host": "other.example",
+                "X-Forwarded-Proto": "http",
+            },
+            "https://manager.example:8443/manager",
+        ),
+        (
+            "/manager",
+            {
+                "Referer": "https://manager.example/manager/admin/task/t1?private-query=secret#details"
+            },
+            "https://manager.example/manager",
+        ),
+        (
+            "/gestion été",
+            {"Origin": "https://[2001:db8::1]:8443"},
+            "https://[2001:db8::1]:8443/gestion%20%C3%A9t%C3%A9",
+        ),
+    ],
+)
+def test_origin_error_suggests_public_url_without_deleting_task(
+    csrf_client, monkeypatch, root_path, headers, expected_url
+):
+    _, effects = csrf_client
+    monkeypatch.setattr(config, "MANAGER_PUBLIC_URL", "http://internal:8081")
+    with TestClient(_app(root_path), base_url="http://internal:8081") as client:
+        client.auth = ("admin", "test-password")
+        response = client.post(
+            "/tasks/delete-selected",
+            headers={**headers, "X-CSRF-Token": _page_token(client)},
+            json={"task_ids": ["t1"]},
+        )
+    assert response.status_code == 403
+    detail = response.json()["detail"]
+    assert "Configure MANAGER_PUBLIC_URL in manager/.env" in detail
+    assert f'Suggested value: MANAGER_PUBLIC_URL="{expected_url}".' in detail
+    assert "restart the Manager and reload the page" in detail
+    assert "other.example" not in detail
+    assert "private-query" not in detail
+    assert "secret" not in detail
+    assert effects == []
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"Origin": "null", "Referer": "https://manager.example/admin"},
+        {"Origin": "https://user:password@manager.example"},
+        {"Origin": "https://manager.example:invalid"},
+        {"Origin": "https://attacker.example", "Sec-Fetch-Site": "cross-site"},
+    ],
+)
+def test_origin_error_does_not_suggest_invalid_or_cross_site_urls(csrf_client, headers):
+    client, effects = csrf_client
+    response = client.post(
+        "/tasks/delete-selected",
+        headers={**headers, "X-CSRF-Token": _page_token(client)},
+        json={"task_ids": ["t1"]},
+    )
+    assert response.status_code == 403
+    detail = response.json()["detail"]
+    assert "Configure MANAGER_PUBLIC_URL in manager/.env" in detail
+    assert "MANAGER_PUBLIC_URL=" not in detail
+    assert "password" not in detail
+    assert "attacker.example" not in detail
+    assert effects == []
+
+
 @pytest.mark.parametrize("root_path", ["", "/manager"])
 @pytest.mark.parametrize("proxy_keeps_prefix", [False, True])
 def test_form_token_survives_another_worker_and_reverse_proxy(

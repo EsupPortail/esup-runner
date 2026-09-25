@@ -5,12 +5,13 @@ import hmac
 import re
 import secrets
 import time
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import HTTPException, Request
 
 from app.core.auth import _openapi_cookie_secret
 from app.core.config import config
+from app.core.url_paths import request_root_path
 
 CSRF_MAX_AGE_SECONDS = 8 * 60 * 60
 _TOKEN_PATTERN = re.compile(r"[0-9]{1,12}\.[0-9a-f]{32}\.[0-9a-f]{64}")
@@ -68,6 +69,25 @@ def _url_origin(value: str) -> tuple[str, str, int] | None:
         return None
 
 
+def _origin_error_detail(request: Request, source: str) -> str:
+    """Explain how to fix the public URL without trusting it for authorization."""
+    detail = (
+        "Invalid request origin. Configure MANAGER_PUBLIC_URL in manager/.env "
+        "to match the URL used to open the Manager in your browser."
+    )
+    if _url_origin(source) is not None and request.headers.get("sec-fetch-site") != "cross-site":
+        public_url = (
+            urlsplit(source)
+            ._replace(path=quote(request_root_path(request), safe="/"), query="", fragment="")
+            .geturl()
+        )
+        detail += f' Suggested value: MANAGER_PUBLIC_URL="{public_url}".'
+    return (
+        f"{detail} Include any reverse-proxy path prefix in this URL, "
+        "then restart the Manager and reload the page."
+    )
+
+
 async def verify_csrf(request: Request) -> None:
     """Reject unsafe admin requests before any handler side effects.
 
@@ -84,7 +104,7 @@ async def verify_csrf(request: Request) -> None:
         or _url_origin(source) != expected_origin
         or request.headers.get("sec-fetch-site") == "cross-site"
     ):
-        raise HTTPException(status_code=403, detail="Invalid request origin")
+        raise HTTPException(status_code=403, detail=_origin_error_detail(request, source))
 
     token = request.headers.get("x-csrf-token")
     if token is None:

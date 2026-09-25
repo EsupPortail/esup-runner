@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Report incomplete HLS/MP4 outputs with the affected file/stream, expected and
+  produced durations, and estimated missing duration. Keep the task failed and
+  prepend a warning summary to the logs sent to the Manager, including recovery;
+  retain chronological details in `encoding.log` and the five-second tolerance.
+
 ## [1.9.0] - 2026-09-24
 
 ### Security

@@ -11,6 +11,7 @@ from typing import Callable, Optional, cast
 
 from fastapi import HTTPException
 
+from app.core.encoding_diagnostics import prepend_encoding_warning
 from app.models.models import TaskRequest
 
 RECOVERY_MONITOR_INTERVAL_SECONDS = 10
@@ -587,6 +588,8 @@ async def finalize_recovered_task(
     runtime: ModuleType,
 ) -> None:
     """Persist terminal status and re-notify manager callback when possible."""
+    if status == "failed":
+        script_output = prepend_encoding_warning(error_message, script_output)
     runtime.set_task_status(
         task_id,
         status,

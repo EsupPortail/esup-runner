@@ -14,6 +14,8 @@ from functools import lru_cache
 from timeit import default_timer as timer
 from typing import Optional
 
+from app.core.encoding_diagnostics import INCOMPLETE_OUTPUT_PREFIX
+
 OUTPUT_DURATION_TOLERANCE_SECONDS = 5.0
 _PROBE_DIAGNOSTIC_MAX_CHARS = 2000
 
@@ -282,6 +284,14 @@ def _validate_stream_durations(
                     f"stream {stream_index} stops at {duration:.3f}s; expected at least "
                     f"{minimum_duration:.3f}s (target {expected_duration:.3f}s, "
                     f"tolerance {duration_tolerance:.3f}s)\n"
+                )
+                msg += (
+                    f"WARNING: {INCOMPLETE_OUTPUT_PREFIX} {os.path.basename(output_path)!r}, "
+                    f"{stream_type} stream {stream_index}: {duration:.3f}s produced, "
+                    f"{expected_duration:.3f}s expected, approximately "
+                    f"{expected_duration - duration:.3f}s missing. "
+                    "Check source integrity and FFmpeg errors; "
+                    "see encoding.log for all output diagnostics.\n"
                 )
 
     return is_valid, msg, duration_summary

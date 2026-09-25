@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from app.core.config import config
+from app.core.encoding_diagnostics import incomplete_output_error
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest
 from app.services.task_results import resolve_task_workspace
@@ -377,7 +378,9 @@ class StudioEncodingHandler(BaseTaskHandler):
             },
         }
         if not enc_result.get("success", False):
-            results["error"] = enc_result.get("error", "Encoding failed")
+            results["error"] = enc_result.get("error") or (
+                incomplete_output_error(str(enc_result.get("stderr") or "")) or "Encoding failed"
+            )
         return results
 
     def _summarize_output(self, res: Dict[str, Any]) -> str:

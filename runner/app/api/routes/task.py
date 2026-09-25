@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.auth import get_current_manager
 from app.core.config import config
+from app.core.encoding_diagnostics import INCOMPLETE_OUTPUT_PREFIX, prepend_encoding_warning
 from app.core.setup_logging import setup_default_logging
 from app.core.state import (
     get_runner_id,
@@ -97,6 +98,8 @@ def _derive_failure_status(error_message: str) -> str:
 
     Returns "timeout" when the message indicates a timeout; otherwise "failed".
     """
+    if (error_message or "").startswith(INCOMPLETE_OUTPUT_PREFIX):
+        return "failed"
     if "timeout" in (error_message or "").lower():
         return "timeout"
     return "failed"
@@ -539,6 +542,7 @@ async def process_task(task_id: str, task_request: TaskRequest):
                 error_msg = _CANCELLED_BY_USER_ERROR
             failure_status = _derive_failure_status(error_msg)
             script_output_text = _normalize_script_output(results.get("script_output"))
+            script_output_text = prepend_encoding_warning(error_msg, script_output_text)
             set_task_status(
                 task_id,
                 failure_status,

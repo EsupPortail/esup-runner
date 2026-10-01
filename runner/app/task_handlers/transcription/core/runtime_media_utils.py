@@ -5,11 +5,15 @@ Builds source-audio preparation steps with predictable timeout behavior.
 Keeps media I/O details isolated from orchestration and business flow code.
 """
 
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import runtime_cli_utils
+
+_SILENCE_START_RE = re.compile(r"silence_start:\s*([0-9]+(?:\.[0-9]+)?)")
+_SILENCE_END_RE = re.compile(r"silence_end:\s*([0-9]+(?:\.[0-9]+)?)")
 
 
 def probe_duration_seconds(
@@ -37,6 +41,93 @@ def probe_duration_seconds(
         if debug:
             print(f"ffprobe failed to get duration: {exc}")
     return 0.0
+
+
+def _run_silence_detection(
+    path: Path,
+    duration_seconds: float,
+    debug: bool,
+    subprocess_run: Callable[..., Any],
+) -> Optional[str]:
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-nostats",
+        "-i",
+        str(path),
+        "-vn",
+        "-af",
+        "silencedetect=noise=-35dB:d=2",
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        proc = subprocess_run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=max(30, min(600, int(duration_seconds * 2) + 30)),
+        )
+    except Exception as exc:
+        if debug:
+            print(f"ffmpeg failed to detect trailing silence: {exc}")
+        return None
+
+    if proc.returncode != 0:
+        if debug:
+            print("ffmpeg failed to detect trailing silence")
+        return None
+
+    return f"{proc.stdout or ''}\n{proc.stderr or ''}"
+
+
+def _parse_trailing_silence_start(output: str, duration_seconds: float) -> Optional[float]:
+    silence_starts = [float(match.group(1)) for match in _SILENCE_START_RE.finditer(output)]
+    silence_ends = [float(match.group(1)) for match in _SILENCE_END_RE.finditer(output)]
+    if not silence_starts or not silence_ends:
+        return None
+
+    trailing_silence_start = silence_starts[-1]
+    trailing_silence_end = silence_ends[-1]
+    if trailing_silence_end < duration_seconds - 1.0:
+        return None
+    if trailing_silence_start <= 0 or trailing_silence_start >= trailing_silence_end:
+        return None
+
+    return trailing_silence_start
+
+
+def probe_effective_duration_seconds(
+    path: Path,
+    debug: bool = False,
+    *,
+    subprocess_run: Callable[..., Any] = subprocess.run,
+) -> float:
+    """Return media duration with confirmed trailing silence excluded."""
+    duration_seconds = probe_duration_seconds(
+        path,
+        debug=debug,
+        subprocess_run=subprocess_run,
+    )
+    if duration_seconds <= 0:
+        return 0.0
+
+    output = _run_silence_detection(path, duration_seconds, debug, subprocess_run)
+    if output is None:
+        return duration_seconds
+
+    trailing_silence_start = _parse_trailing_silence_start(output, duration_seconds)
+    if trailing_silence_start is None:
+        return duration_seconds
+
+    if debug:
+        print(
+            "Detected trailing silence: "
+            f"start={trailing_silence_start:.3f}s, "
+            f"duration={duration_seconds:.3f}s"
+        )
+    return trailing_silence_start
 
 
 def compute_timeout(

@@ -22,6 +22,7 @@ class FinalVttValidationContext:
     validate_vtt_coverage_fn: Callable[..., int]
     validate_vtt_internal_gaps_fn: Callable[..., int]
     detect_vtt_internal_gaps_fn: Callable[[Path, float], Dict[str, Any]]
+    probe_effective_duration_seconds_fn: Optional[Callable[[Path, bool], float]] = None
 
 
 def build_vtt_stem_candidates(audio_src: Path) -> list[str]:
@@ -97,9 +98,19 @@ def validate_final_vtt_and_collect_gap_analysis(
     """Run final VTT validations and return non-blocking internal-gap analysis."""
     resolved_context = context
 
-    reference_duration_sec = resolved_context.probe_duration_seconds_fn(audio_src, debug)
+    reference_path = audio_src
+    reference_duration_sec = resolved_context.probe_duration_seconds_fn(reference_path, debug)
     if reference_duration_sec <= 0:
-        reference_duration_sec = resolved_context.probe_duration_seconds_fn(input_path, debug)
+        reference_path = input_path
+        reference_duration_sec = resolved_context.probe_duration_seconds_fn(reference_path, debug)
+
+    if resolved_context.probe_effective_duration_seconds_fn is not None:
+        effective_duration_sec = resolved_context.probe_effective_duration_seconds_fn(
+            reference_path,
+            debug,
+        )
+        if 0 < effective_duration_sec < reference_duration_sec:
+            reference_duration_sec = effective_duration_sec
 
     rc = resolved_context.validate_vtt_coverage_fn(
         vtt_path=expected_vtt,

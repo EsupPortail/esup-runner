@@ -2783,6 +2783,46 @@ def test_validate_final_vtt_and_collect_gap_analysis_returns_coverage_error_earl
     assert calls["n"] == 2
 
 
+def test_validate_final_vtt_uses_effective_duration_for_coverage(tmp_path):
+    """Validate final VTT coverage against the duration excluding trailing silence."""
+    output_utils = _load_transcription_core_module("output_validation_flow_utils")
+    observed = {}
+
+    def fake_probe(_path, debug=False):
+        return 100.0
+
+    def fake_effective_probe(_path, debug=False):
+        return 70.0
+
+    def fake_validate_coverage(**kwargs):
+        observed.update(kwargs)
+        return 0
+
+    context = output_utils.FinalVttValidationContext(
+        min_vtt_coverage_ratio=0.75,
+        max_vtt_final_gap_seconds=300.0,
+        max_vtt_internal_gap_seconds=15.0,
+        max_vtt_internal_gap_count=0,
+        probe_duration_seconds_fn=fake_probe,
+        validate_vtt_coverage_fn=fake_validate_coverage,
+        validate_vtt_internal_gaps_fn=lambda **_kwargs: 0,
+        detect_vtt_internal_gaps_fn=lambda _path, _threshold: {},
+        probe_effective_duration_seconds_fn=fake_effective_probe,
+    )
+
+    rc, analysis = output_utils.validate_final_vtt_and_collect_gap_analysis(
+        expected_vtt=tmp_path / "subtitles.vtt",
+        audio_src=tmp_path / "audio.mp3",
+        input_path=tmp_path / "input.mp3",
+        debug=False,
+        context=context,
+    )
+
+    assert rc == 0
+    assert analysis == {}
+    assert observed["reference_duration_sec"] == 70.0
+
+
 def test_validate_final_vtt_and_collect_gap_analysis_logs_non_blocking_warning(tmp_path, capsys):
     """Validate Validate final vtt and collect gap analysis logs non blocking warning."""
     output_utils = _load_transcription_core_module("output_validation_flow_utils")

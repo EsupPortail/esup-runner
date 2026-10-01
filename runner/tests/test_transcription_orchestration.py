@@ -200,6 +200,38 @@ def test_runtime_media_utils_extra_branches(monkeypatch, tmp_path, capsys):
     )
     assert "ffprobe failed to get duration" in capsys.readouterr().out
 
+    def fake_probe(command, *args, **kwargs):
+        if command[0] == "ffprobe":
+            return types.SimpleNamespace(returncode=0, stdout="100.0", stderr="")
+        return types.SimpleNamespace(
+            returncode=0,
+            stdout="",
+            stderr="silence_start: 70.500\nsilence_end: 100.000\n",
+        )
+
+    assert (
+        runtime_media.probe_effective_duration_seconds(
+            tmp_path / "a.mp3",
+            subprocess_run=fake_probe,
+        )
+        == 70.5
+    )
+
+    def failing_ffmpeg_probe(command, *args, **kwargs):
+        if command[0] == "ffprobe":
+            return types.SimpleNamespace(returncode=0, stdout="100.0", stderr="")
+        raise RuntimeError("ffmpeg")
+
+    assert (
+        runtime_media.probe_effective_duration_seconds(
+            tmp_path / "a.mp3",
+            debug=True,
+            subprocess_run=failing_ffmpeg_probe,
+        )
+        == 100.0
+    )
+    assert "ffmpeg failed to detect trailing silence" in capsys.readouterr().out
+
     bad_args = types.SimpleNamespace(timeout_factor="oops", min_timeout="oops")
     timeout_value = runtime_media.compute_timeout(
         bad_args,

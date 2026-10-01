@@ -109,6 +109,7 @@ def validate_final_vtt_and_collect_gap_analysis(
         max_vtt_internal_gap_seconds=_MAX_VTT_INTERNAL_GAP_SECONDS,
         max_vtt_internal_gap_count=_MAX_VTT_INTERNAL_GAP_COUNT,
         probe_duration_seconds_fn=runtime_media_utils.probe_duration_seconds,
+        probe_effective_duration_seconds_fn=runtime_media_utils.probe_effective_duration_seconds,
         validate_vtt_coverage_fn=validate_vtt_coverage,
         validate_vtt_internal_gaps_fn=gap_repair_runtime_utils.validate_vtt_internal_gaps,
         detect_vtt_internal_gaps_fn=gap_repair_runtime_utils.detect_vtt_internal_gaps,

@@ -96,6 +96,24 @@ MANAGER_PUBLIC_URL=https://server.univ.fr/runner-manager
 Validate the configuration as described above, restart the Manager with
 `systemctl --user restart esup-runner-manager`, then reload the browser page.
 
+## Diagnosing OOM kills
+
+If systemd reports `Failed with result 'oom-kill'`, compare the service's memory
+usage with its configured limits. Check kernel logs for the killed process and
+whether the host or a cgroup ran out of memory, then correlate the incident time
+with Manager activity (requests, downloads, and concurrent tasks):
+
+```bash
+systemctl --user show esup-runner-manager \
+  -p MemoryCurrent -p MemoryPeak -p MemoryHigh -p MemoryMax -p MemorySwapMax
+journalctl --user -u esup-runner-manager --since '1 hour ago' --no-pager
+# Kernel logs may require elevated read permissions.
+journalctl -k --since '1 hour ago' --no-pager
+```
+
+For a system service, omit `--user` from the service commands. Adjust `--since`
+to cover the incident; `MemoryCurrent` reflects usage after any restart.
+
 ## Task retention behavior
 
 Task JSON persistence (`data/YYYY-MM-DD/*.json`) is automatically cleaned based on:

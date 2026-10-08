@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import Any, Dict, cast
 from urllib.parse import quote
 
+import anyio
 import httpx
 from fastapi import HTTPException
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import ValidationError
+from starlette.types import Receive, Scope, Send
 
 from app.models.models import Runner, Task, TaskResultManifest
 
@@ -195,17 +197,37 @@ async def fetch_runner_resource(
     timeout: httpx.Timeout,
     accept: str,
 ) -> httpx.Response:
-    """Fetch a runner resource and reject non-success responses."""
-    response = await client.get(
+    """Open a runner resource without buffering its body and reject HTTP errors."""
+    request = client.build_request(
+        "GET",
         url,
         headers=context._runner_auth_headers(runner, accept=accept),
         timeout=timeout,
     )
+    response = await client.send(request, stream=True)
     if response.status_code != 200:
-        context.logger.error("Error fetching result from runner: %s", response.status_code)
+        safe_url = request.url.copy_with(userinfo=b"", query=None, fragment=None)
+        context.logger.error(
+            "Error fetching result from runner: %s (runner_id=%s, resource_url=%s)",
+            response.status_code,
+            runner.id,
+            safe_url,
+        )
         await response.aclose()
         raise HTTPException(response.status_code, "Error fetching result from runner")
     return response
+
+
+async def _close_runner_resources(
+    response: httpx.Response | None, client: httpx.AsyncClient
+) -> None:
+    """Release upstream resources even during cancellation or failed response closure."""
+    with anyio.CancelScope(shield=True):
+        try:
+            if response is not None:
+                await response.aclose()
+        finally:
+            await client.aclose()
 
 
 def build_streaming_response(
@@ -220,11 +242,19 @@ def build_streaming_response(
 
     async def content_generator():
         try:
-            async for chunk in response.aiter_bytes():
+            async for chunk in response.aiter_bytes(chunk_size=64 * 1024):
                 yield chunk
         finally:
-            await response.aclose()
-            await client.aclose()
+            await _close_runner_resources(response, client)
+
+    class _RunnerStreamingResponse(StreamingResponse):
+        """Also close the upstream when sending headers or a chunk fails."""
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            try:
+                await super().__call__(scope, receive, send)
+            finally:
+                await _close_runner_resources(response, client)
 
     context._mark_warning_as_completed(task_id)
     headers: Dict[str, str] = {"X-Task-ID": task_id}
@@ -233,7 +263,7 @@ def build_streaming_response(
         headers["Content-Disposition"] = f"attachment; filename={filename}"
     elif content_disposition:
         headers["Content-Disposition"] = content_disposition
-    return StreamingResponse(
+    return _RunnerStreamingResponse(
         content_generator(),
         media_type=media_type or response.headers.get("content-type", "application/octet-stream"),
         headers=headers,
@@ -248,6 +278,8 @@ async def stream_runner_manifest(
     """Proxy-stream a result manifest from its runner."""
     client = context.httpx.AsyncClient()
     timeout = httpx.Timeout(connect=5.0, read=None, write=None, pool=5.0)
+    response = None
+    streaming_response = None
     try:
         response = await context._fetch_runner_resource(
             client,
@@ -256,24 +288,24 @@ async def stream_runner_manifest(
             timeout,
             accept="application/json",
         )
-        return cast(
+        streaming_response = cast(
             StreamingResponse,
             context._build_streaming_response(
                 task.task_id, response, client, media_type="application/json"
             ),
         )
+        return streaming_response
     except HTTPException:
-        await client.aclose()
         raise
     except httpx.TimeoutException:
-        await client.aclose()
         raise HTTPException(504, "Runner request timed out")
     except httpx.RequestError as exc:
-        await client.aclose()
         raise HTTPException(502, f"Error contacting runner: {exc}")
     except Exception as exc:
-        await client.aclose()
         raise HTTPException(500, f"Unexpected error: {exc}")
+    finally:
+        if streaming_response is None:
+            await _close_runner_resources(response, client)
 
 
 async def stream_runner_file(
@@ -286,6 +318,8 @@ async def stream_runner_file(
     client = context.httpx.AsyncClient()
     timeout = httpx.Timeout(connect=5.0, read=None, write=None, pool=5.0)
     encoded_path = quote(file_path, safe="/")
+    response = None
+    streaming_response = None
     try:
         response = await context._fetch_runner_resource(
             client,
@@ -294,7 +328,7 @@ async def stream_runner_file(
             timeout,
             accept="application/octet-stream",
         )
-        return cast(
+        streaming_response = cast(
             StreamingResponse,
             context._build_streaming_response(
                 task.task_id,
@@ -304,15 +338,15 @@ async def stream_runner_file(
                 filename=context.PathlibPath(file_path).name,
             ),
         )
+        return streaming_response
     except HTTPException:
-        await client.aclose()
         raise
     except httpx.TimeoutException:
-        await client.aclose()
         raise HTTPException(504, "Runner request timed out")
     except httpx.RequestError as exc:
-        await client.aclose()
         raise HTTPException(502, f"Error contacting runner: {exc}")
     except Exception as exc:
-        await client.aclose()
         raise HTTPException(500, f"Unexpected error: {exc}")
+    finally:
+        if streaming_response is None:
+            await _close_runner_resources(response, client)

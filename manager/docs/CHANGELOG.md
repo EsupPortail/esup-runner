@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated runtime and development dependencies in `uv.lock` to their latest compatible versions.
+
+### Fixed
+
+- Stream runner result files and manifests without first buffering their entire
+  HTTP response in Manager memory, preventing large downloads from causing
+  file-sized memory spikes. Close upstream resources on download completion,
+  cancellation, client disconnect, and response-construction failure.
+- Include the runner ID and resource URL in result-fetch HTTP error logs, with
+  URL credentials, query parameters, and fragments removed.
 
 ## [1.9.1] - 2026-09-25
 

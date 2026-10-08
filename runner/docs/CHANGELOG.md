@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated runtime and development dependencies in `uv.lock` to their latest compatible versions,
+  including the transcription CPU/GPU stack.
 
 ## [1.9.1] - 2026-09-25
 

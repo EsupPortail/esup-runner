@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -326,8 +328,9 @@ class _FakeHTTPXResponse:
         self.text = body.decode("utf-8", errors="ignore")
         self.closed = False
 
-    async def aiter_bytes(self) -> AsyncIterator[bytes]:
-        yield self._body
+    async def aiter_bytes(self, chunk_size: int = 64 * 1024) -> AsyncIterator[bytes]:
+        for offset in range(0, len(self._body), chunk_size):
+            yield self._body[offset : offset + chunk_size]
 
     async def aclose(self) -> None:
         self.closed = True
@@ -338,13 +341,276 @@ class _FakeHTTPXClient:
         self._response_or_exc = response
         self.closed = False
 
-    async def get(self, *_args, **_kwargs):
+    def build_request(self, method, url, **kwargs):
+        timeout = kwargs.pop("timeout")
+        return httpx.Request(method, url, extensions={"timeout": timeout.as_dict()}, **kwargs)
+
+    async def send(self, *_args, **_kwargs):
         if isinstance(self._response_or_exc, Exception):
             raise self._response_or_exc
         return self._response_or_exc
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class _TrackingHTTPXStream(httpx.AsyncByteStream):
+    """Track reads and closure without buffering a complete result file."""
+
+    def __init__(self):
+        self.chunks_read = 0
+        self.closed = False
+
+    async def __aiter__(self):
+        for _ in range(4):
+            self.chunks_read += 1
+            yield b"x" * (64 * 1024)
+
+    async def aclose(self):
+        self.closed = True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("file_path", [None, "sub dir/video.ts"])
+async def test_runner_result_stream_reads_only_when_consumed(
+    monkeypatch, task_module, clean_state, file_path
+):
+    """HTTPX must leave the body unread until the downstream client consumes it."""
+    runner = _runner("r1")
+    task = _task("t1", "r1", status="completed")
+    tasks[task.task_id] = task
+    stream = _TrackingHTTPXStream()
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, stream=stream)
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", lambda: upstream_client)
+    try:
+        if file_path is None:
+            result = await task_module._stream_runner_manifest(task, runner)
+            expected_path = b"/task/result/t1"
+            expected_accept = "application/json"
+        else:
+            result = await task_module._stream_runner_file(task, runner, file_path)
+            expected_path = b"/task/result/t1/file/sub%20dir/video.ts"
+            expected_accept = "application/octet-stream"
+
+        assert stream.chunks_read == 0
+        assert not stream.closed
+        assert not upstream_client.is_closed
+        assert requests[0].url.raw_path == expected_path
+        assert requests[0].headers["Authorization"] == "Bearer tok"
+        assert requests[0].headers["Accept"] == expected_accept
+        assert requests[0].extensions["timeout"] == {
+            "connect": 5.0,
+            "read": None,
+            "write": None,
+            "pool": 5.0,
+        }
+        assert result.headers["X-Task-ID"] == "t1"
+
+        first_chunk = await anext(result.body_iterator)
+        assert first_chunk == b"x" * (64 * 1024)
+        assert stream.chunks_read == 1
+        remaining = [chunk async for chunk in result.body_iterator]
+        assert len(remaining) == 3
+        assert stream.closed
+        assert upstream_client.is_closed
+    finally:
+        await upstream_client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("disconnect_at", ["headers", "body"])
+async def test_runner_file_disconnect_closes_upstream(
+    monkeypatch, task_module, clean_state, disconnect_at
+):
+    """A disconnected client must release even an unread upstream response."""
+    runner = _runner("r1")
+    task = _task("t1", "r1", status="completed")
+    tasks[task.task_id] = task
+    stream = _TrackingHTTPXStream()
+    upstream_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=stream))
+    )
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", lambda: upstream_client)
+    result = await task_module._stream_runner_file(task, runner, "video.ts")
+
+    async def receive():
+        await asyncio.Event().wait()
+
+    async def send(message):
+        if disconnect_at == "headers" or message["type"] == "http.response.body":
+            raise OSError("client disconnected")
+
+    try:
+        with pytest.raises(Exception):
+            await result({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send)
+        assert stream.closed
+        assert upstream_client.is_closed
+        assert stream.chunks_read == (0 if disconnect_at == "headers" else 1)
+    finally:
+        await result.body_iterator.aclose()
+        await upstream_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_runner_file_asgi_disconnect_shields_upstream_cleanup(
+    monkeypatch, task_module, clean_state
+):
+    """ASGI disconnect cancellation must allow asynchronous upstream cleanup to finish."""
+    task = _task("t1", "r1", status="completed")
+    tasks[task.task_id] = task
+    first_chunk_sent = asyncio.Event()
+
+    class PausingStream(_TrackingHTTPXStream):
+        async def __aiter__(self):
+            self.chunks_read += 1
+            yield b"x" * (64 * 1024)
+            await asyncio.Event().wait()
+
+        async def aclose(self):
+            await asyncio.sleep(0)
+            await super().aclose()
+
+    stream = PausingStream()
+    upstream_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=stream))
+    )
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", lambda: upstream_client)
+    result = await task_module._stream_runner_file(task, _runner("r1"), "video.ts")
+
+    async def receive():
+        await first_chunk_sent.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.body":
+            first_chunk_sent.set()
+
+    try:
+        await result({"type": "http", "asgi": {"spec_version": "2.3"}}, receive, send)
+        assert stream.chunks_read == 1
+        assert stream.closed
+        assert upstream_client.is_closed
+    finally:
+        await result.body_iterator.aclose()
+        await upstream_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_runner_result_error_is_logged_without_reading_body(task_module, clean_state, caplog):
+    """Report the runner and resource without consuming an error body or logging secrets."""
+    caplog.set_level(logging.INFO, logger="httpx")
+    stream = _TrackingHTTPXStream()
+    runner = _runner("r1")
+    url = "http://user:password@r1.example/task/result/t1/file/video.ts?token=secret#private"
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(404, stream=stream))
+    ) as upstream_client:
+        with pytest.raises(HTTPException) as exc:
+            await task_module._fetch_runner_resource(
+                upstream_client, runner, url, httpx.Timeout(1.0), "application/octet-stream"
+            )
+    assert exc.value.status_code == 404
+    assert stream.chunks_read == 0
+    assert stream.closed
+    manager_errors = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == task_module.logger.name and record.levelno == logging.ERROR
+    ]
+    assert len(manager_errors) == 1
+    message = manager_errors[0]
+    assert "runner_id=r1" in message
+    assert "http://r1.example/task/result/t1/file/video.ts" in message
+    assert "404" in message
+    for secret in ("user", "password", "token=secret", "private", runner.token):
+        assert secret not in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [httpx.ReadError("broken stream"), asyncio.CancelledError()])
+async def test_runner_result_interrupted_read_closes_upstream(
+    monkeypatch, task_module, clean_state, failure
+):
+    """Read errors and cancellation after headers must release the upstream connection."""
+    task = _task("t1", "r1", status="completed")
+    tasks[task.task_id] = task
+
+    class InterruptedStream(_TrackingHTTPXStream):
+        async def __aiter__(self):
+            yield b"x" * (64 * 1024)
+            raise failure
+
+    stream = InterruptedStream()
+    upstream_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=stream))
+    )
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", lambda: upstream_client)
+    result = await task_module._stream_runner_file(task, _runner("r1"), "video.ts")
+    with pytest.raises(type(failure)):
+        async for _ in result.body_iterator:
+            pass
+    assert stream.closed
+    assert upstream_client.is_closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("resource", ["manifest", "file"])
+@pytest.mark.parametrize("failure_at", ["fetch", "build"])
+async def test_runner_result_pre_stream_failure_closes_resources(
+    monkeypatch, task_module, clean_state, resource, failure_at
+):
+    """Cancellation or failed response construction must not leave an open upstream."""
+    task = _task("t1", "r1", status="completed")
+    tasks[task.task_id] = task
+    response = _FakeHTTPXResponse()
+    upstream_client = _FakeHTTPXClient(response)
+    monkeypatch.setattr(task_module.httpx, "AsyncClient", lambda: upstream_client)
+
+    async def cancelled_fetch(*args, **kwargs):
+        raise asyncio.CancelledError()
+
+    def failed_build(*args, **kwargs):
+        raise ValueError("unable to build response")
+
+    if failure_at == "fetch":
+        monkeypatch.setattr(task_module, "_fetch_runner_resource", cancelled_fetch)
+        expected_exception = asyncio.CancelledError
+    else:
+        monkeypatch.setattr(task_module, "_build_streaming_response", failed_build)
+        expected_exception = HTTPException
+
+    with pytest.raises(expected_exception):
+        if resource == "manifest":
+            await task_module._stream_runner_manifest(task, _runner("r1"))
+        else:
+            await task_module._stream_runner_file(task, _runner("r1"), "video.ts")
+    assert upstream_client.closed
+    if failure_at == "build":
+        assert response.closed
+
+
+@pytest.mark.asyncio
+async def test_runner_stream_closes_client_when_response_close_fails(task_module, clean_state):
+    """Always close the client even if closing its response raises an exception."""
+    tasks["t1"] = _task("t1", "r1", status="completed")
+
+    class BrokenCloseResponse(_FakeHTTPXResponse):
+        async def aclose(self):
+            raise RuntimeError("unable to close response")
+
+    response = BrokenCloseResponse()
+    client = _FakeHTTPXClient(response)
+    result = task_module._build_streaming_response("t1", response, client)
+    with pytest.raises(RuntimeError, match="unable to close response"):
+        async for _ in result.body_iterator:
+            pass
+    assert client.closed
 
 
 @pytest.mark.asyncio
@@ -440,9 +706,9 @@ async def test_stream_runner_manifest_success(monkeypatch, task_module, clean_st
             super().__init__(response)
             self.last_url: str | None = None
 
-        async def get(self, url: str, *_args, **_kwargs):
-            self.last_url = url
-            return await super().get(url)
+        async def send(self, request, **kwargs):
+            self.last_url = str(request.url)
+            return await super().send(request, **kwargs)
 
     created: dict[str, Any] = {}
 
@@ -481,9 +747,9 @@ async def test_stream_runner_file_success_and_encodes_path(monkeypatch, task_mod
             super().__init__(response)
             self.last_url: str | None = None
 
-        async def get(self, url: str, *_args, **_kwargs):
-            self.last_url = url
-            return await super().get(url)
+        async def send(self, request, **kwargs):
+            self.last_url = str(request.url)
+            return await super().send(request, **kwargs)
 
     created: dict[str, Any] = {}
 
@@ -511,11 +777,11 @@ async def test_stream_runner_manifest_timeout(monkeypatch, task_module, clean_st
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_FakeHTTPXClient):
         def __init__(self, *_, **__):
             self.closed = False
 
-        async def get(self, *_a, **_k):
+        async def send(self, *_a, **_k):
             raise httpx.TimeoutException("timeout")
 
         async def aclose(self):
@@ -536,11 +802,11 @@ async def test_stream_runner_manifest_request_error(monkeypatch, task_module, cl
 
     req = httpx.Request("GET", "http://r1.example/x")
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_FakeHTTPXClient):
         def __init__(self, *_, **__):
             self.closed = False
 
-        async def get(self, *_a, **_k):
+        async def send(self, *_a, **_k):
             raise httpx.RequestError("boom", request=req)
 
         async def aclose(self):
@@ -584,7 +850,7 @@ async def test_stream_runner_manifest_unexpected_exception_closes_client(
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_FakeHTTPXClient):
         def __init__(self, *_, **__):
             self.closed = False
 
@@ -617,11 +883,11 @@ async def test_stream_runner_file_request_error(monkeypatch, task_module, clean_
 
     req = httpx.Request("GET", "http://r1.example/x")
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_FakeHTTPXClient):
         def __init__(self, *_, **__):
             self.closed = False
 
-        async def get(self, *_a, **_k):
+        async def send(self, *_a, **_k):
             raise httpx.RequestError("boom", request=req)
 
         async def aclose(self):
@@ -662,11 +928,11 @@ async def test_stream_runner_file_timeout(monkeypatch, task_module, clean_state)
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_FakeHTTPXClient):
         def __init__(self, *_, **__):
             self.closed = False
 
-        async def get(self, *_a, **_k):
+        async def send(self, *_a, **_k):
             raise httpx.TimeoutException("timeout")
 
         async def aclose(self):
@@ -685,11 +951,11 @@ async def test_stream_runner_file_unexpected_exception(monkeypatch, task_module,
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_FakeHTTPXClient):
         def __init__(self, *_, **__):
             self.closed = False
 
-        async def get(self, *_a, **_k):
+        async def send(self, *_a, **_k):
             raise ValueError("boom")
 
         async def aclose(self):

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Normalize and confine Live output paths before filesystem access. Reject
+  session, playlist, rendition and segment symlinks, and recheck session
+  directories before creation or cleanup to prevent redirected HLS access.
+
 ### Changed
 
 - Report Live outgoing bandwidth per viewer and for `--live-viewers`, using the

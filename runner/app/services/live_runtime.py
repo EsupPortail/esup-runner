@@ -18,6 +18,7 @@ from app.core.setup_logging import setup_default_logging
 from app.models.models import TaskRequest
 from app.services import hls_viewers, pod_sync
 from app.services.live_media import build_command, hls_ready, rtmp_url
+from app.services.live_paths import contained_path
 from app.services.mediamtx import (
     MediaMTXClient,
     MediaMTXError,
@@ -75,11 +76,10 @@ def validate_request(request: TaskRequest) -> None:
 def directory_for(task_id: str) -> Path:
     """Resolve a UUID session beneath the configured HLS root without following a session symlink."""
     uuid.UUID(task_id)
-    base = Path(config.LIVE.hls_directory).resolve()
-    directory = base / task_id
-    if directory.is_symlink() or directory.resolve().parent != base:
-        raise RuntimeError("Invalid Live output directory")
-    return directory
+    try:
+        return contained_path(Path(config.LIVE.hls_directory), task_id)
+    except ValueError:
+        raise RuntimeError("Invalid Live output directory") from None
 
 
 def update(task_id: str, *, durable: bool = True, **fields: Any) -> dict:
@@ -237,6 +237,20 @@ class LiveRuntime:
         self.previous_bytes = 0
         self.previous_sample = time.monotonic()
 
+    def checked_directory(self) -> Path:
+        """Recheck the bound output directory before creation or deletion.
+
+        Raise LiveFailure if a session symlink or a changed root would redirect
+        filesystem access after this runtime was constructed.
+        """
+        try:
+            directory = directory_for(self.task_id)
+        except (ValueError, RuntimeError) as exc:
+            raise LiveFailure("Invalid Live output directory") from exc
+        if directory != self.directory:
+            raise LiveFailure("Live output directory changed")
+        return directory
+
     async def run(self, *, recovering: bool = False) -> None:
         """Run or recover the session, then clean up after completion, failure or cancellation.
 
@@ -278,8 +292,9 @@ class LiveRuntime:
     async def wait_for_mediamtx(self) -> bool:
         """Stop stale media output and wait for the Control API before retrying this session."""
         await self.stop_process()
-        if self.directory.exists():
-            shutil.rmtree(self.directory)
+        directory = self.checked_directory()
+        if directory.exists():
+            shutil.rmtree(directory)
         hls_viewers.clear(self.task_id)
         self.path_missing = True
         self.previous_bytes = 0
@@ -443,11 +458,12 @@ class LiveRuntime:
         Discard raw process output because FFmpeg diagnostics may contain RTMP
         credentials. HLS remains unavailable until all renditions pass readiness.
         """
-        if self.directory.exists():
-            shutil.rmtree(self.directory)
-        self.directory.mkdir(parents=True)
+        directory = self.checked_directory()
+        if directory.exists():
+            shutil.rmtree(directory)
+        directory.mkdir(parents=True)
         for variant in self.settings.variants:
-            (self.directory / variant.name).mkdir()
+            contained_path(directory, variant.name).mkdir()
         command = build_command(
             self.settings,
             rtmp_url(self.settings.local_rtmp_url, self.path),
@@ -571,8 +587,9 @@ class LiveRuntime:
                 await self.terminate_orphans()
                 await self.client.remove_forward(self.path)
                 await self.deactivate_pod_broadcaster()
-                if self.directory.exists():
-                    shutil.rmtree(self.directory)
+                directory = self.checked_directory()
+                if directory.exists():
+                    shutil.rmtree(directory)
                 hls_viewers.clear(self.task_id)
                 update(
                     self.task_id,

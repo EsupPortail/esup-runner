@@ -1,10 +1,12 @@
 """FFmpeg ABR construction and filesystem readiness checks."""
 
+import re
 import time
 from pathlib import Path
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
 from app.core.live_config import LiveSettings
+from app.services.live_paths import contained_path
 
 
 def rtmp_url(base: str, path: str) -> str:
@@ -122,16 +124,21 @@ def build_command(
 
 
 def hls_ready(directory: Path, settings: LiveSettings) -> bool:
-    """Require every advertised variant and recent, non-empty media segments."""
+    """Require contained playlists and recent, non-empty segments for every rendition.
+
+    Return False for incomplete output, invalid paths, symlinks or unreadable
+    files. Recheck the session directory in case it changed after allocation.
+    """
     try:
-        master = (directory / "master.m3u8").read_text()
+        directory = contained_path(directory.parent, directory.name)
+        master = contained_path(directory, "master.m3u8").read_text()
         if "#EXTM3U" not in master:
             return False
         return all(
             _variant_ready(directory, variant.name, master, settings.stall_timeout)
             for variant in settings.variants
         )
-    except (OSError, UnicodeError):
+    except (OSError, UnicodeError, ValueError):
         return False
 
 
@@ -139,18 +146,22 @@ def _variant_ready(directory: Path, name: str, master: str, timeout: float) -> b
     """Check that an advertised rendition has a fresh playlist and non-empty segments.
 
     Require at least two segment entries and validate the last two files.
-    Filesystem or decoding failures propagate to hls_ready.
+    Invalid paths, symlinks and filesystem or decoding failures propagate to
+    hls_ready. Only generated segment filenames are accepted.
     """
     if f"{name}/index.m3u8" not in master:
         return False
-    playlist = directory / name / "index.m3u8"
+    playlist = contained_path(directory, f"{name}/index.m3u8")
     if time.time() - playlist.stat().st_mtime > timeout:
         return False
     content = playlist.read_text()
     segments = [line for line in content.splitlines() if line and not line.startswith("#")]
     if len(segments) < 2 or "#EXTINF:" not in content:
         return False
-    return all(
-        Path(segment).name == segment and (playlist.parent / segment).stat().st_size > 0
-        for segment in segments[-2:]
-    )
+    for segment in segments[-2:]:
+        if re.fullmatch(r"segment_[0-9]+\.ts", segment) is None:
+            return False
+        file = contained_path(playlist.parent, segment)
+        if not file.is_file() or file.stat().st_size == 0:
+            return False
+    return True

@@ -1,4 +1,5 @@
 # Copy and customize the two MediaMTX YAML examples before starting.
+# MediaMTX 1.21.1 is the minimum/default; choose an explicit newer stable tag if desired.
 # A different Compose project name gives another independent Manager/Runner pair.
 services:
   manager:

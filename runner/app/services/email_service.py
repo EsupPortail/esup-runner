@@ -1,7 +1,6 @@
 # runner/app/services/email_service.py
 """
-Email notification service for Runner.
-Sends failure notifications to the manager via SMTP.
+Email notification service for Runner tasks and GPU health warnings.
 """
 
 import asyncio
@@ -143,6 +142,56 @@ async def send_task_failure_email(
         error_message=error_message,
         script_output=script_output,
     )
+    return await _send_notification_email(message, f"task {task_id}")
+
+
+async def send_gpu_health_warning_email(*, error_message: str) -> bool:
+    """Send administrators a GPU warning using the existing SMTP configuration.
+
+    Return False when SMTP is unconfigured or delivery fails.
+    """
+    if not _is_email_configured():
+        logger.warning("SMTP_SERVER or MANAGER_EMAIL not configured: GPU warning email skipped")
+        return False
+
+    runner_id = get_runner_id() or "unknown-runner"
+    runner_url = get_runner_instance_url() or "unknown-url"
+    manager_admin_url = _manager_admin_url()
+    summary = "The NVIDIA driver health check failed. GPU processing may be unavailable."
+    details = [
+        ("Runner", runner_id),
+        ("Host", config.RUNNER_HOST),
+        ("Runner URL", runner_url),
+        ("Command", "nvidia-smi"),
+        ("Check interval", f"{config.GPU_HEALTH_CHECK_INTERVAL_HOURS} hours"),
+    ]
+    text_body = "\n".join(
+        [summary, "", *(f"{label}: {value}" for label, value in details), "", error_message]
+    )
+    message = build_branded_email_message(
+        subject=f"[esup-runner] GPU warning on {runner_id}: nvidia-smi failed",
+        sender=_build_sender_address(),
+        recipient=config.MANAGER_EMAIL,
+        text_body=text_body,
+        product_name="ESUP-Runner",
+        eyebrow="GPU health warning",
+        title="NVIDIA driver unavailable",
+        summary=summary,
+        status_label="WARNING",
+        tone="warning",
+        details=details,
+        primary_block_title="nvidia-smi diagnostics",
+        primary_block_body=error_message,
+        action_label="Open manager",
+        action_url=_action_url(manager_admin_url),
+        footer="This message was generated automatically by the ESUP-Runner runner.",
+        logo_path=_LOGO_PATH,
+    )
+    return await _send_notification_email(message, f"GPU health on {runner_id}")
+
+
+async def _send_notification_email(message: EmailMessage, context: str) -> bool:
+    """Deliver a composed message through SMTP without blocking the event loop."""
 
     def _send() -> None:
         """Send the composed email through the configured SMTP server."""
@@ -155,8 +204,8 @@ async def send_task_failure_email(
 
     try:
         await asyncio.to_thread(_send)
-        logger.info("Email notification sent for task %s", task_id)
+        logger.info("Email notification sent for %s", context)
         return True
     except Exception as exc:
-        logger.error("Failed to send email for task %s: %s", task_id, exc)
+        logger.error("Failed to send email for %s: %s", context, exc)
         return False

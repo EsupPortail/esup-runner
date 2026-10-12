@@ -8,7 +8,9 @@ from typing import Dict, List
 
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
+from app.core.state import get_runner_instance_id
 from app.managers.storage_manager import storage_manager
+from app.services.gpu_health_service import gpu_health_check_loop
 from app.services.manager_service import heartbeat_loop, reconnect_loop
 from app.services.pod_sync import retry_loop as pod_sync_loop
 
@@ -96,6 +98,13 @@ class BackgroundServiceManager:
         ]
         if "live" in config.RUNNER_TASK_TYPES and config.LIVE.pod_url:
             services.append(("pod_sync_loop", pod_sync_loop()))
+        # NVIDIA driver health is shared by all instances on this host.
+        if (
+            config.ENCODING_TYPE == "GPU"
+            and config.GPU_HEALTH_CHECK_INTERVAL_HOURS > 0
+            and get_runner_instance_id() == 0
+        ):
+            services.append(("gpu_health_check_loop", gpu_health_check_loop()))
 
         for name, service in services:
             task = asyncio.create_task(service, name=name)

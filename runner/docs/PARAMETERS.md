@@ -49,6 +49,7 @@ WHISPER_LANGUAGE=auto
 
 ## Encoding / hardware
 - `ENCODING_TYPE` (`CPU` | `GPU`, default `CPU`): Selects CPU or GPU path for encoding tasks.
+- `GPU_HEALTH_CHECK_INTERVAL_HOURS` (non-negative int, default `12`): When `ENCODING_TYPE=GPU`, instance 0 checks `nvidia-smi` at startup and every 12 hours, independently of tasks. Use `24` for daily checks or `0` to disable. Each failed check sends an administrator warning using the existing SMTP settings; command execution times out after 10 seconds. See [automatic NVIDIA driver monitoring](OPERATIONS.md#automatic-nvidia-driver-monitoring).
 - `GPU_HWACCEL_DEVICE` (int, default `0`): Device index passed to scripts.
 - `GPU_CUDA_VISIBLE_DEVICES` (CSV, default `0,1`): Exported when GPU mode is enabled.
 - `GPU_CUDA_DEVICE_ORDER` (default `PCI_BUS_ID`): CUDA device ordering.
@@ -89,7 +90,7 @@ Compatibility note:
 
 
 ## Notifications
-- `SMTP_SERVER`, `SMTP_PORT` (default `25`), `SMTP_SENDER`, `MANAGER_EMAIL`: Optional email settings for failure notifications.
+- `SMTP_SERVER`, `SMTP_PORT` (default `25`), `SMTP_SENDER`, `MANAGER_EMAIL`: Optional email settings for task failures and GPU health warnings. Set `MANAGER_EMAIL` to an administrator address or mailing list.
 
 ## Logging
 - `LOG_DIR` (default `/var/log/esup-runner/`): Log base path; trailing slash is added if missing.

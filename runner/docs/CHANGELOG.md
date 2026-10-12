@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Monitor `nvidia-smi` at startup and every 12 hours in GPU mode, independently
+  of running tasks. Send administrator warnings through the existing SMTP
+  settings on command failures, missing executable or timeout. Run the shared
+  host check on instance 0 only; configure daily checks or disable monitoring
+  with `GPU_HEALTH_CHECK_INTERVAL_HOURS`.
 - Use `/dev/shm/hls` in Linux Live examples and deployment configuration to keep HLS playlists and TS segments in memory; document capacity and restart behavior.
 
 - Add the `live` task type: pull Manager RTMP sources through a native MediaMTX relay and always transcode them to adaptive HLS with FFmpeg. Support CPU and NVENC encoding, optional NVDEC and CPU fallback, durable stop/recovery, and dedicated or mixed Runner instances.

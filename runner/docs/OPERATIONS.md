@@ -120,6 +120,36 @@ Expected behavior:
 - `/runner/ping` should report `available=true` when the instance is idle.
 - `/runner/ping` and `/runner/status` should report `registered=true` after successful manager registration.
 
+## Automatic NVIDIA driver monitoring
+
+With `ENCODING_TYPE=GPU`, the runner checks `nvidia-smi` once at startup and
+every 12 hours by default, even when no tasks are running. Instance 0 performs
+the check for the shared host, avoiding duplicate warnings from sibling
+instances. Keep instance 0 running for this monitoring to remain active.
+
+Configure the existing `SMTP_SERVER`, `SMTP_PORT`, `SMTP_SENDER` and
+`MANAGER_EMAIL` settings in the Runner environment; use an administrator address
+or mailing list for `MANAGER_EMAIL`. Optional STARTTLS and authentication use
+`SMTP_USE_TLS`, `SMTP_USERNAME` and `SMTP_PASSWORD`.
+
+```properties
+ENCODING_TYPE=GPU
+GPU_HEALTH_CHECK_INTERVAL_HOURS=12
+```
+
+Set the interval to `24` for one periodic check per day, or `0` to disable
+monitoring. Restart the Runner after changing its environment. This control is
+enabled only by `ENCODING_TYPE=GPU`, independently of Live configuration.
+
+A missing command, non-zero exit status or 10-second timeout logs a warning and
+sends an email identifying the runner/host and including the failure diagnostics.
+While the failure persists, one reminder is sent per check interval; startup
+checks also send a warning if needed. Successful checks only produce a log entry.
+SMTP configuration or delivery failures are logged, and monitoring retries on
+the next scheduled check. Monitoring does not stop tasks, change readiness or
+attempt driver repairs. A successful `nvidia-smi` check does not validate FFmpeg,
+CUDA or NVENC capabilities; use the GPU diagnostic scripts for those checks.
+
 ## Multi-instance checks
 
 For grouped task-type deployments, check every port from `RUNNER_BASE_PORT` to

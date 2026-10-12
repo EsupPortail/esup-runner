@@ -582,6 +582,10 @@ class Config:
         self.ENCODING_TYPE: str = os.getenv("ENCODING_TYPE", "CPU").upper()
 
         # # # Specifics settings for GPU encoding # # #
+        # Periodic NVIDIA driver health check (0 disables monitoring)
+        self.GPU_HEALTH_CHECK_INTERVAL_HOURS: int = self._read_int(
+            "GPU_HEALTH_CHECK_INTERVAL_HOURS", 12, min_value=0
+        )
         # HWACCEL_DEVICE parameter for GPU encoding (Ex: 0)
         self.GPU_HWACCEL_DEVICE: int = self._read_int("GPU_HWACCEL_DEVICE", 0, min_value=0)
         # CUDA_VISIBLE_DEVICES parameter for GPU encoding (Ex: 0,1)
@@ -776,6 +780,7 @@ class Config:
             ("MAX_FILE_AGE_DAYS", self.MAX_FILE_AGE_DAYS, 0, None),
             ("CLEANUP_INTERVAL_HOURS", self.CLEANUP_INTERVAL_HOURS, 1, None),
             ("EXTERNAL_SCRIPT_TIMEOUT_SECONDS", self.EXTERNAL_SCRIPT_TIMEOUT_SECONDS, 1, None),
+            ("GPU_HEALTH_CHECK_INTERVAL_HOURS", self.GPU_HEALTH_CHECK_INTERVAL_HOURS, 0, None),
             ("GPU_HWACCEL_DEVICE", self.GPU_HWACCEL_DEVICE, 0, None),
         )
         for name, value, minimum, maximum in checks:

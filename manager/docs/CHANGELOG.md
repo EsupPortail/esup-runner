@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Accept stable MediaMTX versions >= 1.21.1, keeping 1.21.1 as the default
+  download and allowing an explicit newer release for new installations.
+  Preserve installed binaries and document manual upgrades, Live interruptions
+  and rollback for native services and Docker.
 - Place compact task log and Live monitoring buttons below the task title and dates, wrapping them on smaller screens. Filter both links by task ID, with log access for every task type and Live monitoring for Live tasks.
 - Use the RTMP broadcaster name as the Live source ID in discovery, explicit declarations, Pod dispatch and administration. Require declared IDs to match the final path component and display one source row with the latest session. The Manager MediaMTX template now lets a second authenticated publisher replace the first on the same path; existing installations must apply `overridePublisher: true`.
 - Updated runtime and development dependencies in `uv.lock` to their latest compatible versions.
@@ -51,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document multiple Live workers declared in one Runner `.env`, with shared MediaMTX and dynamic HLS routes; add an isolated grouped media/recovery validation procedure.
 - Live allocation, metrics and heartbeat recovery for mixed Runners advertising Live alongside VOD task types.
 - MediaMTX installation in the service account's home and systemd user services, allowing routine Live operations without sudo.
-- Add `scripts/install_mediamtx.py` for native Manager Live deployments, with pinned downloads, checksum verification, reusable installations, instance configuration, generated credentials and dry-run support.
+- Add `scripts/install_mediamtx.py` for native Manager Live deployments, with versioned downloads, checksum verification, reusable installations, instance configuration, generated credentials and dry-run support.
 - Add `scripts/configure_live.py` to connect the application to MediaMTX without copying credentials manually. The helper uses the component's Python environment and locked dependencies, preserves unrelated `.env` settings and creates private backups without restarting services.
 - Live session API with exclusive runner reservations, persistent dynamic HLS URLs for Esup-Pod, MediaMTX source monitoring, reconciliation and multi-instance deployment documentation.
 

@@ -81,10 +81,11 @@ def test_install_verified_binary_and_reuse(tmp_path, isolated_home, release):
     assert not (isolated_home / ".local").exists()
 
 
-def test_reuse_path_binary_without_download(tmp_path, isolated_home, monkeypatch, capsys):
+@pytest.mark.parametrize("version", ["1.21.1", "1.21.2", "1.21.10", "2.0.0"])
+def test_reuse_path_binary_without_download(tmp_path, isolated_home, monkeypatch, capsys, version):
     """A PATH installation becomes usable at the default unit's executable path."""
     target = tmp_path / "existing-mediamtx"
-    target.write_text("#!/bin/sh\necho v1.21.1\n")
+    target.write_text(f"#!/bin/sh\necho v{version}\n")
     target.chmod(0o755)
     original = (target.read_bytes(), target.stat().st_ino)
     monkeypatch.setattr(installer.shutil, "which", lambda _: str(target))
@@ -94,7 +95,7 @@ def test_reuse_path_binary_without_download(tmp_path, isolated_home, monkeypatch
     local = isolated_home / ".local/bin/mediamtx"
     assert local.is_symlink()
     assert local.readlink() == target
-    assert subprocess.check_output([local, "--version"], text=True).strip() == "v1.21.1"
+    assert subprocess.check_output([local, "--version"], text=True).strip() == f"v{version}"
     inode = local.lstat().st_ino
     assert installer.main(["install"]) == 0
     assert local.lstat().st_ino == inode
@@ -146,6 +147,99 @@ def test_existing_different_version_is_preserved(tmp_path, capsys):
     assert installer.main(["install", "--binary", str(target)]) == 1
     assert target.read_bytes() == original
     assert "left unchanged" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("version", ["1.21.1", "1.21.2", "1.21.10", "1.22.0", "2.0.0"])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_supported_existing_version_is_reused(
+    tmp_path, isolated_home, monkeypatch, capsys, version, dry_run
+):
+    """Keep any supported stable release, even when another download version is selected."""
+    target = tmp_path / "mediamtx"
+    target.write_text(f"#!/bin/sh\necho v{version}\n")
+    target.chmod(0o755)
+    original = (target.read_bytes(), target.stat().st_ino)
+    monkeypatch.setattr(installer, "download", lambda *_: pytest.fail("Unexpected download"))
+    options = ["install", "--binary", str(target), "--version", "1.21.2"]
+    if dry_run:
+        options.append("--dry-run")
+    assert installer.main(options) == 0
+    assert f"Reusing MediaMTX {version}:" in capsys.readouterr().out
+    assert (target.read_bytes(), target.stat().st_ino) == original
+    assert not (isolated_home / ".local").exists()
+
+
+@pytest.mark.parametrize("reported", ["v1.21.0", "v1.9.99", "v1.21.2-rc1", "v1.21", "devel", ""])
+def test_unsupported_existing_version_is_preserved(tmp_path, monkeypatch, capsys, reported):
+    """Reject old or unrecognized releases before any download or replacement."""
+    target = tmp_path / "mediamtx"
+    target.write_text(f"#!/bin/sh\nprintf '%s\\n' '{reported}'\n")
+    target.chmod(0o755)
+    original = (target.read_bytes(), target.stat().st_ino)
+    monkeypatch.setattr(installer, "download", lambda *_: pytest.fail("Unexpected download"))
+    assert installer.main(["install", "--binary", str(target)]) == 1
+    assert "left unchanged" in capsys.readouterr().err
+    assert (target.read_bytes(), target.stat().st_ino) == original
+
+
+@pytest.mark.parametrize("command", ["install", "setup"])
+@pytest.mark.parametrize("version", ["1.21.0", "1.9.99", "0.99.99"])
+def test_requested_version_below_minimum_is_rejected(
+    tmp_path, config_options, monkeypatch, capsys, command, version
+):
+    """Refuse an unsupported requested release before configuration or downloads."""
+    monkeypatch.setattr(installer, "download", lambda *_: pytest.fail("Unexpected download"))
+    options = [command, "--version", version, "--binary", str(tmp_path / "mediamtx")]
+    if command == "setup":
+        options.extend(config_options)
+    with pytest.raises(SystemExit) as error:
+        installer.main(options)
+    assert error.value.code == 2
+    assert "must be at least 1.21.1" in capsys.readouterr().err
+    assert not (tmp_path / "mediamtx").exists()
+    assert not (tmp_path / "config").exists()
+
+
+@pytest.mark.parametrize(
+    ("requested", "reported"),
+    [
+        ("1.21.2", "1.21.2"),
+        ("1.21.10", "1.21.10"),
+        ("1.22.0", "1.22.0"),
+        ("2.0.0", "2.0.0"),
+        ("1.21.2", "1.21.1"),
+        ("1.21.2", "1.21.3"),
+        ("1.21.2", "1.21.2-rc1"),
+    ],
+)
+def test_selected_download_requires_exact_version(tmp_path, monkeypatch, requested, reported):
+    """Install the chosen release only when the verified archive reports that exact version."""
+    archive = tmp_path / "release.tar.gz"
+    make_archive(archive, content=f"#!/bin/sh\necho v{reported}\n".encode())
+    content = archive.read_bytes()
+    digest = hashlib.sha256(content).hexdigest()
+    archive_name = f"mediamtx_v{requested}_linux_amd64.tar.gz"
+    downloads = []
+
+    def download(url, destination, limit):
+        downloads.append(url)
+        if url.endswith("checksums.sha256"):
+            destination.write_text(f"{digest} *{archive_name}\n")
+        else:
+            destination.write_bytes(content)
+
+    monkeypatch.setattr(installer, "download", download)
+    monkeypatch.setattr(installer.platform, "machine", lambda: "x86_64")
+    target = tmp_path / "bin/mediamtx"
+    assert installer.main(["install", "--version", requested, "--binary", str(target)]) == (
+        0 if requested == reported else 1
+    )
+    assert len(downloads) == 2
+    assert all(f"/releases/download/v{requested}/" in url for url in downloads)
+    if requested == reported:
+        assert subprocess.check_output([target, "--version"], text=True).strip() == f"v{requested}"
+    else:
+        assert not target.parent.exists()
 
 
 def test_setup_dry_run_has_no_downloads_or_writes(tmp_path, config_options, monkeypatch, capsys):

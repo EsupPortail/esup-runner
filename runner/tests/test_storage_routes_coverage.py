@@ -485,7 +485,8 @@ async def test_task_route_additional_branches(monkeypatch, tmp_path):
     monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_MAX_RETRIES", 1)
     monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS", 0)
     monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_BACKOFF_FACTOR", 1.0)
-    assert await task_module.notify_completion("http://cb", "task-1", "completed") is True
+    callback = f"{task_module.config.MANAGER_URL.rstrip('/')}/task/completion"
+    assert await task_module.notify_completion(callback, "task-1", "completed") is True
 
     task_id = "task-output"
     output_dir = tmp_path / task_id / "output"

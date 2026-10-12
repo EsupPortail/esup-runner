@@ -767,7 +767,8 @@ async def test_notify_completion_success(monkeypatch):
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeClient)
     monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_MAX_RETRIES", 0)
 
-    ok = await task_module.notify_completion("http://cb", "tid", "completed")
+    callback = f"{config.MANAGER_URL.rstrip('/')}/task/completion"
+    ok = await task_module.notify_completion(callback, "tid", "completed")
     assert ok is True
     assert captured["timeout"].connect == 5.0
     assert captured["timeout"].read == 30.0
@@ -810,7 +811,8 @@ async def test_notify_completion_retries_and_fails(monkeypatch):
 
     monkeypatch.setattr(task_module.asyncio, "sleep", _sleep)
 
-    ok = await task_module.notify_completion("http://cb", "tid", "failed")
+    callback = f"{config.MANAGER_URL.rstrip('/')}/task/completion"
+    ok = await task_module.notify_completion(callback, "tid", "failed")
     assert ok is False
 
 
@@ -834,7 +836,8 @@ async def test_notify_completion_exception(monkeypatch):
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeClient)
     monkeypatch.setattr(task_module.config, "COMPLETION_NOTIFY_MAX_RETRIES", 0)
-    ok = await task_module.notify_completion("http://cb", "tid", "failed")
+    callback = f"{config.MANAGER_URL.rstrip('/')}/task/completion"
+    ok = await task_module.notify_completion(callback, "tid", "failed")
     assert ok is False
 
 

@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from app.core.config import config
 from app.core.state import get_task_status
 from app.services.hls_viewers import record_request
+from app.services.live_paths import contained_path
 from app.services.live_runtime import directory_for
 
 router = APIRouter(tags=["Live HLS"])
@@ -59,8 +60,8 @@ async def hls_file(live_id: str, filename: str, viewer_id: str | None = None) ->
         raise HTTPException(404, "HLS not found")
     try:
         directory = directory_for(live_id)
-        file = directory / filename
-        if file.is_symlink() or not file.resolve().is_relative_to(directory) or not file.is_file():
+        file = contained_path(directory, filename)
+        if not file.is_file():
             raise ValueError("Invalid HLS file")
     except (ValueError, RuntimeError, OSError):
         raise HTTPException(404, "HLS not found") from None

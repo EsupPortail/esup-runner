@@ -1,4 +1,4 @@
-# MediaMTX 1.21.1. Shared by the Live instances of one Runner deployment.
+# MediaMTX >= 1.21.1. Shared by the Live instances of one Runner deployment.
 # Paths are created and deleted with the local Control API, never YAML edits.
 logLevel: info
 logStructured: false

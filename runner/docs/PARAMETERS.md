@@ -36,6 +36,11 @@ WHISPER_LANGUAGE=auto
 - `RUNNER_TOKEN` (required): Token used to authenticate runner <-> manager calls in both directions.
 - `MANAGER_URL` (default `http://127.0.0.1:8081`): Private Manager API URL used for registration, health checks and callbacks. It must match the Manager's `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`; do not use the public administration `MANAGER_PUBLIC_URL`. Route paths such as `/api/health` are appended automatically.
 
+Task `completion_callback` values must exactly match `MANAGER_URL` (without a
+trailing slash) followed by `/task/completion`. Notifications use this configured
+endpoint, including after task recovery, and never follow redirects. Other
+callback URLs are rejected without sending the Runner token or task output.
+
 ## Storage and cleanup
 - `STORAGE_DIR` (runtime default `/tmp/esup-runner`): Root workspace for task data.
 - `RUNNER_TASK_STATUS_FILE` (optional, default `STORAGE_DIR/runner_task_statuses.json`): Persistent JSON state used to restore in-flight tasks after runner restart (status, callback URL, process metadata). When `RUNNER_INSTANCE_ID` is set, the effective file is instance-scoped with suffix `.instance-<id>` to avoid cross-instance collisions.

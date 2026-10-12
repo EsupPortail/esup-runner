@@ -429,7 +429,8 @@ docker restart esup-runner-manager
 
 See [LIVE.md](LIVE.md) for Live Runner reservations, MediaMTX, the dynamic `hls_url` contract for Pod and multi-instance deployments.
 See [MediaMTX with Docker](MEDIAMTX_SETUP.md#5-run-mediamtx-in-docker) for the
-pinned `bluenviron/mediamtx:1.21.1` image, a MediaMTX-only container with native
+default `bluenviron/mediamtx:1.21.1` image (minimum version; newer stable tags are
+allowed), a MediaMTX-only container with native
 applications, and the complete Live Compose stack.
 
 In that stack, application logs use the writable `/var/log/esup-runner` mount.

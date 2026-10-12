@@ -373,8 +373,8 @@ and callbacks.
 
 ## Service and HLS exposure
 
-Follow [MediaMTX setup](MEDIAMTX_SETUP.md) for the pinned 1.21.1 native or Docker
-installation, shared with the Manager. Reuse an existing installation on the
+Follow [MediaMTX setup](MEDIAMTX_SETUP.md) for a native or Docker installation
+of version >= 1.21.1, shared with the Manager. Reuse an existing installation on the
 same machine, with one configuration and service/container shared by this
 Runner deployment’s Live instances, using [`production/mediamtx-live.yml`](../production/mediamtx-live.yml). Paths are
 created on demand and deleted at the end of the session. Only the associated

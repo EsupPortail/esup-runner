@@ -465,7 +465,8 @@ make docker-build DOCKER_BUILD_NETWORK=host
 
 See [LIVE.md](LIVE.md) for explicit `live` declarations in `runner/.env`, mixed or grouped instances, MediaMTX, adaptive transcoding and recovery.
 The [MediaMTX setup guide](MEDIAMTX_SETUP.md) links to Docker instructions using
-`bluenviron/mediamtx:1.21.1`. MediaMTX uses the same image on CPU and GPU hosts;
+`bluenviron/mediamtx:1.21.1` by default; any explicit stable tag >= 1.21.1 may be
+selected. MediaMTX uses the same image on CPU and GPU hosts;
 GPU transcoding requires a suitable FFmpeg build and GPU access in the Runner.
 
 For Live HLS output in memory, set `LIVE_HLS_DIRECTORY=/dev/shm/hls` and give the

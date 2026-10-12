@@ -4,14 +4,14 @@ For the shortest end-to-end path, start with the Manager's
 [Live installation guide](../../manager/docs/LIVE_INSTALLATION.md). This page
 keeps the Runner-specific MediaMTX details and validation links.
 
-A Runner server needs one **MediaMTX 1.21.1** service to pull the Manager's
+A Runner server needs one **MediaMTX >= 1.21.1** service to pull the Manager's
 RTMP sources. All Runner processes and Live instances declared in their
 `RUNNER_TASK_TYPES` share it. The installation procedure is shared with the Manager:
 follow the [MediaMTX installation guide](../../manager/docs/MEDIAMTX_SETUP.md).
 It covers Debian 12/13 and other Linux distributions, a native executable with
 systemd user services, and Docker.
 
-**If MediaMTX is already installed on this machine, do not reinstall it.** Reuse
+**If a supported MediaMTX version is already installed on this machine, do not reinstall it.** Reuse
 the executable or Docker image and prepare one Runner configuration and
 service/container for this server, separate from the Manager’s MediaMTX. Adding
 Runner processes or `[2x(live)]` / `[4x(live)]` needs no extra MediaMTX process:
@@ -22,12 +22,12 @@ the instances create separate UUID relay paths through the same Control API.
 | Method | Shared instructions |
 | --- | --- |
 | Reuse an existing installation | [Check the installed version and instances](../../manager/docs/MEDIAMTX_SETUP.md#already-installed-on-this-machine) |
-| Native executable | [Install the pinned binary](../../manager/docs/MEDIAMTX_SETUP.md#2-install-the-native-executable), [configure it from the Runner directory](../../manager/docs/MEDIAMTX_SETUP.md#3-prepare-one-instance), then [start systemd](../../manager/docs/MEDIAMTX_SETUP.md#4-start-the-native-systemd-service) |
+| Native executable | [Install a supported binary](../../manager/docs/MEDIAMTX_SETUP.md#2-install-the-native-executable), [configure it from the Runner directory](../../manager/docs/MEDIAMTX_SETUP.md#3-prepare-one-instance), then [start systemd](../../manager/docs/MEDIAMTX_SETUP.md#4-start-the-native-systemd-service) |
 | MediaMTX in Docker with a native Runner | [Configure it from the Runner directory](../../manager/docs/MEDIAMTX_SETUP.md#3-prepare-one-instance), then [start the container](../../manager/docs/MEDIAMTX_SETUP.md#5-run-mediamtx-in-docker) |
 | Complete Docker stack | [Manager/Runner Compose deployment](../../manager/docs/MEDIAMTX_SETUP.md#complete-stack-with-docker-compose) |
 
 The Runner [`scripts/install_mediamtx.py`](../scripts/install_mediamtx.py)
-utility can install the pinned executable and prepare this Runner in one step.
+utility can install a selected stable release >= 1.21.1 and prepare this Runner in one step.
 It uses only files inside `runner/`, including in a Runner-only sparse checkout.
 Run it as the service account, without `sudo`:
 
@@ -50,6 +50,20 @@ and the explicit service startup step.
 Use `configure` instead of `setup` when using Docker or when only configuration
 is needed. Add `--dry-run` to preview the operation. Existing files and passwords
 are preserved; the script does not start or restart services.
+
+### Version selection and manual upgrades
+
+**1.21.1 is the minimum accepted version and the default download.** Any newer
+stable installed version is reused. To download a chosen release at an unused
+destination, pass `--version 1.21.2` to `install` or `setup`; the downloaded
+binary must report that exact release. Existing executables are never replaced.
+
+Follow the shared [manual upgrade procedure](../../manager/docs/MEDIAMTX_SETUP.md#manual-upgrades)
+for native services or Docker, including backups, configuration validation and
+rollback. **A MediaMTX restart interrupts all Live workers sharing it**, drops
+temporary relay paths and can require encoder reconnection/session recovery.
+Perform the change between broadcasts and verify the current HLS URL afterwards.
+Manager/Runner updates and `update-stack.sh` do not upgrade MediaMTX automatically.
 
 The local installer selects the [Runner YAML template](../production/mediamtx-live.yml).
 The example ports are RTMP `2935`, Control API `10997`, and metrics `10998`, all on loopback for a

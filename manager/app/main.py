@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
     # issues during schema/dependency construction.
     if not getattr(app.state, "routers_included", False):
         # Import routers inside lifespan to avoid circular imports at module level
-        from app.api.routes import admin, api, logs, manager, runner, statistics, task
+        from app.api.routes import admin, api, live, logs, manager, runner, statistics, task
 
         # Include routers
         app.include_router(admin.router)
@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
         app.include_router(manager.router)
         app.include_router(runner.router)
         app.include_router(task.router)
+        app.include_router(live.router)
         app.include_router(logs.router)
         app.include_router(statistics.router)
 

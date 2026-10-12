@@ -75,6 +75,23 @@ async def test_dispatch_adapter_keeps_restart_arguments(monkeypatch):
     }
 
 
+@pytest.mark.asyncio
+async def test_dispatch_adapter_rejects_legacy_live_task_dispatch():
+    """Keep Live dispatch on the dedicated Live endpoint."""
+    request = TaskRequest(
+        etab_name="UM",
+        app_name="pod",
+        app_version="1.0",
+        task_type="live",
+        source_url="",
+        parameters={},
+        notify_url="",
+    )
+
+    with pytest.raises(HTTPException, match="Use /live/start"):
+        await task_routes._queue_task_execution(request, "client-token")
+
+
 def test_result_path_adapter_keeps_historical_signature(monkeypatch):
     """The route helper delegates path validation to the result service."""
     captured = SimpleNamespace(context=None, file_path=None)

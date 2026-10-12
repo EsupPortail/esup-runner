@@ -40,6 +40,10 @@
     </div>
   </header>
 
+  {% if 'live' in runner.task_types %}
+  <p><a class="btn btn-outline-primary" href="{{ root_path }}/admin/live?search={{ runner.id|urlencode }}"><i class="bi bi-broadcast" aria-hidden="true"></i> Monitor this runner's Live sessions</a></p>
+  {% endif %}
+
   <!-- Main detail card -->
   <main class="card border-0 shadow-sm mb-4">
     <div class="card-body">
@@ -78,7 +82,8 @@
                 {% set task_icons = {
                   'encoding': {'label': 'Encoding', 'icon': 'bi-explicit', 'title': 'This runner handles encoding tasks.'},
                   'studio': {'label': 'Studio', 'icon': 'bi-record-btn', 'title': 'This runner handles studio tasks.'},
-                  'transcription': {'label': 'Transcription', 'icon': 'bi-badge-cc', 'title': 'This runner handles transcription tasks.'}
+                  'transcription': {'label': 'Transcription', 'icon': 'bi-badge-cc', 'title': 'This runner handles transcription tasks.'},
+                  'live': {'label': 'Live', 'icon': 'bi-broadcast', 'title': 'Live streaming.'},
                 } %}
                 {% for t, meta in task_icons.items() %}
                   {% if t in runner.task_types %}&nbsp;[{{ meta.label }} <i title="{{ meta.title }}" class="bi {{ meta.icon }}" data-bs-toggle="tooltip"></i>]{% endif %}
@@ -128,6 +133,16 @@
               {{ runner.availability }}
             </span>
           </div>
+          {% if 'live' in runner.task_types %}
+          <div class="metadata-item">
+            <span class="metadata-label">MediaMTX status:</span>
+            {% set mediamtx = runner_live_status.mediamtx %}
+            <span class="badge {% if mediamtx.status == 'healthy' %}bg-success{% elif mediamtx.status == 'unavailable' %}bg-danger{% elif mediamtx.status == 'disabled' %}bg-secondary{% else %}bg-warning text-dark{% endif %}">
+              {{ mediamtx.status | lower }}
+            </span>
+            {% if mediamtx.error %}<small class="text-subtle ms-2">{{ mediamtx.error }}</small>{% endif %}
+          </div>
+          {% endif %}
           <div class="metadata-item">
             <span class="metadata-label">Token:</span>
             <span class="text-subtle">{{ runner_token_preview }}</span>

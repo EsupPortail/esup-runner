@@ -43,6 +43,8 @@ def _expired_task_ids_for_cleanup(now: datetime, cleanup_seconds: int) -> list[s
     """Return task IDs older than the configured cleanup retention."""
     expired_task_ids: list[str] = []
     for task_id, task in list(tasks.items()):
+        if task.live is not None and task.status == "running":
+            continue
         created_at = _parse_task_created_at_for_cleanup(task_id, task)
         if created_at is None:
             continue
@@ -113,7 +115,7 @@ async def check_task_timeouts(
 
         now = datetime.now()
         for task_id, task in tasks.items():
-            if task.status == "running":
+            if task.status == "running" and task.live is None:
                 updated_at = datetime.fromisoformat(task.updated_at.replace("Z", "+00:00"))
                 task_duration = now - updated_at
 
@@ -283,6 +285,12 @@ async def _reconcile_single_running_task(task_id: str) -> bool:
     """Reconcile one running task against its assigned runner."""
     task = get_task_from_state(task_id)
     if task is None or task.status != "running":
+        return False
+
+    if task.live is not None:
+        from app.services.live_service import synchronize
+
+        await synchronize(task_id)
         return False
 
     runner = runners.get(task.runner_id)

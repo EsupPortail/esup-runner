@@ -10,6 +10,7 @@ import pytest
 
 from app.core.config import config
 from app.core.state import runners, tasks
+from app.models.live import LiveInfo
 from app.models.models import Runner, Task
 from app.services import task_service
 
@@ -83,6 +84,9 @@ async def test_cleanup_old_tasks_removes_expired(monkeypatch, clean_tasks):
     old = datetime.now() - timedelta(days=3)
     tasks["old"] = _task("old", "completed", created_at=old)
     tasks["old-running"] = _task("old-running", "running", created_at=old)
+    live_running = _task("live-running", "running", created_at=old)
+    live_running.live = LiveInfo(source_id="room", event_id="event")
+    tasks["live-running"] = live_running
     tasks["new"] = _task("new", "completed")
     monkeypatch.setattr(config, "CLEANUP_TASK_FILES_DAYS", 1)
     monkeypatch.setattr(
@@ -100,6 +104,7 @@ async def test_cleanup_old_tasks_removes_expired(monkeypatch, clean_tasks):
 
     assert "old" not in tasks
     assert "old-running" not in tasks
+    assert "live-running" in tasks
     assert "new" in tasks
 
 
@@ -282,6 +287,25 @@ def test_build_runner_task_status_headers():
 
     headers = task_service._build_runner_task_status_headers(_runner(token="tok"))
     assert headers == {"Accept": "application/json", "Authorization": "Bearer tok"}
+
+
+@pytest.mark.asyncio
+async def test_reconcile_single_running_live_task_delegates_to_live_service(
+    clean_tasks, monkeypatch
+):
+    """Delegate running Live reconciliation to the Live service."""
+    live_task = _task("live-task", "running")
+    live_task.live = LiveInfo(source_id="room", event_id="event")
+    tasks[live_task.task_id] = live_task
+    synchronized = []
+
+    async def fake_synchronize(task_id):
+        synchronized.append(task_id)
+
+    monkeypatch.setattr("app.services.live_service.synchronize", fake_synchronize)
+
+    assert await task_service._reconcile_single_running_task("live-task") is False
+    assert synchronized == ["live-task"]
 
 
 @pytest.mark.asyncio

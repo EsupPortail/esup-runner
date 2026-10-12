@@ -14,12 +14,33 @@ from app.core.disk_usage import collect_disk_usage
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_runner_id, get_runner_instance_id, is_available, is_registered
 from app.managers.storage_manager import storage_manager
+from app.services.mediamtx import MediaMTXClient, MediaMTXError
 
 # Configure logging for this module
 logger = setup_default_logging()
 
 # Create API router with prefix and tags for OpenAPI documentation
 router = APIRouter(prefix="/runner", tags=["Runner"])
+_MEDIAMTX_STATUS_TIMEOUT = 2.0
+
+
+async def _mediamtx_status() -> dict[str, str]:
+    """Return a secret-free health state for this Runner's MediaMTX instance."""
+    if "live" not in config.RUNNER_TASK_TYPES:
+        return {"status": "disabled", "error": "Live is disabled on this runner."}
+    settings = config.LIVE
+    client = MediaMTXClient(
+        settings.mediamtx_api_url,
+        settings.mediamtx_api_user,
+        settings.mediamtx_api_password,
+        min(settings.mediamtx_timeout, _MEDIAMTX_STATUS_TIMEOUT),
+    )
+    try:
+        await client.check_health()
+    except MediaMTXError:
+        return {"status": "unavailable", "error": "MediaMTX control unavailable."}
+    return {"status": "healthy", "error": ""}
+
 
 # ======================================================
 # Health & Status Endpoints
@@ -101,6 +122,7 @@ async def status() -> dict:
         "task_types": list(config.RUNNER_TASK_TYPES),
         "manager_url": config.MANAGER_URL,
         "port": os.getenv("RUNNER_PORT"),
+        "mediamtx": await _mediamtx_status(),
         "storage_stats": (
             storage_manager.get_usage_stats() if hasattr(storage_manager, "get_usage_stats") else {}
         ),

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 import app.services.manager_service as manager_service
 from app.core import state
+from app.core.config import config
 from app.main import app, background_manager
 
 
@@ -356,8 +357,10 @@ def test_stop_task_already_terminal():
     }
 
 
-def test_stop_task_unknown_returns_404():
+def test_stop_task_unknown_returns_404(monkeypatch):
     """Validate stop task returns 404 for unknown tasks."""
+    monkeypatch.setattr(config, "RUNNER_TASK_TYPES", {"encoding"})
+
     with TestClient(app) as client:
         resp = client.post("/task/stop/missing-task")
 

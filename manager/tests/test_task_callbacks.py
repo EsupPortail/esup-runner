@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from task_routes_helpers import (
@@ -19,6 +20,7 @@ from task_routes_helpers import task_module
 from app.core.auth import verify_token
 from app.core.state import runners, tasks
 from app.main import app
+from app.models.live import LiveInfo
 from app.models.models import Task, TaskCompletionNotification
 
 __all__ = ["clean_state", "client", "task_module"]
@@ -677,6 +679,34 @@ def test_task_completion_404_task(client, task_module, clean_state):
     finally:
         app.dependency_overrides[verify_token] = lambda: True
     assert resp.status_code == 404
+
+
+def test_live_task_completion_synchronizes_instead_of_mutating_task(
+    monkeypatch, client, clean_state, task_module
+):
+    """Route Live completion notifications through Live synchronization."""
+    runners["r1"] = _runner("r1", token="tok")
+    live_task = _task("live-task", "r1", status="running", notify_url="")
+    live_task.live = LiveInfo(source_id="room", event_id="event")
+    tasks["live-task"] = live_task
+    synchronize = AsyncMock()
+
+    from app.services import live_service
+
+    monkeypatch.setattr(live_service, "synchronize", synchronize)
+    app.dependency_overrides[verify_token] = lambda: "tok"
+    try:
+        response = client.post(
+            "/task/completion",
+            json={"task_id": "live-task", "status": "completed"},
+        )
+    finally:
+        app.dependency_overrides[verify_token] = lambda: True
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "acknowledged"}
+    synchronize.assert_awaited_once_with("live-task")
+    assert tasks["live-task"].status == "running"
 
 
 def test_task_completion_notify_ok(monkeypatch, client, task_module, clean_state):

@@ -21,7 +21,7 @@ NON_DELETABLE_TASK_STATUSES = {"pending", "running"}
 
 # Initialize persistence with safe retry mechanism
 persistence = SafeDailyJSONPersistence(
-    data_directory="data",
+    data_directory=config.MANAGER_DATA_DIR,
     lock_timeout=10,  # 10 second timeout for acquiring lock
     max_retries=3,  # Retry failed operations up to 3 times
 )
@@ -41,6 +41,7 @@ logger.info(f"Task persistence directory resolved to: {_persistence_directory}")
 # Stores runners and tasks to avoid circular imports
 runners = RunnerStore(
     shared_enabled=config.ENVIRONMENT.lower() == "production",
+    state_file=str(persistence.data_directory / "runners_state.json"),
 )
 
 # Load only today's tasks at startup

@@ -1,0 +1,22 @@
+[Unit]
+Description=Esup-Runner Live instance %i
+After=esup-runner-mediamtx@runner.service
+Wants=esup-runner-mediamtx@runner.service
+
+[Service]
+WorkingDirectory=/opt/esup-runner/runner
+Environment=CONFIG_ENV_PATH=%h/.config/esup-runner/%i/runner.env
+Environment=UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+Environment=PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=%h/.config/esup-runner/%i/runner.env
+ExecStart=/opt/esup-runner/runner/.venv/bin/esup-runner-runner
+Restart=on-failure
+RestartSec=5
+# The Live service supervises FFmpeg; a service shutdown also kills its children.
+KillMode=control-group
+TimeoutStopSec=45
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

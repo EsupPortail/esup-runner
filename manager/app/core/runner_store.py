@@ -167,11 +167,19 @@ class RunnerStore(MutableMapping[str, Runner]):
         runner = self._normalize_runner(value)
 
         if not self.shared_enabled:
+            existing = self._memory.get(key)
+            runner.live_task_id = existing.live_task_id if existing else None
+            if runner.live_task_id:
+                runner.availability = "busy"
             self._memory[key] = runner
             return
 
         def _operation() -> None:
             data = self._read_disk()
+            existing = data.get(key)
+            runner.live_task_id = existing.live_task_id if existing else None
+            if runner.live_task_id:
+                runner.availability = "busy"
             data[key] = runner
             self._write_disk(data)
 
@@ -193,6 +201,9 @@ class RunnerStore(MutableMapping[str, Runner]):
                 and (not existing.token or not hmac.compare_digest(existing.token, runner.token))
             ):
                 return False
+            runner.live_task_id = existing.live_task_id if existing else None
+            if runner.live_task_id:
+                runner.availability = "busy"
             data[runner.id] = runner
             if self.shared_enabled:
                 self._write_disk(data)
@@ -340,3 +351,55 @@ class RunnerStore(MutableMapping[str, Runner]):
             return runner
 
         return self._with_lock(_operation)
+
+    def reserve_live(
+        self, key: str, task_id: str, *, confirmed_running: bool = False
+    ) -> Optional[Runner]:
+        """Reserve one whole Live Runner and return it, or None if unavailable.
+
+        The Runner must declare Live, be online and unowned. Set
+        confirmed_running only after verifying that this session is already
+        running, allowing recovery to adopt a busy but unowned Runner. Heartbeat
+        updates cannot clear the resulting reservation.
+        """
+
+        def operation() -> Optional[Runner]:
+            """Assign the session owner while holding the Runner store lock."""
+            data = self._read_disk() if self.shared_enabled else self._memory
+            runner = data.get(key)
+            if runner is None or "live" not in runner.task_types or runner.status != "online":
+                return None
+            if (
+                runner.availability != "available" and not confirmed_running
+            ) or runner.live_task_id:
+                return None
+            runner.live_task_id = task_id
+            runner.availability = "busy"
+            data[key] = runner
+            if self.shared_enabled:
+                self._write_disk(data)
+            return runner
+
+        return self._with_lock(operation)
+
+    def release_live(self, key: str, task_id: str) -> bool:
+        """Release a matching session and return whether its reservation was cleared.
+
+        A missing Runner or a different session owner returns False, preventing
+        stale completion events from releasing a newer assignment.
+        """
+
+        def operation() -> bool:
+            """Clear a matching session owner while holding the Runner store lock."""
+            data = self._read_disk() if self.shared_enabled else self._memory
+            runner = data.get(key)
+            if runner is None or runner.live_task_id != task_id:
+                return False
+            runner.live_task_id = None
+            runner.availability = "available"
+            data[key] = runner
+            if self.shared_enabled:
+                self._write_disk(data)
+            return True
+
+        return self._with_lock(operation)

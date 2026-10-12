@@ -1,0 +1,5 @@
+# Local deployment credentials copied from the examples.
+manager.env
+runner.env
+manager-mediamtx.yml
+runner-mediamtx.yml

@@ -114,6 +114,10 @@
       </div>
     </div>
 
+    <div class="alert alert-info d-flex flex-wrap justify-content-between gap-2">
+      <span><i class="bi bi-broadcast" aria-hidden="true"></i> <strong>{{ live_sessions|default(0) }} ended Live sessions</strong> in this period (completed or failed; counted by creation date).</span>
+      <a href="{{ root_path }}/admin/live">Monitor active Live sessions</a>
+    </div>
     <!-- Chart -->
     <div class="row g-3 mb-4">
       <div class="col-12 col-lg-6">
@@ -186,7 +190,7 @@
                 <tbody>
                   {% for item in by_type %}
                     <tr>
-                      <td>{{ item.label }}</td>
+                      <td>{% if item.label == 'live' %}<i class="bi bi-broadcast" aria-hidden="true"></i> {% endif %}{{ item.label }}</td>
                       <td class="text-end fw-semibold">{{ item.count }}</td>
                     </tr>
                   {% else %}

@@ -52,9 +52,11 @@ def _include_api_routers(app: FastAPI) -> None:
     if getattr(app.state, "api_routers_included", False):
         return
 
-    from app.api.routes import runner, task
+    from app.api.routes import live, runner, task
 
     app.include_router(task.router)
+    app.include_router(live.router)
+    live.configure_access_logging()
     app.include_router(runner.router)
     app.state.api_routers_included = True
 
@@ -97,6 +99,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"Shutting down runner instance {runner_instance_id}")
 
     # Stop background services
+    from app.services.live_runtime import shutdown
+
+    await shutdown()
     await task.stop_recovery_monitors()
     await background_manager.stop_all_services()
 

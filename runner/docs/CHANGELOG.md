@@ -11,13 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated runtime and development dependencies in `uv.lock` to their latest compatible versions,
   including the transcription CPU/GPU stack.
+- Select Live encoding explicitly with `LIVE_TRANSCODER=cpu` (default) or `nvenc`, independently of `ENCODING_TYPE`. Remove the former `auto` value; deployments that relied on `ENCODING_TYPE=GPU` must now set `LIVE_TRANSCODER=nvenc`. Keep optional `LIVE_NVDEC` and CPU fallback.
+- Default to the installed Runner MediaMTX API on port 10997, `/dev/shm/hls` output and HLS URLs derived from each worker address/port.
+- Remove former Live tuning environment overrides. Codecs, presets, frame rate, HLS timing, timeouts and retry count now use fixed internal defaults; remove obsolete assignments when upgrading. See [Live parameters](PARAMETERS.md#internal-live-defaults).
 
 ### Fixed
 
+- Persist failed Pod broadcaster updates and retry them outside media cleanup,
+  including after Runner restarts. Reconcile deferred updates with the latest
+  Manager session to avoid replaying an old stop over a replacement publication.
 - Defer termination-signal logging and worker cleanup until the signal handler
   has unwound; ignore repeated signals during shutdown to prevent recursive
   cleanup and reentrant log writes.
+- Match optional Pod Live synchronization against the broadcaster's `source_id`
+  through its REST filter (Pod 4.5.0), allowing a different Pod slug. Update only
+  a unique exact match, with no slug fallback and a bounded lookup/PATCH timeout.
 - Ignore confirmed trailing silence when comparing final VTT coverage with the source duration, preventing complete transcriptions from being incorrectly rejected as truncated.
+- Make reused MediaMTX installations available at the default user service executable path without reinstalling the binary.
+
+### Added
+
+- Use `/dev/shm/hls` in Linux Live examples and deployment configuration to keep HLS playlists and TS segments in memory; document capacity and restart behavior.
+
+- Add the `live` task type: pull Manager RTMP sources through a native MediaMTX relay and always transcode them to adaptive HLS with FFmpeg. Support CPU and NVENC encoding, optional NVDEC and CPU fallback, durable stop/recovery, and dedicated or mixed Runner instances.
+- Support multiple Live instances in mixed or grouped `RUNNER_TASK_TYPES`, sharing one MediaMTX and common encoding settings, with per-instance HLS URL/directory templates and isolated reservation, cancellation and recovery.
+- MediaMTX and Live Runner systemd user units with home-local configuration, private file permissions and writable data/log examples.
+- Add `scripts/install_mediamtx.py` for native Runner Live deployments, with pinned downloads, checksum verification, reusable installations, instance configuration, generated credentials and dry-run support.
+- Add `scripts/configure_live.py` to connect the application to MediaMTX without copying credentials manually. The helper uses the component's Python environment and locked dependencies, preserves unrelated `.env` settings and creates private backups without restarting services.
 
 ## [1.9.1] - 2026-09-25
 

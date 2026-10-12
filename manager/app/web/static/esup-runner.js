@@ -17,6 +17,7 @@
  * @property {string} [warning] Warning displayed below the action description.
  * @property {string} [cancelLabel] Label of the cancellation button.
  * @property {string} [confirmLabel] Label of the confirmation button.
+ * @property {'delete'|'stop'|'restart'} [action] Action icon and contextual label.
  */
 
 const refreshBtn = document.getElementById("refreshBtn");
@@ -128,6 +129,17 @@ window.esupConfirm = function esupConfirm(options) {
   warningElement.textContent = warning;
   cancelButton.textContent = options.cancelLabel || "Cancel";
   confirmLabelElement.textContent = options.confirmLabel || "Confirm";
+  const action = {
+    stop: { icon: "bi-stop-circle", label: "Stop playback" },
+    restart: { icon: "bi-arrow-clockwise", label: "Restart playback" },
+  }[options.action] || { icon: "bi-trash3", label: "Destructive action" };
+  const isRestart = options.action === "restart";
+  modalElement.classList.toggle("confirmation-modal-restart", isRestart);
+  confirmButton.classList.toggle("btn-danger", !isRestart);
+  confirmButton.classList.toggle("btn-primary", isRestart);
+  modalElement.querySelector(".confirmation-modal-icon i").className = `bi ${action.icon}`;
+  modalElement.querySelector(".confirmation-modal-kicker").textContent = action.label;
+  confirmButton.querySelector("i").className = `bi ${action.icon} me-2`;
 
   return new Promise((resolve) => {
     const modal = window.bootstrap.Modal.getOrCreateInstance(modalElement);

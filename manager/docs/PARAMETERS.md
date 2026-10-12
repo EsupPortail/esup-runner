@@ -114,3 +114,41 @@ old `/home/esup-runner/...` overrides when changing `SERVICE_USER`.
 - Manager runtime behavior and security hardening: [docs/CONFIGURATION.md](CONFIGURATION.md)
 - Installation flow: [docs/INSTALLATION.md](INSTALLATION.md)
 - Operations runbook: [docs/OPERATIONS.md](OPERATIONS.md)
+
+## Live parameters
+
+See [LIVE.md](LIVE.md) for the complete configuration and Esup-Pod contract.
+
+| Parameter | Default |
+| --- | --- |
+| `MANAGER_DATA_DIR` | `data` (tasks, registry, locks and statistics; separate path per Manager) |
+| `LIVE_ENABLED` | `false` |
+| `LIVE_AUTO_START` | `true` (discover accepted RTMP publications and automatically start/stop sessions when Live is enabled) |
+| `LIVE_AUTO_ETAB_NAME` | `unknown` (fallback establishment for automatic sessions; 1–200 characters) |
+| `LIVE_SOURCES` | `{}` |
+| `LIVE_MEDIAMTX_API_URL` | `http://127.0.0.1:9997` |
+| `LIVE_MEDIAMTX_API_USER` | `control` |
+| `LIVE_MEDIAMTX_API_PASSWORD` | `` |
+| `LIVE_MEDIAMTX_LOG_UNIT` | `` (optional systemd user service, e.g. `esup-runner-mediamtx@manager.service`) |
+| `LIVE_MEDIAMTX_LOG_FILE` | `` (alternative absolute path to the Manager MediaMTX plain log) |
+
+Time values are in seconds. `LIVE_SOURCES` optionally declares broadcaster names and private MediaMTX paths before publication, for example `{"amphi-a":"live/amphi-a"}`. Each identifier must equal the final path component: the public broadcaster name, containing at most 100 letters, digits, underscores or hyphens and starting with a letter or digit. Other accepted RTMP publications are discovered automatically using their broadcaster names as `source_id`; this setting is not an allowlist. Bindings persist in `MANAGER_DATA_DIR/.live-sources.json`, even if declarations are removed. The Manager does not transcode and has no Live slot settings. The Manager MediaMTX template allows a new publisher to replace the previous publisher on the same path; see [Live configuration](LIVE.md#manager-configuration).
+Paths must be unique when automatic startup is enabled. Reconciliation and
+RTMP discovery run every 5 seconds (internal default). See
+[automatic operation](LIVE.md#automatic-rtmp-to-hls-operation) for capacity,
+disconnect, republication and stop behavior.
+Configure only one MediaMTX log source. These diagnostics supplement `manager.log`
+in administration; they require MediaMTX `logLevel: info` and `logStructured: false`.
+See [Live diagnostics](LIVE.md#live-diagnostics-in-the-log-viewer).
+
+### Internal Live defaults
+
+MediaMTX request timeout: **5 s**; reconciliation/publication scan interval:
+**5 s**; Runner control timeout: **15 s**. These are code defaults, not environment
+parameters. Remove the former `LIVE_MEDIAMTX_TIMEOUT`, `LIVE_POLL_INTERVAL` and
+`LIVE_RUNNER_TIMEOUT` entries when upgrading; they are no longer read.
+
+Use [the connection helper](MEDIAMTX_SETUP.md#6-connect-the-applications-and-verify)
+to populate the installation password and log source. With the standard native
+ports/account, only `LIVE_ENABLED=true`, that password and the optional log
+source need to appear in the Manager's Live block. No password has a shared default.

@@ -61,6 +61,55 @@ def test_runner_status_uses_storage_stats(monkeypatch):
         assert data["disk_usage"] == fake_disk_usage
 
 
+@pytest.mark.asyncio
+async def test_runner_mediamtx_status_reports_health(monkeypatch):
+    from app.api.routes import runner as runner_module
+
+    class HealthyClient:
+        def __init__(self, *_args):
+            pass
+
+        async def check_health(self):
+            return None
+
+    monkeypatch.setattr(runner_module, "MediaMTXClient", HealthyClient)
+    monkeypatch.setattr(runner_module.config, "RUNNER_TASK_TYPES", ["live"])
+
+    assert await runner_module._mediamtx_status() == {"status": "healthy", "error": ""}
+
+
+@pytest.mark.asyncio
+async def test_runner_mediamtx_status_reports_unavailable(monkeypatch):
+    from app.api.routes import runner as runner_module
+
+    class UnavailableClient:
+        def __init__(self, *_args):
+            pass
+
+        async def check_health(self):
+            raise runner_module.MediaMTXError("private detail")
+
+    monkeypatch.setattr(runner_module, "MediaMTXClient", UnavailableClient)
+    monkeypatch.setattr(runner_module.config, "RUNNER_TASK_TYPES", ["live"])
+
+    assert await runner_module._mediamtx_status() == {
+        "status": "unavailable",
+        "error": "MediaMTX control unavailable.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_runner_mediamtx_status_reports_disabled(monkeypatch):
+    from app.api.routes import runner as runner_module
+
+    monkeypatch.setattr(runner_module.config, "RUNNER_TASK_TYPES", ["encoding"])
+
+    assert await runner_module._mediamtx_status() == {
+        "status": "disabled",
+        "error": "Live is disabled on this runner.",
+    }
+
+
 def test_runner_status_does_not_expose_disk_usage_exception(monkeypatch):
     """Return generic disk errors without exposing exception details through the API."""
     from app.api.routes import runner as runner_module

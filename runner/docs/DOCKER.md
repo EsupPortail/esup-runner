@@ -460,3 +460,20 @@ docker run --rm busybox nslookup files.pythonhosted.org
 ```bash
 make docker-build DOCKER_BUILD_NETWORK=host
 ```
+
+## Live streaming
+
+See [LIVE.md](LIVE.md) for explicit `live` declarations in `runner/.env`, mixed or grouped instances, MediaMTX, adaptive transcoding and recovery.
+The [MediaMTX setup guide](MEDIAMTX_SETUP.md) links to Docker instructions using
+`bluenviron/mediamtx:1.21.1`. MediaMTX uses the same image on CPU and GPU hosts;
+GPU transcoding requires a suitable FFmpeg build and GPU access in the Runner.
+
+For Live HLS output in memory, set `LIVE_HLS_DIRECTORY=/dev/shm/hls` and give the
+Runner container sufficient shared memory (`--shm-size=256m`, or Compose
+`shm_size: "256mb"`). See [Live storage](LIVE.md#hls-storage-in-memory-on-linux).
+Keep task recovery state on the persistent data volume.
+That volume also retains pending Pod status updates, which the Live worker
+retries after API outages and container restarts without holding media cleanup.
+The complete Live Compose example keeps the MediaMTX Control APIs private;
+validate the local files with `docker compose -p live-a config --quiet` before
+starting the stack. See the [Manager Compose procedure](../../manager/docs/LIVE.md#docker-compose).

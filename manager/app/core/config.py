@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 from urllib.parse import SplitResult, unquote, urlsplit
 
 from app.core._check_output import format_status
+from app.core.live_config import LiveSettings
 from app.core.passwords import BcryptPasswordContext
 
 SUPPORTED_API_DOCS_VISIBILITIES = frozenset({"private", "public"})
@@ -67,9 +68,10 @@ _CONFIG_RELOAD_MARKER_PATH = _MANAGER_ROOT / "data" / ".config_reload"
 
 
 # Keys/prefixes managed by this config; cleared on reload to reflect deletions in .env
-_CONFIG_ENV_PREFIXES = ["AUTHORIZED_TOKENS__", "ADMIN_USERS__"]
+_CONFIG_ENV_PREFIXES = ["AUTHORIZED_TOKENS__", "ADMIN_USERS__", "LIVE_"]
 _CONFIG_ENV_KEYS = [
     "SERVICE_USER",
+    "MANAGER_DATA_DIR",
     "MANAGER_PROTOCOL",
     "MANAGER_HOST",
     "MANAGER_PUBLIC_URL",
@@ -383,11 +385,17 @@ def _clear_config_env_vars() -> None:
 def _read_config_reload_marker_mtime_ns() -> int:
     """Return reload marker mtime in nanoseconds, or 0 if unavailable."""
     try:
-        return _CONFIG_RELOAD_MARKER_PATH.stat().st_mtime_ns
+        return _config_reload_marker_path().stat().st_mtime_ns
     except FileNotFoundError:
         return 0
     except OSError:
         return 0
+
+
+def _config_reload_marker_path() -> Path:
+    """Return the instance reload marker, retaining the existing default path."""
+    directory = getattr(_CONFIG_INSTANCE, "MANAGER_DATA_DIR", "data")
+    return Path(directory) / ".config_reload" if directory != "data" else _CONFIG_RELOAD_MARKER_PATH
 
 
 def publish_config_reload_event() -> int:
@@ -395,8 +403,9 @@ def publish_config_reload_event() -> int:
     global _CONFIG_RELOAD_MARKER_MTIME_NS
 
     try:
-        _CONFIG_RELOAD_MARKER_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CONFIG_RELOAD_MARKER_PATH.touch(exist_ok=True)
+        marker = _config_reload_marker_path()
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch(exist_ok=True)
         _CONFIG_RELOAD_MARKER_MTIME_NS = _read_config_reload_marker_mtime_ns()
     except OSError as exc:
         print(f"Warning: failed to publish config reload marker: {exc}")
@@ -508,6 +517,12 @@ class Config:
         self._load_storage_configuration()
         self._load_notification_configuration()
         self._load_business_configuration()
+        self.MANAGER_DATA_DIR = os.getenv("MANAGER_DATA_DIR", "data")
+        try:
+            self.LIVE = LiveSettings.from_environment()
+        except ValueError:
+            self.LIVE = LiveSettings()
+            self._configuration_errors.append("Invalid LIVE configuration")
 
     def _load_network_configuration(self) -> None:
         """Load manager addressing and CORS settings."""
@@ -773,6 +788,7 @@ class Config:
             self._validate_paths,
             self._validate_cors,
             self._validate_priorities,
+            self.LIVE.validate_enabled,
         )
         for validator in validators:
             try:

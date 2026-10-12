@@ -12,6 +12,67 @@ import pytest
 
 import app.core.config as config_module
 import app.core.state as state_module
+from app.core.live_config import LiveSettings
+
+
+@pytest.mark.parametrize(
+    "spec,instance,expected",
+    [
+        (
+            "[1x(encoding,studio,transcription,live)]",
+            None,
+            {"encoding", "studio", "transcription", "live"},
+        ),
+        ("[1x(encoding,studio),1x(live)]", None, {"encoding", "studio", "live"}),
+        ("[1x(encoding,studio),1x(live)]", "0", {"encoding", "studio"}),
+        ("[1x(encoding,studio),1x(live)]", "1", {"live"}),
+    ],
+)
+def test_live_is_declared_through_normal_task_groups(
+    monkeypatch, tmp_path, spec, instance, expected
+):
+    """Resolve launcher/worker task types while sharing one configured Live endpoint."""
+    monkeypatch.setenv("RUNNER_TASK_TYPES", spec)
+    monkeypatch.delenv("RUNNER_INSTANCES", raising=False)
+    monkeypatch.delenv("RUNNER_INSTANCE_ID", raising=False)
+    if instance is not None:
+        monkeypatch.setenv("RUNNER_INSTANCE_ID", instance)
+    cfg = config_module.Config()
+    cfg.LIVE = LiveSettings(
+        upstream_rtmp_url="rtmp://manager:1935",
+        public_hls_base_url="http://runner:8083/hls",
+        hls_directory=str(tmp_path / "hls"),
+    )
+    cfg._validate_live()
+    assert cfg.RUNNER_TASK_TYPES == expected
+    assert sum("live" in types for types in cfg.RUNNER_TASK_TYPES_BY_INSTANCE) == 1
+
+
+@pytest.mark.parametrize(
+    "spec", ["[2x(live)]", "[1x(encoding,live),1x(live)]", "[1x(studio),2x(live)]"]
+)
+def test_multiple_live_instances_share_media_with_distinct_public_urls(monkeypatch, tmp_path, spec):
+    """Validate shared media settings even when inspecting a VOD-only child."""
+    monkeypatch.setenv("RUNNER_TASK_TYPES", spec)
+    monkeypatch.delenv("RUNNER_INSTANCES", raising=False)
+    monkeypatch.setenv("RUNNER_INSTANCE_ID", "0")
+    monkeypatch.setenv("LIVE_UPSTREAM_RTMP_URL", "rtmp://manager:1935")
+    monkeypatch.setenv("LIVE_PUBLIC_HLS_BASE_URL", "http://runner:{port}/hls")
+    monkeypatch.setenv("LIVE_HLS_DIRECTORY", str(tmp_path / "hls" / "instance-{instance_id}"))
+    cfg = config_module.Config()
+    cfg._validate_live()
+    assert sum("live" in types for types in cfg.RUNNER_TASK_TYPES_BY_INSTANCE) == 2
+
+
+def test_grouped_live_still_requires_complete_media_settings(monkeypatch):
+    """Declaring Live validates media settings before starting any worker."""
+    monkeypatch.setenv("RUNNER_TASK_TYPES", "[1x(encoding,studio),1x(live)]")
+    monkeypatch.delenv("RUNNER_INSTANCES", raising=False)
+    monkeypatch.delenv("RUNNER_INSTANCE_ID", raising=False)
+    cfg = config_module.Config()
+    cfg.LIVE = LiveSettings()
+    with pytest.raises(ValueError, match="LIVE_UPSTREAM_RTMP_URL"):
+        cfg._validate_live()
 
 
 @pytest.fixture(autouse=True)
@@ -216,6 +277,7 @@ def test_config_constructor_delegates_to_coherent_loaders(monkeypatch):
         "_load_storage_configuration",
         "_load_notification_configuration",
         "_load_business_configuration",
+        "_load_live_configuration",
     )
     calls = []
 

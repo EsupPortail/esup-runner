@@ -127,6 +127,43 @@ def _render_task_detail_template(status: str, root_path: str = "") -> str:
     )
 
 
+def test_task_detail_live_metadata_hides_empty_fields_and_shows_equipment():
+    task = SimpleNamespace(
+        task_id="live-task",
+        runner_id="runner-1",
+        status="running",
+        task_type="live",
+        created_at="2026-01-01T00:00:00",
+        updated_at="2026-01-01T00:05:00",
+        etab_name="UM",
+        app_name="MediaMTX",
+        app_version=None,
+        affiliation=None,
+        parameters={},
+        source_url="",
+        notify_url="",
+        error=None,
+        script_output=None,
+        live=SimpleNamespace(equipment="SMP351-01"),
+    )
+    env = Environment(loader=FileSystemLoader("app/web/templates"))
+    rendered = env.get_template("task_detail.html").render(
+        csrf_token="test-csrf-token",
+        version="test",
+        dark_mode_enabled=False,
+        task=task,
+        task_actions=admin_routes._build_task_detail_actions(task),
+        last_update="2026-01-01 00:00:00",
+        mediamtx_version="1.21.1",
+        root_path="",
+    )
+
+    assert "MediaMTX / 1.21.1" in rendered
+    assert "Equipment:" in rendered and "SMP351-01" in rendered
+    assert "Source file:" not in rendered
+    assert "Parameters:" not in rendered
+
+
 def _render_tasks_template(root_path: str = "") -> str:
     env = Environment(loader=FileSystemLoader("app/web/templates"))
     template = env.get_template("tasks.html")
@@ -659,6 +696,28 @@ def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
     assert "2026-01-02T00:00:00.123456" not in resp.text
 
 
+@pytest.mark.parametrize(
+    ("live_enabled", "expected_text"),
+    [
+        (False, "Live is not enabled in the Manager configuration."),
+        (True, "0 active · 0 playback ready"),
+    ],
+)
+def test_admin_dashboard_live_tile_reflects_configuration(
+    admin_client, clean_state, monkeypatch, live_enabled, expected_text
+):
+    monkeypatch.setattr(
+        config,
+        "LIVE",
+        config.LIVE.model_copy(update={"enabled": live_enabled}),
+    )
+
+    response = admin_client.get("/admin")
+
+    assert response.status_code == 200
+    assert expected_text in response.text
+
+
 def test_build_attention_summary_collects_limited_items():
     """Validate attention summary collects offline runners and task incidents."""
     runners_data = [
@@ -885,13 +944,14 @@ def test_admin_template_renders_copy_task_id_controls():
     assert "taskRows" in html
     assert "stretched-link" not in html
     assert html.count("dashboard-shortcut-card") == 6
+    assert 'href="/admin/live"' in html
     assert 'href="/admin/credentials"' in html
     assert 'href="/admin/docs"' in html
     assert 'href="/logs"' in html
     assert 'href="#runners-list"' in html
     assert 'href="/tasks"' in html
     assert 'href="/statistics"' in html
-    assert 'aria-label="View Online Runners"' in html
+    assert 'aria-label="View Online Runners"' not in html
     shortcut_tags = re.findall(r"<a\s+[^>]*dashboard-shortcut-card[^>]*>", html)
     assert len(shortcut_tags) == 6
     assert all('title="View ' in tag for tag in shortcut_tags)
@@ -941,6 +1001,7 @@ def test_runner_detail_ok(admin_client, clean_state, monkeypatch):
     """Validate Runner detail ok."""
     runner = _make_runner("r1", seconds_ago=90)
     runner.status = "online"
+    runner.task_types = ["live"]
     runner.token = "runner-token-secret-value-1234"
     runners["r1"] = runner
 
@@ -949,6 +1010,7 @@ def test_runner_detail_ok(admin_client, clean_state, monkeypatch):
             "available": True,
             "url": "http://r1.example/runner/status",
             "error": "",
+            "payload": {"mediamtx": {"status": "healthy", "error": ""}},
             "disk_usage": {
                 "ok": True,
                 "status": "orange",
@@ -974,6 +1036,8 @@ def test_runner_detail_ok(admin_client, clean_state, monkeypatch):
     assert resp.status_code == 200
     assert "r1" in resp.text
     assert "Disk Usage" in resp.text
+    assert "MediaMTX status:" in resp.text
+    assert "healthy" in resp.text
     assert "OFFLINE" in resp.text
     assert "runner-tok...1234" in resp.text
     assert "runner-token-secret-value-1234" not in resp.text

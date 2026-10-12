@@ -14,6 +14,7 @@ from app.core.config import config
 from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.setup_logging import setup_default_logging
 from app.core.url_paths import request_root_path
+from app.services.live_logs import read_media_logs
 
 # Configure logging
 logger = setup_default_logging()
@@ -168,6 +169,12 @@ class LogManager:
                 logger.error(f"Error reading log file {log_path}: {e}")
                 continue
 
+        all_logs.extend(
+            item
+            for item in read_media_logs()
+            if (not level_filter or item["level"] in level_filter)
+            and (not search_term or search_term.lower() in item["raw"].lower())
+        )
         # Sort by timestamp (oldest first)
         all_logs.sort(key=lambda x: x["timestamp"])
 

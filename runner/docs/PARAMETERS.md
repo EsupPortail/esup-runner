@@ -112,3 +112,94 @@ Compatibility note:
 - Transcription-specific behavior and exit codes: [docs/TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md)
 - Cut parameter specifics for encoding tasks: [docs/TYPE_ENCODING.md](TYPE_ENCODING.md)
 - Operations runbook: [docs/OPERATIONS.md](OPERATIONS.md)
+
+## Live parameters
+
+See [LIVE.md](LIVE.md) for the lifecycle, profiles and examples, and
+[TYPE_LIVE.md](TYPE_LIVE.md) for the task request and output contract.
+Time values are in seconds and bitrates are in bit/s.
+
+| Parameter | Default |
+| --- | --- |
+| `LIVE_MEDIAMTX_API_URL` | `http://127.0.0.1:10997` |
+| `LIVE_MEDIAMTX_API_USER` | `control` |
+| `LIVE_MEDIAMTX_API_PASSWORD` | `` |
+| `LIVE_POD_URL` | `` |
+| `LIVE_POD_USERNAME` | `` |
+| `LIVE_POD_PASSWORD` | `` |
+| `LIVE_POD_ESTABLISHMENT_NAME` | `` (empty: all establishments; otherwise exact `task.etab_name` match) |
+| `LIVE_UPSTREAM_RTMP_URL` | `` |
+| `LIVE_LOCAL_RTMP_URL` | `rtmp://127.0.0.1:2935` |
+| `LIVE_PUBLIC_HLS_BASE_URL` | Derived from `RUNNER_PROTOCOL://RUNNER_HOST:{port}/hls` |
+| `LIVE_HLS_DIRECTORY` | `/dev/shm/hls` |
+| `LIVE_TRANSCODER` | `cpu` (`cpu` for libx264, `nvenc` for NVIDIA NVENC) |
+| `LIVE_CPU_FALLBACK` | `true` |
+| `LIVE_NVDEC` | `false` |
+| `LIVE_VARIANTS` | `HIGH 1280×720 1100000/128000 ; MID 720×406 560000/96000 ; LOW 480×270 280000/64000` |
+
+`LIVE_TRANSCODER` selects Live encoding independently of `ENCODING_TYPE`.
+The former `auto` value is no longer accepted. Set `LIVE_TRANSCODER=nvenc`
+explicitly when upgrading a deployment that relied on `ENCODING_TYPE=GPU` to
+select Live NVENC. `LIVE_NVDEC` enables hardware decoding only in NVENC mode;
+it is ignored in CPU mode and after CPU fallback. Scaling remains on CPU.
+
+Declare Live in `RUNNER_TASK_TYPES`, for example
+`[1x(encoding,studio,transcription,live)]` for a mixed instance, or
+`[1x(encoding,studio),2x(live)]` for VOD plus two concurrent Live instances.
+All Live instances in this `.env` share MediaMTX, credentials, encoder settings,
+variants and timeouts. `LIVE_PUBLIC_HLS_BASE_URL` accepts `{port}` (the actual
+API port) and `{instance_id}` (the zero-based index including VOD groups);
+resolved public URLs must differ. `LIVE_HLS_DIRECTORY` accepts `{instance_id}`; use `/dev/shm/hls` on Linux
+for temporary HLS output in memory (see [storage and sizing](LIVE.md#hls-storage-in-memory-on-linux));
+a static root is also valid because each session owns a UUID subdirectory.
+Age cleanup is disabled for all groups sharing an environment with Live.
+See [LIVE.md](LIVE.md) for direct and reverse-proxy examples.
+
+### Internal Live defaults
+
+These values are fixed in `app/core/live_config.py` and, for deferred Pod retries,
+`app/services/pod_sync.py`; they are not environment
+parameters. Remove their former `LIVE_*` assignments when upgrading: they are
+no longer read. Keep deployment, hardware and rendition overrides from the
+operator table above only when they differ from the defaults.
+
+| Behavior | Fixed value | Former environment names (remove) |
+| --- | --- | --- |
+| Video/audio codecs | H.264 / AAC | `LIVE_VIDEO_CODEC`, `LIVE_AUDIO_CODEC` |
+| NVENC / CPU preset | `p4` / `veryfast` | `LIVE_NVENC_PRESET`, `LIVE_CPU_PRESET` |
+| Frame rate / GOP | 25 fps / 50 frames | `LIVE_FPS`, `LIVE_GOP` |
+| HLS segment / playlist | 2 s / 6 segments | `LIVE_SEGMENT_SECONDS`, `LIVE_PLAYLIST_SIZE` |
+| Source / startup timeout | 120 s / 60 s | `LIVE_SOURCE_TIMEOUT`, `LIVE_STARTUP_TIMEOUT` |
+| Stall / stop timeout | 20 s / 10 s | `LIVE_STALL_TIMEOUT`, `LIVE_STOP_TIMEOUT` |
+| Monitoring interval | 2 s | `LIVE_POLL_INTERVAL` |
+| FFmpeg restart budget | 3 retries after the initial attempt; enabled CPU fallback switches to CPU after the first NVENC failure | `LIVE_RESTART_ATTEMPTS` |
+| MediaMTX control timeout | 5 s | `LIVE_MEDIAMTX_TIMEOUT` |
+| Deferred Pod status retries | 10 s pause between scans; at most 2 PATCHes per cycle | None (no environment override) |
+
+Use [the connection helper](../../manager/docs/MEDIAMTX_SETUP.md#6-connect-the-applications-and-verify)
+to fill the three installation-specific connection secrets. HLS storage and direct
+playback URLs then work without additional Live assignments. A reverse proxy
+or Docker port mapping may still need `LIVE_PUBLIC_HLS_BASE_URL`.
+
+`LIVE_POD_URL`, `LIVE_POD_USERNAME` and `LIVE_POD_PASSWORD` are optional and must
+be configured together to synchronize an Esup-Pod broadcaster. Set
+`LIVE_POD_ESTABLISHMENT_NAME` to the exact `task.etab_name` for the Pod when the
+Runner serves multiple establishments. A different establishment causes no Pod
+client or request; leaving it empty preserves the single-establishment behavior.
+This integration requires Pod 4.5.0's broadcaster `source_id` field ("Live source
+identifier") and its REST filter. The Runner looks up
+`GET <LIVE_POD_URL>/rest/broadcasters/?source_id=<identifier>`, checks every result
+page for exactly one matching `source_id`, then sends
+`PATCH <LIVE_POD_URL>/rest/broadcasters/<resolved-slug>/` with `{"status":true}`
+when the source appears and `{"status":false}` during cleanup. The configured
+account needs permission to read broadcasters and update their status. A missing
+or ambiguous match causes no PATCH; there is no fallback to slug matching.
+Pod API failures are logged without blocking MediaMTX cleanup or Runner
+availability.
+
+The Manager derives the internal `broadcaster_id` from the final component of
+the RTMP source path and forwards it as the Live source identifier and
+`source_id`. For automatic discovery,
+the optional `equipment` publication parameter is separate metadata and is not
+used as the Pod source identifier. The final RTMP path component must exactly
+match the broadcaster's `source_id` in Pod; its slug can be different.

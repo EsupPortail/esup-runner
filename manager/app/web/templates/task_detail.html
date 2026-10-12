@@ -104,8 +104,20 @@
               Created on {{ task.created_at }} •
               Last update: {{ task.updated_at }}
             </p>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <a class="btn btn-sm btn-outline-secondary" href="{{ root_path }}/logs/?search={{ task.task_id|urlencode }}">
+                <i class="bi bi-file-text" aria-hidden="true"></i>
+                View logs
+              </a>
+              {% if task.task_type == 'live' %}
+              <a class="btn btn-sm btn-outline-primary" href="{{ root_path }}/admin/live?search={{ task.task_id|urlencode }}">
+                <i class="bi bi-broadcast" aria-hidden="true"></i>
+                Live monitoring
+              </a>
+              {% endif %}
+            </div>
           </div>
-          <div class="col-md-4 text-md-end">
+          <div class="col-md-4 text-md-end mt-3 mt-md-0">
             <span class="badge task-status-badge
               {% if task.status == 'pending' %}bg-warning text-dark
               {% elif task.status == 'completed' %}bg-success
@@ -134,7 +146,8 @@
               {% set task_icons = {
               'encoding': {'icon': 'bi-explicit', 'title': 'Encoding task.'},
               'studio': {'icon': 'bi-record-btn', 'title': 'Studio task.'},
-              'transcription': {'icon': 'bi-badge-cc', 'title': 'Transcription task.'}
+              'transcription': {'icon': 'bi-badge-cc', 'title': 'Transcription task.'},
+              'live': {'label': 'Live', 'icon': 'bi-broadcast', 'title': 'Live streaming.'},
               } %}
               {% if task_icons.get(task.task_type) %}&nbsp;<i title="{{ task_icons[task.task_type].title }}" class="bi {{ task_icons[task.task_type].icon }}" data-bs-toggle="tooltip"></i>{% endif %}
               {{ task.task_type }}
@@ -179,8 +192,14 @@
           </div>
           <div class="metadata-item">
             <span class="metadata-label">Application:</span>
-            <span class="text-subtle">{{ task.app_name }} / {{ task.app_version }}</span>
+            <span class="text-subtle">{{ task.app_name }}{% if task.app_version or task.app_name == 'MediaMTX' %} / {{ task.app_version or mediamtx_version }}{% endif %}</span>
           </div>
+          {% if task.live and task.live.equipment %}
+            <div class="metadata-item">
+              <span class="metadata-label">Equipment:</span>
+              <span class="text-subtle">{{ task.live.equipment }}</span>
+            </div>
+          {% endif %}
           {% if task.affiliation %}
             <div class="metadata-item">
               <span class="metadata-label">Affiliation:</span>
@@ -205,20 +224,24 @@
               <span class="text-subtle">{{ task.parameters.get("video_title") }}</span>
             </div>
           {% endif %}
-          <div class="metadata-item">
-            <span class="metadata-label">Source file:</span>
-            <span class="text-subtle">{{ task.source_url }}</span>
-          </div>
+          {% if task.source_url %}
+            <div class="metadata-item">
+              <span class="metadata-label">Source file:</span>
+              <span class="text-subtle">{{ task.source_url }}</span>
+            </div>
+          {% endif %}
           {% if task.notify_url %}
             <div class="metadata-item">
               <span class="metadata-label">Notify URL:</span>
               <span class="text-subtle">{{ task.notify_url }}</span>
             </div>
           {% endif %}
-          <div class="metadata-item">
-            <span class="metadata-label">Parameters:</span>
-            <span class="text-subtle">{{ task.parameters }}</span>
-          </div>
+          {% if task.parameters %}
+            <div class="metadata-item">
+              <span class="metadata-label">Parameters:</span>
+              <span class="text-subtle">{{ task.parameters }}</span>
+            </div>
+          {% endif %}
         </div>
       </div>
 

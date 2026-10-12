@@ -9,16 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Place compact task log and Live monitoring buttons below the task title and dates, wrapping them on smaller screens. Filter both links by task ID, with log access for every task type and Live monitoring for Live tasks.
+- Use the RTMP broadcaster name as the Live source ID in discovery, explicit declarations, Pod dispatch and administration. Require declared IDs to match the final path component and display one source row with the latest session. The Manager MediaMTX template now lets a second authenticated publisher replace the first on the same path; existing installations must apply `overridePublisher: true`.
 - Updated runtime and development dependencies in `uv.lock` to their latest compatible versions.
+- Include Broadcaster names in Live session search, with the existing partial, case-insensitive matching and lifecycle filters.
+- Add a Start / end column after Runner in Live session monitoring, using the administration's datetime format and exposing an end time only for terminal sessions.
+- Display Live session report ages using the task list's compact duration labels, retaining seconds for reports less than one minute old.
+- Identify Live sessions by Broadcaster while keeping source/event identifiers in their details without a duplicate Broadcaster field, combine codecs and resolutions on one line, and show Broadcaster in the active/recent source table without a separate full source ID panel.
+- Show source origin, current RTMP signal and latest retained session separately in Live administration, with source ID copying and links to filtered sessions. Label historical, missing and unconfirmed information explicitly.
+- Limit the Live administration source list to current RTMP publishers, retained-session sources and declared broadcasters. Keep private bindings and publication checkpoints across retention; show known sources with a notice when publication observation is unavailable.
+- Use fixed internal defaults for Manager Live polling and request timeouts; the former `LIVE_MEDIAMTX_TIMEOUT`, `LIVE_POLL_INTERVAL` and `LIVE_RUNNER_TIMEOUT` environment settings are no longer read. See [Manager Live parameters](PARAMETERS.md#internal-live-defaults).
 
 ### Fixed
 
+- Separate writable Manager logs from the read-only MediaMTX diagnostic mount
+  in Live Compose, and initialize owned Manager data storage in the image.
+  Document quiet Compose validation and avoid printing secrets during placeholder checks.
+- Automatically replace an interrupted automatic Live session after forced
+  Runner restart recovery, once cleanup is confirmed and the same RTMP
+  publication is still active. Preserve explicit stops and allocation deduplication.
 - Stream runner result files and manifests without first buffering their entire
   HTTP response in Manager memory, preventing large downloads from causing
   file-sized memory spikes. Close upstream resources on download completion,
   cancellation, client disconnect, and response-construction failure.
 - Include the runner ID and resource URL in result-fetch HTTP error logs, with
   URL credentials, query parameters, and fragments removed.
+- Keep the last known codecs and resolution for each Live session when a later Runner report contains empty track lists, including source loss and terminal cleanup. Continue updating signal and counters from current reports.
+- Isolate Manager test persistence from installed application data, including state initialization and shutdown hooks.
+- Link an existing MediaMTX executable from PATH into the user unit's default location, and stop the documented startup procedure if installation or configuration validation fails.
+
+### Added
+
+- With Live enabled and `LIVE_AUTO_START=true` (the default when enabled), discover accepted RTMP publications without requiring a `LIVE_SOURCES` declaration. Persist private source bindings and broadcaster identifiers across restarts, expose authenticated source discovery, and support optional declarations before publication.
+- For each detected publication, start HLS, retry when Runner capacity becomes available, stop its automatic session when the encoder disconnects, and deduplicate handling across Manager workers and restarts. Keep API-driven starts available when automatic startup is disabled.
+- Show the latest automatic session and its playback status through source discovery; add automatic-session badges in administration.
+- Provide identifiable Live diagnostics in administration, including sanitized MediaMTX authentication failures from a user journal or mounted log file.
+- Support idempotent restart of a stopped session while its RTMP publication continues, and use shared Bootstrap confirmation dialogs for Live actions.
+- Add a Live administration page with session states, freshness, source and media measurements, Runner capacity and CSRF-protected stops.
+- Add Live icons throughout administration and deduplicate terminal Live statistics.
+- Document multiple Live workers declared in one Runner `.env`, with shared MediaMTX and dynamic HLS routes; add an isolated grouped media/recovery validation procedure.
+- Live allocation, metrics and heartbeat recovery for mixed Runners advertising Live alongside VOD task types.
+- MediaMTX installation in the service account's home and systemd user services, allowing routine Live operations without sudo.
+- Add `scripts/install_mediamtx.py` for native Manager Live deployments, with pinned downloads, checksum verification, reusable installations, instance configuration, generated credentials and dry-run support.
+- Add `scripts/configure_live.py` to connect the application to MediaMTX without copying credentials manually. The helper uses the component's Python environment and locked dependencies, preserves unrelated `.env` settings and creates private backups without restarting services.
+- Live session API with exclusive runner reservations, persistent dynamic HLS URLs for Esup-Pod, MediaMTX source monitoring, reconciliation and multi-instance deployment documentation.
 
 ## [1.9.1] - 2026-09-25
 

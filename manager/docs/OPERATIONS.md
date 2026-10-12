@@ -2,6 +2,10 @@
 
 This document centralizes day-to-day production operations for the manager.
 
+For RTMP-to-HLS Live operations, use the dedicated
+[Live operations runbook](LIVE_OPERATIONS.md). For a new Live deployment, start
+with the [short installation path](LIVE_INSTALLATION.md).
+
 ## Scope and assumptions
 
 - Installation path: `/opt/esup-runner/manager`
@@ -196,3 +200,35 @@ Before upgrades or manual cleanup operations, back up at least:
 - Parameters: [PARAMETERS.md](PARAMETERS.md)
 - Upgrade and rollback: [UPGRADE.md](UPGRADE.md)
 - Docker deployment: [DOCKER.md](DOCKER.md)
+
+## Live streaming
+
+With Live enabled, RTMP publications accepted by MediaMTX start HLS automatically
+by default. Keep the Manager, Runner and MediaMTX services running; no start API
+call is needed from an encoder. The Manager waits for available Live capacity,
+stops the session after encoder disconnection, and creates a new session when
+the encoder republishes. Read the playback URL from **Live** in administration
+or `GET /live/sources/{source_id}` with an API token. List identifiers with
+`GET /live/sources`; source IDs are the broadcaster names at the end of the RTMP
+paths. `LIVE_SOURCES` is only needed to declare sources before publication.
+
+An explicit stop or terminal failure suppresses automatic restart for the same
+RTMP connection. Fix failures, then republish or use **Restart session** after
+cleanup when the encoder stays connected.
+Use **Live diagnostics** in the Logs page to filter `[LIVE]` events, including
+MediaMTX authentication refusals when a diagnostic log source is configured.
+See [Live diagnostics](LIVE.md#live-diagnostics-in-the-log-viewer) for native and Docker setup.
+Preserve `.live-publication-*.json` checkpoints and the private `.live-sources.json`
+registry when backing up `MANAGER_DATA_DIR`. The registry contains RTMP paths/keys;
+keep its owner-only permissions. Adding publishers requires no Manager restart.
+For manual API orchestration only, set `LIVE_AUTO_START=false` and restart the
+Manager. See [automatic operation](LIVE.md#automatic-rtmp-to-hls-operation).
+
+See [LIVE.md](LIVE.md) for Live Runner reservations, MediaMTX, the dynamic `hls_url` contract for Pod and multi-instance deployments.
+
+## Live monitoring
+
+Use **Live** on the administration dashboard to inspect sessions, HLS readiness,
+source measurements, stale reports and available runners, or request a stop.
+See [Live administration](LIVE.md#administration-and-statistics) for refresh,
+retention and statistics semantics.

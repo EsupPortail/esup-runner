@@ -3,6 +3,7 @@
 import asyncio
 import os
 import sys
+import tempfile
 import threading
 import warnings
 from typing import Any, Dict
@@ -169,8 +170,14 @@ warnings.filterwarnings(
 warnings.filterwarnings("ignore", message="Duplicate Operation ID.*", category=UserWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="fastapi.openapi.utils")
 
-from app.core import state as state_module
 from app.core.config import config
+
+# State initialization and its atexit handler must never touch an operator's data.
+# Configure this before importing state; fixture teardown restores that same safe
+# backend, and the temporary directory is removed after state shuts down.
+_test_data = tempfile.TemporaryDirectory(prefix="esup-manager-tests-")
+config.MANAGER_DATA_DIR = _test_data.name
+from app.core import state as state_module
 
 
 @pytest.fixture(autouse=True)

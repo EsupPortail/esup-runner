@@ -2,6 +2,11 @@
 
 This document centralizes day-to-day production operations for the runner.
 
+For RTMP-to-HLS Live operations and recovery, use the Manager's dedicated
+[Live operations runbook](../../manager/docs/LIVE_OPERATIONS.md) and the
+[Runner Live reference](LIVE.md). For a new deployment, start with the
+[short installation path](../../manager/docs/LIVE_INSTALLATION.md).
+
 ## Scope and assumptions
 
 - Installation path: `/opt/esup-runner/runner`
@@ -225,3 +230,7 @@ Before upgrades or large cleanup operations, back up at least:
 - Upgrade and rollback: [UPGRADE.md](UPGRADE.md)
 - Docker deployment: [DOCKER.md](DOCKER.md)
 - FFmpeg setup: [FFMPEG_SETUP.md](FFMPEG_SETUP.md)
+
+## Live streaming
+
+See [LIVE.md](LIVE.md) for explicit `live` declarations in `runner/.env`, mixed or grouped instances, MediaMTX, adaptive transcoding and recovery.

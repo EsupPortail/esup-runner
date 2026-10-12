@@ -1,0 +1,42 @@
+# MediaMTX 1.21.1. Replace credentials and restrict publish/read IP networks.
+# Override addresses with MTX_RTMPADDRESS, MTX_APIADDRESS, MTX_METRICSADDRESS.
+# Native services: bind API/metrics to loopback. Containers: bind only on the
+# private control network; do not publish these ports on the host.
+# RTMP authentication failures are logged at info by MediaMTX.
+logLevel: info
+logStructured: false
+rtsp: false
+rtmp: true
+rtmpAddress: 127.0.0.1:1935
+hls: false
+webrtc: false
+srt: false
+moq: false
+api: true
+apiAddress: 127.0.0.1:9997
+metrics: true
+metricsAddress: 127.0.0.1:9998
+authInternalUsers:
+  - user: publisher
+    pass: CHANGE_ME_PUBLISH_PASSWORD
+    ips: []
+    permissions:
+      - action: publish
+        path: "~^live/[A-Za-z0-9_-]+$"
+  - user: relay
+    pass: CHANGE_ME_RELAY_PASSWORD
+    ips: []
+    permissions:
+      - action: read
+        path: "~^live/[A-Za-z0-9_-]+$"
+  - user: control
+    pass: CHANGE_ME_CONTROL_PASSWORD
+    ips: []
+    permissions:
+      - action: api
+      - action: metrics
+paths:
+  "~^live/[A-Za-z0-9_-]+$":
+    source: publisher
+    # A new authenticated publisher replaces the current broadcaster input.
+    overridePublisher: true

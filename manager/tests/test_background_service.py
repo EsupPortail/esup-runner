@@ -29,18 +29,23 @@ async def test_start_and_stop_all_services(monkeypatch):
         "reconcile_running_tasks_with_runners",
         lambda: fake_service("reconcile"),
     )
+    monkeypatch.setattr(
+        "app.services.live_service.reconcile_forever",
+        lambda: fake_service("live"),
+    )
 
     mgr = background_service.BackgroundServiceManager()
     await mgr.start_all_services()
     await asyncio.sleep(0.01)
     assert mgr.is_running is True
-    assert len(mgr.tasks) == 4
-    assert set(started) == {"runners", "cleanup", "timeouts", "reconcile"}
+    assert len(mgr.tasks) == 5
+    assert set(started) == {"runners", "cleanup", "timeouts", "reconcile", "live"}
     assert {service["name"] for service in mgr.get_service_status()["services"]} == {
         "check_runners_activity",
         "cleanup_old_tasks",
         "check_task_timeouts",
         "reconcile_running_tasks_with_runners",
+        "reconcile_live_sessions",
     }
 
     await mgr.stop_all_services()

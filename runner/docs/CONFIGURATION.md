@@ -172,3 +172,17 @@ Set `MEDIA_CODEC_DENYLIST=` only if you deliberately want to disable this protec
 ## Related docs
 - Full environment variable reference: [docs/PARAMETERS.md](PARAMETERS.md)
 - Operations runbook: [docs/OPERATIONS.md](OPERATIONS.md)
+
+## Live streaming
+
+See [LIVE.md](LIVE.md) for explicit `live` declarations in `runner/.env`, mixed or grouped instances, MediaMTX, adaptive transcoding and recovery.
+See [TYPE_LIVE.md](TYPE_LIVE.md) for the task parameters, request examples and HLS outputs.
+
+### Simplified Live setup
+
+After preparing MediaMTX, run the [connection helper](../../manager/docs/MEDIAMTX_SETUP.md#6-connect-the-applications-and-verify)
+to populate the installation-specific credentials in the existing application
+`.env`. Keep only operator choices that differ from defaults. Technical Live
+timeouts and media tuning are internal defaults, documented in
+[PARAMETERS.md](PARAMETERS.md#internal-live-defaults), and are no longer read from
+`LIVE_*` environment overrides. No additional application environment file is needed.

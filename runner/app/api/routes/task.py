@@ -489,6 +489,9 @@ async def _recover_owned_failed_tasks(failed_tasks: dict[str, dict]) -> int:
 
 async def recover_running_tasks_after_restart() -> None:
     """Restore running task state after process restart using persisted JSON."""
+    from app.services import live_runtime
+
+    await live_runtime.recover()
     await task_recovery.recover_running_tasks_after_restart(runtime=_task_recovery_runtime())
 
 
@@ -832,10 +835,14 @@ async def delete_task_result(task_id: str, current_manager: str = Depends(get_cu
     tags=["Task"],
 )
 async def stop_task(task_id: str, current_manager: str = Depends(get_current_manager)):
-    """Request external process termination for a running task."""
+    """Stop a task using its persisted type, or fence a not-yet-dispatched Live UUID."""
     safe_task_id = (task_id or "").strip()
+    payload = get_task_status(safe_task_id)
+    if "live" in config.RUNNER_TASK_TYPES and (payload is None or payload.get("live")):
+        from app.services.live_runtime import request_stop
+
+        return request_stop(safe_task_id)
     try:
-        payload = get_task_status(safe_task_id)
         if not isinstance(payload, dict):
             raise HTTPException(status_code=404, detail="Task not found")
 
@@ -903,6 +910,18 @@ async def run_task(
     """
     logger.info(f"Received task execution request, registered: {is_registered()}")
 
+    if task_request.task_type == "live":
+        from app.services import live_runtime
+
+        live_runtime.validate_request(task_request)
+        existing = get_task_status(task_request.task_id)
+        if existing is not None:
+            if not existing.get("live"):
+                raise HTTPException(409, "Task identifier already belongs to another task type")
+            return {"task_id": task_request.task_id, "status": existing["status"]}
+    elif config.RUNNER_TASK_TYPES == {"live"}:
+        raise HTTPException(400, "Dedicated live runner")
+
     if not is_registered():
         raise HTTPException(status_code=503, detail="Runner not registered with manager")
 
@@ -924,6 +943,12 @@ async def run_task(
         error_message=None,
         stop_requested=None,
     )
+
+    if task_request.task_type == "live":
+        from app.services import live_runtime
+
+        live_runtime.accept(task_request)
+        return {"status": "started", "task_id": task_request.task_id}
 
     background_tasks.add_task(
         process_task, task_id=task_request.task_id, task_request=task_request

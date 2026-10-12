@@ -256,7 +256,7 @@
                         <code class="small">{{ task.id }}</code>
                       </td>
                       <td>
-                        <span class="badge bg-secondary">{{ task.task_type }}</span>
+                        <span class="badge bg-secondary">{% if task.task_type == 'live' %}<i class="bi bi-broadcast" aria-hidden="true"></i> {% endif %}{{ task.task_type }}</span>
                       </td>
                       <td class="small text-muted">{{ task.created_at }}</td>
                       <td class="small text-muted">{{ task.updated_at }}</td>

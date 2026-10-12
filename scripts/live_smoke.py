@@ -5,11 +5,12 @@ Run from runner/: UV_CACHE_DIR=/tmp/esup-runner-uv-cache uv run --no-sync
 python ../scripts/live_smoke.py --mediamtx /path/to/mediamtx --runners 2
 Add --grouped for one .env and launcher sharing MediaMTX across Live workers.
 Add --automatic to trigger sessions without LIVE_SOURCES or a start API call.
-Requires the two development environments, MediaMTX 1.21.1, FFmpeg and ffprobe.
+Requires the two development environments, MediaMTX >= 1.21.1, FFmpeg and ffprobe.
 """
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -121,10 +122,15 @@ def terminate_all(processes, logs) -> None:
 
 
 def media_template(component: str, secret: str) -> str:
-    """Fill the component's MediaMTX example with temporary test credentials."""
+    """Fill the MediaMTX example with SHA-256 verifiers of a random test secret.
+
+    MediaMTX accepts base64-encoded SHA-256 digests with the ``sha256:`` prefix.
+    Only verifiers are persisted; clients keep using the high-entropy secret.
+    """
     template = (ROOT / component / "production" / "mediamtx-live.yml").read_text()
+    verifier = "sha256:" + base64.b64encode(hashlib.sha256(secret.encode()).digest()).decode()
     for placeholder in ("PUBLISH_PASSWORD", "RELAY_PASSWORD", "CONTROL_PASSWORD", "READ_PASSWORD"):
-        template = template.replace(f"CHANGE_ME_{placeholder}", secret)
+        template = template.replace(f"CHANGE_ME_{placeholder}", verifier)
     return template
 
 
@@ -364,18 +370,25 @@ def configure_smoke_sources(manager_env, sources, automatic):
 def start_runner_process(
     name, runner_env, directory, spawn, media, media_ports, *, grouped=False, previous=None
 ):
-    """Start one API process, or reuse a launcher reading one grouped .env file."""
+    """Start one API process, or a grouped launcher with secrets only in its environment."""
     if grouped:
         if previous is None:
             for key in ("RUNNER_INSTANCE_ID", "RUNNER_INSTANCE_URL", "RUNNER_PORT"):
                 runner_env.pop(key)
-            # Read every application setting from one file, as in production.
+            # Persist only non-secret settings; credentials remain in the environment.
             settings = {
                 key: value
                 for key, value in runner_env.items()
-                if key.startswith(("RUNNER_", "LIVE_"))
-                or key
+                if key
                 in {
+                    "RUNNER_HOST",
+                    "RUNNER_BASE_PORT",
+                    "RUNNER_BASE_NAME",
+                    "RUNNER_INSTANCES",
+                    "RUNNER_MONITORING",
+                    "RUNNER_TASK_TYPES",
+                    "LIVE_MEDIAMTX_API_URL",
+                    "LIVE_HLS_DIRECTORY",
                     "MANAGER_URL",
                     "ENCODING_TYPE",
                     "LOG_DIR",

@@ -4,7 +4,7 @@ This document describes how to install and run the **ESUP Runner Manager** on a 
 For Docker-based deployment, see [DOCKER.md](DOCKER.md).
 For Live streaming, start with [LIVE_INSTALLATION.md](LIVE_INSTALLATION.md) after
 creating the service account and fetching the sources. It links to the detailed
-[MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md) reference for MediaMTX 1.21.1
+[MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md) reference for MediaMTX >= 1.21.1
 installation as a native executable or Docker container, including reuse of an
 existing installation on the same machine.
 

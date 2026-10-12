@@ -519,5 +519,5 @@ Licence GPL 3.0
 ## Live streaming
 
 See [LIVE.md](LIVE.md) for Live Runner reservations, MediaMTX, the dynamic `hls_url` contract for Pod and multi-instance deployments.
-For native or Docker installation of MediaMTX 1.21.1, including reuse of an
+For native or Docker installation of MediaMTX >= 1.21.1, including reuse of an
 existing installation, see [MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md).

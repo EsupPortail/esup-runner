@@ -41,11 +41,17 @@ accounts.
 
 ## Recommended native installation
 
-The commands below use the pinned MediaMTX `1.21.1` release and the standard
-instance names `manager` and `runner`. Run them as the service account. If
+The commands below default to MediaMTX `1.21.1`, the minimum accepted version,
+and the standard instance names `manager` and `runner`. Run them as the service account. If
 the Manager checkout is sparse, also include `runner/production/` for the
 shared systemd unit template. The installation and connection scripts themselves
-are contained in each application directory:
+are contained in each application directory.
+
+Any newer stable version may be reused or selected with `--version` for a new
+installation. See [version selection and manual upgrades](MEDIAMTX_SETUP.md#manual-upgrades)
+before replacing a running MediaMTX service; active broadcasts are interrupted.
+
+Include the shared systemd template in a sparse Manager checkout:
 
 ```bash
 cd /opt/esup-runner

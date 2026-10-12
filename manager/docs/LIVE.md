@@ -476,7 +476,7 @@ Manager.
 ## Installation and security
 
 Follow [MediaMTX installation](MEDIAMTX_SETUP.md) for the native executable,
-systemd service or Docker image, pinned to **1.21.1**. The guide covers Debian
+systemd service or Docker image, requiring **1.21.1 or newer**. The guide covers Debian
 12/13 and other Linux distributions, on CPU and GPU machines. Reuse an existing
 installation on the same host; only the configuration and process/container
 must be separate for each Manager and Live Runner. No additional Python package
@@ -510,7 +510,9 @@ absolute paths; adapt the account's home instead of writing `$HOME` or `~` there
 
 For Docker prerequisites or a MediaMTX-only container alongside native
 applications, see [MediaMTX with Docker](MEDIAMTX_SETUP.md#5-run-mediamtx-in-docker).
-The complete stack below pins both MediaMTX images to `bluenviron/mediamtx:1.21.1`.
+The complete stack below defaults both MediaMTX images to `bluenviron/mediamtx:1.21.1`.
+You may choose another explicit stable tag >= 1.21.1. See
+[manual upgrades](MEDIAMTX_SETUP.md#manual-upgrades) for the procedure and Live interruptions.
 
 From `deploy/live/`, copy the two environment examples to `manager.env` and
 `runner.env`, and the two MediaMTX configurations. For an existing deployment,
@@ -661,7 +663,11 @@ then reconnect the encoder. Restart the Manager after changing its `LIVE_*` sett
 The optional test starts isolated local processes, two Manager workers and the
 requested number of Runner/MediaMTX pairs, or one grouped Runner deployment
 sharing a MediaMTX service with `--grouped`. It keeps data and logs under
-`/tmp/live-smoke-*` and stops its processes when finished:
+`/tmp/live-smoke-*` and stops its processes when finished.
+
+MediaMTX configuration files contain only SHA-256 verifiers of randomly generated
+test passwords. In grouped mode, the shared `.env` contains only non-secret settings;
+tokens and credential-bearing URLs are passed through the process environment.
 
 ```bash
 cd runner
@@ -691,7 +697,7 @@ relay or HLS output. The launcher restarts the crashed worker from its persisten
 state. Omit `--mixed` to make the Live workers exclusively Live-capable.
 
 Prerequisites: both component development environments installed, FFmpeg, ffprobe,
-MediaMTX 1.21.1 and available loopback ports. The test publishes `testsrc2` + `sine`
+MediaMTX >= 1.21.1 and available loopback ports. The test publishes `testsrc2` + `sine`
 and checks all three variants with `ffprobe`, distinct reservations, rejection of
 an additional Live session, repeated stop requests and cleanup. It uses the
 provided YAML examples with temporary secrets to verify RTMP and Control API

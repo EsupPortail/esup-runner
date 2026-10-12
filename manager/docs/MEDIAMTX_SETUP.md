@@ -4,11 +4,18 @@ If this is your first installation, start with the
 [short Live installation path](LIVE_INSTALLATION.md). This page is the detailed
 reference for native systemd, Docker, custom ports and troubleshooting.
 
-This guide installs **MediaMTX 1.21.1** for Live on Linux, including Debian 12
+Live requires **MediaMTX 1.21.1 or newer** on Linux, including Debian 12
 and Debian 13. Run one Manager instance on the Manager host and one shared
 Runner instance on each Runner server; all Runner processes and Live workers on
 that server use the same MediaMTX service. It covers a native executable with
 systemd user services and the official Docker image. MediaMTX is required only for Live.
+
+**1.21.1 is the minimum version and the default for new installations.** You may
+choose any stable release at or above this minimum. Validate its configuration,
+API v3 / `tracks2` contract and RTMP-to-HLS behavior before production use;
+the minimum check does not certify every future release. MediaMTX upgrades are
+managed by the operator, independently of Manager/Runner updates and
+`update-stack.sh`. See [Manual upgrades](#manual-upgrades).
 
 Use the **same MediaMTX executable or image on CPU and GPU machines**. MediaMTX
 receives and relays streams; FFmpeg on the Runner performs transcoding. MediaMTX
@@ -42,16 +49,16 @@ docker image inspect bluenviron/mediamtx:1.21.1 --format '{{.Id}}'
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}'
 ```
 
-If the executable reports `v1.21.1`, keep it. Run `install` in section 2 to
-check it and prepare the path used by the user unit: an existing executable in
+If the executable reports a stable version **>= 1.21.1**, keep it. Run `install`
+in section 2 to check it and prepare the path used by the user unit: an existing executable in
 `PATH` is linked from `~/.local/bin/mediamtx`, without downloading or copying it.
 If the Docker image already exists, skip the image download in section 5.
 
 An existing service/container can also be retained when it is already dedicated
 to the **same** Manager or Live Runner and its configuration matches this guide.
-Inspect its configuration, version and ports before changing anything. If another
-version is installed, plan its compatibility check or upgrade separately: the
-tested reference for this integration is **1.21.1**, using API v3 and `tracks2`.
+Inspect its configuration, version and ports before changing anything. Versions
+below **1.21.1** must be upgraded manually. Newer versions are accepted; check
+their compatibility with this integration's API v3 and `tracks2` usage.
 
 Reuse the **installation** and run one MediaMTX service for the Manager plus
 one shared service on each Runner server. All Live instances declared in a
@@ -121,8 +128,8 @@ python3 scripts/install_mediamtx.py install
 ```
 
 The script first looks for `~/.local/bin/mediamtx`, then for `mediamtx` in `PATH`,
-and reuses a matching version. For a `PATH` installation, it creates a symbolic
-link at `~/.local/bin/mediamtx` so the default user unit can find it. For example,
+and reuses any stable version at or above **1.21.1**. For a `PATH` installation,
+it creates a symbolic link at `~/.local/bin/mediamtx` so the default user unit can find it. For example,
 the link can point to `/usr/local/bin/mediamtx`; the existing executable stays
 unchanged and there is no second installation. Repeated runs retain the link.
 When neither location contains MediaMTX, it selects the Linux architecture, downloads
@@ -131,8 +138,9 @@ When neither location contains MediaMTX, it selects the Linux architecture, down
 verifies SHA-256, and installs only the executable in `~/.local/bin/mediamtx`.
 The bundled default YAML is not installed; section 3 uses the project's templates.
 
-An existing executable with a different version is left unchanged and reported
-as an error. Use `--binary /absolute/path/to/mediamtx` to select an existing
+An existing executable below the minimum, or with an unrecognized/prerelease
+version, is left unchanged and reported as an error. Use
+`--binary /absolute/path/to/mediamtx` to select an existing
 installation outside `PATH`, or a separate destination for a deliberate version
 change. An explicit `--binary` keeps that chosen location and does not create
 the default link; adapt the systemd executable path in section 4 in that case.
@@ -146,10 +154,20 @@ python3 scripts/install_mediamtx.py install --help
 ```
 
 `--dry-run` performs no downloads or writes. It may run an existing executable
-with `--version` to check compatibility. `--version` defaults to the fixed
-`1.21.1` release; another explicit release is an operator choice requiring Live
-validation. Avoid `latest` tags or MediaMTX's `--upgrade` command to retain the
-pinned version.
+with `--version` to check compatibility. The installer's `--version` selects
+the exact release to download **when the selected destination is absent**;
+it defaults to `1.21.1` and rejects releases below that minimum. For example:
+
+```bash
+python3 scripts/install_mediamtx.py install --version 1.21.2
+```
+
+An existing supported executable is reused regardless of this download choice;
+the installer never upgrades or downgrades it. Use a separate `--binary` path
+for a manual upgrade as described below. Downloads still require both a valid
+SHA-256 checksum and the exact requested executable version. Prefer an explicit
+release/tag over `latest` or MediaMTX's `--upgrade` command so deployments remain
+reproducible.
 
 ### Install and configure with one command
 
@@ -238,7 +256,7 @@ reported as errors and left unchanged.
 | Option | Applies to | Purpose |
 | --- | --- | --- |
 | `--dry-run` | All commands | Preview without downloading, writing files or generating secrets |
-| `--version 1.21.1` | `install`, `setup` | Pin the native executable version; does not change Compose image tags |
+| `--version 1.21.2` | `install`, `setup` | Download this release if the destination is absent; minimum/default: 1.21.1. Reuse any supported existing executable; does not change Compose image tags |
 | `--binary /absolute/path/mediamtx` | `install`, `setup` | Select an executable to reuse or a destination for a new installation |
 | `--instance NAME` | `configure`, `setup` | Required unique instance name, e.g. `manager` or `runner` |
 | `--rtmp-address IP:PORT` | `configure`, `setup` | RTMP listener; defaults to the selected template |
@@ -497,15 +515,17 @@ docker version
 docker compose version
 ```
 
-The official image is pinned to **`bluenviron/mediamtx:1.21.1`**, with no `v`
-prefix in the tag. Download it once per Docker host if it is not already present:
+The examples use **`bluenviron/mediamtx:1.21.1`**, with no `v` prefix in the tag.
+You may substitute another explicit stable tag **>= 1.21.1** in all commands and
+in the Compose file. Download it once per Docker host if it is not already present:
 
 ```bash
 docker pull bluenviron/mediamtx:1.21.1
 docker run --rm bluenviron/mediamtx:1.21.1 --version
 ```
 
-Expected version: `v1.21.1`. Neither a host MediaMTX executable nor GPU access is
+Expected version: the selected release (`v1.21.1` for this example).
+Neither a host MediaMTX executable nor GPU access is
 required for this container, including on GPU machines. The standard image is
 sufficient; transcoding and any NVIDIA container setup belong to the Runner.
 
@@ -570,6 +590,9 @@ dedicated Live Runner, and their two separate MediaMTX containers. Both MediaMTX
 services already use `bluenviron/mediamtx:1.21.1`. The provided Runner image uses
 CPU FFmpeg; GPU transcoding requires a suitable Runner image/runtime as described
 in the [GPU documentation](../../runner/docs/gpu/README.md).
+
+Choose another stable MediaMTX release >= 1.21.1 by editing both media image
+tags; application image updates do not update these separate containers.
 
 Use a checkout containing `manager/`, `runner/` and `deploy/live/`. If using a
 sparse checkout, add these paths without replacing the existing selection:
@@ -754,6 +777,109 @@ for discovering the playback URL and handling disconnects. Validate the
 complete path with the [manual Live test](../../runner/docs/LIVE.md#manual-validation)
 or the [CPU smoke test](LIVE.md#reproducible-test-without-streaming-hardware).
 
+## Manual upgrades
+
+MediaMTX version changes are an operator decision. The installation helpers and
+`update-stack.sh` leave an existing executable and running MediaMTX services
+unchanged during Manager/Runner updates.
+
+**Plan a maintenance window: restarting or recreating MediaMTX disconnects
+active RTMP publishers and readers and interrupts the Live RTMP-to-HLS path.**
+All Live workers sharing the affected Runner MediaMTX can be interrupted.
+Runner relay paths created through the API are temporary and are lost on a
+MediaMTX restart. Stop ongoing broadcasts and wait for session cleanup before
+the change. Encoder reconnection and session recovery may be necessary; verify
+the resulting session and its current HLS URL in administration. A replacement
+session can have a new URL. See
+[Restart and outage behavior](LIVE_OPERATIONS.md#restart-and-outage-behavior).
+
+### Native executable with systemd user services
+
+1. Choose a stable release >= **1.21.1** and review its
+   [upstream release notes](https://github.com/bluenviron/mediamtx/releases).
+   Identify the actual executable/configuration with
+   `systemctl --user cat esup-runner-mediamtx@runner.service` (adapt the instance
+   name). Save the old executable, YAML/environment files and customized units
+   in a private backup directory. Preserve existing credentials and settings.
+2. Download the chosen release at a **separate, unused path**. For example,
+   under the service account on a Runner host with its application environment
+   already installed:
+
+   ```bash
+   cd /opt/esup-runner/runner  # Use manager/ on a Manager host.
+   export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+   uv run --no-sync python scripts/install_mediamtx.py install \
+     --version 1.21.2 --binary "$HOME/.local/bin/mediamtx-1.21.2"
+   "$HOME/.local/bin/mediamtx-1.21.2" --version
+   "$HOME/.local/bin/mediamtx-1.21.2" \
+     --validate-conf="$HOME/.config/esup-runner/runner/mediamtx.yml"
+   ```
+
+   Check that the binary reports the selected release. Validate **every**
+   configuration using it, including the Manager configuration if both roles
+   share the executable, with the same `MTX_*` overrides as the services.
+   Continue only when the checksum, version and configuration checks succeed.
+3. During maintenance, stop all MediaMTX units using that executable. For the
+   default account-local regular file, replace `~/.local/bin/mediamtx` with the
+   prepared executable using an atomic rename on the same filesystem. For a
+   symbolic link, system installation or custom `ExecStart`, use its original
+   installation method or deliberately update the unit path; do not
+   unintentionally replace a link or another deployment's executable.
+   Run `systemctl --user daemon-reload` if a unit changed, then start the affected
+   units and inspect their status/journal. For the standard Runner instance:
+
+   ```bash
+   systemctl --user start esup-runner-mediamtx@runner.service
+   systemctl --user status esup-runner-mediamtx@runner.service --no-pager
+   journalctl --user -u esup-runner-mediamtx@runner.service -n 50 --no-pager
+   ```
+
+   On a host with a shared Manager/Runner binary, upgrade it once and restart
+   **both** MediaMTX units. On separate hosts, perform the procedure on each.
+4. Check the running release with `GET /v3/info` and the authenticated
+   `GET /v3/paths/list` check in section 6, using the actual Control API URL.
+   Republish a test source and verify relay creation and HLS playback. The file's
+   `--version` alone does not prove that the running service has loaded it.
+   If startup or Live validation fails, stop the affected units, restore the
+   saved executable and any deliberately changed units/configuration, start
+   them again, and repeat the checks. Keep the backup until validation succeeds.
+   A rollback does not transparently restore broadcasts or temporary relays.
+
+### Docker and Docker Compose
+
+Keep the configured YAML, environment, ports, mounts and service identity.
+Pull an explicit image tag >= **1.21.1** and run its `--version` and
+`--validate-conf` with the existing mounts/environment. For a standalone
+container, recreate it with the selected image and its original options;
+restarting the old container keeps its old image.
+
+For the supplied Compose stack, save the current tags and edit **both**
+`manager-media` and `runner-media` image tags in `deploy/live/compose.yml`.
+Use the deployment's existing project name (here `live-a`):
+
+```bash
+cd /opt/esup-runner/deploy/live
+docker compose -p live-a config --quiet
+docker compose -p live-a pull manager-media runner-media
+docker compose -p live-a run --rm --no-deps manager-media --version
+docker compose -p live-a run --rm --no-deps runner-media --version
+docker compose -p live-a run --rm --no-deps manager-media --validate-conf=/mediamtx.yml
+docker compose -p live-a run --rm --no-deps runner-media --validate-conf=/mediamtx.yml
+```
+
+After successful validation, recreate the media containers during maintenance:
+
+```bash
+docker compose -p live-a up -d --no-deps manager-media runner-media
+docker compose -p live-a logs --tail 50 manager-media runner-media
+```
+
+Verify the actual running versions, the applications' Live status and an
+RTMP-to-HLS test; keep the Control APIs private. To roll back, restore the old
+explicit tags and recreate the media containers, preserving their data/log
+volumes, then repeat those checks. See the official
+[Compose recreation behavior](https://docs.docker.com/reference/cli/docker/compose/up/).
+
 ## Troubleshooting
 
 ### Authentication diagnostics in administration
@@ -790,7 +916,7 @@ See [Live diagnostics](LIVE.md#live-diagnostics-in-the-log-viewer) for limits an
 | Encoder cannot publish | Manager RTMP bind address, firewall, `publisher` credentials, allowed IPs and the `live/<key>` path. |
 | Runner cannot read the source | Manager address reachable from the Runner, `relay` credentials and allowed Runner IPs. |
 | Service cannot read YAML | File ownership/permissions and the service account; for Docker, check the bind mount and numeric UID/GID. |
-| Missing API fields or unsupported configuration | Confirm the running executable/image is the pinned `1.21.1` version. |
+| Missing API fields or unsupported configuration | Confirm the running version is >= `1.21.1`, then check the chosen release's API v3 / `tracks2` and configuration compatibility. Roll back if the newer release fails Live validation. |
 | MediaMTX works but no HLS is available | Check Live reservation/session state, Runner FFmpeg, HLS directory permissions and the HTTPS frontend. |
 
 Upstream references: [installation](https://mediamtx.org/docs/kickoff/install),

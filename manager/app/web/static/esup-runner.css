@@ -130,7 +130,11 @@ body[data-bs-theme="light"] {
   --live-accent-rgb: var(--bs-primary-rgb);
   border-left: 4px solid rgb(var(--live-accent-rgb)) !important;
   background:
-    linear-gradient(135deg, rgba(var(--live-accent-rgb), 0.09), transparent 75%),
+    linear-gradient(
+      135deg,
+      rgba(var(--live-accent-rgb), 0.09),
+      transparent 75%
+    ),
     var(--bs-card-bg);
 }
 

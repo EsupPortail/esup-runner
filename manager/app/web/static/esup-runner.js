@@ -137,8 +137,10 @@ window.esupConfirm = function esupConfirm(options) {
   modalElement.classList.toggle("confirmation-modal-restart", isRestart);
   confirmButton.classList.toggle("btn-danger", !isRestart);
   confirmButton.classList.toggle("btn-primary", isRestart);
-  modalElement.querySelector(".confirmation-modal-icon i").className = `bi ${action.icon}`;
-  modalElement.querySelector(".confirmation-modal-kicker").textContent = action.label;
+  modalElement.querySelector(".confirmation-modal-icon i").className =
+    `bi ${action.icon}`;
+  modalElement.querySelector(".confirmation-modal-kicker").textContent =
+    action.label;
   confirmButton.querySelector("i").className = `bi ${action.icon} me-2`;
 
   return new Promise((resolve) => {

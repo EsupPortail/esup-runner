@@ -719,6 +719,117 @@ def test_output_symlinks_rejected(live_env, tmp_path):
         live.directory_for(live_env.task_id)
 
 
+@pytest.mark.parametrize("identifier", ["../outside", "/etc", "not-a-uuid", "", "a/b"])
+def test_output_directory_rejects_invalid_ids_before_filesystem_access(live_env, identifier):
+    with pytest.raises(ValueError):
+        live.directory_for(identifier)
+    assert not Path(config.LIVE.hls_directory).exists()
+
+
+@pytest.mark.parametrize("form", ["uppercase", "compact", "braces"])
+def test_output_directory_preserves_valid_uuid_spellings(live_env, form):
+    identifier = {
+        "uppercase": live_env.task_id.upper(),
+        "compact": live_env.task_id.replace("-", ""),
+        "braces": "{" + live_env.task_id + "}",
+    }[form]
+    assert live.directory_for(identifier) == Path(config.LIVE.hls_directory) / identifier
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "relative", ["session", "master.m3u8", "high", "high/index.m3u8", "high/segment_2.ts"]
+)
+async def test_hls_readiness_and_public_access_reject_symlinks(live_env, tmp_path, relative):
+    directory = live.directory_for(live_env.task_id)
+    write_hls(directory, config.LIVE)
+    link = directory if relative == "session" else directory / relative
+    target = tmp_path / "outside"
+    is_directory = link.is_dir()
+    link.rename(target)
+    link.symlink_to(target, target_is_directory=is_directory)
+    assert not hls_ready(directory, config.LIVE)
+    tracked(live_env)
+    live.update(live_env.task_id, hls_ready=True)
+    if relative in {"high/index.m3u8", "high/segment_2.ts"}:
+        filename = relative
+    else:
+        filename = "high/segment_2.ts" if relative == "high" else "master.m3u8"
+    with pytest.raises(HTTPException) as error:
+        await hls_file(live_env.task_id, filename)
+    assert error.value.status_code == 404
+    assert target.exists()
+
+
+@pytest.mark.parametrize("segment", ["..", ".", "../outside.ts", "/etc/passwd", "index.m3u8"])
+def test_hls_readiness_rejects_non_segment_playlist_entries(live_env, segment):
+    directory = live.directory_for(live_env.task_id)
+    write_hls(directory, config.LIVE)
+    (directory / "high/index.m3u8").write_text(
+        f"#EXTM3U\n#EXTINF:2,\n{segment}\n#EXTINF:2,\n{segment}\n"
+    )
+    assert not hls_ready(directory, config.LIVE)
+
+
+@pytest.mark.parametrize("empty", [False, True], ids=["directory", "empty-file"])
+def test_hls_readiness_requires_nonempty_segment_files(live_env, empty):
+    directory = live.directory_for(live_env.task_id)
+    write_hls(directory, config.LIVE)
+    segment = directory / "high/segment_2.ts"
+    segment.unlink()
+    if empty:
+        segment.write_bytes(b"")
+    else:
+        segment.mkdir()
+    assert not hls_ready(directory, config.LIVE)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["start", "wait", "cleanup"])
+async def test_runtime_rechecks_output_symlinks_before_writes_and_cleanup(
+    live_env, tmp_path, monkeypatch, operation
+):
+    tracked(live_env)
+    runtime = live.LiveRuntime(live_env)
+    runtime.directory.parent.mkdir()
+    target = tmp_path / "outside"
+    target.mkdir()
+    marker = target / "keep.txt"
+    marker.write_text("private data")
+    runtime.directory.symlink_to(target, target_is_directory=True)
+    runtime.stop_process = AsyncMock()
+    runtime.terminate_orphans = AsyncMock()
+    runtime.client.remove_forward = AsyncMock()
+    if operation == "cleanup":
+
+        async def cancel_retry(_):
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr(live.asyncio, "sleep", cancel_retry)
+        with pytest.raises(asyncio.CancelledError):
+            await runtime.cleanup(None)
+        payload = state.get_task_status(live_env.task_id)
+        assert payload["status"] == "running"
+        assert not payload["live"].get("cleanup_complete", False)
+        assert not state.is_available()
+        task.notify_completion.assert_not_awaited()
+    else:
+        with pytest.raises(live.LiveFailure, match="Invalid Live output directory"):
+            if operation == "start":
+                await runtime.start_process()
+            else:
+                await runtime.wait_for_mediamtx()
+    assert marker.read_text() == "private data"
+
+
+def test_runtime_rejects_output_root_changes(live_env, tmp_path):
+    runtime = live.LiveRuntime(live_env)
+    config.LIVE.hls_directory = str(tmp_path / "replacement")
+    with pytest.raises(live.LiveFailure, match="output directory changed"):
+        runtime.checked_directory()
+    assert not Path(config.LIVE.hls_directory).exists()
+
+
 @pytest.mark.asyncio
 async def test_source_codec_rejected_before_ffmpeg(live_env):
     tracked(live_env)

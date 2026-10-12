@@ -11,6 +11,15 @@ time. Instances started from the same `.env` share one Runner MediaMTX service. 
 The [Manager](../../manager/docs/LIVE.md) reserves the instance and provides Pod
 with the complete HLS URL. There are no multiple slots or passthrough mode.
 
+## Contents
+
+- [Architecture and media relay](#architecture-and-media-relay)
+- [Instance configuration](#instance-configuration)
+- [ABR profile and timeouts](#abr-profile-and-timeouts)
+- [Service and HLS exposure](#service-and-hls-exposure)
+- [Stop and recovery](#stop-and-recovery)
+- [Manual validation](#manual-validation)
+
 ## Architecture and media relay
 
 The Manager discovers the encoder's publication through its own MediaMTX
@@ -341,8 +350,8 @@ The three renditions below are built in; set `LIVE_VARIANTS` only to change thei
 names, dimensions or bitrates. Technical settings use fixed defaults: H.264/AAC,
 25 fps, a 50-frame GOP, 2-second segments and six segments per playlist. CPU uses
 `veryfast` and NVENC uses `p4`. Source/startup/stall/stop timeouts are 120/60/20/10 s,
-monitoring runs every 2 s, the restart budget is three attempts, and MediaMTX
-requests time out after 5 s. An enabled CPU fallback is still available after
+monitoring runs every 2 s, the restart budget is three retries after the initial
+attempt, and MediaMTX requests time out after 5 s. An enabled CPU fallback is still available after
 the first observed NVENC failure; the remaining retry budget applies afterward.
 See the [internal defaults and migration](PARAMETERS.md#internal-live-defaults).
 

@@ -273,16 +273,19 @@ measurement is reported as `null` rather than as zero.
   `503`. The Manager returns `503` when no Live-capable Runner is available.
 - Missing sources time out after 120 seconds (internal default). Incompatible
   codecs fail the session. FFmpeg exits or stalled HLS trigger bounded restarts
-  governed by the configured Live retry and timeout settings.
+  governed by the fixed [internal Live defaults](PARAMETERS.md#internal-live-defaults).
 - While MediaMTX or filesystem cleanup is incomplete, the Runner remains busy
   with state `stopping`; availability is restored only after cleanup succeeds.
 - After a Runner restart, interrupted sessions are cleaned up and normally
-  reported as failed. A recorded stop request completes normally. Starting a new
-  automatic broadcast requires the encoder to disconnect and republish; an API
-  client can also request a new session explicitly. The same publication is not
-  automatically restarted after a terminal failure or an explicit stop. The
-  Manager's **Restart session** action can create a new HLS session while the
-  encoder stays connected; it does not reuse the terminal task UUID.
+  reported as failed. A recorded stop request completes normally. If an automatic
+  session ends with `Runner stopped` or `Runner restarted; session stopped safely`,
+  the Manager creates a replacement after cleanup when the same RTMP publication
+  is still active and no explicit stop was requested. The replacement has a new
+  task UUID and HLS URL. Other terminal failures and explicit stops do not trigger
+  a replacement for the same publication: correct the cause, then republish or
+  use the Manager's **Restart session** action while the encoder stays connected.
+  An API client can also request a new session explicitly. See
+  [Manager automatic recovery](../../manager/docs/LIVE.md#automatic-rtmp-to-hls-operation).
 
 For diagnostics and recovery procedures, see
 [Live operations](LIVE.md#stop-and-recovery) and

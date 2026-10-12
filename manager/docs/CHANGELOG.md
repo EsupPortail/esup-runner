@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Show each task's establishment as an accessible, color-coded initials badge in the admin dashboard and task list, with normalized matching and stable fallback colors for unknown establishments.
 - With Live enabled and `LIVE_AUTO_START=true` (the default when enabled), discover accepted RTMP publications without requiring a `LIVE_SOURCES` declaration. Persist private source bindings and broadcaster identifiers across restarts, expose authenticated source discovery, and support optional declarations before publication.
 - For each detected publication, start HLS, retry when Runner capacity becomes available, stop its automatic session when the encoder disconnects, and deduplicate handling across Manager workers and restarts. Keep API-driven starts available when automatic startup is disabled.
 - Show the latest automatic session and its playback status through source discovery; add automatic-session badges in administration.

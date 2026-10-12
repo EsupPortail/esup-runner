@@ -24,6 +24,7 @@ from app.__version__ import __version__
 from app.core.auth import verify_admin, verify_token
 from app.core.config import config
 from app.core.csrf import csrf_template_context, verify_csrf
+from app.core.etab_badges import build_etab_badge
 from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.priorities import would_exceed_other_domain_quota  # noqa: F401
 from app.core.setup_logging import setup_default_logging
@@ -364,6 +365,7 @@ async def view_tasks(
                 "source_url": task.source_url,
                 "created_at": task.created_at,
                 "updated_at": task.updated_at,
+                "etab_badge": build_etab_badge(task.etab_name),
             }
             for task in display_tasks
         ],

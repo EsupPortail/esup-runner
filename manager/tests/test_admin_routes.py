@@ -682,6 +682,8 @@ def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
         created_at="2026-01-02T00:00:00.123456",
         parameters={"video_id": "vid-001", "video_slug": "new-video", "video_title": "New Video"},
     )
+    tasks["t_old"].etab_name = "Université de Lorraine"
+    tasks["t_new"].etab_name = "Université de Montpellier"
 
     admin_client.cookies.set("theme", "dark")
     resp = admin_client.get("/admin")
@@ -694,6 +696,14 @@ def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
     assert "New Video" not in resp.text
     assert "2026-01-02 00:00:00" in resp.text
     assert "2026-01-02T00:00:00.123456" not in resp.text
+    assert "etab-badge-0" in resp.text
+    assert "etab-badge-1" in resp.text
+    assert "UL" in resp.text
+    assert "UM" in resp.text
+    task_id_position = resp.text.index('href="/admin/task/t_new"')
+    copy_button_position = resp.text.index('data-copy-task-id="t_new"')
+    etab_badge_position = resp.text.index("etab-badge-1")
+    assert task_id_position < copy_button_position < etab_badge_position
 
 
 @pytest.mark.parametrize(
@@ -1051,12 +1061,18 @@ def test_admin_tasks_page_renders(admin_client, clean_state):
     runners["r1"] = _make_runner("r1")
     tasks["t1"] = _make_task("t1", "r1", created_at="2026-01-01T00:00:00", status="running")
     tasks["t2"] = _make_task("t2", "r1", created_at="2026-01-01T00:00:01", status="failed")
+    tasks["t1"].etab_name = "La Rochelle Université"
+    tasks["t2"].etab_name = "ESUP-Portail"
 
     resp = admin_client.get("/admin/tasks")
     assert resp.status_code == 200
     assert "Tasks Management" in resp.text
     assert "t1" in resp.text
     assert "t2" in resp.text
+    assert "etab-badge-2" in resp.text
+    assert "etab-badge-4" in resp.text
+    assert "LR" in resp.text
+    assert "EP" in resp.text
 
 
 def test_toggle_theme_redirects_and_sets_cookie(admin_client):

@@ -30,6 +30,7 @@ from app.core import config as config_module
 from app.core.auth import OPENAPI_TOKEN_COOKIE_NAME, build_openapi_cookie_value, verify_admin
 from app.core.config import config
 from app.core.csrf import csrf_template_context, verify_csrf
+from app.core.etab_badges import build_etab_badge
 from app.core.live_config import MEDIAMTX_VERSION
 from app.core.passwords import BcryptPasswordContext
 from app.core.paths import WEB_TEMPLATES_DIR
@@ -686,6 +687,7 @@ async def admin_dashboard(request: Request):
                 "age_label": age_metadata["label"],
                 "age_is_warning": age_metadata["is_warning"],
                 "video_id": params.get("video_id"),
+                "etab_badge": build_etab_badge(getattr(task, "etab_name", None)),
             }
         )
 
@@ -961,7 +963,7 @@ async def admin_tasks(request: Request) -> Any:
     for task in all_tasks_list:
         status_counts[task.status] = status_counts.get(task.status, 0) + 1
 
-    display_tasks = [
+    display_tasks: list[dict[str, Any]] = [
         {
             "id": task.task_id,
             "status": task.status,
@@ -969,6 +971,7 @@ async def admin_tasks(request: Request) -> Any:
             "source_url": task.source_url,
             "created_at": task.created_at,
             "updated_at": task.updated_at,
+            "etab_badge": build_etab_badge(getattr(task, "etab_name", None)),
         }
         for task in all_tasks_list
     ]

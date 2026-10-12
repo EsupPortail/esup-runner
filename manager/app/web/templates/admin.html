@@ -456,13 +456,23 @@
                       </a>
                       <button
                         type="button"
-                        class="btn btn-sm btn-outline-secondary copy-task-id-btn me-2"
+                        class="btn btn-sm btn-outline-secondary copy-task-id-btn me-1"
                         data-copy-task-id="{{ task.id }}"
                         aria-label="Copy task ID {{ task.id }}"
                         title="Copy task ID"
                         data-bs-toggle="tooltip">
                         <i class="bi bi-clipboard" aria-hidden="true"></i>
                       </button>
+                      {% if task.etab_badge %}
+                        <span
+                          class="etab-badge {{ task.etab_badge.color_class }}"
+                          title="{{ task.etab_badge.name }}"
+                          data-bs-toggle="tooltip"
+                          role="img"
+                          aria-label="Establishment: {{ task.etab_badge.name }}">
+                          {{ task.etab_badge.initials }}
+                        </span>
+                      {% endif %}
                       {% if task.video_id %}
                         <span class="d-inline-flex align-items-center gap-1 ms-1 text-subtle task-video-id">
                           <span class="flex-shrink-0" title="Video ID" data-bs-toggle="tooltip" aria-label="Video ID">

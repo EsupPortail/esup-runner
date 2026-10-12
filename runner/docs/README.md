@@ -209,5 +209,5 @@ Legacy alias for logs is still supported: `LOG_DIRECTORY`.
 
 See [TYPE_LIVE.md](TYPE_LIVE.md) for the task contract, request examples and HLS outputs.
 See [LIVE.md](LIVE.md) for explicit `live` declarations in `runner/.env`, mixed or grouped instances, MediaMTX, adaptive transcoding and recovery.
-For native or Docker installation of MediaMTX 1.21.1 on CPU/GPU machines, see
+For native or Docker installation of MediaMTX >= 1.21.1 on CPU/GPU machines, see
 [MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md), which links to the shared Manager guide.

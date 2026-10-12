@@ -352,3 +352,30 @@ Boolean values accept common forms: `true/false`, `1/0`, `yes/no`, `on/off`.
 ## Related docs
 - Full environment variable reference: [docs/PARAMETERS.md](PARAMETERS.md)
 - Operations runbook: [docs/OPERATIONS.md](OPERATIONS.md)
+
+## Live streaming
+
+With `LIVE_ENABLED=true`, `LIVE_AUTO_START=true` (default) makes publishing RTMP
+accepted by the Manager's MediaMTX sufficient to start HLS on an available Live
+Runner. `LIVE_SOURCES` optionally declares broadcaster/path bindings; each ID
+must match the final RTMP path component (the public broadcaster name). It does
+not filter publications. Discovered identifiers and private paths persist in
+`MANAGER_DATA_DIR/.live-sources.json`. Set `LIVE_AUTO_START=false` for exclusively API-driven sessions.
+`LIVE_AUTO_ETAB_NAME` sets the fallback establishment for automatic session
+statistics. An RTMP publication can override it with the URL query parameter
+`etablishment`; the value is URL-decoded and recorded as the task requester.
+For MediaMTX diagnostics in administration, configure either
+`LIVE_MEDIAMTX_LOG_UNIT` (a service in the Manager's systemd user journal) or
+`LIVE_MEDIAMTX_LOG_FILE` (an absolute path to a readable plain log). MediaMTX must
+use `logLevel: info`; see [Live diagnostics](LIVE.md#live-diagnostics-in-the-log-viewer).
+
+See [LIVE.md](LIVE.md) for Live Runner reservations, MediaMTX, the dynamic `hls_url` contract for Pod and multi-instance deployments.
+
+### Simplified Live setup
+
+After preparing MediaMTX, run the [connection helper](MEDIAMTX_SETUP.md#6-connect-the-applications-and-verify)
+to populate the installation-specific credentials in the existing application
+`.env`. Keep only operator choices that differ from defaults. Technical Live
+timeouts and media tuning are internal defaults, documented in
+[PARAMETERS.md](PARAMETERS.md#internal-live-defaults), and are no longer read from
+`LIVE_*` environment overrides. No additional application environment file is needed.

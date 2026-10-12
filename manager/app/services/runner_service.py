@@ -42,6 +42,10 @@ async def check_runners_activity(
             if current_runner is None:
                 continue
             if now - current_runner.last_heartbeat > timedelta(minutes=1):
+                if current_runner.live_task_id:
+                    current_runner.status = "offline"
+                    runners[runner_id] = current_runner
+                    continue
                 del runners[runner_id]
                 logger.info(f"Runner {runner_id} removed due to inactivity")
 

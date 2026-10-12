@@ -1,0 +1,75 @@
+# Copy and customize the two MediaMTX YAML examples before starting.
+# A different Compose project name gives another independent Manager/Runner pair.
+services:
+  manager:
+    build: ../../manager
+    env_file: ./manager.env
+    environment:
+      MANAGER_HOST: manager
+      MANAGER_BIND_HOST: 0.0.0.0
+      MANAGER_PORT: "8081"
+      MANAGER_DATA_DIR: /app/data
+      LIVE_ENABLED: "true"
+      LIVE_MEDIAMTX_API_URL: http://manager-media:9997
+      LIVE_MEDIAMTX_LOG_FILE: /var/log/mediamtx/mediamtx.log
+    ports:
+      - "${MANAGER_BIND_IP:-127.0.0.1}:${MANAGER_HTTP_PORT:-8081}:8081"
+    volumes:
+      - manager-data:/app/data
+      - manager-logs:/var/log/esup-runner
+      - manager-media-logs:/var/log/mediamtx:ro
+    depends_on: [manager-media]
+    stop_grace_period: 45s
+    restart: unless-stopped
+  manager-media:
+    image: bluenviron/mediamtx:1.21.1
+    environment:
+      MTX_RTMPADDRESS: :1935
+      MTX_APIADDRESS: :9997
+      MTX_METRICSADDRESS: :9998
+      MTX_LOGLEVEL: info
+      MTX_LOGSTRUCTURED: "false"
+      MTX_LOGDESTINATIONS: stdout,file
+      MTX_LOGFILE: /var/log/esup-runner/mediamtx.log
+    ports:
+      - "${RTMP_BIND_IP:-127.0.0.1}:${MANAGER_RTMP_PORT:-1935}:1935"
+    volumes:
+      - ./manager-mediamtx.yml:/mediamtx.yml:ro
+      - manager-media-logs:/var/log/esup-runner
+    restart: unless-stopped
+  runner:
+    build: ../../runner
+    env_file: ./runner.env
+    environment:
+      RUNNER_HOST: runner
+      RUNNER_BASE_PORT: "8082"
+      RUNNER_TASK_TYPES: "[1x(live)]"
+      RUNNER_INSTANCES: "1"
+      MANAGER_URL: http://manager:8081
+      LIVE_MEDIAMTX_API_URL: http://runner-media:9997
+      LIVE_HLS_DIRECTORY: /dev/shm/hls
+    # Shared by all Live workers in this container; tune for simultaneous streams.
+    shm_size: "256mb"
+    ports:
+      - "${RUNNER_BIND_IP:-127.0.0.1}:${RUNNER_HTTP_PORT:-8082}:8082"
+    volumes:
+      - runner-data:/tmp/esup-runner
+      - runner-logs:/var/log/esup-runner
+    depends_on: [manager, runner-media]
+    stop_grace_period: 45s
+    restart: unless-stopped
+  runner-media:
+    image: bluenviron/mediamtx:1.21.1
+    environment:
+      MTX_RTMPADDRESS: :1935
+      MTX_APIADDRESS: :9997
+      MTX_METRICSADDRESS: :9998
+    volumes:
+      - ./runner-mediamtx.yml:/mediamtx.yml:ro
+    restart: unless-stopped
+volumes:
+  manager-data:
+  manager-logs:
+  manager-media-logs:
+  runner-data:
+  runner-logs:

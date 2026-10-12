@@ -44,6 +44,13 @@ class BackgroundServiceManager:
             ("reconcile_running_tasks_with_runners", reconcile_running_tasks_with_runners()),
         ]
 
+        from app.core.config import config
+
+        if config.LIVE.enabled:
+            from app.services.live_service import reconcile_forever
+
+            services.append(("reconcile_live_sessions", reconcile_forever()))
+
         for name, service in services:
             task = asyncio.create_task(service, name=name)
             self.tasks.append(task)

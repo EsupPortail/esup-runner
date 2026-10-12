@@ -136,7 +136,8 @@ def _sanitize_task_payload_for_persistence(
         return None
 
     status = str(task_payload.get("status", "")).strip().lower()
-    if status not in _RECOVERABLE_TASK_STATUSES:
+    is_live = isinstance(task_payload.get("live"), dict)
+    if status not in _RECOVERABLE_TASK_STATUSES and not (is_live and status == "completed"):
         return None
 
     compact_payload: Dict[str, Any] = {
@@ -146,6 +147,8 @@ def _sanitize_task_payload_for_persistence(
 
     _copy_persisted_string_fields(compact_payload, task_payload)
     _copy_persisted_positive_int_fields(compact_payload, task_payload)
+    if is_live:
+        compact_payload["live"] = dict(task_payload["live"])
 
     restart_attempts = _normalize_non_negative_int(task_payload.get("recovery_restart_attempts"))
     if restart_attempts:
@@ -196,8 +199,13 @@ def _resolve_task_status_file() -> Path:
     )
 
 
-def _persist_task_statuses() -> None:
-    """Persist runner task statuses atomically to disk."""
+def _persist_task_statuses(*, strict: bool = False) -> None:
+    """Persist compact task statuses atomically to the instance's status file.
+
+    By default, log write failures and retain in-memory state. With strict=True,
+    propagate failures so Live callers cannot acknowledge an unpersisted change.
+    Files containing Live metadata are restricted to the service account.
+    """
     with _RUNNER_STATE_LOCK:
         task_statuses = _RUNNER_STATE.get("task_statuses", {})
         if not isinstance(task_statuses, dict):
@@ -226,17 +234,30 @@ def _persist_task_statuses() -> None:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path = file_path.with_name(f".{file_path.name}.tmp")
             with open(tmp_path, "w", encoding="utf-8") as f:
+                if strict or any("live" in payload for payload in compact_task_statuses.values()):
+                    os.chmod(tmp_path, 0o600)
                 json.dump(compact_task_statuses, f, ensure_ascii=False, indent=2)
                 f.write("\n")
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, file_path)
         except Exception:
+            if strict:
+                raise
             # Best-effort persistence: runtime logic should still work in-memory.
             logger.warning(
                 "Failed to atomically persist runner task statuses; keeping in-memory state"
             )
             return
+
+
+def persist_live_checkpoint() -> None:
+    """Persist a strict task checkpoint before acknowledging Live progress.
+
+    Propagate storage errors to the caller so dispatch and cleanup cannot be
+    acknowledged until their state has been written successfully.
+    """
+    _persist_task_statuses(strict=True)
 
 
 def _load_task_statuses_from_disk() -> None:

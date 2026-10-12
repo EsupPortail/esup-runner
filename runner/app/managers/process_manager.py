@@ -308,15 +308,20 @@ class UvicornProcessManager:
             logger.info("Instance monitoring stopped")
 
     def wait_for_termination(self) -> None:
+        """Wait for workers, unwinding signal handlers before logging or cleanup.
+
+        The first termination signal interrupts the wait; subsequent signals are
+        ignored while cleanup runs to prevent recursive shutdown and log writes.
         """
-        Wait for all processes to complete (typically until interrupted).
-        """
+        received_signal = None
         try:
-            # Set up signal handlers for graceful shutdown
+
             def signal_handler(signum, frame):
-                logger.info(f"Received signal {signum}, shutting down…")
-                self.stop_all_instances()
-                sys.exit(0)
+                """Interrupt the wait once without logging or cleaning up in the handler."""
+                nonlocal received_signal
+                if received_signal is None:
+                    received_signal = signum
+                    raise KeyboardInterrupt
 
             signal.signal(signal.SIGINT, signal_handler)
             signal.signal(signal.SIGTERM, signal_handler)
@@ -326,5 +331,10 @@ class UvicornProcessManager:
                 process.join()
 
         except KeyboardInterrupt:
-            logger.info("Keyboard interrupt received, shutting down…")
+            if received_signal is None:
+                logger.info("Keyboard interrupt received, shutting down…")
+            else:
+                logger.info("Received signal %s, shutting down…", received_signal)
             self.stop_all_instances()
+            if received_signal is not None:
+                sys.exit(0)

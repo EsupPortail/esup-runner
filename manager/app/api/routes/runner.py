@@ -259,5 +259,8 @@ async def runner_heartbeat(
         if normalized_availability in {"available", "busy"}:
             runner.availability = normalized_availability
 
+    if "live" in runner.task_types:
+        runner.status = "online"
+
     runners[runner_id] = runner
     return {"status": "ok"}

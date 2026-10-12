@@ -273,8 +273,14 @@ def test_restart_instance_status_monitor_and_wait(monkeypatch):
     monkeypatch.setattr(
         process_manager_module.sys, "exit", lambda code: (_ for _ in ()).throw(SystemExit(code))
     )
+
+    class SignalledProcess:
+        def join(self):
+            captured_handlers[signal.SIGTERM](signal.SIGTERM, None)
+
+    manager.processes = [SignalledProcess()]
     with pytest.raises(SystemExit):
-        captured_handlers[signal.SIGTERM](signal.SIGTERM, None)
+        manager.wait_for_termination()
     assert stopped["called"] is True
 
 
@@ -382,6 +388,8 @@ async def test_storage_cleanup_loop_runs_initial_periodic_and_cancel(monkeypatch
     """Validate Storage cleanup loop runs initial periodic and cancel."""
     monkeypatch.setattr(service_manager_module.config, "MAX_FILE_AGE_DAYS", 3)
     monkeypatch.setattr(service_manager_module.config, "CLEANUP_INTERVAL_HOURS", 1)
+    monkeypatch.setattr(service_manager_module.config, "RUNNER_TASK_TYPES", {"encoding"})
+    monkeypatch.setattr(service_manager_module.config, "RUNNER_TASK_TYPES_BY_INSTANCE", [])
 
     cleanup_calls = []
 
@@ -409,6 +417,8 @@ async def test_storage_cleanup_loop_handles_initial_and_periodic_errors(monkeypa
     """Validate Storage cleanup loop handles initial and periodic errors."""
     monkeypatch.setattr(service_manager_module.config, "MAX_FILE_AGE_DAYS", 5)
     monkeypatch.setattr(service_manager_module.config, "CLEANUP_INTERVAL_HOURS", 1)
+    monkeypatch.setattr(service_manager_module.config, "RUNNER_TASK_TYPES", {"encoding"})
+    monkeypatch.setattr(service_manager_module.config, "RUNNER_TASK_TYPES_BY_INSTANCE", [])
 
     cleanup_calls = {"count": 0}
 
@@ -434,6 +444,8 @@ async def test_storage_cleanup_loop_handles_initial_and_periodic_errors(monkeypa
 @pytest.mark.asyncio
 async def test_background_service_manager_start_stop_and_status(monkeypatch):
     """Validate Background service manager start stop and status."""
+    monkeypatch.setattr(service_manager_module.config, "ENCODING_TYPE", "CPU")
+    monkeypatch.setattr(service_manager_module.config.LIVE, "pod_url", "")
 
     async def sleeper():
         await asyncio.sleep(10)

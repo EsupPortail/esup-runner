@@ -2,7 +2,9 @@
 
 This document is the entry point for deploying a GPU-capable FFmpeg stack for the runner.
 
-Use this for `ENCODING_TYPE=GPU`.
+Use this for VOD `ENCODING_TYPE=GPU` or Live `LIVE_TRANSCODER=nvenc`.
+Live backend selection is independent of `ENCODING_TYPE`; its optional
+`LIVE_NVDEC` setting controls hardware decoding, while scaling stays on CPU.
 For CPU-only mode, install distribution FFmpeg:
 
 ```bash

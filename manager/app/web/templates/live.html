@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>Live Monitoring - ESUP-Runner</title>
+  <link rel="icon" type="image/png" href="{{ root_path }}/static/favicon.png?version={{ version }}">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ root_path }}/static/esup-runner.css?version={{ version }}">
+  <script src="{{ root_path }}/static/esup-runner.js?version={{ version }}" defer></script>
+  <script src="{{ root_path }}/static/live.js?version={{ version }}" defer></script>
+</head>
+<body class="container py-4" data-bs-theme="{% if dark_mode_enabled %}dark{% else %}light{% endif %}">
+  <header class="row mb-4">
+    <div class="col">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+          <h1 class="h2 mb-2"><i class="bi bi-broadcast text-primary" aria-hidden="true"></i> Live Monitoring</h1>
+          <p class="text-subtle mb-0">Sources, playback and runner capacity · Updated {{ last_update }}</p>
+        </div>
+        <nav class="text-end" aria-label="Live navigation">
+          <div class="btn-group">
+            <a href="{{ root_path }}/admin" class="btn btn-outline-secondary">
+              <i class="bi bi-arrow-left" aria-hidden="true"></i>
+              Back to Dashboard
+            </a>
+            <a href="{{ root_path }}/logs/?search=%5BLIVE%5D" class="btn btn-outline-secondary">
+              <i class="bi bi-broadcast" aria-hidden="true"></i>
+              Live diagnostics
+            </a>
+            <button id="refreshBtn" type="button" class="btn btn-primary">
+              <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+              Refresh
+            </button>
+          </div>
+        </nav>
+      </div>
+    </div>
+  </header>
+  <main>
+    {% set state_colors = {'running': 'success', 'failed': 'danger', 'completed': 'secondary', 'stopping': 'warning', 'waiting_source': 'warning', 'starting': 'info', 'pending': 'secondary'} %}
+    {% if stop_feedback %}
+    <div class="alert alert-info" role="status">Stop requested. The runner remains reserved until cleanup is confirmed.</div>
+    {% endif %}
+    {% if restart_feedback %}
+    <div class="alert alert-success" role="status">Restart requested. A new session and HLS URL are being created; the encoder can keep publishing.</div>
+    {% endif %}
+    {% if restart_error %}
+    <div class="alert alert-warning" role="alert">{{ restart_error }}</div>
+    {% endif %}
+    {% if not overview.enabled %}
+    <div class="alert alert-warning" role="status">Live is disabled on this Manager. Existing session records remain visible.</div>
+    {% endif %}
+    <section class="row g-3 mb-4" aria-label="Live overview">
+      {% for label, value, detail, icon, color in [
+        ('Active sessions', overview.active_count, 'Includes waiting, starting and stopping', 'bi-broadcast', 'primary'),
+        ('Playback ready', overview.ready_count, 'Recently confirmed by runner', 'bi-play-circle', 'success'),
+        ('Available runners', overview.available_count ~ ' / ' ~ overview.workers|length, 'Online Live workers with a free slot', 'bi-pc-display-horizontal', 'info'),
+        ('Needs attention', overview.attention_count, 'Active sessions with stale data or errors', 'bi-exclamation-triangle', 'warning')
+      ] %}
+      <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card h-100 border-0 shadow-sm live-stat-card live-stat-{{ color }}">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <span class="live-stat-icon rounded-3 bg-{{ color }}-subtle text-{{ color }}-emphasis"><i class="bi {{ icon }}" aria-hidden="true"></i></span>
+              <h2 class="h6 text-subtle mb-0">{{ label }}</h2>
+            </div>
+            <p class="display-6 fw-semibold text-{{ color }}-emphasis mb-1">{{ value }}</p>
+            <p class="small text-subtle mb-0">{{ detail }}</p>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </section>
+
+    <section class="card border-0 shadow-sm mb-4" aria-labelledby="mediamtx-title">
+      <div class="card-body">
+        <h2 class="h5 mb-3" id="mediamtx-title"><i class="bi bi-hdd-network text-primary me-1" aria-hidden="true"></i> MediaMTX status</h2>
+        {% set manager_media_status = overview.manager_mediamtx %}
+        {% set media_status_colors = {'healthy': 'success', 'unavailable': 'danger', 'disabled': 'secondary', 'unknown': 'warning'} %}
+        <div class="d-flex flex-wrap align-items-center gap-3">
+          <strong>Manager instance</strong>
+          <span class="badge text-bg-{{ media_status_colors[manager_media_status.status] }}">{{ manager_media_status.status }}</span>
+          {% if manager_media_status.error %}<span class="small text-subtle">{{ manager_media_status.error }}</span>{% else %}<span class="small text-subtle">Control API responding</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="card border-0 shadow-sm mb-4" aria-labelledby="workers-title">
+      <div class="card-body">
+        <h2 class="h5 mb-3" id="workers-title"><i class="bi bi-pc-display-horizontal text-primary me-1" aria-hidden="true"></i> Live runners <small class="text-subtle fw-normal">({{ overview.workers|length }})</small></h2>
+        <p class="small text-subtle">Each worker has one slot. Mixed workers may also be occupied by encoding, studio or transcription.</p>
+        <div class="table-responsive"><table class="table table-hover align-middle live-monitoring-table mb-0">
+          <thead><tr><th scope="col">Runner</th><th scope="col">Types</th><th scope="col">Capacity</th><th scope="col">MediaMTX</th><th scope="col">Heartbeat</th><th scope="col">Reserved Live</th></tr></thead>
+          <tbody>{% for worker in overview.workers %}
+            <tr><td><a href="{{ root_path }}/admin/runner/{{ worker.id|urlencode }}">{{ worker.id }}</a></td>
+              <td><i class="bi bi-broadcast" aria-hidden="true"></i> {{ worker.task_types|join(', ') }}</td>
+              <td>{% if not worker.online %}<span class="badge text-bg-danger">Offline</span>{% elif worker.available %}<span class="badge text-bg-success">Available</span>{% else %}<span class="badge text-bg-warning">Reserved / {{ worker.availability }}</span>{% endif %}</td>
+              <td>{% set media_status = worker.mediamtx %}<span class="badge text-bg-{{ media_status_colors[media_status.status] }}">{{ media_status.status }}</span>{% if media_status.error %}<div class="small text-subtle mt-1">{{ media_status.error }}</div>{% endif %}</td>
+              <td>{% if worker.age_seconds is none %}Unknown{% else %}{{ worker.age_seconds }} s ago{% endif %}</td>
+              <td>{% if worker.session_id %}<a href="{{ root_path }}/admin/task/{{ worker.session_id|urlencode }}">{{ worker.session_id }}</a>{% else %}None{% endif %}</td></tr>
+          {% else %}<tr><td colspan="6" class="text-subtle">No Live-capable runners registered.</td></tr>{% endfor %}</tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <p id="live-refresh-status" class="small text-subtle mb-0" role="status">Refresh every 15 seconds. Pause refresh to inspect session details.</p>
+      <button type="button" id="live-refresh-toggle" class="btn btn-sm btn-outline-secondary" aria-pressed="false">Pause refresh</button>
+    </div>
+
+    <section class="card border-0 shadow-sm mb-4" aria-labelledby="sessions-title">
+      <div class="card-body">
+        <h2 class="h5 mb-3" id="sessions-title"><i class="bi bi-broadcast text-primary me-1" aria-hidden="true"></i> Sessions <span class="badge rounded-pill bg-primary-subtle text-primary-emphasis">{{ filtered_count }}</span></h2>
+        <form action="{{ root_path }}/admin/live" method="get" class="row g-2 align-items-end bg-body-tertiary rounded-3 p-3 mx-0 mb-3">
+          {% if source_filter %}<input type="hidden" name="source_filter" value="{{ source_filter }}">{% endif %}
+          <div class="col-12 col-md-3">
+            <label for="live-state" class="form-label">State</label>
+            <select id="live-state" name="state_filter" class="form-select">
+              {% for value, label in [('all', 'All sessions'), ('active', 'Active sessions'), ('pending', 'Pending'), ('waiting_source', 'Waiting for source'), ('starting', 'Starting'), ('running', 'Running'), ('stopping', 'Stopping'), ('completed', 'Completed'), ('failed', 'Failed')] %}
+              <option value="{{ value }}" {% if state_filter == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-6">
+            <label for="live-search" class="form-label">Search broadcaster, source, event, session, runner or establishment</label>
+            <input id="live-search" type="search" name="search" class="form-control" maxlength="200" value="{{ search }}">
+          </div>
+          <div class="col-12 col-md-3 d-flex gap-2">
+            <button class="btn btn-primary" type="submit">Filter</button>
+            <a class="btn btn-outline-secondary" href="{{ root_path }}/admin/live">Reset</a>
+          </div>
+        </form>
+        {% if source_filter %}<p class="small text-subtle">Showing sessions for source <code>{{ source_filter }}</code>.</p>{% endif %}
+        <p class="small text-subtle">Active sessions appear first. Signal and counters are the last runner report. Codecs and resolution are the last known values for this session. Stale reports suppress the playback link.</p>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle live-monitoring-table">
+            <caption>Retained Live sessions · {{ overview.failed_count }} failed · {{ overview.sessions|length }} total.</caption>
+            <thead><tr><th scope="col">Broadcaster</th><th scope="col">State / freshness</th><th scope="col">Runner</th><th scope="col">Start / end</th><th scope="col">Input</th><th scope="col">Playback / actions</th></tr></thead>
+            <tbody>
+              {% for row in sessions %}
+              <tr data-live-state="{{ row.state }}"{% if row.attention %} class="live-needs-attention"{% endif %}>
+                <td class="text-break">
+                  <strong>{{ row.broadcaster or 'Not available' }}</strong>
+                  <div class="small text-subtle">{{ row.etab_name }}</div>
+                  {% if row.automatic %}<span class="badge bg-primary-subtle text-primary-emphasis">Automatic RTMP</span>{% endif %}
+                  <details class="small mt-2">
+                    <summary>Session details</summary>
+                    <dl class="mt-2 mb-0">
+                      <dt>ID</dt><dd><a href="{{ root_path }}/admin/task/{{ row.id|urlencode }}">{{ row.id }}</a></dd>
+                      <dt>Source ID</dt><dd><code class="text-break">{{ row.source_id }}</code></dd>
+                      <dt>Event ID</dt><dd><code class="text-break">{{ row.event_id }}</code></dd>
+                      <dt>Equipment</dt><dd>{{ row.equipment or 'Not provided' }}</dd>
+                      <dt>Created</dt><dd>{{ row.created_at }}</dd>
+                      <dt>Elapsed session time</dt><dd>{{ row.duration_seconds if row.duration_seconds is not none else 'Unknown' }} s (includes waiting and cleanup)</dd>
+                      <dt>Last runner report</dt><dd>{{ row.last_seen or 'No report yet' }}</dd>
+                      <dt>Received / forwarded</dt><dd>{{ '%.2f'|format(row.input_mib) }} / {{ '%.2f'|format(row.forward_mib) }} MiB</dd>
+                    </dl>
+                  </details>
+                </td>
+                <td>
+                  <span class="badge text-bg-{{ state_colors[row.state] }}">{{ row.state|replace('_', ' ') }}</span>
+                  {% if row.stale %}<div class="small text-warning mt-1">Stale / unconfirmed</div>{% endif %}
+                  <div class="small text-subtle">{% if row.age_seconds is none %}No runner report{% else %}Reported {% if row.age_seconds < 60 %}{{ row.age_seconds }} s{% else %}{{ format_duration(row.age_seconds) }}{% endif %} ago{% endif %}</div>
+                  {% if row.error %}<p class="small text-danger text-break mt-1 mb-0">{{ row.error }}</p>{% endif %}
+                  {% if row.transcode_errors %}<div class="small text-warning">Transcode errors: {{ row.transcode_errors }}</div>{% endif %}
+                </td>
+                <td class="text-break"><a href="{{ root_path }}/admin/runner/{{ row.runner_id|urlencode }}">{{ row.runner_id }}</a></td>
+                <td class="small text-nowrap">
+                  <div>Start: {% if row.created_at %}<time datetime="{{ row.created_at }}">{{ format_datetime(row.created_at) }}</time>{% else %}Unknown{% endif %}</div>
+                  <div>End: {% if row.active %}Ongoing{% elif row.ended_at %}<time datetime="{{ row.ended_at }}">{{ format_datetime(row.ended_at) }}</time>{% else %}Unknown{% endif %}</div>
+                </td>
+                <td>
+                  <span class="small">{% if row.source_ready %}Signal present{% else %}Signal absent{% endif %}{% if not row.active or row.stale %} (last report){% endif %}</span>
+                  <div>{{ '%.3f'|format(row.input_mbps) }} Mbit/s</div>
+                  <div class="small text-subtle"><i class="bi bi-people" aria-hidden="true"></i> {% if row.hls_sessions is none %}Viewers unavailable{% else %}~{{ row.hls_sessions }} {{ 'viewer' if row.hls_sessions == 1 else 'viewers' }} (by IP){% endif %}</div>
+                  <div class="small text-subtle text-nowrap">{{ row.codecs|join(', ') or 'Codecs unknown' }} · {{ row.resolutions|join(', ') or 'Resolution unknown' }}</div>
+                </td>
+                <td>
+                  {% if row.hls_url %}<a href="{{ row.hls_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success mb-2"><i class="bi bi-play-circle" aria-hidden="true"></i> Open HLS playlist</a>
+                  {% else %}<div class="small text-subtle mb-2">HLS unavailable</div>{% endif %}
+                  {% if row.active %}
+                  <form method="post" action="{{ root_path }}/admin/live/{{ row.id|urlencode }}/stop" data-live-action="stop" data-live-source="{{ row.source_id }}" data-live-id="{{ row.id }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit" {% if row.stop_requested %}disabled{% endif %}>
+                      <i class="bi bi-stop-circle" aria-hidden="true"></i> {% if row.stop_requested %}Stop pending{% else %}Stop session{% endif %}
+                    </button>
+                  </form>
+                  {% endif %}
+                  {% if row.can_restart %}
+                  <form method="post" action="{{ root_path }}/admin/live/{{ row.id|urlencode }}/restart" data-live-action="restart" data-live-source="{{ row.source_id }}" data-live-id="{{ row.id }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="btn btn-sm btn-outline-primary" type="submit">
+                      <i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Restart session
+                    </button>
+                    <div class="small text-subtle mt-1">Requires an active RTMP source. Creates a new HLS URL.</div>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}<tr><td colspan="6" class="text-center text-subtle py-4">No Live sessions match these filters. {% if overview.auto_start %}Publish RTMP to this Manager's MediaMTX to start a session automatically.{% else %}Start a session from your client application using a known source.{% endif %}</td></tr>{% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <nav class="d-flex justify-content-between align-items-center" aria-label="Session pages">
+          <span class="small text-subtle">Page {{ page }} / {{ page_count }} · Up to 50 sessions per page</span>
+          <div class="d-flex gap-2">
+            {% if page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ root_path }}/admin/live?{{ filter_query }}&amp;page={{ page - 1 }}">Previous</a>{% endif %}
+            {% if page < page_count %}<a class="btn btn-sm btn-outline-secondary" href="{{ root_path }}/admin/live?{{ filter_query }}&amp;page={{ page + 1 }}">Next</a>{% endif %}
+          </div>
+        </nav>
+      </div>
+    </section>
+
+    <details class="bg-body-tertiary rounded-3 p-3 mb-4"><summary><i class="bi bi-camera-video text-primary me-1" aria-hidden="true"></i> Active and recent sources ({{ overview.sources|length }})</summary>
+      <p class="small text-subtle mt-2">Each source is identified by its broadcaster name. Shows current publishers, retained-session sources and declared sources. A new publisher on the same RTMP path replaces the previous input. Historical sources disappear when their last session is removed. Full RTMP paths and credentials are never listed.</p>
+      {% if overview.source_observation_unavailable %}<p class="small text-warning" role="status">Current RTMP publications could not be verified. Known sources are temporarily shown; their presence does not confirm an active signal.</p>{% endif %}
+      <p id="live-source-copy-status" class="small text-subtle" role="status" aria-live="polite"></p>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <caption>RTMP signal is observed at page refresh. Session state and establishment/equipment describe the latest retained session.</caption>
+          <thead><tr><th scope="col">Broadcaster</th><th scope="col">Establishment / equipment</th><th scope="col">RTMP signal</th><th scope="col">Latest session</th><th scope="col">Actions</th></tr></thead>
+          <tbody>
+            {% for source in overview.source_rows %}
+            {% set latest = source.latest_session %}
+            <tr>
+              <td class="text-break">
+                <div class="d-flex align-items-center gap-2">
+                  <strong id="live-source-id-{{ source.id }}" tabindex="-1">{{ source.label }}</strong>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-live-source="{{ source.id }}" aria-label="Copy broadcaster name {{ source.id }}" title="Copy broadcaster name"><i class="bi bi-clipboard" aria-hidden="true"></i></button>
+                </div>
+              </td>
+              <td class="text-break">
+                <strong>{{ latest.etab_name if latest and latest.etab_name else 'Not provided' }}</strong>
+                <div class="small">Equipment: {{ latest.equipment if latest and latest.equipment else 'Not provided' }}</div>
+                {% if latest %}<div class="small text-subtle">{% if latest.active %}From latest session{% else %}Historical · from latest session{% endif %}</div>{% endif %}
+              </td>
+              <td>
+                {% if source.publishing is sameas true %}<span class="badge text-bg-success">Present</span>
+                {% elif source.publishing is sameas false %}<span class="badge text-bg-secondary">Absent</span>
+                {% else %}<span class="badge text-bg-warning">Not verified</span>{% endif %}
+              </td>
+              <td>
+                {% if latest %}
+                <a href="{{ root_path }}/admin/task/{{ latest.id|urlencode }}"><span class="badge text-bg-{{ state_colors[latest.state] }}">{{ latest.state|replace('_', ' ') }}</span></a>
+                <div class="small text-subtle mt-1">Created <time datetime="{{ latest.created_at }}">{{ latest.created_at|replace('T', ' ') }}</time></div>
+                {% if latest.stale %}<div class="small text-warning">Last runner report unconfirmed</div>{% endif %}
+                {% else %}<span class="small text-subtle">No retained session</span>{% endif %}
+              </td>
+              <td><a class="btn btn-sm btn-outline-primary" href="{{ root_path }}/admin/live?{{ source.filter_query }}">View sessions</a></td>
+            </tr>
+            {% else %}<tr><td colspan="5" class="text-center text-subtle py-3">No active or recent sources.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import List, Optional, Set
 from urllib.parse import urlparse
 
-SUPPORTED_TASK_TYPES = frozenset({"encoding", "studio", "transcription"})
+from app.core.live_config import LiveSettings
+
+SUPPORTED_TASK_TYPES = frozenset({"encoding", "studio", "transcription", "live"})
 SUPPORTED_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 DEFAULT_SERVICE_USER = "esup-runner"
 SUPPORTED_STUDIO_PRESETS = frozenset(
@@ -178,7 +180,11 @@ def _load_environment_variables() -> None:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(current_dir)
     grandparent_dir = os.path.dirname(parent_dir)
-    env_path = os.path.join(grandparent_dir, ".env")
+    env_path = (
+        os.getenv("CONFIG_ENV_PATH")
+        or os.getenv("ENV_FILE")
+        or os.path.join(grandparent_dir, ".env")
+    )
 
     if os.path.exists(env_path):
         try:
@@ -357,6 +363,43 @@ class Config:
         self._load_storage_configuration()
         self._load_notification_configuration()
         self._load_business_configuration()
+        self._load_live_configuration()
+
+    def _load_live_configuration(self) -> None:
+        """Resolve HLS templates using the worker index and actual listening port.
+
+        Without a public URL override, reuse the Runner's protocol and host.
+        Before workers start, the launcher represents the first Live instance
+        and validates every declared Live instance with its planned port.
+        """
+        try:
+            self._live_template = LiveSettings.from_environment()
+            if not self._live_template.public_hls_base_url:
+                host = self.RUNNER_HOST
+                if ":" in host and not host.startswith("["):
+                    host = f"[{host}]"
+                self._live_template.public_hls_base_url = (
+                    f"{self.RUNNER_PROTOCOL}://{host}:{{port}}/hls"
+                )
+            first_live = next(
+                (
+                    i
+                    for i, types in enumerate(self.RUNNER_TASK_TYPES_BY_INSTANCE)
+                    if "live" in types
+                ),
+                0,
+            )
+            instance_id = self._read_int(
+                "RUNNER_INSTANCE_ID", first_live, min_value=0, max_value=self.RUNNER_INSTANCES - 1
+            )
+            port = self._read_int(
+                "RUNNER_PORT", self.RUNNER_BASE_PORT + instance_id, min_value=1, max_value=65535
+            )
+            self.LIVE = self._live_template.for_instance(instance_id, port)
+        except ValueError:
+            self._live_template = LiveSettings()
+            self.LIVE = LiveSettings()
+            self._configuration_errors.append("Invalid LIVE configuration")
 
     def _load_network_configuration(self) -> None:
         """Load runner and manager network addressing settings."""
@@ -539,6 +582,10 @@ class Config:
         self.ENCODING_TYPE: str = os.getenv("ENCODING_TYPE", "CPU").upper()
 
         # # # Specifics settings for GPU encoding # # #
+        # Periodic NVIDIA driver health check (0 disables monitoring)
+        self.GPU_HEALTH_CHECK_INTERVAL_HOURS: int = self._read_int(
+            "GPU_HEALTH_CHECK_INTERVAL_HOURS", 12, min_value=0
+        )
         # HWACCEL_DEVICE parameter for GPU encoding (Ex: 0)
         self.GPU_HWACCEL_DEVICE: int = self._read_int("GPU_HWACCEL_DEVICE", 0, min_value=0)
         # CUDA_VISIBLE_DEVICES parameter for GPU encoding (Ex: 0,1)
@@ -586,6 +633,7 @@ class Config:
             self._validate_studio_defaults,
             self._validate_paths,
             self._validate_gpu,
+            self._validate_live,
         )
 
         for validator in validators:
@@ -597,6 +645,28 @@ class Config:
                 errors.append(str(exc))
 
         _raise_validation_errors(errors)
+
+    def _validate_live(self) -> None:
+        """Validate Live settings and distinct public routes for all Live instances."""
+        live_instances = [
+            i for i, types in enumerate(self.RUNNER_TASK_TYPES_BY_INSTANCE) if "live" in types
+        ]
+        if len(live_instances) > 1:
+            public_urls: set[str] = set()
+            for instance_id in live_instances:
+                settings = self._live_template.for_instance(
+                    instance_id, self.RUNNER_BASE_PORT + instance_id
+                )
+                settings.validate_enabled()
+                public_url = settings.public_hls_base_url.rstrip("/")
+                if public_url in public_urls:
+                    raise ValueError(
+                        "LIVE_PUBLIC_HLS_BASE_URL must differ for each Live instance; "
+                        "use {port} for direct access or {instance_id} with a reverse proxy"
+                    )
+                public_urls.add(public_url)
+        if "live" in self.RUNNER_TASK_TYPES:
+            self.LIVE.validate_enabled()
 
     def _validate_instances(self) -> None:
         """Validate that the runner starts at least one instance."""
@@ -710,6 +780,7 @@ class Config:
             ("MAX_FILE_AGE_DAYS", self.MAX_FILE_AGE_DAYS, 0, None),
             ("CLEANUP_INTERVAL_HOURS", self.CLEANUP_INTERVAL_HOURS, 1, None),
             ("EXTERNAL_SCRIPT_TIMEOUT_SECONDS", self.EXTERNAL_SCRIPT_TIMEOUT_SECONDS, 1, None),
+            ("GPU_HEALTH_CHECK_INTERVAL_HOURS", self.GPU_HEALTH_CHECK_INTERVAL_HOURS, 0, None),
             ("GPU_HWACCEL_DEVICE", self.GPU_HWACCEL_DEVICE, 0, None),
         )
         for name, value, minimum, maximum in checks:

@@ -369,6 +369,17 @@ def test_config_constructor_delegates_to_coherent_loaders(monkeypatch):
     assert config._configuration_validated is False
 
 
+def test_config_records_invalid_live_configuration(monkeypatch):
+    """Record invalid Live environment values without aborting configuration loading."""
+    from app.core.config import Config
+
+    monkeypatch.setenv("LIVE_SOURCES", "{invalid-json")
+
+    config = Config()
+
+    assert "Invalid LIVE configuration" in config._configuration_errors
+
+
 def test_config_initialization_and_validation_branches(monkeypatch):
     """Validate Config initialization and validation branches."""
     from app.core.config import Config

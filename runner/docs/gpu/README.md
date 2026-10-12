@@ -1,6 +1,6 @@
 # Runner GPU Documentation Matrix
 
-This directory contains installation documentation for NVIDIA driver/CUDA and GPU-capable FFmpeg stacks used by the runner when `ENCODING_TYPE=GPU`.
+This directory contains installation documentation for NVIDIA driver/CUDA and GPU-capable FFmpeg stacks used by the runner for VOD `ENCODING_TYPE=GPU` or Live `LIVE_TRANSCODER=nvenc`. Live backend selection is independent of `ENCODING_TYPE`.
 
 ## How to use this documentation
 

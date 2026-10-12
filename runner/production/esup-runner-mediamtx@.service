@@ -1,0 +1,13 @@
+[Unit]
+Description=MediaMTX for Esup-Runner instance %i
+
+[Service]
+EnvironmentFile=%h/.config/esup-runner/%i/mediamtx.env
+ExecStart="%h/.local/bin/mediamtx" "%h/.config/esup-runner/%i/mediamtx.yml"
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

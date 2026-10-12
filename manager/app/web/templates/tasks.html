@@ -229,6 +229,7 @@
                       <input type="checkbox" id="selectAllTasks" class="form-check-input" autocomplete="off">
                     </th>
                     <th>Status</th>
+                    <th>Estab.</th>
                     <th>Task ID</th>
                     <th>Type</th>
                     <th>Created</th>
@@ -253,10 +254,24 @@
                         <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
                       </td>
                       <td>
+                        {% if task.etab_badge %}
+                          <span
+                            class="etab-badge {{ task.etab_badge.color_class }}"
+                            title="{{ task.etab_badge.name }}"
+                            data-bs-toggle="tooltip"
+                            role="img"
+                            aria-label="Establishment: {{ task.etab_badge.name }}">
+                            {{ task.etab_badge.initials }}
+                          </span>
+                        {% else %}
+                          <span class="text-muted">-</span>
+                        {% endif %}
+                      </td>
+                      <td>
                         <code class="small">{{ task.id }}</code>
                       </td>
                       <td>
-                        <span class="badge bg-secondary">{{ task.task_type }}</span>
+                        <span class="badge bg-secondary">{% if task.task_type == 'live' %}<i class="bi bi-broadcast" aria-hidden="true"></i> {% endif %}{{ task.task_type }}</span>
                       </td>
                       <td class="small text-muted">{{ task.created_at }}</td>
                       <td class="small text-muted">{{ task.updated_at }}</td>
@@ -281,7 +296,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                      <td colspan="8" class="text-center text-muted py-5">
+                      <td colspan="9" class="text-center text-muted py-5">
                         <i class="bi bi-inbox display-1" aria-hidden="true"></i>
                         <div class="h5 mt-3">No tasks found</div>
                         <p class="mb-0">Try adjusting your filters or search criteria</p>

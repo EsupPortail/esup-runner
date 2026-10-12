@@ -31,12 +31,17 @@ def test_view_tasks_filters_and_renders(client, clean_state):
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
     tasks["t2"] = _task("t2", "r1", status="failed")
+    tasks["t1"].etab_name = "Université Côte d'Azur"
+    tasks["t2"].etab_name = "ESUP-Portail"
 
     resp = client.get("/tasks?status=completed&limit=10")
     assert resp.status_code == 200
     assert "Tasks Management" in resp.text
     assert "t1" in resp.text
     assert "t2" not in resp.text
+    assert "<th>Estab.</th>" in resp.text
+    assert "etab-badge-3" in resp.text
+    assert "UC" in resp.text
 
 
 def test_view_tasks_search_task_type_and_status_counts_else(

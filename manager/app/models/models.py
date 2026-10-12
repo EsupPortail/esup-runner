@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.models.live import LiveInfo
+
 
 def _validate_safe_url(url: str, field_name: str) -> str:
     """Validate that a URL is safe against SSRF attacks.
@@ -74,6 +76,8 @@ class Runner(BaseModel):
         token: Authentication token used for secure communication with the manager
         version: Runner software version - useful for compatibility checks and debugging
     """
+
+    live_task_id: Optional[str] = None
 
     id: str = Field(
         ...,
@@ -191,6 +195,8 @@ class Task(BaseModel):
         error: Optional error message if the task failed during execution
         script_output: Optional raw output from the task execution script - useful for debugging and understanding task behavior
     """
+
+    live: Optional[LiveInfo] = None
 
     task_id: str = Field(
         ...,

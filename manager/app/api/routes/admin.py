@@ -4,6 +4,7 @@ Admin routes for Runner Manager API.
 Handles administrative dashboard and monitoring endpoints.
 """
 
+import asyncio
 import csv
 import re
 import secrets
@@ -13,7 +14,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from slowapi import Limiter
@@ -29,12 +30,16 @@ from app.core import config as config_module
 from app.core.auth import OPENAPI_TOKEN_COOKIE_NAME, build_openapi_cookie_value, verify_admin
 from app.core.config import config
 from app.core.csrf import csrf_template_context, verify_csrf
+from app.core.etab_badges import build_etab_badge
+from app.core.live_config import MEDIAMTX_VERSION
 from app.core.passwords import BcryptPasswordContext
 from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_task as get_task_from_state
 from app.core.state import get_tasks_snapshot, runners
 from app.core.url_paths import cookie_path, prefixed_path, request_root_path
+from app.services import live_admin, live_service
+from app.services.mediamtx import MediaMTXClient, MediaMTXError
 
 # Configure logging
 logger = setup_default_logging()
@@ -68,6 +73,7 @@ _TASK_AGE_UPDATED_AT_LABELS = {
 }
 _ADMIN_DASHBOARD_RATE_LIMIT = "60/minute"
 _RUNNER_STATUS_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=2.0, pool=2.0)
+_MEDIAMTX_STATUS_TIMEOUT = 2.0
 _RUNNER_ONLINE_HEARTBEAT_SECONDS = 60
 _TOKEN_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 _ADMIN_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_.@-]+$")
@@ -406,8 +412,12 @@ def _build_task_age_metadata(
     created_at: Any,
     updated_at: Any,
     now: datetime | None = None,
+    task_type: Any = None,
 ) -> dict[str, Any]:
-    """Build compact task age metadata for dashboard display."""
+    """Build compact task age metadata for dashboard display.
+
+    Live sessions can legitimately run for many hours, so they never raise the age warning.
+    """
     normalized_status = str(status or "").lower()
     label_prefix = _TASK_AGE_CREATED_AT_LABELS.get(normalized_status)
     timestamp_value = created_at
@@ -428,7 +438,11 @@ def _build_task_age_metadata(
     age_seconds = max(0, int((reference_time - timestamp).total_seconds()))
     duration = _format_duration_label(age_seconds)
     suffix = "" if normalized_status == "pending" else " ago"
-    is_warning = uses_created_at and (age_seconds >= _TASK_AGE_WARNING_THRESHOLD_MINUTES * 60)
+    is_warning = (
+        task_type != "live"
+        and uses_created_at
+        and age_seconds >= _TASK_AGE_WARNING_THRESHOLD_MINUTES * 60
+    )
 
     return {
         "label": f"{label_prefix} {duration}{suffix}",
@@ -516,6 +530,42 @@ async def _fetch_runner_live_status(runner: Any) -> dict[str, Any]:
     }
 
 
+async def _fetch_manager_mediamtx_status() -> dict[str, str]:
+    """Probe the Manager's local MediaMTX control API without exposing its URL."""
+    if not config.LIVE.enabled:
+        return {"status": "disabled", "error": "Live is disabled on this manager."}
+    settings = config.LIVE
+    client = MediaMTXClient(
+        settings.mediamtx_api_url,
+        settings.mediamtx_api_user,
+        settings.mediamtx_api_password,
+        min(settings.mediamtx_timeout, _MEDIAMTX_STATUS_TIMEOUT),
+    )
+    try:
+        await client.check_health()
+    except MediaMTXError:
+        return {"status": "unavailable", "error": "MediaMTX control unavailable."}
+    return {"status": "healthy", "error": ""}
+
+
+def _runner_mediamtx_status(result: dict[str, Any]) -> dict[str, str]:
+    """Project a Runner status payload into the safe Live dashboard contract."""
+    if not result.get("available"):
+        return {"status": "unknown", "error": "Runner status unavailable."}
+    payload = result.get("payload")
+    media_status = payload.get("mediamtx") if isinstance(payload, dict) else None
+    if not isinstance(media_status, dict):
+        return {"status": "unknown", "error": "Runner does not report MediaMTX status."}
+    status_value = media_status.get("status")
+    if status_value == "healthy":
+        return {"status": "healthy", "error": ""}
+    if status_value == "disabled":
+        return {"status": "disabled", "error": "Live is disabled on this runner."}
+    if status_value == "unavailable":
+        return {"status": "unavailable", "error": "MediaMTX control unavailable."}
+    return {"status": "unknown", "error": "Runner returned an invalid MediaMTX status."}
+
+
 def _build_attention_summary(
     runners_data: list[dict[str, Any]],
     tasks_data_sorted: list[dict[str, Any]],
@@ -538,7 +588,7 @@ def _build_attention_summary(
     stale_running_tasks: list[dict[str, Any]] = []
     stale_threshold_seconds = _STALE_RUNNING_TASK_THRESHOLD_MINUTES * 60
     for task in tasks_data_sorted:
-        if task["status"] != "running":
+        if task["status"] != "running" or task.get("task_type") == "live":
             continue
 
         updated_at = _parse_datetime(task.get("updated_at"))
@@ -621,6 +671,7 @@ async def admin_dashboard(request: Request):
             task.created_at,
             task.updated_at,
             now=now,
+            task_type=getattr(task, "task_type", None),
         )
         tasks_data.append(
             {
@@ -636,6 +687,7 @@ async def admin_dashboard(request: Request):
                 "age_label": age_metadata["label"],
                 "age_is_warning": age_metadata["is_warning"],
                 "video_id": params.get("video_id"),
+                "etab_badge": build_etab_badge(getattr(task, "etab_name", None)),
             }
         )
 
@@ -649,7 +701,7 @@ async def admin_dashboard(request: Request):
 
     month_key = now.strftime("%Y-%m")
     tasks_this_month = 0
-    csv_path = Path("data") / "task_stats.csv"
+    csv_path = Path(config.MANAGER_DATA_DIR) / "task_stats.csv"
     if csv_path.exists():
         try:
             with csv_path.open("r", encoding="utf-8") as file:
@@ -671,6 +723,9 @@ async def admin_dashboard(request: Request):
             "online_runners": len([r for r in runners_data if r["status"] == "online"]),
             "total_tasks": len(tasks_data_sorted),
             "tasks_this_month": tasks_this_month,
+            "live_overview": live_admin.build_overview(
+                tasks_snapshot.values(), runners.values(), now
+            ),
             **attention_summary,
             "admin_count": len(config.ADMIN_USERS),
             "dark_mode_enabled": dark_mode,
@@ -678,6 +733,111 @@ async def admin_dashboard(request: Request):
             "version": __version__,
             "root_path": request_root_path(request),
         },
+    )
+
+
+@router.get("/live", include_in_schema=False)
+@limiter.limit(_ADMIN_DASHBOARD_RATE_LIMIT)
+async def live_dashboard(
+    request: Request,
+    state_filter: str = "all",
+    search: str = Query(default="", max_length=200),
+    page: int = Query(default=1, ge=1),
+):
+    """Render retained Live sessions and active/recent sources using read-only media probes."""
+    now = datetime.now()
+    overview = live_admin.build_overview(get_tasks_snapshot().values(), runners.values(), now)
+    manager_mediamtx, publishing_sources, *runner_statuses = await asyncio.gather(
+        _fetch_manager_mediamtx_status(),
+        live_admin.observe_publishing_sources(),
+        *(_fetch_runner_live_status(runners[worker["id"]]) for worker in overview["workers"]),
+    )
+    overview["manager_mediamtx"] = manager_mediamtx
+    overview["source_observation_unavailable"] = publishing_sources is None
+    visible_sources = (
+        set(live_admin.known_sources())
+        if publishing_sources is None
+        else set(overview["sources"]) | publishing_sources
+    )
+    overview.update(live_admin.source_summary(visible_sources))
+    overview["source_rows"] = live_admin.source_rows(overview, publishing_sources)
+    for worker, runner_status in zip(overview["workers"], runner_statuses):
+        worker["mediamtx"] = _runner_mediamtx_status(runner_status)
+    sessions = overview["sessions"]
+    source_filter = request.query_params.get("source_filter", "")
+    if source_filter:
+        sessions = [row for row in sessions if row["source_id"] == source_filter]
+    if state_filter == "active":
+        sessions = [row for row in sessions if row["active"]]
+    elif state_filter != "all":
+        sessions = [row for row in sessions if row["state"] == state_filter]
+    query = search.strip().casefold()
+    if query:
+        sessions = [
+            row
+            for row in sessions
+            if any(
+                query in str(row[key] or "").casefold()
+                for key in ("id", "source_id", "event_id", "runner_id", "etab_name", "broadcaster")
+            )
+        ]
+    page_count = max(1, (len(sessions) + 49) // 50)
+    page = min(page, page_count)
+    filters = {"state_filter": state_filter, "search": search}
+    if source_filter:
+        filters["source_filter"] = source_filter
+    return templates.TemplateResponse(
+        request,
+        "live.html",
+        {
+            "overview": overview,
+            "sessions": sessions[(page - 1) * 50 : page * 50],
+            "filtered_count": len(sessions),
+            "page": page,
+            "page_count": page_count,
+            "filter_query": urlencode(filters),
+            "source_filter": source_filter,
+            "state_filter": state_filter,
+            "search": search,
+            "format_duration": _format_duration_label,
+            "format_datetime": _format_datetime_without_milliseconds,
+            "stop_feedback": request.query_params.get("message") == "stop_requested",
+            "restart_feedback": request.query_params.get("message") == "restart_requested",
+            "restart_error": {
+                "restart_404": "This Live session or its source no longer exists.",
+                "restart_409": "Restart unavailable: wait for cleanup, check that the RTMP source is publishing and that no other session uses it.",
+                "restart_503": "Restart unavailable: check available Live runners, MediaMTX control and storage. See Live diagnostics for details.",
+            }.get(request.query_params.get("message", "")),
+            "dark_mode_enabled": request.cookies.get("theme") == "dark",
+            "last_update": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "version": __version__,
+            "root_path": request_root_path(request),
+        },
+    )
+
+
+@router.post("/live/{live_id}/stop", include_in_schema=False)
+async def stop_live_session(request: Request, live_id: str):
+    """Persist an admin-authorized stop through Live orchestration, protected by CSRF."""
+    await live_service.stop(live_id, token=None)
+    return RedirectResponse(
+        f"{request_root_path(request)}/admin/live?message=stop_requested", status_code=303
+    )
+
+
+@router.post("/live/{live_id}/restart", include_in_schema=False)
+async def restart_live_session(request: Request, live_id: str):
+    """Restart a cleaned-up Live through orchestration, with admin auth and CSRF."""
+    message = "restart_requested"
+    try:
+        await live_service.restart(live_id, token=None)
+    except HTTPException as exc:
+        if exc.status_code not in {404, 409, 503}:
+            raise
+        logger.warning("[LIVE] [RESTART_BLOCKED] status=%s", exc.status_code)
+        message = f"restart_{exc.status_code}"
+    return RedirectResponse(
+        f"{request_root_path(request)}/admin/live?message={message}", status_code=303
     )
 
 
@@ -716,6 +876,7 @@ async def get_task_detail(request: Request, task_id: str):
             "task_actions": _build_task_detail_actions(task),
             "dark_mode_enabled": dark_mode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "mediamtx_version": MEDIAMTX_VERSION,
             "version": __version__,
             "root_path": request_root_path(request),
         },
@@ -747,6 +908,7 @@ async def get_runner_detail(request: Request, runner_id: str):
 
     runner = runners[runner_id]
     runner_live_status = await _fetch_runner_live_status(runner)
+    runner_live_status["mediamtx"] = _runner_mediamtx_status(runner_live_status)
     heartbeat_metadata = _build_runner_heartbeat_metadata(runner)
 
     dark_mode = request.cookies.get("theme") == "dark"
@@ -801,7 +963,7 @@ async def admin_tasks(request: Request) -> Any:
     for task in all_tasks_list:
         status_counts[task.status] = status_counts.get(task.status, 0) + 1
 
-    display_tasks = [
+    display_tasks: list[dict[str, Any]] = [
         {
             "id": task.task_id,
             "status": task.status,
@@ -809,6 +971,7 @@ async def admin_tasks(request: Request) -> Any:
             "source_url": task.source_url,
             "created_at": task.created_at,
             "updated_at": task.updated_at,
+            "etab_badge": build_etab_badge(getattr(task, "etab_name", None)),
         }
         for task in all_tasks_list
     ]

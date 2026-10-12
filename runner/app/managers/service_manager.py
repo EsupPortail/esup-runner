@@ -8,8 +8,11 @@ from typing import Dict, List
 
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
+from app.core.state import get_runner_instance_id
 from app.managers.storage_manager import storage_manager
+from app.services.gpu_health_service import gpu_health_check_loop
 from app.services.manager_service import heartbeat_loop, reconnect_loop
+from app.services.pod_sync import retry_loop as pod_sync_loop
 
 logger = setup_default_logging()
 
@@ -17,13 +20,20 @@ logger = setup_default_logging()
 async def storage_cleanup_loop() -> None:
     """
     Background service for periodic storage cleanup.
-    Removes files and directories older than MAX_FILE_AGE_DAYS.
+    Removes files and directories older than MAX_FILE_AGE_DAYS. Environments
+    containing a Live instance disable this sweep across their shared storage;
+    the Live runtime owns HLS cleanup and durable stop records.
     """
     cleanup_interval_seconds = config.CLEANUP_INTERVAL_HOURS * 3600
-    max_file_age_days = config.MAX_FILE_AGE_DAYS
+    # VOD siblings share storage and must also preserve Live state and HLS.
+    max_file_age_days = (
+        0
+        if "live" in config.RUNNER_TASK_TYPES.union(*config.RUNNER_TASK_TYPES_BY_INSTANCE)
+        else config.MAX_FILE_AGE_DAYS
+    )
 
     if max_file_age_days <= 0:
-        logger.info("Storage cleanup service disabled: MAX_FILE_AGE_DAYS is 0 (unlimited)")
+        logger.info("Storage age cleanup disabled (unlimited retention or Live task group)")
         return
 
     logger.info(
@@ -86,6 +96,15 @@ class BackgroundServiceManager:
             ("heartbeat_loop", heartbeat_loop()),
             ("storage_cleanup_loop", storage_cleanup_loop()),
         ]
+        if "live" in config.RUNNER_TASK_TYPES and config.LIVE.pod_url:
+            services.append(("pod_sync_loop", pod_sync_loop()))
+        # NVIDIA driver health is shared by all instances on this host.
+        if (
+            config.ENCODING_TYPE == "GPU"
+            and config.GPU_HEALTH_CHECK_INTERVAL_HOURS > 0
+            and get_runner_instance_id() == 0
+        ):
+            services.append(("gpu_health_check_loop", gpu_health_check_loop()))
 
         for name, service in services:
             task = asyncio.create_task(service, name=name)

@@ -90,17 +90,18 @@ make ci
 ## High-level lifecycle
 1) Launcher starts one or more runner instances (FastAPI + Uvicorn). Instance ID and port are derived from configuration.
 2) On startup the instance registers with the Manager, advertising which task types it supports.
-3) The Manager POSTs tasks to the runner. The runner picks the right handler for the task type.
-4) The handler downloads inputs into an isolated workspace, runs the appropriate script, stores outputs and logs, and writes metadata for the task.
+3) The Manager POSTs tasks to the runner, which dispatches them to the appropriate handler or Live runtime.
+4) File-based tasks download inputs into an isolated workspace and produce result files. Live tasks relay a stream and continuously generate HLS while the session is active.
 5) Completion status is reported back to the Manager; background services keep storage tidy and can monitor instances.
 
 ## Handler layout (refactor)
-- Each task type now follows the same runtime layout under [app/task_handlers](../app/task_handlers):
+- The `encoding`, `studio` and `transcription` types follow the same runtime layout under [app/task_handlers](../app/task_handlers):
     - a handler class (`*_handler.py`) used by the FastAPI runtime;
     - a stable CLI entrypoint (`encoding.py`, `studio.py`, `transcription.py`);
     - a sibling `core/` package containing the modular runtime implementation.
 - The CLI entrypoints remain stable wrappers exposing `main` / `parse_args`, while orchestration lives in `core/`.
 - Legacy compatibility wrappers under `app/task_handlers/*/scripts/` were removed.
+- The `live` type has a marker package at [app/task_handlers/live](../app/task_handlers/live) for discoverability, while its lifecycle uses [app/services/live_runtime.py](../app/services/live_runtime.py); see [TYPE_LIVE.md](TYPE_LIVE.md).
 
 ## Configuring instances and task types
 - Configuration is driven by environment variables parsed in [app/core/config.py](../app/core/config.py).
@@ -123,7 +124,8 @@ The Manager enforces **version compatibility at MAJOR + MINOR level**.
 In other words, a runner `1.0.x` can register only to a manager `1.0.y`.
 
 ## Supported task types
-The runner ships with three handlers (see [app/task_handlers](../app/task_handlers)):
+The runner supports `encoding`, `studio`, `transcription` and `live`. The first
+three use [task handlers](../app/task_handlers); Live uses a dedicated runtime.
 
 ### Encoding (`encoding`)
 - Handler: [app/task_handlers/encoding/encoding_handler.py](../app/task_handlers/encoding/encoding_handler.py)
@@ -148,7 +150,24 @@ The runner ships with three handlers (see [app/task_handlers](../app/task_handle
 - Purpose: run the Whisper-based subtitle pipeline (Python API, with CLI fallback) to generate WebVTT from media/audio, then finalize, validate, and package outputs with metadata.
 - Parameters: `language` (final subtitle language), `source_language` (optional spoken source language hint), `format` (currently `vtt`), `model` (small|medium|large|turbo), `normalize` (audio pre-normalization toggle), plus tracking metadata (`video_id`, `video_slug`, `video_title`). GPU use follows `ENCODING_TYPE`.
 
+### Live (`live`)
+
+- Marker package: [app/task_handlers/live](../app/task_handlers/live).
+- Runtime: [app/services/live_runtime.py](../app/services/live_runtime.py).
+- Purpose: pull an RTMP source through MediaMTX and transcode it into adaptive HLS with FFmpeg.
+- Parameters: the Manager supplies `source_id` and `source_path`; transcoding settings come from the instance environment.
+- Capacity: one task at a time per instance, including mixed Live/VOD instances. Live instances in one deployment share MediaMTX and resolve their HLS URLs and directories from templates.
+- CPU/GPU: libx264 or NVIDIA NVENC, selected through the Live configuration.
+- Contract, payloads, outputs and errors: [TYPE_LIVE.md](TYPE_LIVE.md).
+- End-to-end installation: [manager/docs/LIVE_INSTALLATION.md](../../manager/docs/LIVE_INSTALLATION.md).
+- Operations and recovery: [manager/docs/LIVE_OPERATIONS.md](../../manager/docs/LIVE_OPERATIONS.md).
+- Runner configuration and validation: [LIVE.md](LIVE.md).
+
 ## How tasks are processed
+
+The following applies to `encoding`, `studio` and `transcription`. For Live
+processing and output, see [TYPE_LIVE.md](TYPE_LIVE.md).
+
 - Each handler inherits from [app/task_handlers/base_handler.py](../app/task_handlers/base_handler.py), which manages workspaces, downloads, input validation, and metadata writing.
 - Workspaces live under the storage manager base path; outputs and logs are written to an `output/` subfolder with a `task_metadata.json` summary.
 - Result manifests are written to `<STORAGE_DIR>/<task_id>/manifest.json`.
@@ -180,8 +199,15 @@ Legacy alias for logs is still supported: `LOG_DIRECTORY`.
 - FFmpeg GPU setup (entry point): [docs/FFMPEG_SETUP.md](FFMPEG_SETUP.md)
 - FFmpeg/CUDA GPU matrix: [docs/gpu/README.md](gpu/README.md)
 - Upgrading: [UPGRADE.md](UPGRADE.md)
-- Task type docs: [docs/TYPE_ENCODING.md](TYPE_ENCODING.md), [docs/TYPE_STUDIO.md](TYPE_STUDIO.md), [docs/TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md)
+- Task type docs: [docs/TYPE_ENCODING.md](TYPE_ENCODING.md), [docs/TYPE_STUDIO.md](TYPE_STUDIO.md), [docs/TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md), [docs/TYPE_LIVE.md](TYPE_LIVE.md)
 - Full parameter reference: [docs/PARAMETERS.md](PARAMETERS.md)
 - Runner configuration details: [docs/CONFIGURATION.md](CONFIGURATION.md)
 - Version management: [docs/VERSION_MANAGEMENT.md](VERSION_MANAGEMENT.md)
 - OpenAPI docs are exposed at `/docs` when a runner instance is running.
+
+## Live streaming
+
+See [TYPE_LIVE.md](TYPE_LIVE.md) for the task contract, request examples and HLS outputs.
+See [LIVE.md](LIVE.md) for explicit `live` declarations in `runner/.env`, mixed or grouped instances, MediaMTX, adaptive transcoding and recovery.
+For native or Docker installation of MediaMTX 1.21.1 on CPU/GPU machines, see
+[MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md), which links to the shared Manager guide.

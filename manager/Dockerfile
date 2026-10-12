@@ -51,8 +51,8 @@ ENV PATH="/app/.venv/bin:${PATH}" \
 # Create dedicated non-root user and writable runtime directories.
 RUN groupadd --gid "${ESUP_RUNNER_GID}" "${SERVICE_USER}" && \
     useradd --uid "${ESUP_RUNNER_UID}" --gid "${ESUP_RUNNER_GID}" --home-dir "${HOME}" --create-home --shell /usr/sbin/nologin "${SERVICE_USER}" && \
-    mkdir -p /var/log/esup-runner /tmp/esup-runner "${UV_CACHE_DIR}" && \
-    chown -R "${SERVICE_USER}:${SERVICE_USER}" /var/log/esup-runner /tmp/esup-runner "${HOME}"
+    mkdir -p /app/data /var/log/esup-runner /tmp/esup-runner "${UV_CACHE_DIR}" && \
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" /app/data /var/log/esup-runner /tmp/esup-runner "${HOME}"
 
 # Copy the built app and virtual environment with correct ownership.
 COPY --from=build --chown=${SERVICE_USER}:${SERVICE_USER} /app /app

@@ -267,6 +267,18 @@ def test_try_reserve_in_memory_store_handles_missing_and_busy(tmp_path):
     assert store.try_reserve("r1") is None
 
 
+def test_runner_store_assignment_preserves_live_reservation_in_memory(tmp_path):
+    """Keep a Live reservation busy when refreshing an in-memory runner."""
+    store = RunnerStore(shared_enabled=False, state_file=str(tmp_path / "runners.json"))
+    store["r1"] = _runner("r1")
+    store["r1"].live_task_id = "live-task"
+
+    store["r1"] = _runner("r1").model_copy(update={"availability": "available"})
+
+    assert store["r1"].live_task_id == "live-task"
+    assert store["r1"].availability == "busy"
+
+
 def test_default_state_file_is_anchored_to_manager_root():
     """Validate Default state file is anchored to manager root."""
     store = RunnerStore(shared_enabled=False)

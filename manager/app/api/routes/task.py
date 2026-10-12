@@ -24,6 +24,7 @@ from app.__version__ import __version__
 from app.core.auth import verify_admin, verify_token
 from app.core.config import config
 from app.core.csrf import csrf_template_context, verify_csrf
+from app.core.etab_badges import build_etab_badge
 from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.priorities import would_exceed_other_domain_quota  # noqa: F401
 from app.core.setup_logging import setup_default_logging
@@ -101,7 +102,7 @@ def _runner_auth_headers(runner: Runner, accept: str) -> Dict[str, str]:
 
 
 def _append_task_stats_csv(task: Task) -> None:
-    """Append a single task stats row to data/task_stats.csv."""
+    """Append a task stats row; deduplicate Live sessions under the shared CSV lock."""
     if _is_pytest_run():
         logger.debug("Skipping task_stats.csv append during pytest for task %s", task.task_id)
         return
@@ -113,7 +114,7 @@ def _append_task_stats_csv(task: Task) -> None:
         )
         return
 
-    data_dir = PathlibPath("data")
+    data_dir = PathlibPath(config.MANAGER_DATA_DIR)
     data_dir.mkdir(parents=True, exist_ok=True)
     csv_path = data_dir / "task_stats.csv"
     lock = FileLock(str(csv_path) + ".lock")
@@ -141,6 +142,10 @@ def _append_task_stats_csv(task: Task) -> None:
 
     with lock:
         needs_header = not csv_path.exists() or csv_path.stat().st_size == 0
+        if task.live is not None and not needs_header:
+            with csv_path.open("r", encoding="utf-8", newline="") as csv_file:
+                if any(row.get("task_id") == task.task_id for row in csv.DictReader(csv_file)):
+                    return
         with csv_path.open("a", encoding="utf-8", newline="") as csv_file:
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
             if needs_header:
@@ -360,6 +365,7 @@ async def view_tasks(
                 "source_url": task.source_url,
                 "created_at": task.created_at,
                 "updated_at": task.updated_at,
+                "etab_badge": build_etab_badge(task.etab_name),
             }
             for task in display_tasks
         ],
@@ -636,6 +642,8 @@ async def _queue_task_execution(
     created_at: str | None = None,
 ) -> dict:
     """Queue a task on an available runner and schedule its execution."""
+    if task_request.task_type == "live":
+        raise HTTPException(400, "Use /live/start for Live sessions")
     return await task_dispatch_service.queue_task_execution(
         sys.modules[__name__],
         task_request,
@@ -1160,6 +1168,12 @@ async def task_completion(
     task = _get_task_or_404(notification.task_id)
     runner = _get_runner_or_404(task.runner_id)
     _verify_runner_token(runner, current_token)
+
+    if task.live is not None:
+        from app.services.live_service import synchronize
+
+        await synchronize(task.task_id)
+        return {"status": "acknowledged"}
 
     _apply_task_completion_update(task, notification)
     # Persist terminal status before callback to avoid races with clients that

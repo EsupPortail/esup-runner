@@ -18,6 +18,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.__version__ import __version__
 from app.core.auth import verify_admin
+from app.core.config import config
 from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.setup_logging import setup_default_logging
 from app.core.url_paths import request_root_path
@@ -41,7 +42,7 @@ _TASK_STATS_DEFAULT_FIELDNAMES = [
 
 def _task_stats_csv_path() -> Path:
     """Return the canonical path of the statistics CSV file."""
-    return Path("data") / "task_stats.csv"
+    return Path(config.MANAGER_DATA_DIR) / "task_stats.csv"
 
 
 def _load_task_stats_csv(csv_path: Path) -> List[Dict[str, str]]:
@@ -221,6 +222,7 @@ async def statistics_dashboard(
         {
             "request": request,
             "total_tasks": total_tasks,
+            "live_sessions": by_type.get("live", 0),
             "unique_types": len(by_type),
             "unique_etabs": len(by_etab),
             "date_range": date_range,

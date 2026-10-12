@@ -30,6 +30,14 @@ See [UPGRADE.md](UPGRADE.md).
 
 See [OPERATIONS.md](OPERATIONS.md).
 
+## Live streaming
+
+Use the [short Live installation path](LIVE_INSTALLATION.md) for a new RTMP to
+HLS deployment, then the [Live operations runbook](LIVE_OPERATIONS.md) for the
+administration page, logs, restarts and incident handling. The detailed
+[Manager Live reference](LIVE.md) and [MediaMTX setup](MEDIAMTX_SETUP.md) cover
+the API and custom deployments.
+
 ### Quick install (Ubuntu/Debian)
 
 ```bash
@@ -507,3 +515,9 @@ If the original task request has a non-empty `notify_url`, the manager POSTs:
 ## License
 
 Licence GPL 3.0
+
+## Live streaming
+
+See [LIVE.md](LIVE.md) for Live Runner reservations, MediaMTX, the dynamic `hls_url` contract for Pod and multi-instance deployments.
+For native or Docker installation of MediaMTX 1.21.1, including reuse of an
+existing installation, see [MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md).

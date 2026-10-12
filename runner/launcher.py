@@ -19,6 +19,8 @@ def main():
     """
     Main entry point for multi-instance runner launcher.
     """
+    # Reject ambiguous HLS routes and invalid groups before starting any worker.
+    config.validate_configuration()
     # Create process manager
     manager = UvicornProcessManager(
         base_port=config.RUNNER_BASE_PORT, instances=config.RUNNER_INSTANCES

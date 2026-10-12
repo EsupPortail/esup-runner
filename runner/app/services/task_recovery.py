@@ -788,12 +788,20 @@ async def recover_owned_failed_tasks(
 
 
 async def recover_running_tasks_after_restart(*, runtime: ModuleType) -> None:
-    """Restore running task state after process restart using persisted JSON."""
+    """Restore VOD tasks, deferring failed-task retries while Live cleanup owns the runner."""
     running_tasks = runtime._get_owned_task_statuses({"running"})
+    running_tasks = {key: value for key, value in running_tasks.items() if not value.get("live")}
     if running_tasks:
         await runtime._recover_owned_running_tasks(running_tasks)
 
+    if any(
+        payload.get("live") for payload in runtime._get_owned_task_statuses({"running"}).values()
+    ):
+        runtime._refresh_availability_from_recovered_state()
+        return
+
     failed_tasks = runtime._get_owned_task_statuses({"failed", "timeout"})
+    failed_tasks = {key: value for key, value in failed_tasks.items() if not value.get("live")}
     if not running_tasks and not failed_tasks:
         runtime._refresh_availability_from_recovered_state()
         return

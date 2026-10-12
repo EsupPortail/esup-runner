@@ -3,6 +3,11 @@
 This guide describes how to install and run the **Esup-Runner Runner** service on a Debian/Ubuntu server.
 For Docker-based deployment, see [DOCKER.md](DOCKER.md).
 For day-to-day operations after installation, see [OPERATIONS.md](OPERATIONS.md).
+For any Runner declaring `live`, start with the Manager's
+[LIVE_INSTALLATION.md](../../manager/docs/LIVE_INSTALLATION.md), then use
+[MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md) for Runner-specific details. MediaMTX 1.21.1
+installation is the same on CPU and GPU machines; reuse an existing installation
+on the host and prepare one MediaMTX service shared by the Runner’s Live instances.
 
 ## Version compatibility note (Runner & Manager)
 

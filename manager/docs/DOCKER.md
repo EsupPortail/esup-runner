@@ -424,3 +424,16 @@ cd /opt/esup-runner/manager
 make docker-fix-perms ESUP_RUNNER_UID=$(id -u) ESUP_RUNNER_GID=$(id -g)
 docker restart esup-runner-manager
 ```
+
+## Live streaming
+
+See [LIVE.md](LIVE.md) for Live Runner reservations, MediaMTX, the dynamic `hls_url` contract for Pod and multi-instance deployments.
+See [MediaMTX with Docker](MEDIAMTX_SETUP.md#5-run-mediamtx-in-docker) for the
+pinned `bluenviron/mediamtx:1.21.1` image, a MediaMTX-only container with native
+applications, and the complete Live Compose stack.
+
+In that stack, application logs use the writable `/var/log/esup-runner` mount.
+MediaMTX diagnostics use a separate read-only mount at `/var/log/mediamtx`;
+do not overlay the application log directory with the media log volume.
+The image creates `/app/data` owned by the service account so a new named
+volume preserves the Manager's ability to write task state.

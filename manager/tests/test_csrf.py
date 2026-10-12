@@ -28,6 +28,8 @@ _MUTATIONS = [
     ("/admin/credentials/tokens/client/delete", "data", {}),
     ("/admin/reload-config", "data", {}),
     ("/admin/toggle-theme", "data", {}),
+    ("/admin/live/live-session/stop", "data", {}),
+    ("/admin/live/live-session/restart", "data", {}),
     ("/tasks/delete-selected", "json", {"task_ids": ["t1"]}),
     ("/tasks/restart-selected", "json", {"task_ids": ["t1"]}),
     ("/tasks/stop-selected", "json", {"task_ids": ["t1"]}),
@@ -107,6 +109,8 @@ def csrf_client(monkeypatch):
 
     monkeypatch.setattr(task, "_queue_task_execution", queue_task)
     monkeypatch.setattr(task, "_stop_selected_task", stop_task)
+    monkeypatch.setattr(admin.live_service, "stop", stop_task)
+    monkeypatch.setattr(admin.live_service, "restart", queue_task)
     with TestClient(_app(), base_url="http://internal:8081") as client:
         client.auth = ("admin", "test-password")
         yield client, effects
@@ -402,7 +406,9 @@ def test_every_admin_mutation_declares_csrf_protection():
         if auth.verify_admin in dependencies:
             assert csrf.verify_csrf in dependencies, route.path
             mutations.add(
-                route.path.replace("{admin_name}", "admin").replace("{token_name}", "client")
+                route.path.replace("{admin_name}", "admin")
+                .replace("{token_name}", "client")
+                .replace("{live_id}", "live-session")
             )
         if auth.verify_token in dependencies:
             assert csrf.verify_csrf not in dependencies, route.path

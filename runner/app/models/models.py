@@ -26,7 +26,7 @@ class TaskRequest(BaseModel):
         affiliation: Affiliation of the requester - e.g., 'student', 'employee', etc.
         parameters: Task-specific parameters required for execution
         notify_url: Callback URL for task completion notification
-        completion_callback: Optional callback URL to notify upon task completion
+        completion_callback: Optional configured Manager endpoint for task completion
     """
 
     task_id: str = Field(
@@ -61,7 +61,7 @@ class TaskRequest(BaseModel):
     )
     completion_callback: Optional[str] = Field(
         None,  # Default value is None for optional fields
-        description="Callback URL for task completion notification - if provided, the runner will POST the result to this URL upon task completion",
+        description="Optional Manager completion endpoint; must equal MANAGER_URL + /task/completion. The runner sends completion notifications only to this configured endpoint.",
     )
 
 

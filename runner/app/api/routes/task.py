@@ -640,14 +640,25 @@ async def notify_completion(
     Notify manager about task completion status.
 
     Args:
-        callback_url: Manager endpoint to receive notification
+        callback_url: Must match the configured Manager completion endpoint
         task_id: Task identifier being reported
         status: Terminal completion status ('completed', 'failed' or 'timeout')
         error_message: Optional error details for failed tasks
         script_output: Optional script output for debugging
 
-    All request phases use finite timeouts and any successful 2xx response is accepted.
+    Only the endpoint derived from MANAGER_URL receives the runner token. Invalid
+    callbacks return False without a request, including during persisted task recovery.
+    Redirects are disabled. All request phases use finite timeouts and any successful
+    2xx response is accepted.
     """
+    manager_callback_url = f"{config.MANAGER_URL.rstrip('/')}/task/completion"
+    if callback_url != manager_callback_url:
+        logger.error(
+            "Rejected completion callback for task %s: unexpected Manager endpoint",
+            task_id,
+        )
+        return False
+
     max_retries = max(0, int(config.COMPLETION_NOTIFY_MAX_RETRIES))
     base_delay = max(0, int(config.COMPLETION_NOTIFY_RETRY_DELAY_SECONDS))
     backoff_factor = max(1.0, float(config.COMPLETION_NOTIFY_BACKOFF_FACTOR))
@@ -662,9 +673,9 @@ async def notify_completion(
     while True:
         attempt += 1
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
                 response = await client.post(
-                    callback_url,
+                    manager_callback_url,
                     json={
                         "task_id": task_id,
                         "status": status,
@@ -697,7 +708,7 @@ async def notify_completion(
         except Exception as e:
             logger.error(
                 "Error sending completion notification to %s (attempt %s/%s): %s",
-                callback_url,
+                manager_callback_url,
                 attempt,
                 max_retries + 1,
                 str(e),

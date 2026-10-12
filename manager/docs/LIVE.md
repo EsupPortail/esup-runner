@@ -4,6 +4,18 @@
 > **Operating an installed deployment?** Use the [Live operations runbook](LIVE_OPERATIONS.md).
 > This page is the detailed API, configuration and architecture reference.
 
+## Contents
+
+- [Architecture and design choices](#architecture-and-design-choices)
+- [Manager configuration](#manager-configuration)
+- [Automatic RTMP-to-HLS operation](#automatic-rtmp-to-hls-operation)
+- [Integration with Esup-Pod](#integration-with-esup-pod)
+- [States, persistence and failures](#states-persistence-and-failures)
+- [Installation and security](#installation-and-security)
+- [Monitoring and troubleshooting](#monitoring-and-troubleshooting)
+- [Reproducible test without streaming hardware](#reproducible-test-without-streaming-hardware)
+- [Administration and statistics](#administration-and-statistics)
+
 ## Architecture and design choices
 
 A Live session is an Esup-Runner `live` task. Its `live_id` is its `task_id`.
@@ -455,8 +467,10 @@ media/storage control. Administration displays these failures without discarding
 
 The general `Task.status` remains `running` throughout all active states, then
 becomes `completed` or `failed`. The 24-hour VOD timeout does not apply. A missing
-source has a configurable timeout on the Runner. Source loss, FFmpeg exits and
-stalled playlists trigger a limited number of restart attempts. If MediaMTX is
+source times out after 120 seconds on the Runner (a fixed internal default).
+See the [Runner's internal Live defaults](../../runner/docs/PARAMETERS.md#internal-live-defaults).
+Source loss, FFmpeg exits and stalled playlists trigger a limited number of
+restart attempts. If MediaMTX is
 unavailable during cleanup, the Runner remains busy.
 For automatic sessions, a confirmed RTMP disconnection additionally triggers a
 normal stop from the Manager; a new connection requires a new session.
@@ -514,21 +528,11 @@ The complete stack below defaults both MediaMTX images to `bluenviron/mediamtx:1
 You may choose another explicit stable tag >= 1.21.1. See
 [manual upgrades](MEDIAMTX_SETUP.md#manual-upgrades) for the procedure and Live interruptions.
 
-From `deploy/live/`, copy the two environment examples to `manager.env` and
-`runner.env`, and the two MediaMTX configurations. For an existing deployment,
-retain and review the configured files instead of copying over them:
-
-```bash
-cd /opt/esup-runner/deploy/live
-umask 077
-cp manager.env.example manager.env
-cp runner.env.example runner.env
-cp ../../manager/production/mediamtx-live.yml manager-mediamtx.yml
-cp ../../runner/production/mediamtx-live.yml runner-mediamtx.yml
-# Replace secrets in all four files before starting.
-docker compose -p live-a config --quiet
-docker compose -p live-a up -d --build
-```
+For the first deployment, follow the [Docker Compose shortcut](LIVE_INSTALLATION.md#docker-compose-shortcut).
+It covers private configuration files, matching credentials, an administrator
+password hash, browser-facing Manager/HLS URLs and startup validation. For an
+existing deployment, retain and review the configured files instead of copying
+over them. The details below cover networking, storage and additional workers.
 
 The [Compose file](../../deploy/live/compose.yml) contains a Manager, its MediaMTX
 instance, a Runner and its MediaMTX instance. Media APIs are not published. Host

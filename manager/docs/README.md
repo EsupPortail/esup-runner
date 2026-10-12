@@ -9,34 +9,30 @@ Client applications submit tasks to the manager, the manager selects an eligible
 
 This folder contains the manager documentation.
 
+## Contents
+
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Parameters](#parameters)
+- [Upgrading](#upgrading)
+- [Operations](#operations)
+- [Live streaming](#live-streaming)
+- [Local pre-PR checks](#local-pre-pr-checks)
+- [What the manager does](#what-the-manager-does)
+- [Authentication and version compatibility](#authentication-and-version-compatibility)
+- [Recommended network exposure (security)](#recommended-network-exposure-security)
+- [Task lifecycle](#task-lifecycle)
+- [Client API: submitting tasks to the manager](#client-api-submitting-tasks-to-the-manager)
+- [Runner API: calls performed by the manager](#runner-api-calls-performed-by-the-manager)
+- [Manager API: callbacks and client-facing endpoints](#manager-api-callbacks-and-client-facing-endpoints)
+- [Admin dashboard](#admin-dashboard)
+- [Diagrams](#diagrams)
+- [License](#license)
+
 ## Installation
 
 See [INSTALLATION.md](INSTALLATION.md).
 For Docker-based installation, see [DOCKER.md](DOCKER.md).
-
-## Configuration
-
-See [CONFIGURATION.md](CONFIGURATION.md).
-
-## Parameters
-
-See [PARAMETERS.md](PARAMETERS.md).
-
-## Upgrading
-
-See [UPGRADE.md](UPGRADE.md).
-
-## Operations
-
-See [OPERATIONS.md](OPERATIONS.md).
-
-## Live streaming
-
-Use the [short Live installation path](LIVE_INSTALLATION.md) for a new RTMP to
-HLS deployment, then the [Live operations runbook](LIVE_OPERATIONS.md) for the
-administration page, logs, restarts and incident handling. The detailed
-[Manager Live reference](LIVE.md) and [MediaMTX setup](MEDIAMTX_SETUP.md) cover
-the API and custom deployments.
 
 ### Quick install (Ubuntu/Debian)
 
@@ -82,6 +78,30 @@ make create-service
 
 `SERVICE_USER` defaults to `esup-runner`. When customized, use that same account
 for source ownership, `uv` installation, `make create-service`, and `loginctl enable-linger`.
+
+## Configuration
+
+See [CONFIGURATION.md](CONFIGURATION.md).
+
+## Parameters
+
+See [PARAMETERS.md](PARAMETERS.md).
+
+## Upgrading
+
+See [UPGRADE.md](UPGRADE.md).
+
+## Operations
+
+See [OPERATIONS.md](OPERATIONS.md).
+
+## Live streaming
+
+Use the [short Live installation path](LIVE_INSTALLATION.md) for a new RTMP to
+HLS deployment, then the [Live operations runbook](LIVE_OPERATIONS.md) for the
+administration page, logs, restarts and incident handling. The detailed
+[Manager Live reference](LIVE.md) and [MediaMTX setup](MEDIAMTX_SETUP.md) cover
+the API and custom deployments with MediaMTX 1.21.1 or newer.
 
 ## Local pre-PR checks
 
@@ -515,9 +535,3 @@ If the original task request has a non-empty `notify_url`, the manager POSTs:
 ## License
 
 Licence GPL 3.0
-
-## Live streaming
-
-See [LIVE.md](LIVE.md) for Live Runner reservations, MediaMTX, the dynamic `hls_url` contract for Pod and multi-instance deployments.
-For native or Docker installation of MediaMTX >= 1.21.1, including reuse of an
-existing installation, see [MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md).

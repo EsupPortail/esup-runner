@@ -82,14 +82,13 @@ anything and never overwrites a complete existing configuration.
 Install the shared user unit once on each host, then start the corresponding
 instance. The complete procedure, including user lingering for boot, is in
 [MediaMTX systemd setup](MEDIAMTX_SETUP.md#4-start-the-native-systemd-service).
-The essential start commands are:
+Follow its YAML validation and unit installation steps before running the
+essential start commands:
 
 ```bash
 systemctl --user enable --now esup-runner-mediamtx@manager.service  # Manager host
 systemctl --user enable --now esup-runner-mediamtx@runner.service     # Runner host
 ```
-
-Validate the selected YAML with `mediamtx --validate-conf` before starting it.
 
 ### 2. Connect the applications
 
@@ -135,18 +134,29 @@ frontend to the owning Runner instance; never construct it from a guessed port.
 
 ### 3. Start the applications
 
-Start MediaMTX before the applications, then start or restart the normal user
-services after their `.env` files are complete:
+Start MediaMTX before the applications. If the Runner uses a grouped
+configuration, use the existing `esup-runner-runner.service`; do not also enable
+the old templated Live service. Add the MediaMTX dependency drop-in described in
+[Runner Live service setup](../../runner/docs/LIVE.md#use-the-main-runner-service-with-a-mixed-or-grouped-env)
+and run `systemctl --user daemon-reload` before starting the application.
+
+For a first application installation, enable and start the normal user services
+after their `.env` files are complete. Run each command on the corresponding host:
 
 ```bash
 systemctl --user enable --now esup-runner-manager.service
 systemctl --user enable --now esup-runner-runner.service
 ```
 
-If the Runner uses a grouped configuration, use the existing
-`esup-runner-runner.service`; do not also enable the old templated Live service.
-Add the MediaMTX dependency drop-in described in
-[Runner Live service setup](../../runner/docs/LIVE.md#use-the-main-runner-service-with-a-mixed-or-grouped-env).
+For applications that are already running, finish active tasks and broadcasts,
+then restart the affected services to load the updated `.env`:
+
+```bash
+systemctl --user restart esup-runner-manager.service  # Manager host
+systemctl --user restart esup-runner-runner.service   # Runner host
+```
+
+`enable --now` alone does not restart an active service or apply its new environment.
 
 ### 4. Verify before involving the encoder
 
@@ -193,7 +203,13 @@ For a repeatable test without an encoder, follow the
 ## Docker Compose shortcut
 
 For a self-contained evaluation or a small deployment, use the supplied
-[Compose stack](../../deploy/live/compose.yml):
+[Compose stack](../../deploy/live/compose.yml). The example starts one Live
+Runner and uses loopback addresses for a first test on the Docker host.
+
+### 1. Prepare private configuration files and build the images
+
+For a new deployment, copy the examples below. For an existing deployment,
+retain and review its configured files instead of copying over them:
 
 ```bash
 cd /opt/esup-runner/deploy/live
@@ -202,7 +218,74 @@ cp manager.env.example manager.env
 cp runner.env.example runner.env
 cp ../../manager/production/mediamtx-live.yml manager-mediamtx.yml
 cp ../../runner/production/mediamtx-live.yml runner-mediamtx.yml
-# Replace every CHANGE_ME_* value with a unique secret.
+docker compose -p live-a build
+```
+
+### 2. Configure matching credentials and an administrator
+
+Replace all active `CHANGE_ME_*` values in the four files. Use different secrets
+for each role, with matching values only where the same credential is used:
+
+| Credential | Matching locations |
+| --- | --- |
+| Runner API token | `manager.env` `AUTHORIZED_TOKENS__runners` and `runner.env` `RUNNER_TOKEN` |
+| Client API token | `manager.env` `AUTHORIZED_TOKENS__pod` and the client application's token |
+| Manager `publisher` password | `manager-mediamtx.yml` and the encoder's publishing credentials |
+| Manager `relay` password | `manager-mediamtx.yml` and `runner.env` `LIVE_UPSTREAM_RTMP_URL` |
+| Manager `control` password | `manager-mediamtx.yml` and `manager.env` `LIVE_MEDIAMTX_API_PASSWORD` |
+| Runner `control` password | `runner-mediamtx.yml` and `runner.env` `LIVE_MEDIAMTX_API_PASSWORD` |
+| Runner `transcoder` password | `runner-mediamtx.yml` and `runner.env` `LIVE_LOCAL_RTMP_URL` |
+
+URL-encode reserved characters in RTMP URL credentials. For administration,
+generate a bcrypt hash using the built Manager image; no host Python environment
+is required. This command prompts privately for the password and prints its hash:
+
+```bash
+docker compose -p live-a run --rm --no-deps --entrypoint python manager -c \
+  'from getpass import getpass; from app.core.passwords import BcryptPasswordContext; print(BcryptPasswordContext().hash(getpass("Admin password: ")))'
+```
+
+Replace `CHANGE_ME_BCRYPT_HASH` in `manager.env` with that hash, keeping the
+single quotes around the `ADMIN_USERS__admin` value so Compose preserves its
+dollar signs. Use the entered password to log in as `admin`; store only the hash
+in the file. If the Manager's host Python environment is already installed,
+`uv run scripts/generate_password.py` from `manager/` is an alternative; copy its
+hash into the same single-quoted assignment. Without an `ADMIN_USERS__*` entry,
+the administration interface is inaccessible even when API tokens work.
+
+### 3. Set browser-facing URLs and encoder access
+
+The examples work locally with the default published ports:
+
+| File and setting | Local test value | Change it when |
+| --- | --- | --- |
+| `manager.env`: `MANAGER_PUBLIC_URL` | `http://127.0.0.1:8081` | The browser uses another address, port or HTTPS frontend; use that exact public URL for administration and CSRF validation |
+| `runner.env`: `LIVE_PUBLIC_HLS_BASE_URL` | `http://127.0.0.1:8082/hls` | Viewers use another address, port or HTTPS frontend; use the URL routed to this Runner's `/hls/` endpoint |
+
+Loopback URLs work only for a browser/player on the Docker host. For remote
+viewers, configure the public HTTPS route before starting and set the HLS base URL
+to it, for example `https://live.example.org/hls`. Follow
+[Runner HLS exposure](../../runner/docs/LIVE.md#service-and-hls-exposure);
+Compose does not create the reverse proxy, DNS record or TLS certificate.
+
+Set `RTMP_BIND_IP` to an encoder-reachable host interface for a remote encoder;
+it defaults to loopback for local testing. Export it in the shell running Compose,
+or put it in `deploy/live/.env`. The same applies to host-port overrides such as
+`MANAGER_HTTP_PORT` and `RUNNER_HTTP_PORT`; update the browser-facing URLs to match.
+`manager.env` and `runner.env` configure applications inside their containers;
+they do not supply variables for Compose host-port interpolation.
+
+Keep internal container URLs using `manager-media` and `runner-media`; do not
+replace these names with `127.0.0.1`.
+
+### 4. Validate and start
+
+Run from `deploy/live/`. The subshell stops before startup if any active
+placeholder remains or Compose validation fails:
+
+```bash
+(
+set -eu
 # Ignore disabled optional settings; print only filenames, never secret values.
 if awk '!/^[[:space:]]*#/ && /CHANGE_ME/ {
   if (!seen[FILENAME]++) print FILENAME
@@ -214,32 +297,35 @@ else
   echo "No MediaMTX or application placeholders remain"
 fi
 docker compose -p live-a config --quiet
-docker compose -p live-a up -d --build
+docker compose -p live-a up -d
 docker compose -p live-a ps
+)
 ```
 
-The `grep` command must return no placeholder before the stack is used. Keep
-the Manager `control` password aligned with its application environment, the
-Runner `control` and `transcoder` passwords aligned with the Runner environment,
-the Manager `relay` password aligned with `LIVE_UPSTREAM_RTMP_URL`, and the
-Runner `transcoder` password aligned with `LIVE_LOCAL_RTMP_URL`. Set
-`RTMP_BIND_IP` to an encoder-reachable interface; it defaults to loopback.
-Export it in the shell running Compose, or put it in `deploy/live/.env`.
-`manager.env` and `runner.env` configure the applications inside their containers;
-they do not supply variables for Compose host-port interpolation.
+The `awk` check ignores comment lines and prints filenames only. It does not
+validate password matching or public routing. `config --quiet` validates the
+Compose model without displaying the expanded environment. The Manager's
+writable application logs stay at `/var/log/esup-runner`; it reads MediaMTX
+diagnostics from the separate read-only mount `/var/log/mediamtx/mediamtx.log`.
 
-The placeholder check ignores comment lines and prints filenames only, keeping configured secrets out of
-its output. `config --quiet` validates the Compose model without displaying
-the expanded environment. The Manager's writable application logs stay at
-`/var/log/esup-runner`; it reads MediaMTX diagnostics from the separate
-read-only mount `/var/log/mediamtx/mediamtx.log`.
+### 5. Verify the first session
 
-Compose uses internal names (`manager-media`, `runner-media`) in container
-URLs. Do not replace them with `127.0.0.1`. Use
-`docker compose -p live-a logs --tail=100 manager runner manager-media runner-media`
-for the first verification. This shortcut exposes one Live Runner; follow the
-[Compose details](MEDIAMTX_SETUP.md#complete-stack-with-docker-compose) before
-adding workers or publishing production traffic.
+Open `http://127.0.0.1:8081/admin/live` for the default local test, or the configured
+Manager public URL followed by `/admin/live`. Log in with the `admin` account and
+confirm that the Live Runner is available. Inspect startup logs with:
+
+```bash
+docker compose -p live-a logs --tail=100 manager runner manager-media runner-media
+```
+
+Perform the [first Live test](#5-perform-the-first-live-test), using the Docker
+host's reachable RTMP address and published port for the encoder. For a local
+publisher, these default to `127.0.0.1:1935`. Wait for `running` and `hls_ready=true`,
+then use the exact displayed `hls_url` in the player.
+
+Before adding workers or publishing production traffic, follow the
+[Compose reference](LIVE.md#docker-compose) for networking, persistent volumes
+and additional Runner identities.
 
 ## Next step
 

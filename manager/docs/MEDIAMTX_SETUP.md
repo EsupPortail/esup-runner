@@ -23,6 +23,17 @@ does not need CUDA, NVIDIA drivers or a GPU-enabled image. Configure the Runner'
 FFmpeg separately using [FFmpeg setup](../../runner/docs/FFMPEG_SETUP.md) and
 [Live Runner configuration](../../runner/docs/LIVE.md).
 
+## Contents
+
+- [Choose an installation method](#1-choose-an-installation-method)
+- [Install the native executable](#2-install-the-native-executable)
+- [Prepare one instance](#3-prepare-one-instance)
+- [Start the native systemd service](#4-start-the-native-systemd-service)
+- [Run MediaMTX in Docker](#5-run-mediamtx-in-docker)
+- [Connect the applications and verify](#6-connect-the-applications-and-verify)
+- [Manual upgrades](#manual-upgrades)
+- [Troubleshooting](#troubleshooting)
+
 ## 1) Choose an installation method
 
 | Deployment | Steps |
@@ -602,7 +613,7 @@ cd /opt/esup-runner
 git sparse-checkout add manager runner deploy/live
 ```
 
-Then follow the [Live Docker Compose procedure](LIVE.md#docker-compose) to copy
+Then follow the [Live Docker Compose procedure](LIVE_INSTALLATION.md#docker-compose-shortcut) to copy
 and customize the two application environments and two MediaMTX YAML files.
 This method uses Docker's private network: the applications reach the control
 APIs at `http://manager-media:9997` and `http://runner-media:9997`, respectively.

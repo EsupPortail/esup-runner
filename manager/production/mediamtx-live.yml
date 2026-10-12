@@ -1,4 +1,4 @@
-# MediaMTX 1.21.1. Replace credentials and restrict publish/read IP networks.
+# MediaMTX >= 1.21.1. Replace credentials and restrict publish/read IP networks.
 # Override addresses with MTX_RTMPADDRESS, MTX_APIADDRESS, MTX_METRICSADDRESS.
 # Native services: bind API/metrics to loopback. Containers: bind only on the
 # private control network; do not publish these ports on the host.

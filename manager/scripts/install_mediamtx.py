@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install a pinned MediaMTX executable and prepare this Manager Live instance.
+"""Install or reuse MediaMTX >= 1.21.1 and prepare this Manager Live instance.
 
 Run from manager/ as the service account, without sudo; defaults use its home directory.
 Uses only the Python standard library. Run with --help for installation,
@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.21.1"
+VERSION = "1.21.1"  # Minimum supported release and default download.
 MAX_ARCHIVE_SIZE = 256 * 1024 * 1024
 ADDRESS_KEYS = {
     "rtmp_address": ("rtmpAddress", "MTX_RTMPADDRESS"),
@@ -40,7 +40,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.set_defaults(role="manager")
     commands = parser.add_subparsers(dest="command", required=True)
     for command, help_text in (
-        ("install", "Install or reuse the pinned native executable"),
+        ("install", "Install or reuse a supported native executable"),
         ("configure", "Prepare one Manager instance; also suitable for Docker"),
         ("setup", "Install/reuse the executable, then prepare an instance"),
     ):
@@ -50,7 +50,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
         if command != "configure":
             child.add_argument(
-                "--version", default=VERSION, help=f"Fixed release (default: {VERSION})"
+                "--version",
+                default=VERSION,
+                help=f"Release to download if absent (minimum/default: {VERSION}); reuse supported installs",
             )
             child.add_argument(
                 "--binary",
@@ -78,6 +80,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.command != "configure" and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version):
         parser.error("--version must be a fixed release such as 1.21.1")
+    if args.command != "configure" and tuple(map(int, args.version.split("."))) < tuple(
+        map(int, VERSION.split("."))
+    ):
+        parser.error(f"--version must be at least {VERSION}")
     if args.command != "install" and not re.fullmatch(
         r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", args.instance
     ):
@@ -111,12 +117,22 @@ def linux_architecture() -> str:
     return architectures[machine]
 
 
-def check_version(binary: Path, version: str) -> None:
-    """Require the executable's exact version, without replacing a different release."""
+def read_version(binary: Path) -> str:
+    """Read a stable executable version, rejecting unrecognized or prerelease output."""
     result = subprocess.run(
         [str(binary), "--version"], check=True, capture_output=True, text=True, timeout=15
     )
-    if result.stdout.strip() != f"v{version}":
+    reported = result.stdout.strip()
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", reported):
+        raise ValueError(
+            f"{binary} does not report a stable MediaMTX version; it has been left unchanged."
+        )
+    return reported[1:]
+
+
+def check_version(binary: Path, version: str) -> None:
+    """Require the downloaded executable's exact requested version."""
+    if read_version(binary) != version:
         raise ValueError(
             f"{binary} does not report v{version}; it has been left unchanged. "
             "Review the existing installation or select another --binary path."
@@ -184,8 +200,13 @@ def install_binary(args: argparse.Namespace) -> Path:
     """Reuse or install a verified binary, linking PATH installs for the default user unit."""
     target = binary_path(args)
     if target.exists() or target.is_symlink():
-        check_version(target, args.version)
-        print(f"Reusing MediaMTX {args.version}: {target}")
+        installed = read_version(target)
+        if tuple(map(int, installed.split("."))) < tuple(map(int, VERSION.split("."))):
+            raise ValueError(
+                f"{target} reports v{installed}; MediaMTX >= {VERSION} is required. "
+                "It has been left unchanged; upgrade it manually or select another --binary path."
+            )
+        print(f"Reusing MediaMTX {installed}: {target}")
         local = Path.home() / ".local/bin/mediamtx"
         if args.binary is None and target != local:
             reject_symlinks(local.parent)

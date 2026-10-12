@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Report Live outgoing bandwidth per viewer and for `--live-viewers`, using the
+  configured rendition video/audio bitrates independently of the transcoder.
+- Include Live CPU/NVENC, CPU fallback, rendition count and optional total viewer
+  delivery budgets in `check_runner_resources.py`; retain configured Live task
+  groups in sizing suggestions and check the targeted GPU device.
 - Updated runtime and development dependencies in `uv.lock` to their latest compatible versions,
   including the transcription CPU/GPU stack.
 - Select Live encoding explicitly with `LIVE_TRANSCODER=cpu` (default) or `nvenc`, independently of `ENCODING_TYPE`. Remove the former `auto` value; deployments that relied on `ENCODING_TYPE=GPU` must now set `LIVE_TRANSCODER=nvenc`. Keep optional `LIVE_NVDEC` and CPU fallback.
@@ -26,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Match optional Pod Live synchronization against the broadcaster's `source_id`
   through its REST filter (Pod 4.5.0), allowing a different Pod slug. Update only
   a unique exact match, with no slug fallback and a bounded lookup/PATCH timeout.
+- Retain Live as an alternative task in a resource-checked mixed instance when
+  sizing recommendations cannot fit a dedicated Live instance.
 - Ignore confirmed trailing silence when comparing final VTT coverage with the source duration, preventing complete transcriptions from being incorrectly rejected as truncated.
 - Make reused MediaMTX installations available at the default user service executable path without reinstalling the binary.
 

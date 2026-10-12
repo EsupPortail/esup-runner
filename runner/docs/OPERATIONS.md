@@ -189,6 +189,93 @@ Run `check_config.py` first after editing `.env`. It validates the same effectiv
 configuration used at Runner startup, prints only non-sensitive summary values,
 and returns `2` when one or more settings are invalid.
 
+### Live resource estimates
+
+`check_runner_resources.py` includes Live when `RUNNER_TASK_TYPES` declares
+`live` in at least one instance, including a mixed group. Live resource and
+network sections stay hidden otherwise, even when `LIVE_MEDIAMTX_API_PASSWORD`,
+`LIVE_UPSTREAM_RTMP_URL` or `--live-viewers` are set. Relay credentials alone do
+not enable Live. It reads `LIVE_TRANSCODER` (independently of `ENCODING_TYPE`), the
+configured `LIVE_VARIANTS`, `LIVE_CPU_FALLBACK` and `GPU_HWACCEL_DEVICE`.
+Each instance runs one task at a time: mixed groups use the maximum CPU, RAM
+and VRAM requirement among their supported tasks, while dedicated instances
+add their requirements. See [Live operation](LIVE.md) for the media pipeline.
+
+The starting budgets for the default three-rendition H.264/AAC profile are:
+
+| Live transcoder | vCPU per session | Host RAM per session | VRAM per session |
+| --- | ---: | ---: | ---: |
+| CPU (`libx264`) | 2 | 2 GB | 0 |
+| GPU (`nvenc`), CPU fallback disabled | 1 | 2 GB | 1 GB |
+| GPU (`nvenc`), CPU fallback enabled (default) | 2 | 2 GB | 1 GB |
+
+These are planning assumptions, not measured maximum usage. The CPU and viewer
+figures come from historical Nginx RTMP sizing; the GPU figures are initial
+estimates. Profiles with more than three renditions increase the budgets
+proportionally, rounding vCPU upward. A larger source/output resolution or frame
+rate still requires measurement even when the rendition count is unchanged.
+NVDEC does not reduce the CPU reserve: the current pipeline still scales video,
+encodes AAC and muxes HLS on the CPU.
+
+Pass the **total concurrent viewers served by this host across all sessions**:
+
+```bash
+UV_CACHE_DIR=/tmp/esup-runner-uv-cache uv run scripts/check_runner_resources.py --live-viewers 4000
+```
+
+The script adds `ceil(viewers / 2000)` vCPU once for delivery, for either
+transcoder. Without this option, the viewer count defaults to zero and the
+output explicitly states that viewer delivery is excluded. This CLI option is
+only a sizing input; it does not limit viewers or change the Runner configuration.
+For example, two dedicated CPU Lives and 4,000 viewers require an estimated
+6 vCPU and 4 GB RAM before additional system/service overhead.
+
+The Live report also shows the network impact of every concurrent viewer.
+For each configured rendition, it adds the video and audio bitrates, then
+reports the lowest and highest per-viewer payload rates in Mbps (1,000,000
+bits/s). Each viewer plays one rendition, so the rendition bitrates are not
+added together. The host-wide viewer count is applied once across all sessions,
+for either CPU or NVENC transcoding.
+
+With the default profile, the range is 0.344–1.228 Mbps per viewer. At 4,000
+concurrent viewers, the estimated outgoing payload is 1,376–4,912 Mbps, or about
+1.38–4.91 Gbps. Without `--live-viewers`, the per-viewer range is still shown but
+the aggregate bandwidth is not estimated. Size egress for the highest rendition
+and add headroom for HLS/HTTP/TLS overhead and traffic peaks. These estimates
+assume direct HLS delivery from the Runner; caching/CDN can reduce Runner
+traffic. The script does not measure or validate network link capacity, and
+network sizing does not change its CPU/RAM/GPU adequacy result.
+
+When Live is enabled, recommendations grow the configured task groups in
+proportion to their declared counts while the budgets fit. They retain the
+groups' task types, including mixed groups, and may omit a group that cannot fit.
+If this would exclude Live entirely, the script tries adding `live` as an
+alternative task on one retained instance, checking all its resource budgets
+again. For example, on an 8-vCPU host with at least 10 GB RAM, a CPU recommendation
+can be `[1x(encoding,studio,transcription,live)]`: all four task types share the
+same instance, and only one task can run at a time. A viewer budget or a larger
+Live profile can prevent this addition.
+This is a greedy suggestion, not an optimal allocation. Review the printed
+recommendation before applying it. If no configured group can fit even one
+instance, the script reports that no feasible configuration is available.
+Configurations without Live keep the existing VOD
+recommendation logic and GPU model policy.
+
+Each Live rendition creates a separate NVENC encoding session. All Lives use
+the configured `GPU_HWACCEL_DEVICE`; their VRAM and known-model encoding budgets
+must fit that device, even on a host with multiple GPUs. Existing per-model VOD
+encoding maxima are reused conservatively as encoding budgets, counting every
+Live rendition. Unknown models use VRAM estimates and cannot validate encoding
+throughput or driver session limits. NVIDIA documents these separate constraints
+in its [NVENC application note](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/nvenc-application-note/index.html).
+
+Benchmark the actual RTMP-to-HLS workload before setting production capacity.
+Check CPU use, NVENC/NVDEC utilization, driver session limits, network egress,
+TLS/reverse-proxy overhead and shared MediaMTX/service overhead. GPU VOD CPU
+overhead remains outside this script's model. HLS segments under `/dev/shm/hls`
+also consume RAM and are not measured by the script; validate their retained size
+and the tmpfs capacity separately, especially for custom high-bitrate profiles.
+
 ## Storage and retention operations
 
 Task outputs/manifests are stored under `STORAGE_DIR`.

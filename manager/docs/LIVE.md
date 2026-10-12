@@ -4,18 +4,12 @@
 > **Operating an installed deployment?** Use the [Live operations runbook](LIVE_OPERATIONS.md).
 > This page is the detailed API, configuration and architecture reference.
 
+## Architecture and design choices
+
 A Live session is an Esup-Runner `live` task. Its `live_id` is its `task_id`.
 It reserves an entire Runner instance until cleanup is complete.
 Four simultaneous streams require four Runner instances; they can be launched
 from one `RUNNER_TASK_TYPES=[4x(live)]` declaration. No global limit is imposed.
-
-**Publishing RTMP is sufficient to start HLS.** With `LIVE_ENABLED=true`, the
-Manager automatically discovers RTMP publications accepted by its MediaMTX, reserves
-an available Live Runner and starts transcoding. Extron SMP 351, OBS and other
-encoders only need their usual RTMP publishing configuration; no start API call
-or encoder-side script is required. The Manager, Runner and MediaMTX services
-must already be running: publishing starts a Live task and FFmpeg, not an
-otherwise stopped systemd service.
 
 ```mermaid
 flowchart LR
@@ -31,8 +25,6 @@ flowchart LR
     A -->|hls_url| P
     H --> V[hls.js / VLC player]
 ```
-
-## Architecture and design choices
 
 The encoder always publishes to the MediaMTX instance associated with the Manager.
 The Manager discovers publications by periodically querying MediaMTX's private
@@ -196,6 +188,14 @@ setting to their publisher paths; changing the checkout template does not update
 an installed configuration.
 
 ## Automatic RTMP-to-HLS operation
+
+**Publishing RTMP is sufficient to start HLS.** With `LIVE_ENABLED=true`, the
+Manager automatically discovers RTMP publications accepted by its MediaMTX, reserves
+an available Live Runner and starts transcoding. Extron SMP 351, OBS and other
+encoders only need their usual RTMP publishing configuration; no start API call
+or encoder-side script is required. The Manager, Runner and MediaMTX services
+must already be running: publishing starts a Live task and FFmpeg, not an
+otherwise stopped systemd service.
 
 1. Enable Live and configure MediaMTX Control API access as above. Keep
    `LIVE_AUTO_START=true`; no `LIVE_SOURCES` declaration is needed. Restart the

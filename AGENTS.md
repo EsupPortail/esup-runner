@@ -21,9 +21,13 @@
   snapshot or `HEAD` cannot establish which changes predated the task.
 - Use `uv` for Python and Python tooling, always with
   `UV_CACHE_DIR=/tmp/esup-runner-uv-cache`.
-- Write explanations, findings, and final responses in French unless explicitly
-  requested otherwise. Lead with the result, then list changed files, checks run,
-  and limitations. Suggest next steps only when useful.
+- Write user-facing explanations, findings, and final responses in French unless
+  explicitly requested otherwise. Lead with the result, then list changed files,
+  checks run, and limitations. Suggest next steps only when useful.
+- Write repository documentation in English, including guides, README files,
+  changelogs, parameter references, diagrams, and documentation examples. The
+  French-language rule applies only to conversations with the user, not to
+  repository documentation.
 
 Skills describe workflows and invariants. Resolve changeable details (versions,
 dependencies, CI commands, release options and effects) from the current source

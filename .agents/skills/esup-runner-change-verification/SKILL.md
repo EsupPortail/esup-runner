@@ -47,6 +47,13 @@ merely because it looks old, or add speculative compatibility layers.
 
 ## Validate readiness
 
+- Require English docstrings for new Python functions, methods, and classes in
+  application code and maintained scripts; require existing docstrings to be
+  updated when their documented behavior changes. Follow the style and level of
+  detail in nearby project code, covering purpose, meaningful parameters, return
+  values, exceptions, and side effects where useful. Flag missing or inaccurate
+  docstrings as corrections needed before declaring readiness. Keep this check
+  scoped to the change and follow existing conventions for test code.
 - Identify missing or weak regression tests, particularly failure paths and
   behavior hidden by mocks. Read the sibling
   [testing skill](../esup-runner-testing/SKILL.md) for command selection and
@@ -60,6 +67,15 @@ merely because it looks old, or add speculative compatibility layers.
   `docs/CONFIGURATION.md`, and `docs/CHANGELOG.md` as applicable. Consult
   `.github/pull_request_template.md` when preparing a PR; ordinary changes do
   not require a version bump.
+- For added or changed environment parameters, require corresponding updates in
+  the affected component's `.env.example`. Follow the existing SMTP block style:
+  English `#  - PARAMETER: description` comments explaining purpose, units,
+  allowed values, and defaults where relevant, followed by example assignments.
+  Group related settings and retain or add a reference to the detailed component
+  documentation (for example, `docs/LIVE.md`). Verify descriptions against the
+  configuration code and preserve commented optional settings unless enabling
+  them is part of the requested change. Flag missing or outdated explanations
+  as corrections needed before declaring readiness.
 - Inspect the final diff again after validation. Use the baseline to check that
   unrelated user changes were preserved and that only intended changes belong
   to this task; retain any attribution limitation if evidence is incomplete.

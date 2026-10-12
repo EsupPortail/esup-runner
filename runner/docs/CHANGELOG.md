@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated runtime and development dependencies in `uv.lock` to their latest compatible versions,
   including the transcription CPU/GPU stack.
 
+### Fixed
+
+- Ignore confirmed trailing silence when comparing final VTT coverage with the source duration, preventing complete transcriptions from being incorrectly rejected as truncated.
+
 ## [1.9.1] - 2026-09-25
 
 ### Fixed

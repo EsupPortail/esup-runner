@@ -212,10 +212,12 @@ def test_runtime_media_utils_extra_branches(monkeypatch, tmp_path, capsys):
     assert (
         runtime_media.probe_effective_duration_seconds(
             tmp_path / "a.mp3",
+            debug=True,
             subprocess_run=fake_probe,
         )
         == 70.5
     )
+    assert "Detected trailing silence" in capsys.readouterr().out
 
     def failing_ffmpeg_probe(command, *args, **kwargs):
         if command[0] == "ffprobe":
@@ -231,6 +233,44 @@ def test_runtime_media_utils_extra_branches(monkeypatch, tmp_path, capsys):
         == 100.0
     )
     assert "ffmpeg failed to detect trailing silence" in capsys.readouterr().out
+
+    assert (
+        runtime_media._run_silence_detection(
+            tmp_path / "a.mp3",
+            100.0,
+            True,
+            lambda *_a, **_k: types.SimpleNamespace(returncode=1, stdout="", stderr=""),
+        )
+        is None
+    )
+    assert "ffmpeg failed to detect trailing silence" in capsys.readouterr().out
+
+    assert runtime_media._parse_trailing_silence_start("", 100.0) is None
+    assert (
+        runtime_media._parse_trailing_silence_start("silence_start: 10\nsilence_end: 90", 100.0)
+        is None
+    )
+    assert (
+        runtime_media._parse_trailing_silence_start("silence_start: 0\nsilence_end: 100", 100.0)
+        is None
+    )
+    assert (
+        runtime_media._parse_trailing_silence_start("silence_start: 100\nsilence_end: 100", 100.0)
+        is None
+    )
+
+    monkeypatch.setattr(runtime_media, "probe_duration_seconds", lambda *a, **k: 0.0)
+    assert runtime_media.probe_effective_duration_seconds(tmp_path / "a.mp3") == 0.0
+    monkeypatch.setattr(runtime_media, "probe_duration_seconds", lambda *a, **k: 100.0)
+    assert (
+        runtime_media.probe_effective_duration_seconds(
+            tmp_path / "a.mp3",
+            subprocess_run=lambda *_a, **_k: types.SimpleNamespace(
+                returncode=0, stdout="", stderr="no silence markers"
+            ),
+        )
+        == 100.0
+    )
 
     bad_args = types.SimpleNamespace(timeout_factor="oops", min_timeout="oops")
     timeout_value = runtime_media.compute_timeout(

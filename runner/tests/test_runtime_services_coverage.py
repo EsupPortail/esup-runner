@@ -273,8 +273,14 @@ def test_restart_instance_status_monitor_and_wait(monkeypatch):
     monkeypatch.setattr(
         process_manager_module.sys, "exit", lambda code: (_ for _ in ()).throw(SystemExit(code))
     )
+
+    class SignalledProcess:
+        def join(self):
+            captured_handlers[signal.SIGTERM](signal.SIGTERM, None)
+
+    manager.processes = [SignalledProcess()]
     with pytest.raises(SystemExit):
-        captured_handlers[signal.SIGTERM](signal.SIGTERM, None)
+        manager.wait_for_termination()
     assert stopped["called"] is True
 
 

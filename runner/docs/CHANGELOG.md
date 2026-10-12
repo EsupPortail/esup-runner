@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Defer termination-signal logging and worker cleanup until the signal handler
+  has unwound; ignore repeated signals during shutdown to prevent recursive
+  cleanup and reentrant log writes.
 - Ignore confirmed trailing silence when comparing final VTT coverage with the source duration, preventing complete transcriptions from being incorrectly rejected as truncated.
 
 ## [1.9.1] - 2026-09-25

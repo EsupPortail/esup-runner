@@ -6,12 +6,15 @@ import asyncio
 
 import pytest
 
+from app.core.config import config
 from app.services import background_service
 
 
 @pytest.mark.asyncio
-async def test_start_and_stop_all_services(monkeypatch):
-    """Validate Start and stop all services."""
+@pytest.mark.parametrize("live_enabled", [False, True], ids=["live-disabled", "live-enabled"])
+async def test_start_and_stop_all_services(monkeypatch, live_enabled):
+    """Start and stop the expected services independently of the local Live setting."""
+    monkeypatch.setattr(config.LIVE, "enabled", live_enabled)
     started = []
 
     async def fake_service(name: str):
@@ -34,21 +37,29 @@ async def test_start_and_stop_all_services(monkeypatch):
         lambda: fake_service("live"),
     )
 
-    mgr = background_service.BackgroundServiceManager()
-    await mgr.start_all_services()
-    await asyncio.sleep(0.01)
-    assert mgr.is_running is True
-    assert len(mgr.tasks) == 5
-    assert set(started) == {"runners", "cleanup", "timeouts", "reconcile", "live"}
-    assert {service["name"] for service in mgr.get_service_status()["services"]} == {
+    expected_started = {"runners", "cleanup", "timeouts", "reconcile"}
+    expected_services = {
         "check_runners_activity",
         "cleanup_old_tasks",
         "check_task_timeouts",
         "reconcile_running_tasks_with_runners",
-        "reconcile_live_sessions",
     }
+    if live_enabled:
+        expected_started.add("live")
+        expected_services.add("reconcile_live_sessions")
 
-    await mgr.stop_all_services()
+    mgr = background_service.BackgroundServiceManager()
+    await mgr.start_all_services()
+    try:
+        await asyncio.sleep(0.01)
+        assert mgr.is_running is True
+        assert len(mgr.tasks) == len(expected_services)
+        assert set(started) == expected_started
+        assert {service["name"] for service in mgr.get_service_status()["services"]} == (
+            expected_services
+        )
+    finally:
+        await mgr.stop_all_services()
     assert mgr.is_running is False
     assert mgr.tasks == []
 

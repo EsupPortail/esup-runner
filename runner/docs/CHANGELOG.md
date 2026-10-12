@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Accept stable MediaMTX versions >= 1.21.1, keeping 1.21.1 as the default
+  download and allowing an explicit newer release for new installations.
+  Preserve installed binaries and document manual upgrades, Live interruptions
+  and rollback for native services and Docker.
 - Report Live outgoing bandwidth per viewer and for `--live-viewers`, using the
   configured rendition video/audio bitrates independently of the transcoder.
 - Include Live CPU/NVENC, CPU fallback, rendition count and optional total viewer
@@ -54,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add the `live` task type: pull Manager RTMP sources through a native MediaMTX relay and always transcode them to adaptive HLS with FFmpeg. Support CPU and NVENC encoding, optional NVDEC and CPU fallback, durable stop/recovery, and dedicated or mixed Runner instances.
 - Support multiple Live instances in mixed or grouped `RUNNER_TASK_TYPES`, sharing one MediaMTX and common encoding settings, with per-instance HLS URL/directory templates and isolated reservation, cancellation and recovery.
 - MediaMTX and Live Runner systemd user units with home-local configuration, private file permissions and writable data/log examples.
-- Add `scripts/install_mediamtx.py` for native Runner Live deployments, with pinned downloads, checksum verification, reusable installations, instance configuration, generated credentials and dry-run support.
+- Add `scripts/install_mediamtx.py` for native Runner Live deployments, with versioned downloads, checksum verification, reusable installations, instance configuration, generated credentials and dry-run support.
 - Add `scripts/configure_live.py` to connect the application to MediaMTX without copying credentials manually. The helper uses the component's Python environment and locked dependencies, preserves unrelated `.env` settings and creates private backups without restarting services.
 
 ## [1.9.1] - 2026-09-25

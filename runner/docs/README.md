@@ -6,18 +6,27 @@
 
 This README explains what the runner service does, how it is started, and the task types it can execute.
 
+## Contents
+
+- [Installation](#installation)
+- [Upgrading](#upgrading)
+- [Operations](#operations)
+- [Local pre-PR checks](#local-pre-pr-checks)
+- [What the runner is](#what-the-runner-is)
+- [High-level lifecycle](#high-level-lifecycle)
+- [Handler layout (refactor)](#handler-layout-refactor)
+- [Configuring instances and task types](#configuring-instances-and-task-types)
+- [Authentication and version compatibility (Runner / Manager)](#authentication-and-version-compatibility-runner--manager)
+- [Supported task types](#supported-task-types)
+- [How tasks are processed](#how-tasks-are-processed)
+- [Minimal .env example](#minimal-env-example)
+- [Additional references](#additional-references)
+- [Live streaming](#live-streaming)
+
 ## Installation
 
 See [INSTALLATION.md](INSTALLATION.md).
 For Docker-based installation, see [DOCKER.md](DOCKER.md).
-
-## Upgrading
-
-See [UPGRADE.md](UPGRADE.md).
-
-## Operations
-
-See [OPERATIONS.md](OPERATIONS.md).
 
 ### Quick install (Ubuntu/Debian)
 
@@ -71,6 +80,14 @@ make create-service
 
 `SERVICE_USER` defaults to `esup-runner`. When customized, use that same account
 for source ownership, `uv` installation, `make create-service`, and `loginctl enable-linger`.
+
+## Upgrading
+
+See [UPGRADE.md](UPGRADE.md).
+
+## Operations
+
+See [OPERATIONS.md](OPERATIONS.md).
 
 ## Local pre-PR checks
 

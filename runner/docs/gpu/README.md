@@ -2,6 +2,12 @@
 
 This directory contains installation documentation for NVIDIA driver/CUDA and GPU-capable FFmpeg stacks used by the runner for VOD `ENCODING_TYPE=GPU` or Live `LIVE_TRANSCODER=nvenc`. Live backend selection is independent of `ENCODING_TYPE`.
 
+## Contents
+
+- [How to use this documentation](#how-to-use-this-documentation)
+- [Compatibility matrix](#compatibility-matrix)
+- [Recommended path](#recommended-path)
+
 ## How to use this documentation
 
 1. Choose the platform page matching your OS/CUDA stack.

@@ -271,6 +271,8 @@ async def test_dispatch_timeout_is_retried_with_same_live_id(setup_live, monkeyp
 
 @pytest.mark.asyncio
 async def test_dispatch_forwards_the_pod_broadcaster_slug(setup_live, monkeypatch):
+    monkeypatch.setattr(config, "MANAGER_URL", "http://manager.internal:8081/")
+    monkeypatch.setattr(config, "MANAGER_PUBLIC_URL", "https://manager.example/manager/")
     task = live._allocate(request(), "pod")
     worker = state.runners[task.runner_id]
     dispatch = AsyncMock(return_value={"status": "started"})
@@ -284,6 +286,10 @@ async def test_dispatch_forwards_the_pod_broadcaster_slug(setup_live, monkeypatc
     assert payload["parameters"]["broadcaster_id"] == "room"
     assert payload["parameters"]["source_id"] == "room"
     assert payload["parameters"]["source_path"] == "secret-key/room"
+    assert payload["completion_callback"] == "http://manager.internal:8081/task/completion"
+    assert (
+        payload["completion_callback_public"] == "https://manager.example/manager/task/completion"
+    )
 
 
 def test_reservation_atomic_with_stale_heartbeat_and_registration(tmp_path):

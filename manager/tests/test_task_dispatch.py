@@ -793,9 +793,9 @@ async def test_execute_task_async_background_success_sets_runner_busy(
             return FakeResponse()
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
-    monkeypatch.setattr(task_module.config, "MANAGER_URL", "http://manager.internal:8081")
+    monkeypatch.setattr(task_module.config, "MANAGER_URL", "http://manager.internal:8081/")
     monkeypatch.setattr(
-        task_module.config, "MANAGER_PUBLIC_URL", "https://admin.example.org/runner-manager"
+        task_module.config, "MANAGER_PUBLIC_URL", "https://admin.example.org/runner-manager/"
     )
 
     from app.models.models import TaskRequest
@@ -814,19 +814,33 @@ async def test_execute_task_async_background_success_sets_runner_busy(
     await task_module.execute_task_async_background("t1", runners["r1"], req)
     assert runners["r1"].availability == "busy"
     assert captured["completion_callback"] == "http://manager.internal:8081/task/completion"
+    assert captured["completion_callback_public"] == (
+        "https://admin.example.org/runner-manager/task/completion"
+    )
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runner_status, runner_error",
+    [
+        (500, "no"),
+        (
+            422,
+            '{"detail":"Completion callback rejected: align MANAGER_URL with '
+            'MANAGER_PROTOCOL, MANAGER_HOST and MANAGER_PORT, or MANAGER_PUBLIC_URL."}',
+        ),
+    ],
+)
 async def test_execute_task_async_background_failure_marks_task_failed(
-    monkeypatch, task_module, clean_state
+    monkeypatch, task_module, clean_state, runner_status, runner_error
 ):
     """Validate Execute task async background failure marks task failed."""
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t1"] = _task("t1", "r1", status="pending")
 
     class FakeResponse:
-        status_code = 500
-        text = "no"
+        status_code = runner_status
+        text = runner_error
 
     class FakeAsyncClient:
         def __init__(self, *_, **__):
@@ -858,6 +872,7 @@ async def test_execute_task_async_background_failure_marks_task_failed(
 
     await task_module.execute_task_async_background("t1", runners["r1"], req)
     assert tasks["t1"].status == "failed"
+    assert runner_error in tasks["t1"].error
     assert runners["r1"].availability == "available"
 
 

@@ -310,3 +310,38 @@ async def test_wait_for_terminal_state_treats_timeout_as_terminal(monkeypatch):
     assert result["status"] == "timeout"
     get_status.assert_awaited_once()
     sleep.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_callback_rejection_is_printed_and_stops_smoke_check_without_waiting(
+    monkeypatch, capsys
+):
+    """Show the Runner's admission error instead of waiting for the task deadline."""
+    error = (
+        "Runner returned status 422: Completion callback rejected: "
+        "align MANAGER_URL with MANAGER_PROTOCOL, MANAGER_HOST and MANAGER_PORT, "
+        "or MANAGER_PUBLIC_URL."
+    )
+    monkeypatch.setattr(pipeline, "submit_task_or_exit", AsyncMock(return_value="task-callback"))
+    get_status = AsyncMock(return_value={"status": "failed", "error": error})
+    get_manifest = AsyncMock()
+    sleep = AsyncMock()
+    monkeypatch.setattr(pipeline, "get_task_status", get_status)
+    monkeypatch.setattr(pipeline, "get_result_manifest", get_manifest)
+    monkeypatch.setattr(pipeline.asyncio, "sleep", sleep)
+
+    with pytest.raises(SystemExit, match="task-callback.*status='failed'"):
+        await pipeline.run_one_task_check(
+            AsyncMock(),
+            "http://manager",
+            "token",
+            "Encoding check",
+            {"task_type": "encoding"},
+            download_first_file=True,
+            max_wait_seconds=1200,
+        )
+
+    assert error in capsys.readouterr().out
+    get_status.assert_awaited_once()
+    sleep.assert_not_awaited()
+    get_manifest.assert_not_awaited()

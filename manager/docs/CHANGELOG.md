@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Advertise private and public Manager completion endpoints for VOD and Live
+  tasks so Runners configured with either address can report completion.
+  Mismatches are rejected before execution with a configuration diagnostic.
 - Separate writable Manager logs from the read-only MediaMTX diagnostic mount
   in Live Compose, and initialize owned Manager data storage in the image.
   Document quiet Compose validation and avoid printing secrets during placeholder checks.

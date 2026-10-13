@@ -629,6 +629,69 @@ async def get_task_status_endpoint(
     return {"task_id": safe_task_id, "status": "not_found"}
 
 
+def _describe_completion_callback(callback_url: Optional[str]) -> str:
+    """Describe an endpoint without exposing URL credentials, queries or fragments."""
+    if not callback_url:
+        return "not provided"
+    try:
+        url = httpx.URL(callback_url)
+    except httpx.InvalidURL:
+        return "invalid URL"
+    return f"scheme={url.scheme!r}, host={url.host!r}, port={url.port!r}, path={url.path!r}"
+
+
+def _validate_completion_callback(
+    callback_url: str, public_callback_url: Optional[str] = None
+) -> str:
+    """Return the configured endpoint if a Manager address matches, else raise HTTP 422.
+
+    Ignore trailing slashes on Manager bases and completion paths. Advertised
+    addresses only establish a match: the returned destination always comes
+    from this Runner's MANAGER_URL. Rejections include a redacted configuration
+    diagnostic suitable for task errors and logs.
+    """
+    manager_base_url = config.MANAGER_URL.rstrip("/")
+    completion_path = "/task/completion"
+    manager_callback_url = f"{manager_base_url}{completion_path}"
+    for advertised_url in (callback_url, public_callback_url):
+        if not advertised_url:
+            continue
+        candidate = advertised_url.rstrip("/")
+        if (
+            candidate.endswith(completion_path)
+            and candidate.removesuffix(completion_path).rstrip("/") == manager_base_url
+        ):
+            return manager_callback_url
+
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "Completion callback rejected: neither Manager address matches this Runner's "
+            f"MANAGER_URL. Runner expects ({_describe_completion_callback(manager_callback_url)}); "
+            f"Manager private callback ({_describe_completion_callback(callback_url)}); "
+            f"Manager public callback ({_describe_completion_callback(public_callback_url)}). "
+            "Align runner/.env MANAGER_URL with manager/.env MANAGER_PROTOCOL, MANAGER_HOST "
+            "and MANAGER_PORT, or with MANAGER_PUBLIC_URL. Trailing slashes are ignored; "
+            "credentials, query strings and fragments are not accepted."
+        ),
+    )
+
+
+def _prepare_task_completion_callback(task_request: TaskRequest) -> None:
+    """Canonicalize an advertised callback before admission, logging HTTP 422 rejections."""
+    if not (task_request.completion_callback or task_request.completion_callback_public):
+        return
+    try:
+        task_request.completion_callback = _validate_completion_callback(
+            task_request.completion_callback or "", task_request.completion_callback_public
+        )
+    except HTTPException as exc:
+        logger.error(
+            "Rejected completion callback for task %s: %s", task_request.task_id, exc.detail
+        )
+        raise
+
+
 async def notify_completion(
     callback_url: str,
     task_id: str,
@@ -640,7 +703,7 @@ async def notify_completion(
     Notify manager about task completion status.
 
     Args:
-        callback_url: Must match the configured Manager completion endpoint
+        callback_url: Must match the configured Manager completion endpoint, ignoring trailing slashes
         task_id: Task identifier being reported
         status: Terminal completion status ('completed', 'failed' or 'timeout')
         error_message: Optional error details for failed tasks
@@ -648,14 +711,17 @@ async def notify_completion(
 
     Only the endpoint derived from MANAGER_URL receives the runner token. Invalid
     callbacks return False without a request, including during persisted task recovery.
-    Redirects are disabled. All request phases use finite timeouts and any successful
-    2xx response is accepted.
+    Trailing slashes on the Manager base or completion path are ignored; the
+    request always uses the configured canonical endpoint. Redirects are disabled.
+    All request phases use finite timeouts and any successful 2xx response is accepted.
     """
-    manager_callback_url = f"{config.MANAGER_URL.rstrip('/')}/task/completion"
-    if callback_url != manager_callback_url:
+    try:
+        manager_callback_url = _validate_completion_callback(callback_url)
+    except HTTPException as exc:
         logger.error(
-            "Rejected completion callback for task %s: unexpected Manager endpoint",
+            "Rejected completion callback for task %s: %s",
             task_id,
+            exc.detail,
         )
         return False
 
@@ -902,6 +968,7 @@ async def stop_task(task_id: str, current_manager: str = Depends(get_current_man
     summary="Execute task",
     description="Start task execution on the runner",
     tags=["Task"],
+    responses={422: {"description": "Invalid task request or Manager completion address"}},
 )
 async def run_task(
     task_request: TaskRequest,
@@ -918,8 +985,14 @@ async def run_task(
 
     Returns:
         dict: Task execution status and identifier
+
+    Raises:
+        HTTPException: If neither advertised Manager endpoint matches MANAGER_URL,
+            or the Runner cannot accept the task. Callback validation happens
+            before workspace creation, task state changes or background execution.
     """
     logger.info(f"Received task execution request, registered: {is_registered()}")
+    _prepare_task_completion_callback(task_request)
 
     if task_request.task_type == "live":
         from app.services import live_runtime

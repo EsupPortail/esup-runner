@@ -27,6 +27,7 @@ class TaskRequest(BaseModel):
         parameters: Task-specific parameters required for execution
         notify_url: Callback URL for task completion notification
         completion_callback: Optional configured Manager endpoint for task completion
+        completion_callback_public: Optional public Manager endpoint advertised alongside the private one
     """
 
     task_id: str = Field(
@@ -61,7 +62,11 @@ class TaskRequest(BaseModel):
     )
     completion_callback: Optional[str] = Field(
         None,  # Default value is None for optional fields
-        description="Optional Manager completion endpoint; must equal MANAGER_URL + /task/completion. The runner sends completion notifications only to this configured endpoint.",
+        description="Optional private Manager completion endpoint. Either this endpoint or completion_callback_public must match the Runner MANAGER_URL + /task/completion. Notifications use only the Runner's configured endpoint.",
+    )
+    completion_callback_public: Optional[str] = Field(
+        None,
+        description="Optional public Manager completion endpoint derived from MANAGER_PUBLIC_URL. Used only to match the Runner's configured Manager address, never as a request-selected notification destination.",
     )
 
 

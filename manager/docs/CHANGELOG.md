@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Replace the Live dashboard tile with a Runners shortcut when Live is disabled.
 - Accept stable MediaMTX versions >= 1.21.1, keeping 1.21.1 as the default
   download and allowing an explicit newer release for new installations.
   Preserve installed binaries and document manual upgrades, Live interruptions

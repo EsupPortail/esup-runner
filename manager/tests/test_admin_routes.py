@@ -709,23 +709,39 @@ def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
 @pytest.mark.parametrize(
     ("live_enabled", "expected_text"),
     [
-        (False, "Live is not enabled in the Manager configuration."),
+        (False, "3 online / 4 registered"),
         (True, "0 active · 0 playback ready"),
     ],
 )
-def test_admin_dashboard_live_tile_reflects_configuration(
-    admin_client, clean_state, monkeypatch, live_enabled, expected_text
-):
-    monkeypatch.setattr(
-        config,
-        "LIVE",
-        config.LIVE.model_copy(update={"enabled": live_enabled}),
+@pytest.mark.parametrize("root_path", ["", "/manager"])
+def test_admin_dashboard_live_tile_reflects_configuration(live_enabled, expected_text, root_path):
+    """Keep six shortcuts and show Runners only when Live is disabled."""
+    env = Environment(loader=FileSystemLoader("app/web/templates"))
+    html = env.get_template("admin.html").render(
+        root_path=root_path,
+        attention_count=0,
+        online_runners=3,
+        total_runners=4,
+        live_overview={
+            "enabled": live_enabled,
+            "active_count": 0,
+            "ready_count": 0,
+            "available_count": 0,
+            "attention_count": 0,
+        },
     )
 
-    response = admin_client.get("/admin")
-
-    assert response.status_code == 200
-    assert expected_text in response.text
+    assert expected_text in html
+    shortcut_tags = re.findall(r"<a\s+[^>]*dashboard-shortcut-card[^>]*>", html)
+    assert len(shortcut_tags) == 6
+    if live_enabled:
+        assert f'href="{root_path}/admin/live"' in shortcut_tags[3]
+        assert 'aria-label="View Live monitoring"' in shortcut_tags[3]
+        assert 'aria-label="View Runners"' not in html
+    else:
+        assert 'href="#runners-list"' in shortcut_tags[3]
+        assert 'aria-label="View Runners"' in shortcut_tags[3]
+        assert f'href="{root_path}/admin/live"' not in html
 
 
 def test_build_attention_summary_collects_limited_items():

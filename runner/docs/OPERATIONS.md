@@ -330,6 +330,22 @@ If runner API is healthy but `registered=false`:
    - runner: `journalctl --user -u esup-runner-runner -n 200 --no-pager`
    - manager: corresponding manager service logs
 
+### Completion callback rejected / pipeline test keeps waiting
+
+If encoding outputs are complete but the Manager still reports `running`, look
+for `Rejected completion callback` in the Runner log. Compare the Runner's
+`MANAGER_URL` with either the Manager's private
+`MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT` address or `MANAGER_PUBLIC_URL`.
+A public reverse proxy must expose `/task/completion` and the other Manager API
+routes, not just the administration interface.
+
+With the updated Manager and Runner, both endpoints are advertised and checked
+before processing. A mismatch immediately fails the Manager task with HTTP `422`
+and an explanation showing the expected and advertised address components,
+without URL credentials, queries or fragments. The pipeline test prints that
+error instead of waiting for its deadline. After correcting configuration,
+restart the affected service and rerun `manager/scripts/check_pipeline_tasks.py`.
+
 ## Backup checklist (before risky operations)
 
 Before upgrades or large cleanup operations, back up at least:

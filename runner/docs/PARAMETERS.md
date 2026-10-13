@@ -34,12 +34,14 @@ WHISPER_LANGUAGE=auto
 
 ## Networking and auth
 - `RUNNER_TOKEN` (required): Token used to authenticate runner <-> manager calls in both directions.
-- `MANAGER_URL` (default `http://127.0.0.1:8081`): Private Manager API URL used for registration, health checks and callbacks. It must match the Manager's `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`; do not use the public administration `MANAGER_PUBLIC_URL`. Route paths such as `/api/health` are appended automatically.
+- `MANAGER_URL` (default `http://127.0.0.1:8081`): Manager API URL used for registration, health checks and callbacks. It must match either the Manager's `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`, or its `MANAGER_PUBLIC_URL`. Prefer the private API; a public reverse proxy must also expose the API. Route paths such as `/api/health` are appended automatically.
 
-Task `completion_callback` values must exactly match `MANAGER_URL` (without a
-trailing slash) followed by `/task/completion`. Notifications use this configured
-endpoint, including after task recovery, and never follow redirects. Other
-callback URLs are rejected without sending the Runner token or task output.
+The Manager sends `completion_callback` (private endpoint) and
+`completion_callback_public` (public endpoint). At least one must match the
+Runner's `MANAGER_URL` followed by `/task/completion`. The accepted callback is
+canonicalized before persistence. Notifications use only this configured
+endpoint, including after task recovery, and never follow redirects. A mismatch returns HTTP `422` before
+execution, with a redacted diagnostic visible in the Manager task and CLI test.
 
 ## Storage and cleanup
 - `STORAGE_DIR` (runtime default `/tmp/esup-runner`): Root workspace for task data.

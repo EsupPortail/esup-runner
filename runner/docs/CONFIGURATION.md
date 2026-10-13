@@ -98,8 +98,9 @@ RUNNER_INSTANCES=4
 # Monitor instances and automatically restart failed ones
 RUNNER_MONITORING=false
 
-# Private Manager API URL used by this Runner.
-# It must use MANAGER_PROTOCOL/HOST/PORT from the Manager, never MANAGER_PUBLIC_URL.
+# Manager API URL used by this Runner.
+# Match the Manager's MANAGER_PROTOCOL/HOST/PORT or MANAGER_PUBLIC_URL.
+# Prefer the private API; a public proxy must expose the Manager API too.
 MANAGER_URL=http://127.0.0.1:8081
 
 # API token authentication
@@ -130,6 +131,14 @@ WHISPER_MODEL=turbo
 WHISPER_LANGUAGE=auto
 # HF_TOKEN=hf_xxx
 ```
+
+The Manager advertises both its private and public completion endpoints. The
+Runner accepts tasks when either endpoint matches its own `MANAGER_URL` followed
+by `/task/completion`. It always sends notifications to its own configured
+endpoint and does not follow redirects. A mismatch returns HTTP `422` before
+execution, with the expected and
+advertised addresses and the configuration variables to check. This error is
+visible in the Manager task and the pipeline smoke-test output.
 
 `WHISPER_LANGUAGE` now expresses the final subtitle language:
 - `auto`: keep the detected spoken language

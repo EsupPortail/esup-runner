@@ -239,7 +239,8 @@ async def _dispatch(task: Task, runner: Runner) -> None:
                 "source_path": source_path,
                 "broadcaster_id": broadcaster_id,
             },
-            "completion_callback": f"{config.MANAGER_URL}/task/completion",
+            "completion_callback": f"{config.MANAGER_URL.rstrip('/')}/task/completion",
+            "completion_callback_public": f"{config.MANAGER_PUBLIC_URL.rstrip('/')}/task/completion",
         },
     )
 

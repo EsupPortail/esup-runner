@@ -36,7 +36,8 @@ async def execute_task_background(
                     "affiliation": task_request.affiliation,
                     "parameters": task_request.parameters,
                     "notify_url": task_request.notify_url,
-                    "completion_callback": f"{context.config.MANAGER_URL}/task/completion",
+                    "completion_callback": f"{context.config.MANAGER_URL.rstrip('/')}/task/completion",
+                    "completion_callback_public": f"{context.config.MANAGER_PUBLIC_URL.rstrip('/')}/task/completion",
                 },
                 headers=context._runner_auth_headers(runner, accept="application/json"),
             )

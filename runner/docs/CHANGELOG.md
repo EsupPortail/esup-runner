@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Accept either advertised private or public Manager completion endpoint when
+  it matches the Runner's configured `MANAGER_URL`.
+  Canonicalize the callback before persistence and reject mismatches before
+  execution with a redacted diagnostic visible in the Manager and CLI test.
 - Persist failed Pod broadcaster updates and retry them outside media cleanup,
   including after Runner restarts. Reconcile deferred updates with the latest
   Manager session to avoid replaying an old stop over a replacement publication.

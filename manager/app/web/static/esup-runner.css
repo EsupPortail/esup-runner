@@ -91,7 +91,6 @@ body[data-bs-theme="light"] {
 
 .dashboard-shortcut-card {
   cursor: pointer;
-  min-height: 7.5rem;
   justify-content: center;
 }
 

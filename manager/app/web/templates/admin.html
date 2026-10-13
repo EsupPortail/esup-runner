@@ -321,16 +321,28 @@
       </a>
     </div>
 
-    <!-- Live sessions -->
+    <!-- Live sessions or Runners -->
     <div class="col-12 col-sm-6 col-lg-4">
+      {% if live_overview and not live_overview.enabled %}
+      <a href="#runners-list" class="card border-0 stat-item dashboard-shortcut-card rounded p-3 h-100 text-body text-decoration-none"
+        aria-label="View Runners" title="View Runners" data-bs-toggle="tooltip">
+        <div class="d-flex justify-content-between align-items-center gap-3">
+          <div>
+            <h2 class="h6 text-uppercase text-subtle mb-1"><i class="bi bi-pc-display-horizontal text-primary me-1" aria-hidden="true"></i>Runners</h2>
+            <div class="fs-6 fw-bold">{{ online_runners }} online / {{ total_runners }} registered</div>
+          </div>
+          <span class="btn btn-outline-light btn-sm rounded-circle dashboard-shortcut-icon" aria-hidden="true">
+            <i class="bi bi-arrow-right" aria-hidden="true"></i>
+          </span>
+        </div>
+      </a>
+      {% else %}
       <a href="{{ root_path }}/admin/live" class="card border-0 stat-item dashboard-shortcut-card rounded p-3 h-100 text-body text-decoration-none"
         aria-label="View Live monitoring" title="View Live monitoring" data-bs-toggle="tooltip">
         <div class="d-flex justify-content-between align-items-center gap-3">
           <div>
             <h2 class="h6 text-uppercase text-subtle mb-1"><i class="bi bi-broadcast text-primary me-1" aria-hidden="true"></i>Live</h2>
-            {% if live_overview and not live_overview.enabled %}
-            <div class="fs-6 fw-bold">Live is not enabled in the Manager configuration.</div>
-            {% elif live_overview %}
+            {% if live_overview %}
             <div class="fs-6 fw-bold">{{ live_overview.active_count }} active · {{ live_overview.ready_count }} playback ready</div>
             <div class="small text-subtle">{{ live_overview.available_count }} available runners · {{ live_overview.attention_count }} need attention</div>
             {% else %}<div class="fs-6 fw-bold">Live monitoring</div>{% endif %}
@@ -340,6 +352,7 @@
           </span>
         </div>
       </a>
+      {% endif %}
     </div>
 
     <!-- Tasks -->

@@ -138,7 +138,13 @@ async def test_dedicated_live_runner_rejects_vod_tasks(live_env, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_declaration_exclusive_run_and_duplicate_dispatch(live_env, monkeypatch):
+@pytest.mark.parametrize("manager_address", ["private", "public"])
+async def test_declaration_exclusive_run_and_duplicate_dispatch(
+    live_env, monkeypatch, manager_address
+):
+    if manager_address == "public":
+        monkeypatch.setattr(config, "MANAGER_URL", "https://manager.example/manager/")
+        live_env.completion_callback_public = "https://manager.example/manager//task/completion/"
     monkeypatch.setattr(live, "schedule", lambda request: None)
     result = await task.run_task(live_env, BackgroundTasks(), "token")
     assert result["status"] == "started" and not state.is_available()
@@ -150,6 +156,9 @@ async def test_declaration_exclusive_run_and_duplicate_dispatch(live_env, monkey
     assert payload["live"]["state"] == "waiting_source"
     state.reload_task_statuses_from_disk()
     assert state.get_task_status(live_env.task_id)["task_request"]["task_type"] == "live"
+    assert state.get_task_status(live_env.task_id)["completion_callback"] == (
+        f"{config.MANAGER_URL.rstrip('/')}/task/completion"
+    )
 
 
 @pytest.mark.asyncio

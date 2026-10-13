@@ -293,6 +293,15 @@ Used for runner selection. The manager requires this JSON shape:
 
 The manager starts a task by POSTing a JSON payload to the selected runner.
 
+The Manager adds `completion_callback` from its computed private `MANAGER_URL`
+and `completion_callback_public` from `MANAGER_PUBLIC_URL`. The Runner accepts
+either endpoint when it matches its own configured `MANAGER_URL`, and canonicalizes
+the callback before persistence. If neither matches, it returns HTTP `422`
+before execution and the Manager marks the task
+as failed with the configuration diagnostic. Both components must be updated
+to use the public alternative. Notifications always use the Runner's configured
+address; advertised URLs never select an arbitrary destination.
+
 Headers:
 
 ```http

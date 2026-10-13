@@ -47,13 +47,20 @@ views of the same Manager:
 | `MANAGER_HOST` | Private DNS name or IP advertised for Runner-to-Manager communication. | Use a value resolvable and reachable from every Runner, such as `manager.internal` or a private IP. Never advertise `0.0.0.0`; use `127.0.0.1` only when every Runner is on the same host. |
 | `MANAGER_PORT` | Port of the private API and local Uvicorn/Gunicorn listening socket. | Use the port on which the Manager process listens, normally `8081`. A public reverse proxy can expose another port, commonly `443`. |
 | `MANAGER_BIND_HOST` | Local interface on which Uvicorn/Gunicorn accepts connections. | Use `127.0.0.1` for same-host access only, a specific local interface address to restrict listening, or `0.0.0.0` for every IPv4 interface. This value is never advertised to Runners. |
-| `MANAGER_PUBLIC_URL` | Complete browser-facing URL of the administration interface. | Set it to the external reverse-proxy URL, including its scheme, optional non-default port and optional path prefix. Runners never use this URL. |
+| `MANAGER_PUBLIC_URL` | Complete browser-facing URL of the administration interface, also advertised as an alternative Manager completion address. | Set it to the external reverse-proxy URL, including its scheme, optional non-default port and optional path prefix. Runners may use it if their own `MANAGER_URL` matches and the proxy exposes the Manager API. |
 
 `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT` are combined into the
 computed private `MANAGER_URL`. The Manager puts
-`MANAGER_URL/task/completion` in dispatched tasks; Runners must be able to call
-that address. A Runner's own `MANAGER_URL` must identify the same private API so
-that registration, heartbeats and health checks use the private network.
+`MANAGER_URL/task/completion` in `completion_callback` and
+`MANAGER_PUBLIC_URL/task/completion` in `completion_callback_public` for dispatched
+VOD and Live tasks. A Runner's own `MANAGER_URL` must match either base address.
+Prefer the private API for registration, heartbeats and health checks. Runners
+configured with the public address require the proxy
+to expose the Manager API, including `/task/completion`. Notifications always
+use the Runner's configured address, never an arbitrary advertised destination.
+If neither endpoint matches, the Runner returns HTTP `422` before execution;
+the Manager fails the task and exposes the redacted configuration diagnostic
+in the task details and CLI pipeline test.
 
 `MANAGER_PUBLIC_URL` does not change the listening socket. If it is absent, it
 falls back to `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT`. Set it explicitly

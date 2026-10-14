@@ -62,18 +62,27 @@ def _parse_updated_at(value: Optional[str]) -> datetime:
 
 def _pick_newest_task(local_task: Task, persisted_task: Task) -> Task:
     """
-    Resolve conflicts between local/persisted task versions by most recent updated_at.
+    Keep the newest task update and any acknowledgment for the same execution.
     """
     local_ts = _parse_updated_at(getattr(local_task, "updated_at", None))
     persisted_ts = _parse_updated_at(getattr(persisted_task, "updated_at", None))
-    return local_task if local_ts >= persisted_ts else persisted_task
+    newest, other = (
+        (local_task, persisted_task) if local_ts >= persisted_ts else (persisted_task, local_task)
+    )
+    if (
+        newest.run_id == other.run_id
+        and newest.acknowledged_at is None
+        and other.acknowledged_at is not None
+    ):
+        return newest.model_copy(update={"acknowledged_at": other.acknowledged_at})
+    return newest
 
 
 def _should_keep_local_only_task_in_production(
     task: Task, *, now: Optional[datetime] = None
 ) -> bool:
     """Return True when a local-only task should remain visible in production snapshots."""
-    cleanup_days = max(0, int(getattr(config, "CLEANUP_TASK_FILES_DAYS", 60) or 0))
+    cleanup_days = max(0, int(getattr(config, "CLEANUP_TASK_FILES_DAYS", 30) or 0))
     if cleanup_days == 0:
         return True
 
@@ -198,12 +207,11 @@ def get_task(task_id: str) -> Optional[Task]:
     # Both versions exist: keep the freshest one to avoid stale per-worker caches.
     assert local_task is not None
     assert persisted_task is not None
-    local_ts = _parse_updated_at(getattr(local_task, "updated_at", None))
-    persisted_ts = _parse_updated_at(getattr(persisted_task, "updated_at", None))
-    if persisted_ts > local_ts:
-        tasks[task_id] = persisted_task
+    newest_task = _pick_newest_task(local_task, persisted_task)
+    if newest_task is not local_task:
+        tasks[task_id] = newest_task
         logger.info(f"Refreshed task {task_id} from shared persistence")
-        return persisted_task
+        return newest_task
 
     return local_task
 

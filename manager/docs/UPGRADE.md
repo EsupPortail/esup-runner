@@ -124,7 +124,16 @@ MANAGER_BIND_HOST=0.0.0.0
 MANAGER_PORT=8081
 ```
 
-The path `/runner-manager` is automatically used as FastAPI's `root_path`. Runners and completion callbacks continue to use the private `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT` address and never need access to `MANAGER_PUBLIC_URL`. Configure the reverse proxy to expose only administration routes. The automatic fallback preserves direct, unprefixed access only; it cannot infer an external reverse-proxy origin or path.
+The path `/runner-manager` becomes FastAPI's `root_path`. Prefer the private API;
+each Runner's `MANAGER_URL` must match either the private base URL or
+`MANAGER_PUBLIC_URL`. Completion callbacks use the Runner's configured base URL.
+
+Runners using the public URL require the proxy to expose the authenticated API
+under its path prefix: registration, heartbeats, health, task status and
+`/task/completion`. A proxy limited to administration is suitable only when all
+Runners use the private API. See [configuration](CONFIGURATION.md#core-manager-settings).
+
+The automatic fallback preserves direct, unprefixed access only.
 
 ---
 

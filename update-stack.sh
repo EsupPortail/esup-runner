@@ -25,7 +25,8 @@
 #    In transcription-cpu/transcription-gpu modes, the test adds
 #    --with-transcription-translation.
 # 6) Optionally send an update summary email to MANAGER_EMAIL
-#    (using SMTP settings from runner/.env).
+#    (using SMTP settings from runner/.env), including configuration changes
+#    detected between the Git revisions before and after the update.
 #
 # Concrete usage examples:
 # - Unless --manager-only/--runner-only is provided, commands below update
@@ -69,6 +70,8 @@ UPDATED_MANAGER=0
 UPDATED_RUNNER=0
 TEST_STATUS="skipped"
 EMAIL_STATUS="skipped"
+CONFIG_CHANGES_STATUS="skipped"
+CONFIG_CHANGES_REPORT=""
 EXIT_CODE=0
 MANAGER_RESTART_REQUIRED=0
 RUNNER_RESTART_REQUIRED=0
@@ -246,6 +249,7 @@ print_update_summary() {
   print_summary_line "Manager updated" "${manager_status}"
   print_summary_line "Runner updated" "${runner_status}"
   print_summary_line "Post-update test" "${TEST_STATUS}"
+  print_summary_line "Configuration review" "${CONFIG_CHANGES_STATUS}"
   print_summary_line "Email notification" "${EMAIL_STATUS}"
   if [[ "${EXIT_CODE}" -eq 0 ]]; then
     print_summary_line "Exit code" "0"
@@ -710,6 +714,148 @@ update_uv() {
   warn "Skipping uv update for ${target_user}: cannot switch user (runuser/sudo unavailable)."
 }
 
+collect_config_changes() {
+  # Compare committed configuration files without reading local .env values.
+  local before_rev="$1"
+  local after_rev="$2"
+  local report
+
+  if report="$(python3 - "${REPO_ROOT}" "${before_rev}" "${after_rev}" "${TARGET_SCOPE}" <<'PY_CONFIG_CHANGES'
+from __future__ import annotations
+
+import re
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+ASSIGNMENT = re.compile(r"^\s*(#\s*)?(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
+
+
+def git(*args: str) -> str:
+    """Read revision data, bounding execution and capturing Git diagnostics."""
+    return subprocess.run(
+        ["git", "-C", repository, *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    ).stdout
+
+
+def read_file(revision: str, path: str) -> str:
+    """Read a committed file, returning empty text when it did not exist."""
+    if not git("ls-tree", "--name-only", revision, "--", path).strip():
+        return ""
+    return git("show", f"{revision}:{path}")
+
+
+def example_parameters(text: str) -> dict[str, tuple[bool, str]]:
+    """Parse active and commented examples, ignoring presentation and comments.
+
+    Active assignments take precedence over commented examples of the same key.
+    Values are compared in memory only and are never included in the report.
+    """
+    parameters: dict[str, tuple[bool, str]] = {}
+    for line in text.splitlines():
+        match = ASSIGNMENT.match(line)
+        if match is None:
+            continue
+        comment, name, value = match.groups()
+        if value.lstrip().startswith(("'", '"')):
+            lexer = shlex.shlex(value.lstrip(), posix=True)
+            lexer.whitespace_split = True
+            tokens = list(lexer)
+            if len(tokens) != 1:
+                raise ValueError("Invalid quoted example assignment.")
+            value = tokens[0]
+        else:
+            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()
+        active = comment is None
+        if name not in parameters or active or not parameters[name][0]:
+            parameters[name] = (active, value)
+    return parameters
+
+
+def configuration_report(before: str, after: str, scope: str) -> str:
+    """Describe changes for installed components selected for this update."""
+    components = [
+        component
+        for component in ("manager", "runner")
+        if scope in ("auto", component) and (Path(repository) / component / ".env").is_file()
+    ]
+    paths = [
+        f"{component}/{suffix}"
+        for component in components
+        for suffix in (".env.example", "app/core/config.py", "app/core/live_config.py")
+    ]
+    if not paths:
+        return ""
+    changed = set(git("diff", "--name-only", before, after, "--", *paths).splitlines())
+    report = []
+    for component in components:
+        lines = []
+        example = f"{component}/.env.example"
+        if example in changed:
+            lines.extend(example_changes(read_file(before, example), read_file(after, example)))
+        for filename in ("config.py", "live_config.py"):
+            path = f"{component}/app/core/{filename}"
+            if path in changed:
+                lines.append(f"- Configuration defaults or validation rules changed: {path}")
+        if lines:
+            report.extend(
+                [
+                    f"{component.title()} configuration:",
+                    *lines,
+                    f"- Review your configuration; see {component}/docs/PARAMETERS.md "
+                    f"and {component}/docs/CONFIGURATION.md.",
+                    "",
+                ]
+            )
+    return "\n".join(report).rstrip()
+
+
+def example_changes(before: str, after: str) -> list[str]:
+    """List parameter changes without exposing either version's example values."""
+    old = example_parameters(before)
+    new = example_parameters(after)
+    common = old.keys() & new.keys()
+    changes = (
+        ("Parameters added", new.keys() - old.keys()),
+        ("Parameters removed", old.keys() - new.keys()),
+        ("Example values changed", {key for key in common if old[key][1] != new[key][1]}),
+        (
+            "Example assignments enabled/disabled",
+            {key for key in common if old[key][0] != new[key][0]},
+        ),
+    )
+    return [f"- {label}: {', '.join(sorted(names))}" for label, names in changes if names]
+
+
+repository, before, after, scope = sys.argv[1:]
+try:
+    print(configuration_report(before, after, scope))
+except (OSError, ValueError, subprocess.SubprocessError):
+    print("Unable to compare committed configuration files.", file=sys.stderr)
+    sys.exit(1)
+PY_CONFIG_CHANGES
+  )"; then
+    CONFIG_CHANGES_REPORT="${report}"
+    CONFIG_CHANGES_STATUS="unchanged"
+    if [[ -n "${report}" ]]; then
+      CONFIG_CHANGES_STATUS="changed"
+      warn "Configuration changes detected; review the following settings."
+      printf '%s\n' "${report}"
+    fi
+  else
+    CONFIG_CHANGES_STATUS="failed"
+    CONFIG_CHANGES_REPORT="Configuration comparison failed. Review the runner and manager configuration files before relying on the updated defaults."
+    warn "${CONFIG_CHANGES_REPORT}"
+    mark_non_fatal_failure
+  fi
+}
+
 update_git_sources() {
   # Refresh git sources and detect which components changed (for restart decisions).
   local before_rev after_rev
@@ -731,11 +877,20 @@ update_git_sources() {
   after_rev="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)"
 
   if [[ -z "${before_rev}" || -z "${after_rev}" ]]; then
+    CONFIG_CHANGES_STATUS="failed"
+    CONFIG_CHANGES_REPORT="Configuration comparison unavailable: Git revisions could not be read. Review your configuration manually."
     warn "Unable to read git revisions, restart decision will stay conservative."
+    warn "${CONFIG_CHANGES_REPORT}"
+    mark_non_fatal_failure
     return 0
   fi
 
   if [[ "${before_rev}" == "${after_rev}" ]]; then
+    if [[ "${DRY_RUN}" -eq 1 ]]; then
+      CONFIG_CHANGES_STATUS="dry-run"
+    else
+      CONFIG_CHANGES_STATUS="unchanged"
+    fi
     log "Git revision unchanged (${after_rev})."
     return 0
   fi
@@ -751,6 +906,8 @@ update_git_sources() {
     RUNNER_RESTART_REQUIRED=1
     log "Detected changes under runner/."
   fi
+
+  collect_config_changes "${before_rev}" "${after_rev}"
 }
 
 infer_runner_sync_mode() {
@@ -1115,6 +1272,13 @@ send_update_email_if_configured() {
   fi
 
   local git_revision hostname_value date_value subject body overall_status test_status_label
+  local configuration_section=""
+  if [[ -n "${CONFIG_CHANGES_REPORT}" ]]; then
+    configuration_section="
+Configuration changes to review:
+${CONFIG_CHANGES_REPORT}
+"
+  fi
   local manager_admin_url report_title report_summary report_eyebrow
   git_revision="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
   hostname_value="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "unknown-host")"
@@ -1189,7 +1353,7 @@ ESUP-RUNNER UPDATE REPORT
 Overall status:
 - Workflow result      : ${overall_status}
 - Updated components   : ${updated_label}${version_lines}
-
+${configuration_section}
 Execution details:
 - Git revision         : ${git_revision}
 - Date                 : ${date_value}
@@ -1198,6 +1362,10 @@ Execution details:
 - Manager admin        : ${manager_admin_url:-unavailable}
 
 This message was generated automatically by the ESUP-Runner update-stack.sh."
+  fi
+
+  if [[ -n "${CONFIG_CHANGES_REPORT}" && "${SEND_TEST_EMAIL}" -ne 1 ]]; then
+    subject="${subject} - configuration review required"
   fi
 
   local logo_path=""
@@ -1240,6 +1408,7 @@ This message was generated automatically by the ESUP-Runner update-stack.sh."
     EMAIL_REPORT_EYEBROW="${report_eyebrow}" \
     EMAIL_REPORT_TITLE="${report_title}" \
     EMAIL_REPORT_SUMMARY="${report_summary}" \
+    EMAIL_CONFIG_CHANGES="${CONFIG_CHANGES_REPORT}" \
     python3 - <<'PY'
 from __future__ import annotations
 
@@ -1336,10 +1505,11 @@ def render_html_email(
     title: str,
     summary: str,
     logo_cid: str | None,
+    config_changes: str = "",
 ) -> str:
     """Render the HTML body for update report and preview emails."""
     if overall_status == "SUCCESS":
-        tone = "success"
+        tone = "warning" if config_changes else "success"
     elif overall_status == "TEST EMAIL":
         tone = "info"
     else:
@@ -1372,6 +1542,18 @@ def render_html_email(
             "text-decoration:none;font-size:14px;font-weight:700;padding:11px 18px;"
             'border-radius:6px;">Open manager</a>'
             "</td></tr>"
+        )
+
+    configuration_html = ""
+    if config_changes:
+        configuration_html = (
+            '<tr><td style="padding:0 28px 24px 28px;background:#ffffff;">'
+            '<h2 style="font-size:18px;color:#7a3f00;margin:0 0 12px;">'
+            "Configuration changes to review</h2>"
+            '<pre style="margin:0;padding:16px;background:#fff4e5;color:#212529;'
+            'font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;'
+            'white-space:pre-wrap;word-break:break-word;">'
+            f"{escape(config_changes)}</pre></td></tr>"
         )
 
     return (
@@ -1414,6 +1596,7 @@ def render_html_email(
         'style="border:1px solid #e9ecef;border-radius:6px;overflow:hidden;">'
         f"{render_rows(rows)}"
         "</table></td></tr>"
+        f"{configuration_html}"
         f"{action_html}"
         '<tr><td style="padding:18px 28px 24px 28px;background:#f8f9fa;'
         'border-top:1px solid #e9ecef;color:#6c747c;font-size:12px;line-height:1.5;">'
@@ -1463,6 +1646,7 @@ manager_admin_url = os.environ.get("EMAIL_MANAGER_ADMIN_URL", "").strip()
 report_eyebrow = os.environ.get("EMAIL_REPORT_EYEBROW", "").strip()
 report_title = os.environ.get("EMAIL_REPORT_TITLE", "").strip()
 report_summary = os.environ.get("EMAIL_REPORT_SUMMARY", "").strip()
+config_changes = os.environ.get("EMAIL_CONFIG_CHANGES", "").strip()
 
 if not smtp_server or not manager_email:
     print("SMTP_SERVER and MANAGER_EMAIL are required.", file=sys.stderr)
@@ -1497,6 +1681,7 @@ html_body = render_html_email(
         "The automatic stack update finished and this report summarizes the result.",
     ),
     logo_cid=logo_cid,
+    config_changes=config_changes,
 )
 
 msg = EmailMessage()

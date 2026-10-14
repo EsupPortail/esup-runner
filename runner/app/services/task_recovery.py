@@ -757,7 +757,8 @@ async def recover_failed_task(task_id: str, payload: dict, *, runtime: ModuleTyp
         if task_exists is False:
             runtime.clear_task_status(task_id)
             runtime.logger.info(
-                "Skipping automatic restart for task %s: task is deleted or its run was replaced on manager; "
+                "Skipping automatic restart for task %s: task is deleted, acknowledged "
+                "or its run was replaced on manager; "
                 "cleared local recovery state",
                 task_id,
             )

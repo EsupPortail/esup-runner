@@ -26,7 +26,11 @@ logger = setup_default_logging()
 
 
 async def manager_task_exists(task_id: str) -> bool | None:
-    """Confirm a recoverable task and its execution; None means unconfirmed Manager state."""
+    """Confirm that a Manager task still permits automatic recovery.
+
+    Return False for deleted, replaced or acknowledged tasks, and None when
+    the Manager state cannot be confirmed.
+    """
     safe_task_id = validate_task_id(task_id)
     tracked = get_task_status(safe_task_id) or {}
     task_request = tracked.get("task_request")
@@ -48,7 +52,7 @@ async def manager_task_exists(task_id: str) -> bool | None:
                 if response.status_code == 200 and payload.get("task_id") == safe_task_id:
                     if expected_run_id is not None and payload.get("run_id") != expected_run_id:
                         return False
-                    return True
+                    return payload.get("acknowledged_at") is None
                 if response.status_code == 404 and payload.get("detail") == "Task not found":
                     return False
 

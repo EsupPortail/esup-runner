@@ -55,8 +55,8 @@ def _action_url(value: str) -> str | None:
 
 
 def _manager_admin_url() -> str:
-    """Return the manager admin URL used in failure notifications."""
-    manager_url = (config.MANAGER_URL or "").rstrip("/")
+    """Return the public manager admin URL, falling back to the API address."""
+    manager_url = (config.MANAGER_PUBLIC_URL or config.MANAGER_URL or "").rstrip("/")
     if manager_url.endswith("/admin"):
         return manager_url
     return f"{manager_url}/admin"
@@ -69,21 +69,30 @@ def _compose_failure_email(
     status: str,
     error_message: str,
     script_output: Optional[str],
+    video_id: str | int | None = None,
 ) -> EmailMessage:
-    """Compose the runner task failure notification email."""
+    """Compose a task failure email including the video ID when available."""
     runner_id = get_runner_id() or "unknown-runner"
     runner_url = get_runner_instance_url() or "unknown-url"
     manager_admin_url = _manager_admin_url()
 
     subject = f"[esup-runner] Task {task_id} {status}"
 
+    details = [("Task", task_id)]
+    video_id = str(video_id).strip() if video_id is not None else ""
+    if video_id:
+        details.append(("Video ID", video_id))
+    details.extend(
+        [
+            ("Type", task_type),
+            ("Status", status),
+            ("Runner", runner_id),
+            ("Runner URL", runner_url),
+            ("Manager admin", manager_admin_url),
+        ]
+    )
     body_lines = [
-        f"Task: {task_id}",
-        f"Type: {task_type}",
-        f"Status: {status}",
-        f"Runner: {runner_id}",
-        f"Runner URL: {runner_url}",
-        f"Manager admin: {manager_admin_url}",
+        *(f"{label}: {value}" for label, value in details),
         "",
         "Error:",
         error_message or "(no details)",
@@ -103,14 +112,7 @@ def _compose_failure_email(
         summary="A runner task ended in a non-success state and may need attention.",
         status_label=status.upper(),
         tone=_tone_for_status(status),
-        details=[
-            ("Task", task_id),
-            ("Type", task_type),
-            ("Status", status),
-            ("Runner", runner_id),
-            ("Runner URL", runner_url),
-            ("Manager admin", manager_admin_url),
-        ],
+        details=details,
         primary_block_title="Error details",
         primary_block_body=error_message or "(no details)",
         secondary_block_title="Script output" if script_output else None,
@@ -129,8 +131,9 @@ async def send_task_failure_email(
     status: str,
     error_message: str,
     script_output: Optional[str] = None,
+    video_id: str | int | None = None,
 ) -> bool:
-    """Send the runner task failure email when SMTP is configured."""
+    """Send a task failure email with an optional video ID when SMTP is configured."""
     if not _is_email_configured():
         logger.warning("SMTP_SERVER or MANAGER_EMAIL not configured: email notification skipped")
         return False
@@ -141,6 +144,7 @@ async def send_task_failure_email(
         status=status,
         error_message=error_message,
         script_output=script_output,
+        video_id=video_id,
     )
     return await _send_notification_email(message, f"task {task_id}")
 

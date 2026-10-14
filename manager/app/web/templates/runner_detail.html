@@ -133,6 +133,27 @@
               {{ runner.availability }}
             </span>
           </div>
+          {% if runner.availability == 'busy' %}
+          <div class="metadata-item">
+            <span class="metadata-label">Current task:</span>
+            {% if runner_current_tasks %}
+            <ul class="list-unstyled mb-0">
+              {% for task in runner_current_tasks %}
+              <li class="mb-2">
+                <a href="{{ root_path }}/admin/task/{{ task.task_id|urlencode }}" class="link-body-emphasis text-break">Task #{{ task.task_id }}</a>
+                <span class="badge bg-secondary">{{ task.task_type }}</span>
+                <span class="badge {% if task.status == 'running' %}badge-running{% else %}bg-warning text-dark{% endif %}">{{ task.status | upper }}</span>
+                {% if task.parameters.get('video_id') %}
+                <small class="d-block text-subtle">Video ID: {{ task.parameters.get('video_id') }}</small>
+                {% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <span class="text-subtle">Current task information unavailable.</span>
+            {% endif %}
+          </div>
+          {% endif %}
           {% if 'live' in runner.task_types %}
           <div class="metadata-item">
             <span class="metadata-label">MediaMTX status:</span>

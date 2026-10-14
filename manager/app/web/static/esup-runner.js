@@ -1,7 +1,7 @@
 /**
  * @file Shared browser behaviors for the Runner Manager administration pages.
  *
- * This script handles page refresh controls and destructive-action confirmations.
+ * This script handles refresh controls, incident acknowledgments and confirmations.
  * Confirmations use a reusable Bootstrap modal when available and fall back to
  * the browser's native confirmation dialog otherwise.
  */
@@ -26,6 +26,38 @@ if (refreshBtn) {
     window.location.reload();
   });
 }
+
+document.querySelectorAll("[data-acknowledge-task-id]").forEach((button) => {
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const feedback = document.querySelector("[data-acknowledge-feedback]");
+    button.disabled = true;
+    if (feedback) {
+      feedback.classList.add("d-none");
+    }
+
+    try {
+      const response = await fetch(button.dataset.acknowledgeUrl, {
+        method: "POST",
+        headers: {
+          "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content,
+        },
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Unable to acknowledge task");
+      }
+      window.location.reload();
+    } catch (error) {
+      if (feedback) {
+        feedback.className = "alert alert-danger mt-3";
+        feedback.textContent = error instanceof Error ? error.message : String(error);
+      }
+      button.disabled = false;
+    }
+  });
+});
 
 /**
  * Returns the shared confirmation modal, creating it on first use.

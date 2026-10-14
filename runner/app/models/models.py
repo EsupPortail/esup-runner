@@ -18,6 +18,7 @@ class TaskRequest(BaseModel):
 
     Attributes:
         task_id: Universally unique identifier for the task
+        run_id: Optional execution identity supplied by the Manager for relaunch safety
         etab_name: Name of the institution or organization requesting the task
         app_name: Name of client application requesting the task - used for auditing and tracking purposes
         app_version: Version of the client application requesting the task - useful for compatibility and debugging
@@ -33,6 +34,9 @@ class TaskRequest(BaseModel):
     task_id: str = Field(
         ...,
         description="Task unique identifier - automatically generated UUID for tracking task lifecycle",
+    )
+    run_id: Optional[str] = Field(
+        None, description="Manager execution identifier used to reject stale completion updates"
     )
     etab_name: str = Field(
         ..., description="Name of the institution or organization requesting the task"

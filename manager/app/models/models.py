@@ -192,6 +192,7 @@ class Task(BaseModel):
         notify_url: Callback URL for task completion notification
         created_at: ISO timestamp when the task was initially created
         updated_at: ISO timestamp when the task was last modified
+        acknowledged_at: Optional ISO timestamp when an operator acknowledged the incident
         error: Optional error message if the task failed during execution
         script_output: Optional raw output from the task execution script - useful for debugging and understanding task behavior
     """
@@ -262,7 +263,14 @@ class Task(BaseModel):
     )
     updated_at: str = Field(
         ...,
-        description="Task last update timestamp in ISO format - tracks when status changes occur for monitoring",
+        description="Task last update timestamp in ISO format - tracks status changes and incident acknowledgments",
+    )
+    acknowledged_at: Optional[str] = Field(
+        default=None,
+        description=(
+            "Manager-side incident acknowledgment timestamp in ISO format. "
+            "Hides the task from Needs attention without changing its execution status."
+        ),
     )
     error: Optional[str] = Field(
         None,  # Default value is None for optional fields
@@ -300,6 +308,7 @@ class TaskCompletionNotification(BaseModel):
 
     Attributes:
         task_id: Reference to the task being reported on
+        run_id: Optional execution identity echoed by the runner
         status: Final status of the task (completed, failed or timeout)
         error_message: Detailed error information if the task failed or timed out
         script_output: Raw output from the task execution script - useful for debugging and understanding task behavior
@@ -308,6 +317,9 @@ class TaskCompletionNotification(BaseModel):
     task_id: str = Field(
         ...,
         description="Task identifier - must match the ID of the originally assigned task for proper status updates",
+    )
+    run_id: Optional[str] = Field(
+        None, description="Execution identifier echoed by the runner to reject stale results"
     )
     status: Literal["completed", "failed", "timeout"] = Field(
         ...,

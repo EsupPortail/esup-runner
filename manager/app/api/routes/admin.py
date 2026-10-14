@@ -571,7 +571,7 @@ def _build_attention_summary(
     tasks_data_sorted: list[dict[str, Any]],
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Build compact dashboard data for runners and tasks needing attention."""
+    """Build dashboard alerts, excluding acknowledged terminal task incidents."""
     reference_time = now or datetime.now()
     offline_runners = sorted(
         [runner for runner in runners_data if runner["status"] == "offline"],
@@ -579,11 +579,19 @@ def _build_attention_summary(
         reverse=True,
     )
     attention_task_status_counts = {
-        status: len([task for task in tasks_data_sorted if task["status"] == status])
+        status: len(
+            [
+                task
+                for task in tasks_data_sorted
+                if task["status"] == status and not task.get("acknowledged_at")
+            ]
+        )
         for status in _ATTENTION_TASK_STATUSES
     }
     attention_tasks = [
-        task for task in tasks_data_sorted if task["status"] in _ATTENTION_TASK_STATUSES
+        task
+        for task in tasks_data_sorted
+        if task["status"] in _ATTENTION_TASK_STATUSES and not task.get("acknowledged_at")
     ]
     stale_running_tasks: list[dict[str, Any]] = []
     stale_threshold_seconds = _STALE_RUNNING_TASK_THRESHOLD_MINUTES * 60
@@ -678,6 +686,7 @@ async def admin_dashboard(request: Request):
                 "id": task_id,
                 "runner_id": task.runner_id,
                 "status": task.status,
+                "acknowledged_at": task.acknowledged_at,
                 "task_type": getattr(task, "task_type", None),
                 "created_at": task.created_at,
                 "created_at_display": _format_datetime_without_milliseconds(task.created_at),

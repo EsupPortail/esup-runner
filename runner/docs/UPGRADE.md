@@ -295,6 +295,16 @@ Detection rules used by the script:
 - Manager is considered installed when `/opt/esup-runner/manager/.env` exists.
 - Runner is considered installed when `/opt/esup-runner/runner/.env` exists.
 
+After `git pull`, the script reports changes to `.env.example` and configuration
+code for updated components in the console and, when configured, the update
+email. Review [parameters](PARAMETERS.md) and [configuration](CONFIGURATION.md)
+before adapting your local `.env` manually. Email uses `SMTP_*` and
+`MANAGER_EMAIL` from `runner/.env`; `--skip-email` disables it.
+
+The comparison covers only changes brought by this pull and is skipped with
+`--skip-git-update` or `--dry-run`. A comparison failure returns a non-zero exit
+code but lets the remaining update steps continue.
+
 Examples:
 
 ```bash

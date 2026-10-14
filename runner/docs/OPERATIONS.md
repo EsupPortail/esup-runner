@@ -57,6 +57,16 @@ recovery and failure emails. If the Manager cannot confirm their existence,
 recovery is deferred: restart the Runner or relaunch the task from the Manager
 once it is available.
 
+## Periodic running-task verification
+
+Each instance checks running file-based tasks hourly and finalizes abandoned
+executions, notifying the Manager. Set `TASK_PROCESS_CHECK_INTERVAL_SECONDS`
+(`600` for ten minutes, `0` to disable), then restart the Runner. Live uses
+separate supervision.
+
+Relaunch failed tasks from the Manager; periodic checks do not retry them. Update
+both components to ignore results from older attempts. See [verification rules and limits](PARAMETERS.md#task-verification).
+
 ## Stopping a running task
 
 The manager can request cancellation of a task that is still tracked as
@@ -119,6 +129,15 @@ Expected behavior:
 - `/runner/health` should report `status=healthy`.
 - `/runner/ping` should report `available=true` when the instance is idle.
 - `/runner/ping` and `/runner/status` should report `registered=true` after successful manager registration.
+
+## Task failure emails
+
+Configure `SMTP_SERVER` and `MANAGER_EMAIL` in `runner/.env` for task failure
+and timeout emails, which include `parameters.video_id` when provided.
+
+Set `MANAGER_PUBLIC_URL` to the browser-facing Manager base URL for email links,
+including GPU warnings; it falls back to `MANAGER_URL`. Restart the Runner after
+changing these settings.
 
 ## Automatic NVIDIA driver monitoring
 

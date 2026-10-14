@@ -14,6 +14,7 @@ from app.core.setup_logging import setup_default_logging
 from app.core.state import (
     get_runner_id,
     get_runner_instance_url,
+    get_task_status,
     is_available,
     is_registered,
     set_registered,
@@ -25,8 +26,11 @@ logger = setup_default_logging()
 
 
 async def manager_task_exists(task_id: str) -> bool | None:
-    """Check a task before recovery; None means the manager could not confirm it."""
+    """Confirm a recoverable task and its execution; None means unconfirmed Manager state."""
     safe_task_id = validate_task_id(task_id)
+    tracked = get_task_status(safe_task_id) or {}
+    task_request = tracked.get("task_request")
+    expected_run_id = task_request.get("run_id") if isinstance(task_request, dict) else None
     try:
         async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
             response = await client.get(
@@ -42,6 +46,8 @@ async def manager_task_exists(task_id: str) -> bool | None:
             payload = response.json()
             if isinstance(payload, dict):
                 if response.status_code == 200 and payload.get("task_id") == safe_task_id:
+                    if expected_run_id is not None and payload.get("run_id") != expected_run_id:
+                        return False
                     return True
                 if response.status_code == 404 and payload.get("detail") == "Task not found":
                     return False

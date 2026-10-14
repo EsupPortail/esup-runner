@@ -34,7 +34,7 @@ from app.core.state import (
 )
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest, TaskResultResponse
-from app.services import task_recovery, task_results
+from app.services import task_monitor, task_recovery, task_results
 from app.services.email_service import send_task_failure_email
 from app.services.manager_service import manager_task_exists  # noqa: F401 - recovery runtime hook
 from app.services.result_manifest import collect_manifest_output_files
@@ -502,9 +502,10 @@ async def stop_recovery_monitors() -> None:
 
 async def process_task(task_id: str, task_request: TaskRequest):
     """
-    Process task using task dispatcher.
+    Process a task while tracking coroutine ownership for periodic verification.
     """
     completion_callback = task_request.completion_callback
+    execution_id = task_monitor.register_execution(task_id, task_request.run_id)
     try:
         set_task_metadata(
             task_id,
@@ -513,6 +514,10 @@ async def process_task(task_id: str, task_request: TaskRequest):
             task_request=task_request.model_dump(mode="json"),
             error_message=None,
             stop_requested=None,
+            execution_id=execution_id,
+            process_pid=None,
+            process_pgid=None,
+            process_start_ticks=None,
         )
 
         set_available(False)
@@ -562,6 +567,7 @@ async def process_task(task_id: str, task_request: TaskRequest):
                 status=failure_status,
                 error_message=error_msg,
                 script_output=script_output_text,
+                video_id=task_request.parameters.get("video_id"),
             )
             if completion_callback:
                 await notify_completion(
@@ -585,10 +591,12 @@ async def process_task(task_id: str, task_request: TaskRequest):
             task_type=task_request.task_type,
             status=failure_status,
             error_message=error_msg,
+            video_id=task_request.parameters.get("video_id"),
         )
         if completion_callback:
             await notify_completion(completion_callback, task_id, failure_status, error_msg)
     finally:
+        task_monitor.unregister_execution(task_id, execution_id)
         # Recompute availability from tracked running tasks to avoid
         # advertising availability while other tasks are still running.
         _refresh_availability_from_recovered_state()
@@ -620,11 +628,23 @@ async def get_task_status_endpoint(
         return tracked_status
 
     try:
-        _resolve_task_manifest_path(safe_task_id)
-        return {"task_id": safe_task_id, "status": "completed"}
+        manifest_path = _resolve_task_manifest_path(safe_task_id)
+        manifest = task_monitor.read_result_document(manifest_path)
+        payload = {"task_id": safe_task_id, "status": "completed"}
+        if manifest.get("execution_id"):
+            if manifest.get("task_id") != safe_task_id:
+                raise ValueError("Task manifest identity does not match")
+            output_dir = _resolve_task_output_dir_if_exists(safe_task_id)
+            if output_dir is None:
+                raise ValueError("Task output directory is missing")
+            task_monitor.validate_output_files(output_dir, manifest.get("files"))
+            payload["execution_id"] = manifest["execution_id"]
+        return payload
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
+    except (OSError, ValueError):
+        pass
 
     return {"task_id": safe_task_id, "status": "not_found"}
 
@@ -692,6 +712,27 @@ def _prepare_task_completion_callback(task_request: TaskRequest) -> None:
         raise
 
 
+def _completion_notification_payload(
+    task_id: str,
+    status: str,
+    error_message: Optional[str],
+    script_output: Optional[str],
+) -> dict:
+    """Snapshot terminal fields and the Manager run_id before delivery retries."""
+    tracked_payload = get_task_status(task_id) or {}
+    persisted_request = tracked_payload.get("task_request")
+    run_id = persisted_request.get("run_id") if isinstance(persisted_request, dict) else None
+    notification = {
+        "task_id": task_id,
+        "status": status,
+        "error_message": error_message,
+        "script_output": script_output,
+    }
+    if run_id:
+        notification["run_id"] = run_id
+    return notification
+
+
 async def notify_completion(
     callback_url: str,
     task_id: str,
@@ -714,6 +755,7 @@ async def notify_completion(
     Trailing slashes on the Manager base or completion path are ignored; the
     request always uses the configured canonical endpoint. Redirects are disabled.
     All request phases use finite timeouts and any successful 2xx response is accepted.
+    The Manager run_id is captured before delivery and preserved across retries.
     """
     try:
         manager_callback_url = _validate_completion_callback(callback_url)
@@ -736,18 +778,14 @@ async def notify_completion(
     )
 
     attempt = 0
+    notification = _completion_notification_payload(task_id, status, error_message, script_output)
     while True:
         attempt += 1
         try:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
                 response = await client.post(
                     manager_callback_url,
-                    json={
-                        "task_id": task_id,
-                        "status": status,
-                        "error_message": error_message,
-                        "script_output": script_output,
-                    },
+                    json=notification,
                     headers={
                         "Accept": "application/json",
                         "Authorization": f"Bearer {config.RUNNER_TOKEN}",
@@ -1034,6 +1072,16 @@ async def run_task(
         live_runtime.accept(task_request)
         return {"status": "started", "task_id": task_request.task_id}
 
+    # Register the accepting request too: response transmission may yield before
+    # Starlette starts process_task, and the watchdog must keep this task active.
+    execution_id = task_monitor.register_execution(task_request.task_id, task_request.run_id)
+    set_task_metadata(
+        task_request.task_id,
+        execution_id=execution_id,
+        process_pid=None,
+        process_pgid=None,
+        process_start_ticks=None,
+    )
     background_tasks.add_task(
         process_task, task_id=task_request.task_id, task_request=task_request
     )  # pragma: no cover (background scheduling side-effect)

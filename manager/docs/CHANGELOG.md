@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Protect relaunched file-based tasks and Runner availability from stale
+  callbacks and polling results using `run_id`. Update both components.
 - Advertise private and public Manager completion endpoints for VOD and Live
   tasks so Runners configured with either address can report completion.
   Mismatches are rejected before execution with a configuration diagnostic.
@@ -48,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add persistent acknowledgment for failed, warning and timed-out tasks from
+  the dashboard and task details. Hide handled incidents from Needs attention
+  while preserving history and statistics; clear acknowledgment on task restart.
+- Report configuration changes after `git pull` in the `update-stack.sh` console
+  output and update emails, without exposing values or modifying local `.env`
+  files.
 - Show each task's establishment as an accessible, color-coded initials badge in the admin dashboard and task list, with normalized matching and stable fallback colors for unknown establishments.
 - With Live enabled and `LIVE_AUTO_START=true` (the default when enabled), discover accepted RTMP publications without requiring a `LIVE_SOURCES` declaration. Persist private source bindings and broadcaster identifiers across restarts, expose authenticated source discovery, and support optional declarations before publication.
 - For each detected publication, start HLS, retry when Runner capacity becomes available, stop its automatic session when the encoder disconnects, and deduplicate handling across Manager workers and restarts. Keep API-driven starts available when automatic startup is disabled.

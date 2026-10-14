@@ -86,6 +86,14 @@ Task operations from `/tasks`:
 - Bulk restart: failed/timeout/warning/completed tasks
 - Bulk delete: non-running tasks only
 
+### Acknowledge a task incident
+
+After handling a failed, warning or timed-out task, click **Acknowledge** in
+**Needs attention** or on its detail page. This clears the dashboard alert; the
+task stays in `/tasks` with an **acknowledged** badge, preserving its status,
+history and statistics. Acknowledgments survive Manager restarts and are cleared
+when the task is restarted.
+
 ### Actions fail with `Invalid request origin`
 
 In `manager/.env`, set `MANAGER_PUBLIC_URL` to the browser-facing base URL,
@@ -118,11 +126,20 @@ journalctl -k --since '1 hour ago' --no-pager
 For a system service, omit `--user` from the service commands. Adjust `--since`
 to cover the incident; `MemoryCurrent` reflects usage after any restart.
 
+## Running task reconciliation
+
+The Manager checks running file-based tasks with their Runner every hour and
+saves terminal statuses. With updated Runners, results from previous execution
+attempts are ignored. See [Runner periodic verification](../../runner/docs/OPERATIONS.md#periodic-running-task-verification)
+for the Runner's local checks.
+
 ## Task retention behavior
 
 Task JSON persistence (`data/YYYY-MM-DD/*.json`) is automatically cleaned based on:
 
-- `CLEANUP_TASK_FILES_DAYS` in `.env` (default: `60`; set `0` to disable age-based cleanup)
+- `CLEANUP_TASK_FILES_DAYS` in `.env` (default: `30`; set `0` to disable age-based cleanup)
+
+Use a short, non-zero retention to limit task accumulation and memory usage.
 
 Important:
 

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Include `parameters.video_id`, when available, in task failure emails.
 - Accept stable MediaMTX versions >= 1.21.1, keeping 1.21.1 as the default
   download and allowing an explicit newer release for new installations.
   Preserve installed binaries and document manual upgrades, Live interruptions
@@ -32,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Validate recovery outputs for the current execution, rebuild missing manifests
+  from successful metadata and skip startup retries for replaced attempts.
+  Update both components to reject stale callbacks and polling results.
 - Accept either advertised private or public Manager completion endpoint when
   it matches the Runner's configured `MANAGER_URL`.
   Canonicalize the callback before persistence and reject mismatches before
@@ -52,6 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add periodic checks for abandoned file-based tasks, preserving active work
+  and notifying the Manager of terminal outcomes. Configure each instance with
+  `TASK_PROCESS_CHECK_INTERVAL_SECONDS` (default `3600`; `0` disables checks).
+- Add optional `MANAGER_PUBLIC_URL` for administration links in failure and GPU
+  warning emails, falling back to `MANAGER_URL` when unset or blank.
+- Report configuration changes after `git pull` in the `update-stack.sh` console
+  output and update emails, without exposing values or modifying local `.env`
+  files.
 - Monitor `nvidia-smi` at startup and every 12 hours in GPU mode, independently
   of running tasks. Send administrator warnings through the existing SMTP
   settings on command failures, missing executable or timeout. Run the shared

@@ -13,6 +13,7 @@ from app.managers.storage_manager import storage_manager
 from app.services.gpu_health_service import gpu_health_check_loop
 from app.services.manager_service import heartbeat_loop, reconnect_loop
 from app.services.pod_sync import retry_loop as pod_sync_loop
+from app.services.task_monitor import task_process_check_loop
 
 logger = setup_default_logging()
 
@@ -95,6 +96,7 @@ class BackgroundServiceManager:
             ("reconnect_loop", reconnect_loop()),
             ("heartbeat_loop", heartbeat_loop()),
             ("storage_cleanup_loop", storage_cleanup_loop()),
+            ("task_process_check_loop", task_process_check_loop()),
         ]
         if "live" in config.RUNNER_TASK_TYPES and config.LIVE.pod_url:
             services.append(("pod_sync_loop", pod_sync_loop()))

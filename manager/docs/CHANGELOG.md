@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.10.0] - 2026-10-14
+
 ### Changed
 
 - Reduce default `CLEANUP_TASK_FILES_DAYS` from 60 to 30 days, shortening task

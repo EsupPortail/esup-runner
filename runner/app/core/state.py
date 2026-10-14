@@ -41,8 +41,14 @@ _TERMINAL_TASK_STATUSES = {"completed", "failed", "timeout"}
 _ALLOWED_TASK_STATUSES = {"running", *_TERMINAL_TASK_STATUSES}
 _RUNNER_STATE_LOCK = threading.RLock()
 _RECOVERABLE_TASK_STATUSES = {"running", "failed", "timeout"}
-_PERSISTED_STRING_FIELDS = ("runner_id", "completion_callback", "error_message", "stop_requested")
-_PERSISTED_POSITIVE_INT_FIELDS = ("process_pid", "process_pgid")
+_PERSISTED_STRING_FIELDS = (
+    "runner_id",
+    "completion_callback",
+    "error_message",
+    "stop_requested",
+    "execution_id",
+)
+_PERSISTED_POSITIVE_INT_FIELDS = ("process_pid", "process_pgid", "process_start_ticks")
 
 
 def _normalize_positive_int(value: Any) -> Optional[int]:
@@ -549,10 +555,11 @@ def set_task_status(
             payload["script_output"] = str(script_output)
 
         if normalized_status in _TERMINAL_TASK_STATUSES:
-            # PID and PGID only identify the process while the task is running.
-            # Purge both together so recovery never reuses a stale process group.
+            # Process identifiers only apply while the task is running.
+            # Purge their birth ticks too, so recovery never reuses a stale identity.
             payload.pop("process_pid", None)
             payload.pop("process_pgid", None)
+            payload.pop("process_start_ticks", None)
 
         task_statuses[normalized_task_id] = payload
 

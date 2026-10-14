@@ -900,7 +900,7 @@ async def get_task_detail(request: Request, task_id: str):
 )
 async def get_runner_detail(request: Request, runner_id: str):
     """
-    Runner detail page.
+    Runner detail page with active tasks for a busy runner.
 
     Args:
         request: FastAPI request object
@@ -919,6 +919,15 @@ async def get_runner_detail(request: Request, runner_id: str):
     runner_live_status = await _fetch_runner_live_status(runner)
     runner_live_status["mediamtx"] = _runner_mediamtx_status(runner_live_status)
     heartbeat_metadata = _build_runner_heartbeat_metadata(runner)
+    runner_current_tasks = (
+        [
+            task
+            for task in get_tasks_snapshot().values()
+            if task.runner_id == runner_id and task.status in {"pending", "running"}
+        ]
+        if runner.availability == "busy"
+        else []
+    )
 
     dark_mode = request.cookies.get("theme") == "dark"
 
@@ -933,6 +942,7 @@ async def get_runner_detail(request: Request, runner_id: str):
             "runner_age_seconds": heartbeat_metadata["age_seconds"],
             "runner_token_preview": _format_secret_preview(getattr(runner, "token", "")),
             "runner_live_status": runner_live_status,
+            "runner_current_tasks": runner_current_tasks,
             "dark_mode_enabled": dark_mode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "version": __version__,

@@ -417,6 +417,7 @@ class Config:
         if manager_url_env is not None and not manager_url_env.strip():
             self._record_configuration_error("MANAGER_URL must not be empty")
         self.MANAGER_URL: str = _normalize_base_url(manager_url_env, "http://127.0.0.1:8081")
+        self.MANAGER_PUBLIC_URL: str = _normalize_base_url(os.getenv("MANAGER_PUBLIC_URL"), "")
 
     def _load_security_configuration(self) -> None:
         """Load authentication and request security settings."""
@@ -577,6 +578,9 @@ class Config:
             18000,
             min_value=1,
         )
+        self.TASK_PROCESS_CHECK_INTERVAL_SECONDS: int = self._read_int(
+            "TASK_PROCESS_CHECK_INTERVAL_SECONDS", 3600, min_value=0
+        )
 
         # Encoding type (CPU or GPU)
         self.ENCODING_TYPE: str = os.getenv("ENCODING_TYPE", "CPU").upper()
@@ -720,7 +724,7 @@ class Config:
             )
 
     def _validate_names_and_urls(self) -> None:
-        """Validate required runner identifiers and the manager base URL."""
+        """Validate runner identifiers and the configured manager API and public URLs."""
         errors: List[str] = []
         for name, value in (
             ("RUNNER_HOST", self.RUNNER_HOST),
@@ -734,21 +738,27 @@ class Config:
         ):
             errors.append("RUNNER_HOST must contain a hostname or IP address only")
 
-        try:
-            manager_url = urlparse(self.MANAGER_URL)
-            manager_hostname = manager_url.hostname
-            manager_url.port
-        except ValueError:
-            manager_url = None
-            manager_hostname = None
-
-        if (
-            manager_url is None
-            or manager_url.scheme not in {"http", "https"}
-            or not manager_hostname
-            or any(character.isspace() for character in manager_hostname)
+        for name, value in (
+            ("MANAGER_URL", self.MANAGER_URL),
+            ("MANAGER_PUBLIC_URL", self.MANAGER_PUBLIC_URL),
         ):
-            errors.append("MANAGER_URL must be an absolute HTTP(S) URL")
+            if not value and name == "MANAGER_PUBLIC_URL":
+                continue
+            try:
+                manager_url = urlparse(value)
+                manager_hostname = manager_url.hostname
+                manager_url.port
+            except ValueError:
+                manager_url = None
+                manager_hostname = None
+
+            if (
+                manager_url is None
+                or manager_url.scheme not in {"http", "https"}
+                or not manager_hostname
+                or any(character.isspace() for character in manager_hostname)
+            ):
+                errors.append(f"{name} must be an absolute HTTP(S) URL")
 
         _raise_validation_errors(errors)
 
@@ -780,6 +790,12 @@ class Config:
             ("MAX_FILE_AGE_DAYS", self.MAX_FILE_AGE_DAYS, 0, None),
             ("CLEANUP_INTERVAL_HOURS", self.CLEANUP_INTERVAL_HOURS, 1, None),
             ("EXTERNAL_SCRIPT_TIMEOUT_SECONDS", self.EXTERNAL_SCRIPT_TIMEOUT_SECONDS, 1, None),
+            (
+                "TASK_PROCESS_CHECK_INTERVAL_SECONDS",
+                self.TASK_PROCESS_CHECK_INTERVAL_SECONDS,
+                0,
+                None,
+            ),
             ("GPU_HEALTH_CHECK_INTERVAL_HOURS", self.GPU_HEALTH_CHECK_INTERVAL_HOURS, 0, None),
             ("GPU_HWACCEL_DEVICE", self.GPU_HWACCEL_DEVICE, 0, None),
         )

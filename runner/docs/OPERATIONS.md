@@ -52,10 +52,12 @@ The runner then sends updated task status back to the manager.
 During this startup reconciliation window, runner availability is kept `false`
 to avoid accepting new work too early.
 
-For tasks with a completion callback, deletion in the Manager prevents automatic
-recovery and failure emails. If the Manager cannot confirm their existence,
-recovery is deferred: restart the Runner or relaunch the task from the Manager
-once it is available.
+For tasks with a completion callback, deletion or incident acknowledgment in the
+Manager prevents automatic recovery and failure emails. The Runner clears the
+local recovery state while preserving workspace files; acknowledged tasks remain
+in the Manager history and can still be restarted manually. If the Manager cannot
+confirm whether recovery is allowed, recovery is deferred: restart the Runner or
+relaunch the task from the Manager once it is available.
 
 ## Periodic running-task verification
 

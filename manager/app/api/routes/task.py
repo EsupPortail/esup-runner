@@ -56,6 +56,7 @@ _FAILURE_TASK_STATUSES = {"failed", "timeout", "error"}
 _NON_DELETABLE_TASK_STATUSES = {"pending", "running"}
 _NON_RESTARTABLE_TASK_STATUSES = {"pending", "running"}
 _STOPPABLE_TASK_STATUSES = {"running"}
+_ACKNOWLEDGEABLE_TASK_STATUSES = {"failed", "warning", "timeout"}
 _MAX_BULK_DELETE_TASKS = 200
 _MAX_BULK_RESTART_TASKS = 200
 _MAX_BULK_STOP_TASKS = 200
@@ -361,6 +362,7 @@ async def view_tasks(
             {
                 "id": task.task_id,
                 "status": task.status,
+                "acknowledged_at": task.acknowledged_at,
                 "task_type": task.task_type,
                 "source_url": task.source_url,
                 "created_at": task.created_at,
@@ -846,6 +848,42 @@ async def stop_selected_tasks(payload: Dict[str, List[str]]) -> dict:
 
 
 @router.post(
+    "/acknowledge/{task_id}",
+    response_model=Task,
+    summary="Acknowledge a task incident",
+    description="Remove a task incident from Needs attention while retaining its status and history",
+    dependencies=[Depends(verify_admin), Depends(verify_csrf)],
+)
+async def acknowledge_task(task_id: str) -> Task:
+    """Persist an operator acknowledgment without changing the task execution status.
+
+    Repeated acknowledgments are idempotent. Reject active or successful tasks
+    and restore the in-memory record if persistence fails.
+    """
+    task = _get_task_or_404(task_id)
+    if task.status not in _ACKNOWLEDGEABLE_TASK_STATUSES:
+        raise HTTPException(409, f"Task status '{task.status}' cannot be acknowledged")
+    if task.acknowledged_at is not None:
+        return task
+
+    now_iso = datetime.now().isoformat()
+    acknowledged_task = task.model_copy(update={"acknowledged_at": now_iso, "updated_at": now_iso})
+    tasks[task_id] = acknowledged_task
+    try:
+        saved = save_tasks()
+    except Exception:
+        tasks[task_id] = task
+        logger.exception("Failed to persist acknowledgment for task %s", task_id)
+        raise HTTPException(503, "Task acknowledgment could not be saved")
+    if not saved:
+        tasks[task_id] = task
+        raise HTTPException(503, "Task acknowledgment could not be saved")
+
+    logger.info("Task %s incident acknowledged", task_id)
+    return acknowledged_task
+
+
+@router.post(
     "/execute",
     response_model=dict,
     summary="Execute task asynchronously",
@@ -1169,6 +1207,10 @@ async def task_completion(
     runner = _get_runner_or_404(task.runner_id)
     _verify_runner_token(runner, current_token)
 
+    if notification.run_id is not None and notification.run_id != task.run_id:
+        logger.warning("Ignoring stale completion for task %s", notification.task_id)
+        return {"status": "ignored", "reason": "stale_run"}
+
     if task.live is not None:
         from app.services.live_service import synchronize
 
@@ -1176,10 +1218,14 @@ async def task_completion(
         return {"status": "acknowledged"}
 
     _apply_task_completion_update(task, notification)
+    expected_run_id = task.run_id
     # Persist terminal status before callback to avoid races with clients that
     # fetch /task/result immediately after receiving notify_url.
     save_tasks()
     await _handle_notify_callback(task, notification)
+
+    if not _task_run_matches(get_task_from_state(task.task_id), expected_run_id):
+        return {"status": "acknowledged"}
 
     runner.availability = "available"
     runners[runner.id] = runner

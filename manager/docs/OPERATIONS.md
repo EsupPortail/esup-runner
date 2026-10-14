@@ -92,7 +92,9 @@ After handling a failed, warning or timed-out task, click **Acknowledge** in
 **Needs attention** or on its detail page. This clears the dashboard alert; the
 task stays in `/tasks` with an **acknowledged** badge, preserving its status,
 history and statistics. Acknowledgments survive Manager restarts and are cleared
-when the task is restarted.
+when the task is restarted. With an updated Runner, acknowledged incidents also
+prevent automatic task recovery after Runner service restarts, without sending
+new failure emails. Tasks can still be restarted manually from the Manager.
 
 ### Actions fail with `Invalid request origin`
 

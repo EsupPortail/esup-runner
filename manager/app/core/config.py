@@ -722,7 +722,7 @@ class Config:
 
         # Remove task files older than specified number of days
         self.CLEANUP_TASK_FILES_DAYS: int = self._read_int(
-            "CLEANUP_TASK_FILES_DAYS", 60, min_value=0
+            "CLEANUP_TASK_FILES_DAYS", 30, min_value=0
         )
 
         # Domain-based priorities (optional)

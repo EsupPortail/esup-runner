@@ -252,6 +252,9 @@
                       </td>
                       <td>
                         <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
+                        {% if task.acknowledged_at %}
+                          <span class="badge bg-secondary" title="Incident handled on {{ task.acknowledged_at }}">acknowledged</span>
+                        {% endif %}
                       </td>
                       <td>
                         {% if task.etab_badge %}

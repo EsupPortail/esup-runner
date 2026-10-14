@@ -96,6 +96,7 @@
       </div>
     </div>
   </header>
+  <div class="alert alert-danger d-none" role="alert" data-acknowledge-feedback></div>
   {% if attention_count > 0 %}
     <section class="mb-4" aria-labelledby="needsAttentionTitle" id="needs-attention">
       <div class="card needs-attention-card">
@@ -222,7 +223,21 @@
                             <i class="bi bi-clipboard" aria-hidden="true"></i>
                           </button>
                         </div>
-                        <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
+                        <div class="d-flex align-items-center gap-2">
+                          <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
+                          {% if task.status in ['failed', 'warning', 'timeout'] %}
+                            <button
+                              type="button"
+                              class="btn btn-sm btn-outline-success"
+                              data-acknowledge-task-id="{{ task.id }}"
+                              data-acknowledge-url="{{ root_path }}/task/acknowledge/{{ task.id|urlencode }}"
+                              aria-label="Acknowledge task {{ task.id }}"
+                              title="Mark this incident as handled and keep the task history">
+                              <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                              Acknowledge
+                            </button>
+                          {% endif %}
+                        </div>
                       </div>
                       {% if task.error_label %}
                         <div class="attention-error-label mt-1">

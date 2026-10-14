@@ -32,6 +32,17 @@
               Back to Dashboard
             </a>
             <!-- Actions -->
+            {% if task.status in ['failed', 'warning', 'timeout'] and not task.acknowledged_at %}
+              <button
+                type="button"
+                class="btn btn-outline-success"
+                data-acknowledge-task-id="{{ task.task_id }}"
+                data-acknowledge-url="{{ root_path }}/task/acknowledge/{{ task.task_id|urlencode }}"
+                title="Mark this incident as handled and keep the task history">
+                <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                Acknowledge
+              </button>
+            {% endif %}
             <button id="refreshBtn" class="btn btn-primary">
               <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
               Refresh
@@ -82,7 +93,7 @@
           </small>
         </div>
       </div>
-      <div id="taskActionFeedback" class="alert mt-3 mb-0 d-none" role="alert"></div>
+      <div id="taskActionFeedback" class="alert mt-3 mb-0 d-none" role="alert" data-acknowledge-feedback></div>
     </div>
   </header>
 
@@ -100,6 +111,12 @@
         <div class="row align-items-center">
           <div class="col-md-8">
             <h2 class="h4 mb-2">Task #{{ task.task_id }}</h2>
+            {% if task.acknowledged_at %}
+              <p class="mb-2">
+                <span class="badge bg-secondary">acknowledged</span>
+                <small class="text-subtle">Incident handled on {{ task.acknowledged_at }}</small>
+              </p>
+            {% endif %}
             <p class="text-subtle mb-0">
               Created on {{ task.created_at }} •
               Last update: {{ task.updated_at }}

@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Skip startup recovery for task incidents acknowledged in the Manager, clearing
+  local recovery state without rerunning the task or sending failure emails.
 - Validate recovery outputs for the current execution, rebuild missing manifests
   from successful metadata and skip startup retries for replaced attempts.
   Update both components to reject stale callbacks and polling results.

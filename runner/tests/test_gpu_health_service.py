@@ -202,6 +202,7 @@ async def test_service_manager_starts_monitoring_only_on_enabled_primary_gpu_ins
         "reconnect_loop",
         "heartbeat_loop",
         "storage_cleanup_loop",
+        "task_process_check_loop",
         "gpu_health_check_loop",
     ):
         monkeypatch.setattr(service_manager_module, name, wait_forever)
@@ -213,7 +214,7 @@ async def test_service_manager_starts_monitoring_only_on_enabled_primary_gpu_ins
     try:
         names = {task.get_name() for task in tasks}
         assert ("gpu_health_check_loop" in names) is enabled
-        assert len(tasks) == (4 if enabled else 3)
+        assert len(tasks) == (5 if enabled else 4)
     finally:
         await manager.stop_all_services()
 

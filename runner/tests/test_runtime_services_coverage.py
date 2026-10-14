@@ -453,6 +453,7 @@ async def test_background_service_manager_start_stop_and_status(monkeypatch):
     monkeypatch.setattr(service_manager_module, "reconnect_loop", sleeper)
     monkeypatch.setattr(service_manager_module, "heartbeat_loop", sleeper)
     monkeypatch.setattr(service_manager_module, "storage_cleanup_loop", sleeper)
+    monkeypatch.setattr(service_manager_module, "task_process_check_loop", sleeper)
 
     manager = service_manager_module.BackgroundServiceManager()
     await manager.start_all_services()
@@ -460,12 +461,13 @@ async def test_background_service_manager_start_stop_and_status(monkeypatch):
 
     status = manager.get_service_status()
     assert status["is_running"] is True
-    assert status["tasks"] == 3
-    assert len(status["services"]) == 3
+    assert status["tasks"] == 4
+    assert len(status["services"]) == 4
     assert {service["name"] for service in status["services"]} == {
         "reconnect_loop",
         "heartbeat_loop",
         "storage_cleanup_loop",
+        "task_process_check_loop",
     }
 
     await manager.stop_all_services()

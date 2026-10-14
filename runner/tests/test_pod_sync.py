@@ -291,7 +291,13 @@ async def test_background_retry_service_is_scoped_to_live_instances(
     async def sleeper():
         await asyncio.Event().wait()
 
-    for name in ("reconnect_loop", "heartbeat_loop", "storage_cleanup_loop", "pod_sync_loop"):
+    for name in (
+        "reconnect_loop",
+        "heartbeat_loop",
+        "storage_cleanup_loop",
+        "task_process_check_loop",
+        "pod_sync_loop",
+    ):
         monkeypatch.setattr(service_manager, name, sleeper)
     manager = service_manager.BackgroundServiceManager()
     await manager.start_all_services()
@@ -299,5 +305,6 @@ async def test_background_retry_service_is_scoped_to_live_instances(
         "reconnect_loop",
         "heartbeat_loop",
         "storage_cleanup_loop",
+        "task_process_check_loop",
     } | ({"pod_sync_loop"} if enabled else set())
     await manager.stop_all_services()

@@ -568,6 +568,40 @@ def test_config_manager_url_strips_trailing_slash(monkeypatch):
     assert cfg.MANAGER_URL == "http://1.2.3.4:8000"
 
 
+@pytest.mark.parametrize(
+    "public_url,expected",
+    [
+        (None, ""),
+        ("  ", ""),
+        (" https://admin.example.org/runner-manager/ ", "https://admin.example.org/runner-manager"),
+        ("http://127.0.0.1:8081/admin/", "http://127.0.0.1:8081/admin"),
+    ],
+)
+def test_config_manager_public_url_is_optional_and_normalized(monkeypatch, public_url, expected):
+    monkeypatch.setenv("MANAGER_URL", "http://manager.internal:8081")
+    if public_url is None:
+        monkeypatch.delenv("MANAGER_PUBLIC_URL", raising=False)
+    else:
+        monkeypatch.setenv("MANAGER_PUBLIC_URL", public_url)
+    cfg = config_module.Config()
+    assert cfg.MANAGER_PUBLIC_URL == expected
+    assert cfg.MANAGER_URL == "http://manager.internal:8081"
+    cfg._validate_names_and_urls()
+
+
+@pytest.mark.parametrize(
+    "public_url",
+    ["admin.example.org", "ftp://admin.example.org", "https://bad host", "http://host:invalid"],
+)
+def test_config_rejects_invalid_manager_public_url(monkeypatch, public_url):
+    monkeypatch.setenv("MANAGER_PUBLIC_URL", public_url)
+    cfg = config_module.Config()
+    with pytest.raises(
+        config_module.ConfigValidationError, match="MANAGER_PUBLIC_URL must be an absolute HTTP"
+    ):
+        cfg._validate_names_and_urls()
+
+
 def test_config_ignores_download_retry_env_settings(monkeypatch):
     """Validate Config keeps download retry tuning internal to handlers."""
     monkeypatch.setenv("DOWNLOAD_MAX_ATTEMPTS", "7")

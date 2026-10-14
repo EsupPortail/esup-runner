@@ -23,7 +23,7 @@ _RUNNER_REPORTED_STATUSES = {"running", "completed", "failed", "timeout"}
 
 def _cleanup_days_from_config() -> int:
     """Return normalized task cleanup retention days."""
-    return max(0, int(getattr(config, "CLEANUP_TASK_FILES_DAYS", 60) or 0))
+    return max(0, int(getattr(config, "CLEANUP_TASK_FILES_DAYS", 30) or 0))
 
 
 def _parse_task_created_at_for_cleanup(task_id: str, task: Task) -> datetime | None:
@@ -302,8 +302,15 @@ async def _reconcile_single_running_task(task_id: str) -> bool:
         )
         return False
 
+    expected_run_id = task.run_id
     payload = await _fetch_runner_task_status(runner, task_id)
     if payload is None:
+        return False
+
+    task = get_task_from_state(task_id)
+    if task is None or task.status != "running" or task.run_id != expected_run_id:
+        return False
+    if payload.get("execution_id") is not None and payload["execution_id"] != expected_run_id:
         return False
 
     if not _apply_runner_task_status(task, payload):

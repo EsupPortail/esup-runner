@@ -28,6 +28,7 @@ async def execute_task_background(
                 f"{runner.url}/task/run",
                 json={
                     "task_id": task_id,
+                    "run_id": context.tasks[task_id].run_id,
                     "etab_name": task_request.etab_name,
                     "app_name": task_request.app_name,
                     "app_version": task_request.app_version,

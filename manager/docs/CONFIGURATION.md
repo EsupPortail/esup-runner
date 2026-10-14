@@ -35,7 +35,7 @@ MANAGER_BIND_HOST=0.0.0.0
 MANAGER_PORT=8081
 ENVIRONMENT=production
 UVICORN_WORKERS=2
-CLEANUP_TASK_FILES_DAYS=60
+CLEANUP_TASK_FILES_DAYS=30
 ```
 
 The five addressing variables deliberately describe three different network
@@ -76,7 +76,7 @@ The important distinction is that `MANAGER_HOST` answers “where can a Runner
 reach the Manager?”, while `MANAGER_BIND_HOST` answers “on which local network
 interface does the process listen?”. They can be equal, but do not need to be.
 
-- `CLEANUP_TASK_FILES_DAYS` controls cleanup retention for all task files (all statuses). Set `0` to disable age-based cleanup.
+- `CLEANUP_TASK_FILES_DAYS` controls cleanup retention for all task files (all statuses). Set `0` to disable age-based cleanup. Keeping this value low and non-zero is recommended to limit task accumulation and Manager memory usage; choose the shortest retention that meets your task-history needs.
 - `UVICORN_WORKERS` is used in production process setups (Gunicorn/Uvicorn workers).
 
 ## Authentication
@@ -292,7 +292,9 @@ ENVIRONMENT=production
 UVICORN_WORKERS=2
 
 # Remove task files older than specified number of days
-CLEANUP_TASK_FILES_DAYS=60
+# Recommended: keep this value low and non-zero to limit task accumulation
+# and Manager memory usage, while meeting your task-history needs.
+CLEANUP_TASK_FILES_DAYS=30
 
 # Logs
 # Legacy alias still supported: LOG_DIRECTORY

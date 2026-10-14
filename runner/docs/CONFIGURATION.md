@@ -102,6 +102,9 @@ RUNNER_MONITORING=false
 # Match the Manager's MANAGER_PROTOCOL/HOST/PORT or MANAGER_PUBLIC_URL.
 # Prefer the private API; a public proxy must expose the Manager API too.
 MANAGER_URL=http://127.0.0.1:8081
+# Optional public Manager base URL for the "Open manager" button in emails.
+# /admin is appended unless already present; defaults to MANAGER_URL.
+# MANAGER_PUBLIC_URL=https://admin.example.org/runner-manager
 
 # API token authentication
 RUNNER_TOKEN=change-me-runner-token
@@ -119,6 +122,7 @@ MAX_VIDEO_SIZE_GB=0
 MAX_FILE_AGE_DAYS=7
 CLEANUP_INTERVAL_HOURS=24
 EXTERNAL_SCRIPT_TIMEOUT_SECONDS=18000
+TASK_PROCESS_CHECK_INTERVAL_SECONDS=3600
 MEDIA_CODEC_DENYLIST=magicyuv
 
 # Encoding type (CPU or GPU)

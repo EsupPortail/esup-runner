@@ -936,6 +936,9 @@ def test_admin_template_renders_copy_task_id_controls():
     assert 'http-equiv="refresh"' not in html
     assert 'data-copy-task-id="attention-task"' in html
     assert 'aria-label="Copy task ID attention-task"' in html
+    assert 'data-acknowledge-task-id="attention-task"' in html
+    assert 'data-acknowledge-url="/task/acknowledge/attention-task"' in html
+    assert 'data-acknowledge-task-id="stale-running-task"' not in html
     assert 'data-copy-task-id="dashboard-task"' in html
     assert 'aria-label="Copy task ID dashboard-task"' in html
     assert 'data-task-detail-url="/admin/task/attention-task"' in html

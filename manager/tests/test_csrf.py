@@ -33,6 +33,7 @@ _MUTATIONS = [
     ("/tasks/delete-selected", "json", {"task_ids": ["t1"]}),
     ("/tasks/restart-selected", "json", {"task_ids": ["t1"]}),
     ("/tasks/stop-selected", "json", {"task_ids": ["t1"]}),
+    ("/task/acknowledge/t1", "json", {}),
 ]
 
 
@@ -98,6 +99,7 @@ def csrf_client(monkeypatch):
         task, "get_task_from_state", record("lookup", make_task("t1", "r1", status="failed"))
     )
     monkeypatch.setattr(task, "delete_task_from_state", record("delete"))
+    monkeypatch.setattr(task, "save_tasks", record("save"))
 
     async def queue_task(*_args, **_kwargs):
         effects.append("restart")
@@ -409,6 +411,7 @@ def test_every_admin_mutation_declares_csrf_protection():
                 route.path.replace("{admin_name}", "admin")
                 .replace("{token_name}", "client")
                 .replace("{live_id}", "live-session")
+                .replace("{task_id}", "t1")
             )
         if auth.verify_token in dependencies:
             assert csrf.verify_csrf not in dependencies, route.path

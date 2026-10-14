@@ -26,6 +26,57 @@ from app.models.models import Task, TaskCompletionNotification
 __all__ = ["clean_state", "client", "task_module"]
 
 
+@pytest.mark.asyncio
+async def test_stale_completion_cannot_overwrite_relaunched_task(
+    monkeypatch, task_module, clean_state
+):
+    """Ignore an older attempt even when both executions use the same runner token."""
+    runner = _runner("r1", token="runner-token")
+    runner.availability = "busy"
+    runners["r1"] = runner
+    tasks["t1"] = _task("t1", "r1", status="running")
+    tasks["t1"].run_id = "new-attempt"
+    callback = AsyncMock()
+    save = AsyncMock()
+    monkeypatch.setattr(task_module, "_handle_notify_callback", callback)
+    monkeypatch.setattr(task_module, "save_tasks", save)
+    result = await task_module.task_completion(
+        TaskCompletionNotification(task_id="t1", run_id="old-attempt", status="completed"),
+        current_token="runner-token",
+    )
+    assert result == {"status": "ignored", "reason": "stale_run"}
+    assert tasks["t1"].status == "running"
+    assert runners["r1"].availability == "busy"
+    callback.assert_not_called()
+    save.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_relaunch_during_client_callback_does_not_release_new_reservation(
+    monkeypatch, task_module, clean_state
+):
+    """Do not mark a runner available after a newer execution replaces the completed one."""
+    runner = _runner("r1", token="runner-token")
+    runner.availability = "busy"
+    runners["r1"] = runner
+    tasks["t1"] = _task("t1", "r1", status="running")
+    tasks["t1"].run_id = "old-attempt"
+    monkeypatch.setattr(task_module, "save_tasks", lambda: None)
+
+    async def relaunch(_completed_task, _notification):
+        tasks["t1"] = _task("t1", "r1", status="running")
+        tasks["t1"].run_id = "new-attempt"
+
+    monkeypatch.setattr(task_module, "_handle_notify_callback", relaunch)
+    result = await task_module.task_completion(
+        TaskCompletionNotification(task_id="t1", run_id="old-attempt", status="completed"),
+        current_token="runner-token",
+    )
+    assert result == {"status": "acknowledged"}
+    assert tasks["t1"].status == "running"
+    assert runners["r1"].availability == "busy"
+
+
 def test_append_task_stats_csv_handles_invalid_date(task_module, tmp_path, monkeypatch):
     """Validate Append task stats csv handles invalid date."""
     monkeypatch.setattr(task_module, "_is_pytest_run", lambda: False)

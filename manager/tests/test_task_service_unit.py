@@ -555,6 +555,49 @@ async def test_reconcile_single_running_task_branches(monkeypatch, clean_tasks, 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["stale-payload", "relaunch", "deleted", "terminal"])
+async def test_reconciliation_does_not_override_a_newer_task_run(
+    monkeypatch, clean_tasks, clean_runners, change
+):
+    """Ignore old polling responses and state changes that happen during the request."""
+    tasks["t1"] = _task("t1", "running")
+    tasks["t1"].run_id = "current-attempt"
+    runners["r1"] = _runner()
+
+    async def fetch(_runner, _task_id):
+        if change == "relaunch":
+            tasks["t1"] = _task("t1", "running")
+            tasks["t1"].run_id = "next-attempt"
+        elif change == "deleted":
+            tasks.pop("t1")
+        elif change == "terminal":
+            tasks["t1"].status = "failed"
+        return {"status": "completed", "execution_id": "previous-attempt"}
+
+    monkeypatch.setattr(task_service, "_fetch_runner_task_status", fetch)
+    assert await task_service._reconcile_single_running_task("t1") is False
+    if "t1" in tasks:
+        assert tasks["t1"].status == ("failed" if change == "terminal" else "running")
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_accepts_current_execution_identity(
+    monkeypatch, clean_tasks, clean_runners
+):
+    """Accept verified current-run results returned by the runner watchdog."""
+    tasks["t1"] = _task("t1", "running")
+    tasks["t1"].run_id = "current-attempt"
+    runners["r1"] = _runner()
+
+    async def fetch(_runner, _task_id):
+        return {"status": "completed", "execution_id": "current-attempt"}
+
+    monkeypatch.setattr(task_service, "_fetch_runner_task_status", fetch)
+    assert await task_service._reconcile_single_running_task("t1") is True
+    assert tasks["t1"].status == "completed"
+
+
+@pytest.mark.asyncio
 async def test_reconcile_running_tasks_with_runners_handles_loop_exception(monkeypatch):
     """Validate Reconcile running tasks with runners handles loop exception."""
     stop = asyncio.Event()

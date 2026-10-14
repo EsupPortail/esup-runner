@@ -123,6 +123,7 @@ def test_restart_selected_tasks_restarts_and_reports(monkeypatch, client, task_m
     tasks["t-completed"] = _task("t-completed", "r1", status="completed")
     tasks["t-running"] = _task("t-running", "r1", status="running")
     tasks["t-failed"].client_token = "client-123"
+    tasks["t-failed"].acknowledged_at = "2026-01-01T12:00:00"
 
     class FakePingResponse:
         def json(self):
@@ -174,6 +175,7 @@ def test_restart_selected_tasks_restarts_and_reports(monkeypatch, client, task_m
     assert restarted_ids == {"t-failed", "t-completed"}
     assert tasks["t-failed"].client_token == "client-123"
     assert tasks["t-failed"].status == "running"
+    assert tasks["t-failed"].acknowledged_at is None
     assert tasks["t-completed"].status == "running"
     assert tasks["t-failed"].run_id is not None
     assert tasks["t-completed"].run_id is not None

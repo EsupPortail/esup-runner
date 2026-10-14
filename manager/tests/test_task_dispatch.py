@@ -772,6 +772,7 @@ async def test_execute_task_async_background_success_sets_runner_busy(
     """Validate Execute task async background success sets runner busy."""
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t1"] = _task("t1", "r1", status="pending")
+    tasks["t1"].run_id = "current-attempt"
     captured: dict[str, Any] = {}
 
     class FakeResponse:
@@ -813,6 +814,7 @@ async def test_execute_task_async_background_success_sets_runner_busy(
 
     await task_module.execute_task_async_background("t1", runners["r1"], req)
     assert runners["r1"].availability == "busy"
+    assert captured["run_id"] == "current-attempt"
     assert captured["completion_callback"] == "http://manager.internal:8081/task/completion"
     assert captured["completion_callback_public"] == (
         "https://admin.example.org/runner-manager/task/completion"

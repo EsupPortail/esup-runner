@@ -39,7 +39,7 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 - `MANAGER_ROOT_PATH` (computed, not an environment variable): FastAPI deployment prefix derived from the path in `MANAGER_PUBLIC_URL`.
 - `ENVIRONMENT` (default `development`): Environment name used by runtime/deployment wrappers.
 - `UVICORN_WORKERS` (int, default `4`): Worker count for production process managers.
-- `CLEANUP_TASK_FILES_DAYS` (int, default `60`): Retention for all tasks managed by cleanup services, regardless of status. Set `0` to disable age-based cleanup.
+- `CLEANUP_TASK_FILES_DAYS` (int, default `30`): Retention for all tasks managed by cleanup services, regardless of status. Set `0` to disable age-based cleanup. Keeping this value low and non-zero is recommended to limit task accumulation and Manager memory usage; choose the shortest retention that meets your task-history needs.
 
 ## Authentication and admin access
 - `AUTHORIZED_TOKENS__*`: Defines accepted API tokens (headers: `Authorization: Bearer <token>` or `X-API-Token: <token>`).

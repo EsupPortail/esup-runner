@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from jinja2 import Environment, FileSystemLoader
 
@@ -1073,6 +1074,95 @@ def test_runner_detail_ok(admin_client, clean_state, monkeypatch):
     assert "76.0%" in resp.text
     assert "bi-exclamation-triangle-fill" in resp.text
     assert "Storage usage is elevated" in resp.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("availability", ["busy", "available"])
+@pytest.mark.parametrize(
+    ("task_type", "task_status"),
+    [
+        ("encoding", "running"),
+        ("studio", "running"),
+        ("transcription", "pending"),
+        ("live", "running"),
+    ],
+)
+async def test_runner_detail_selects_active_tasks(
+    monkeypatch, availability, task_type, task_status
+):
+    runner = _make_runner("r1")
+    runner.availability = availability
+    current_task = _make_task(
+        "current-task", "r1", created_at="2026-01-01T00:00:00", status=task_status
+    )
+    current_task.task_type = task_type
+    snapshot = {current_task.task_id: current_task}
+    for status_value in ("completed", "failed", "warning", "timeout"):
+        snapshot[status_value] = _make_task(
+            status_value, "r1", created_at="2026-01-01T00:00:00", status=status_value
+        )
+    snapshot["other-task"] = _make_task(
+        "other-task", "r2", created_at="2026-01-01T00:00:00", status="running"
+    )
+    monkeypatch.setattr(admin_routes, "runners", {runner.id: runner})
+    monkeypatch.setattr(admin_routes, "get_tasks_snapshot", lambda: snapshot)
+
+    async def _unavailable_runner_status(_runner):
+        return {"available": False, "error": "Runner status request failed.", "disk_usage": None}
+
+    monkeypatch.setattr(admin_routes, "_fetch_runner_live_status", _unavailable_runner_status)
+    monkeypatch.setattr(
+        admin_routes.templates, "TemplateResponse", lambda _request, _template, context: context
+    )
+    context = await admin_routes.get_runner_detail(Request({"type": "http", "headers": []}), "r1")
+
+    assert context["runner_current_tasks"] == ([current_task] if availability == "busy" else [])
+
+
+@pytest.mark.parametrize("root_path", ["", "/manager"])
+@pytest.mark.parametrize("video_id", [None, 123, "<script>alert(1)</script>"])
+@pytest.mark.parametrize(
+    ("availability", "has_task"), [("busy", True), ("busy", False), ("available", False)]
+)
+def test_runner_detail_template_shows_current_task(root_path, video_id, availability, has_task):
+    runner = _make_runner("r1")
+    runner.availability = availability
+    current_task = _make_task(
+        "current-task",
+        "r1",
+        created_at="2026-01-01T00:00:00",
+        status="running",
+        parameters={"video_title": "Hidden video title"},
+    )
+    if video_id is not None:
+        current_task.parameters["video_id"] = video_id
+    env = Environment(loader=FileSystemLoader("app/web/templates"), autoescape=True)
+    rendered = env.get_template("runner_detail.html").render(
+        runner=runner,
+        runner_current_tasks=[current_task] if has_task else [],
+        runner_live_status={},
+        root_path=root_path,
+    )
+
+    if has_task:
+        assert f'href="{root_path}/admin/task/current-task"' in rendered
+        assert "Task #current-task" in rendered
+        assert "encoding</span>" in rendered
+        assert "RUNNING</span>" in rendered
+        if video_id is None:
+            assert "Video ID:" not in rendered
+        elif isinstance(video_id, int):
+            assert "Video ID: 123" in rendered
+        else:
+            assert "Video ID: &lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+        assert "Current task information unavailable." not in rendered
+    elif availability == "busy":
+        assert "Current task information unavailable." in rendered
+        assert "Task #current-task" not in rendered
+    else:
+        assert "Current task:" not in rendered
+    assert "Hidden video title" not in rendered
+    assert "<script>alert(1)</script>" not in rendered
 
 
 def test_admin_tasks_page_renders(admin_client, clean_state):

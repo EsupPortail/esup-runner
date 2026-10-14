@@ -43,6 +43,11 @@ def test_acknowledgment_retains_history_and_is_idempotent(acknowledgment_client,
             assert payload[field] == value
     assert state.persistence.load_task("incident") == payload
 
+    task_status_response = acknowledgment_client.get("/task/status/incident")
+    assert task_status_response.status_code == 200
+    assert task_status_response.json()["acknowledged_at"] == payload["acknowledged_at"]
+    assert task_status_response.json()["status"] == task_status
+
     repeated = acknowledgment_client.post("/task/acknowledge/incident")
     assert repeated.status_code == 200
     assert repeated.json() == payload

@@ -411,6 +411,14 @@ def infer_workspace_terminal_status(
     runtime: ModuleType,
 ) -> Optional[tuple[str, Optional[str], Optional[str]]]:
     """Infer terminal status from workspace artifacts after a restart."""
+    if payload.get("execution_id"):
+        from app.services.task_monitor import infer_terminal_status
+
+        try:
+            status, error = infer_terminal_status(task_id, payload, runtime)
+        except (OSError, ValueError, HTTPException):
+            return None
+        return status, error, runtime._collect_recovery_script_output(task_id, payload)
     raw_results = runtime._read_recovery_task_results(task_id)
     script_output = (
         runtime._normalize_script_output(raw_results.get("script_output"))
@@ -615,6 +623,26 @@ async def reconcile_recovered_task(
     runtime: ModuleType,
 ) -> str:
     """Reconcile one previously running task after a runner restart."""
+    if payload.get("execution_id"):
+        from app.services.task_monitor import has_task_processes, infer_terminal_status
+
+        if has_task_processes(task_id, payload, runtime):
+            return "running"
+        try:
+            status, error = infer_terminal_status(task_id, payload, runtime)
+        except (OSError, ValueError, HTTPException):
+            status, error = (
+                "failed",
+                "Task execution disappeared with invalid or incomplete outputs",
+            )
+        await runtime._finalize_recovered_task(
+            task_id,
+            payload,
+            status=status,
+            error_message=error,
+            script_output=runtime._collect_recovery_script_output(task_id, payload),
+        )
+        return status
     try:
         runtime._resolve_task_manifest_path(task_id)
         script_output = runtime._collect_recovery_script_output(task_id, payload)
@@ -729,7 +757,7 @@ async def recover_failed_task(task_id: str, payload: dict, *, runtime: ModuleTyp
         if task_exists is False:
             runtime.clear_task_status(task_id)
             runtime.logger.info(
-                "Skipping automatic restart for task %s: task no longer exists on manager; "
+                "Skipping automatic restart for task %s: task is deleted or its run was replaced on manager; "
                 "cleared local recovery state",
                 task_id,
             )

@@ -41,7 +41,8 @@ document.querySelectorAll("[data-acknowledge-task-id]").forEach((button) => {
       const response = await fetch(button.dataset.acknowledgeUrl, {
         method: "POST",
         headers: {
-          "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content,
+          "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')
+            .content,
         },
       });
       const payload = await response.json();
@@ -52,7 +53,8 @@ document.querySelectorAll("[data-acknowledge-task-id]").forEach((button) => {
     } catch (error) {
       if (feedback) {
         feedback.className = "alert alert-danger mt-3";
-        feedback.textContent = error instanceof Error ? error.message : String(error);
+        feedback.textContent =
+          error instanceof Error ? error.message : String(error);
       }
       button.disabled = false;
     }

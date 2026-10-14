@@ -39,6 +39,8 @@ class FakeAsyncClient:
     ("status_code", "payload", "expected"),
     [
         (200, {"task_id": "task-1", "status": "failed"}, True),
+        (200, {"task_id": "task-1", "acknowledged_at": None}, True),
+        (200, {"task_id": "task-1", "acknowledged_at": "2026-10-14T12:00:00"}, False),
         (404, {"detail": "Task not found"}, False),
         (404, {"detail": "Not Found"}, None),
         (200, {"task_id": "another-task"}, None),

@@ -1,4 +1,4 @@
-"""Regression tests for tasks deleted on the Manager while recovery state remains."""
+"""Regression tests for deleted or acknowledged Manager tasks with recovery state."""
 
 import asyncio
 from unittest.mock import AsyncMock, Mock
@@ -6,9 +6,10 @@ from unittest.mock import AsyncMock, Mock
 import httpx
 import pytest
 
+import app.main as main_module
 from app.api.routes import task as task_module
 from app.core import state
-from app.services import manager_service
+from app.services import live_runtime, manager_service
 
 
 @pytest.fixture
@@ -91,6 +92,61 @@ async def test_deleted_task_is_forgotten_across_restarts_without_email(
         assert state.get_task_status("foreign-task")["status"] == "failed"
         assert state.is_available()
 
+    assert len(requests) == 1
+    assert requests[0].url.path == f"/task/status/{task_id}"
+    assert diagnostic.read_text(encoding="utf-8") == "Original failure"
+    task_module.process_task.assert_not_awaited()
+    task_module.send_task_failure_email.assert_not_awaited()
+    task_module.notify_completion.assert_not_awaited()
+    task_module._terminate_stale_task_processes.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["failed", "timeout"])
+@pytest.mark.parametrize("manager_status", ["failed", "warning", "timeout"])
+@pytest.mark.parametrize("callback_location", ["metadata", "request"])
+async def test_acknowledged_task_is_forgotten_across_service_restarts(
+    monkeypatch, recovery_context, status, manager_status, callback_location
+):
+    """Acknowledged incidents must not restart or notify during application startup."""
+    task_id = persist_failed_task(status, callback_location)
+    state.set_task_status("foreign-task", "failed")
+    state.set_task_metadata("foreign-task", runner_id="runner-b")
+    workspace = recovery_context / task_id
+    workspace.mkdir()
+    diagnostic = workspace / "failure.log"
+    diagnostic.write_text("Original failure", encoding="utf-8")
+    requests = stub_manager(
+        monkeypatch,
+        lambda _: httpx.Response(
+            200,
+            json={
+                "task_id": task_id,
+                "status": manager_status,
+                "acknowledged_at": "2026-10-14T12:00:00",
+            },
+        ),
+    )
+    monkeypatch.setattr(main_module, "register_with_manager", AsyncMock(return_value=True))
+    monkeypatch.setattr(main_module.background_manager, "start_all_services", AsyncMock())
+    monkeypatch.setattr(main_module.background_manager, "stop_all_services", AsyncMock())
+    monkeypatch.setattr(live_runtime, "shutdown", AsyncMock())
+    monkeypatch.setattr(
+        task_module,
+        "_infer_workspace_terminal_status",
+        Mock(side_effect=AssertionError("Acknowledged tasks must not reconcile outputs")),
+    )
+
+    for _ in range(2):
+        state.reload_task_statuses_from_disk()
+        async with main_module.lifespan(main_module.app):
+            await asyncio.sleep(0)
+            assert state.get_task_status(task_id) is None
+            assert state.get_task_status("foreign-task")["status"] == "failed"
+            assert state.is_available()
+
+    state.reload_task_statuses_from_disk()
+    assert state.get_task_status(task_id) is None
     assert len(requests) == 1
     assert requests[0].url.path == f"/task/status/{task_id}"
     assert diagnostic.read_text(encoding="utf-8") == "Original failure"

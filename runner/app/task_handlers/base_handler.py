@@ -3,7 +3,6 @@
 Base task handler defining the interface for all task processors.
 """
 
-import json
 import os
 import shutil
 import tempfile
@@ -157,7 +156,7 @@ class BaseTaskHandler(ABC):
 
     def save_task_metadata(self, task_id: str, results: Dict[str, Any], output_dir: Path) -> Path:
         """
-        Save task execution metadata as JSON.
+        Atomically save task results, execution identity and expected output filenames.
 
         Args:
             task_id: Task identifier
@@ -173,10 +172,19 @@ class BaseTaskHandler(ABC):
             "timestamp": self._get_timestamp(),
             "results": results,
         }
+        from app.core.state import get_task_status
+        from app.services.result_manifest import collect_manifest_output_files
+        from app.services.task_monitor import write_result_document
+
+        payload = get_task_status(task_id) or {}
+        if payload.get("execution_id"):
+            metadata["execution_id"] = payload["execution_id"]
+        metadata["output_files"] = collect_manifest_output_files(
+            output_dir, ignored_names={"task_metadata.json", "info_video.json", "encoding.log"}
+        )
 
         metadata_file = output_dir / "task_metadata.json"
-        with open(metadata_file, "w") as f:
-            json.dump(metadata, f, indent=2)
+        write_result_document(metadata_file, metadata)
 
         return metadata_file
 
@@ -210,7 +218,14 @@ class BaseTaskHandler(ABC):
             except Exception:
                 process_pgid = process_pid
 
-            set_task_metadata(task_id, process_pid=process_pid, process_pgid=process_pgid)
+            from app.services.task_monitor import read_process_identity
+
+            metadata = {"process_pid": process_pid, "process_pgid": process_pgid}
+            try:
+                metadata["process_start_ticks"] = read_process_identity(process_pid)[1]
+            except (OSError, ValueError, IndexError):
+                pass
+            set_task_metadata(task_id, **metadata)
         except Exception:
             pass
 

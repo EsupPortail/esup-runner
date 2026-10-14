@@ -14,6 +14,7 @@ from app.core.setup_logging import setup_default_logging
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest
 from app.services.result_manifest import collect_manifest_output_files
+from app.services.task_monitor import execute_handler
 from app.services.task_results import resolve_task_workspace
 from app.task_handlers import task_handler_manager
 
@@ -83,7 +84,7 @@ class TaskDispatcher:
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor(max_workers=1) as executor:
                 results = await loop.run_in_executor(
-                    executor, handler.execute_task, task_id, task_request
+                    executor, execute_handler, handler, task_id, task_request
                 )
 
             if results.get("success"):
@@ -116,6 +117,11 @@ class TaskDispatcher:
                 "task_id": task_id,
                 "files": output_files,
             }
+            from app.core.state import get_task_status
+
+            payload = get_task_status(task_id) or {}
+            if payload.get("execution_id"):
+                manifest["execution_id"] = payload["execution_id"]
 
             manifest_bytes = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(
                 "utf-8"

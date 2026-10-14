@@ -52,9 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Show active tasks on busy Runner detail pages, with task type, status, optional
+  video ID and a direct link to task details.
 - Add persistent acknowledgment for failed, warning and timed-out tasks from
   the dashboard and task details. Hide handled incidents from Needs attention
   while preserving history and statistics; clear acknowledgment on task restart.
+  Updated Runners also skip automatic recovery of acknowledged task incidents.
 - Report configuration changes after `git pull` in the `update-stack.sh` console
   output and update emails, without exposing values or modifying local `.env`
   files.

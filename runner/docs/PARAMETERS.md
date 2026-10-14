@@ -35,6 +35,7 @@ WHISPER_LANGUAGE=auto
 ## Networking and auth
 - `RUNNER_TOKEN` (required): Token used to authenticate runner <-> manager calls in both directions.
 - `MANAGER_URL` (default `http://127.0.0.1:8081`): Manager API URL used for registration, health checks and callbacks. It must match either the Manager's `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`, or its `MANAGER_PUBLIC_URL`. Prefer the private API; a public reverse proxy must also expose the API. Route paths such as `/api/health` are appended automatically.
+- `MANAGER_PUBLIC_URL` (optional, default empty): Browser-facing Manager HTTP(S) base URL used for email links. Set it in the Runner environment to the same public address as the Manager, including any reverse-proxy path prefix. The "Open manager" button appends `/admin` unless the URL already ends with it. When unset or blank, links use `MANAGER_URL`. This setting does not change API calls or completion callbacks.
 
 The Manager sends `completion_callback` (private endpoint) and
 `completion_callback_public` (public endpoint). At least one must match the
@@ -50,6 +51,26 @@ execution, with a redacted diagnostic visible in the Manager task and CLI test.
 - `MAX_FILE_AGE_DAYS` (int, default `0` = keep forever): Cleanup threshold.
 - `CLEANUP_INTERVAL_HOURS` (int, default `24`): Periodic cleanup interval.
 - `EXTERNAL_SCRIPT_TIMEOUT_SECONDS` (int, default `18000`): Timeout (in seconds) for external scripts run by `encoding`, `studio`, and `transcription` handlers.
+- `TASK_PROCESS_CHECK_INTERVAL_SECONDS` (non-negative int, default `3600`): Periodically verify running file-based tasks within each Runner instance. Use `600` for ten-minute checks or `0` to disable. This is independent of script timeouts and launcher monitoring. See [periodic running-task verification](OPERATIONS.md#periodic-running-task-verification).
+
+## Task verification
+
+`TASK_PROCESS_CHECK_INTERVAL_SECONDS` applies independently to each instance's
+file-based tasks. The check preserves active Python work and surviving external
+processes, and rechecks abandoned executions after ten seconds. Process birth
+ticks distinguish reused PIDs; zombies do not count as active work.
+
+Completion requires a matching manifest or successful metadata, plus nonempty
+recorded deliverables contained in the workspace. A missing manifest can be
+rebuilt from successful metadata; partial files alone never establish success.
+Explicit failure and user cancellation take precedence. New executions carry
+an identifier in recovery state, metadata and manifests; the Manager also uses
+it to reject stale callbacks and polling responses. Startup retries skip attempts
+already replaced on the Manager. Existing unmarked recovery records retain
+their startup behavior. Update both components for these protections.
+
+The check does not diagnose stalled Python workers or surviving processes.
+`EXTERNAL_SCRIPT_TIMEOUT_SECONDS` separately bounds external script execution.
 
 ## Media safety
 - `MEDIA_CODEC_DENYLIST` (CSV, default `magicyuv`): Codec denylist checked with lightweight binary signatures immediately after download and before FFmpeg, ffprobe, or Whisper inspect the media. The built-in `magicyuv` rule rejects MagicYUV signatures because of CVE-2026-8461 / PixelSmash. Set this to an empty value only if you accept that risk.

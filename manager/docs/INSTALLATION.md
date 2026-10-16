@@ -382,6 +382,31 @@ Recommendations:
 - Keep private API namespaces (`/api`, `/runner`, `/task`) inaccessible from the public proxy.
 - Avoid direct public access to the manager process on `MANAGER_PORT`.
 
+### Trust HAProxy forwarding headers
+
+When using HAProxy, explicitly set the following in `manager/.env`, and in
+`runner/.env` if HLS is also published through the proxy:
+
+```dotenv
+# Replace with the HAProxy source IP as seen by the application.
+FORWARDED_ALLOW_IPS=10.0.0.10
+```
+
+This is a native Gunicorn/Uvicorn setting loaded from `.env` by the launchers.
+Use the actual proxy source IP after any NAT, or comma-separated IPs for
+redundant proxies. Avoid `*`; the default trusts only loopback peers.
+Restart the affected services completely after changing it. See
+[proxy configuration](CONFIGURATION.md#trust-haproxy-forwarding-headers) for
+the defaults and how HTTPS and client IP headers are trusted.
+
+For HAProxy terminating HTTPS and receiving client connections directly,
+set these headers in the relevant backend and preserve the public `Host`:
+
+```haproxy
+http-request set-header X-Forwarded-Proto https
+http-request set-header X-Forwarded-For %[src]
+```
+
 ### Publish the Manager below a URL prefix
 
 Set the complete public URL when the Manager is exposed below a subpath such as `/manager`:

@@ -1,27 +1,12 @@
 # MediaMTX installation for Live streaming
 
-If this is your first installation, start with the
-[short Live installation path](LIVE_INSTALLATION.md). This page is the detailed
-reference for native systemd, Docker, custom ports and troubleshooting.
+For a first deployment, follow [Live installation](LIVE_INSTALLATION.md).
+This reference covers alternative ports, Docker, service management and upgrades.
 
-Live requires **MediaMTX 1.21.1 or newer** on Linux, including Debian 12
-and Debian 13. Run one Manager instance on the Manager host and one shared
-Runner instance on each Runner server; all Runner processes and Live workers on
-that server use the same MediaMTX service. It covers a native executable with
-systemd user services and the official Docker image. MediaMTX is required only for Live.
-
-**1.21.1 is the minimum version and the default for new installations.** You may
-choose any stable release at or above this minimum. Validate its configuration,
-API v3 / `tracks2` contract and RTMP-to-HLS behavior before production use;
-the minimum check does not certify every future release. MediaMTX upgrades are
-managed by the operator, independently of Manager/Runner updates and
-`update-stack.sh`. See [Manual upgrades](#manual-upgrades).
-
-Use the **same MediaMTX executable or image on CPU and GPU machines**. MediaMTX
-receives and relays streams; FFmpeg on the Runner performs transcoding. MediaMTX
-does not need CUDA, NVIDIA drivers or a GPU-enabled image. Configure the Runner's
-FFmpeg separately using [FFmpeg setup](../../runner/docs/FFMPEG_SETUP.md) and
-[Live Runner configuration](../../runner/docs/LIVE.md).
+Live requires **MediaMTX >= 1.21.1** on Linux (including Debian 12/13).
+The installer defaults to **1.21.1** and reuses newer stable installations.
+MediaMTX receives/relays RTMP; FFmpeg in the Runner performs CPU or GPU transcoding.
+The MediaMTX executable/image is identical for CPU and GPU hosts.
 
 ## Contents
 
@@ -36,470 +21,240 @@ FFmpeg separately using [FFmpeg setup](../../runner/docs/FFMPEG_SETUP.md) and
 
 ## 1) Choose an installation method
 
-| Deployment | Steps |
+| Deployment | Procedure |
 | --- | --- |
-| Native MediaMTX, managed by systemd --user | Check existing installations below, then sections [2](#2-install-the-native-executable), [3](#3-prepare-one-instance) and [4](#4-start-the-native-systemd-service) |
-| MediaMTX in Docker, with Manager/Runner applications on the host | Sections [3](#3-prepare-one-instance) and [5](#5-run-mediamtx-in-docker) |
-| Complete Manager/Runner stack in Docker Compose | Go directly to [Complete stack with Docker Compose](#complete-stack-with-docker-compose) |
+| Native executable + systemd user service | Sections 2–4, then 6 |
+| MediaMTX container + native applications | Section 3 (`configure`), then 5–6 |
+| Complete Docker Compose stack | [Live installation: Compose](LIVE_INSTALLATION.md#docker-compose-shortcut) |
+
+Run one Manager MediaMTX and **one shared Runner MediaMTX per Runner server**,
+even when both roles share a host. Adding Live workers needs no extra MediaMTX
+service: each session creates its own temporary relay path through the API.
+One native executable or Docker image can serve both roles.
 
 ### Already installed on this machine?
 
-**There is no need to reinstall MediaMTX for each Manager or Runner.** One native
-executable can serve all instances on a host. Docker containers can reuse the
-same image. Check what is already available:
-
 ```bash
-# Include the account-local binary directory in this shell.
 export PATH="$HOME/.local/bin:$PATH"
-# Native installation, if present:
 command -v mediamtx
 mediamtx --version
-
-# Docker installation, if Docker is present:
-docker image inspect bluenviron/mediamtx:1.21.1 --format '{{.Id}}'
-docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}'
 ```
 
-If the executable reports a stable version **>= 1.21.1**, keep it. Run `install`
-in section 2 to check it and prepare the path used by the user unit: an existing executable in
-`PATH` is linked from `~/.local/bin/mediamtx`, without downloading or copying it.
-If the Docker image already exists, skip the image download in section 5.
-
-An existing service/container can also be retained when it is already dedicated
-to the **same** Manager or Live Runner and its configuration matches this guide.
-Inspect its configuration, version and ports before changing anything. Versions
-below **1.21.1** must be upgraded manually. Newer versions are accepted; check
-their compatibility with this integration's API v3 and `tracks2` usage.
-
-Reuse the **installation** and run one MediaMTX service for the Manager plus
-one shared service on each Runner server. All Live instances declared in a
-Runner's `RUNNER_TASK_TYPES` and all Runner processes on that server share its
-MediaMTX service and credentials, using independent `live/<live_id>` relay
-paths. For example, one Manager and a Runner server configured with
-`[1x(encoding,studio),4x(live)]` need **two MediaMTX services**, one executable
-or image, and one application `runner/.env`. Increasing the Live count or adding
-Runner processes does not require another MediaMTX configuration or service.
-
-The Manager's MediaMTX remains separate from the Runner's: it receives encoder
-sources while the Runner server's shared instance hosts temporary pull relays.
-Each additional Runner server has its own `runner` instance and local service.
+Reuse a stable executable **>= 1.21.1**. Section 2 links an existing `PATH`
+installation to the user unit's default path without copying or replacing it.
+For Docker, inspect existing images/containers before pulling another image.
+Retain a service already dedicated to the same role if its ports, credentials
+and configuration match. Upgrade older versions [manually](#manual-upgrades).
 
 ### Prerequisites
 
-- A Linux host and a login session for the service account (`esup-runner` in
-  these examples). Run installation and operations as that account, without
-  `sudo`. All example listener ports are above 1024.
-- The `esup-runner` account and repository checkout from the
-  [Manager installation](INSTALLATION.md) or
-  [Runner installation](../../runner/docs/INSTALLATION.md), assumed below at
-  `/opt/esup-runner`. Run the commands in Bash.
-- Available ports for each instance, and network access from encoders to the
-  Manager's RTMP listener and from Runners to that same listener.
+Use the service account and checkout from the [Manager](INSTALLATION.md) or
+[Runner](../../runner/docs/INSTALLATION.md) installation, assumed at
+`/opt/esup-runner`. Run commands without `sudo`, from the relevant component.
+Both installers are self-contained in component-only sparse checkouts.
 
-Only initial OS provisioning needs an administrator if packages are missing.
-On Debian 12/13 or Ubuntu, an administrator can install the prerequisites:
+The installer uses Python **3.11+**, its standard library and CA certificates.
+Native services require a working `systemctl --user` session. Missing OS
+packages require an administrator; on Debian 12/13 or Ubuntu:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 ca-certificates curl coreutils openssl
+sudo apt install -y python3 ca-certificates curl
 ```
 
-On other Linux distributions, use the equivalent packages. The upstream Linux
-binary avoids a local compilation step. Native startup below requires systemd;
-adapt service management on distributions using another init system. Docker
-requires a supported Docker Engine installation, described in section 5.
+Reserve distinct listener ports. Encoders and Runners must reach the Manager's
+RTMP listener; Control APIs and metrics remain private. Default ports:
 
-Use the component-local installer: [Manager](../scripts/install_mediamtx.py)
-or [Runner](../../runner/scripts/install_mediamtx.py). Each selects its own
-`production/mediamtx-live.yml` template without a positional role argument.
-It needs **Python 3.11 or newer** and uses only the standard library;
-no application virtual environment or Python package installation is required.
-The commands below use the operating system's Python as the logged-in service
-account. New installations use `~/.local/bin/mediamtx`; configuration lives under
-`~/.config/esup-runner/<instance>/`. MediaMTX configuration paths deliberately use
-the account's home directory; `--config-root` selects another location. The user
-unit files themselves follow systemd's configuration directory, including
-`XDG_CONFIG_HOME` when set. Adapt custom configuration paths in the units below.
-
-The scripts and YAML template are included in a component-only sparse checkout;
-no root `scripts/` directory or other application is needed to install or configure
-MediaMTX. Run commands from `manager/` on the Manager host or `runner/` on the
-Runner host. Section 4 separately describes obtaining the shared systemd unit.
+| Role | RTMP | Control API | Metrics |
+| --- | --- | --- | --- |
+| Manager | 1935 | 9997 | 9998 |
+| Runner | 2935 | 10997 | 10998 |
 
 ## 2) Install the native executable
 
-Skip the native installation when using Docker. For a native service, run the
-following once per host; it also checks and reuses an existing installation.
-
-Install or reuse the native executable:
+Skip this section for Docker. Run once per host, from either component:
 
 ```bash
-cd /opt/esup-runner/manager  # Use /opt/esup-runner/runner on a Runner host.
+cd /opt/esup-runner/manager  # Use runner/ on a Runner host.
 python3 scripts/install_mediamtx.py install
 ```
 
-The script first looks for `~/.local/bin/mediamtx`, then for `mediamtx` in `PATH`,
-and reuses any stable version at or above **1.21.1**. For a `PATH` installation,
-it creates a symbolic link at `~/.local/bin/mediamtx` so the default user unit can find it. For example,
-the link can point to `/usr/local/bin/mediamtx`; the existing executable stays
-unchanged and there is no second installation. Repeated runs retain the link.
-When neither location contains MediaMTX, it selects the Linux architecture, downloads
-**1.21.1** and `checksums.sha256` from the
+The installer reuses `~/.local/bin/mediamtx` or a supported executable in `PATH`.
+Otherwise it downloads the selected Linux archive and `checksums.sha256` from the
 [official release](https://github.com/bluenviron/mediamtx/releases/tag/v1.21.1),
-verifies SHA-256, and installs only the executable in `~/.local/bin/mediamtx`.
-The bundled default YAML is not installed; section 3 uses the project's templates.
+checks SHA-256 and the exact binary version, and installs only the executable.
+An unsupported existing executable is reported and left unchanged.
 
-An existing executable below the minimum, or with an unrecognized/prerelease
-version, is left unchanged and reported as an error. Use
-`--binary /absolute/path/to/mediamtx` to select an existing
-installation outside `PATH`, or a separate destination for a deliberate version
-change. An explicit `--binary` keeps that chosen location and does not create
-the default link; adapt the systemd executable path in section 4 in that case.
+| Option | Effect |
+| --- | --- |
+| `--dry-run` | No downloads or writes; an existing binary may be checked with `--version` |
+| `--version 1.21.2` | Exact release to download if absent; minimum/default: 1.21.1 |
+| `--binary /absolute/path/mediamtx` | Existing binary or unused installation destination; no default-path link |
 
-Preview the operation or display the available options:
-
-```bash
-python3 scripts/install_mediamtx.py install --dry-run
-python3 scripts/install_mediamtx.py --help
-python3 scripts/install_mediamtx.py install --help
-```
-
-`--dry-run` performs no downloads or writes. It may run an existing executable
-with `--version` to check compatibility. The installer's `--version` selects
-the exact release to download **when the selected destination is absent**;
-it defaults to `1.21.1` and rejects releases below that minimum. For example:
-
-```bash
-python3 scripts/install_mediamtx.py install --version 1.21.2
-```
-
-An existing supported executable is reused regardless of this download choice;
-the installer never upgrades or downgrades it. Use a separate `--binary` path
-for a manual upgrade as described below. Downloads still require both a valid
-SHA-256 checksum and the exact requested executable version. Prefer an explicit
-release/tag over `latest` or MediaMTX's `--upgrade` command so deployments remain
-reproducible.
+An installed version is never upgraded or downgraded automatically.
+Use a separate destination for a [manual upgrade](#manual-upgrades).
+Run `python3 scripts/install_mediamtx.py --help` for all commands.
 
 ### Install and configure with one command
 
-`setup` combines `install` and `configure`. For a new native deployment, choose
-one command below and then continue with section 4 and the authentication mapping
-in section 3:
+`setup` combines `install` and `configure`, preserving existing binaries and
+complete configurations. Run the relevant command on each host:
 
 ```bash
-# Manager: choose a private interface instead of 0.0.0.0 where possible.
+# Manager: prefer a specific private interface where possible.
 cd /opt/esup-runner/manager
 python3 scripts/install_mediamtx.py setup --instance manager \
   --rtmp-address 0.0.0.0:1935
 
-# Live Runner on the same host or another machine:
+# Runner:
 cd /opt/esup-runner/runner
 python3 scripts/install_mediamtx.py setup --instance runner
 ```
 
-Both commands use their component's fixed role and support `--dry-run`. The script
-prepares files and reports their locations; service startup remains the explicit step in section 4. Existing
-executables and complete instance configurations are reused without overwriting
-files or regenerating passwords.
+Continue with section 4; `setup` does not start services.
 
 ## 3) Prepare one instance
 
-Use `configure` when the executable is already installed, or when MediaMTX runs
-in Docker with host networking. Skip file creation if `setup` already prepared
-this instance. The complete Compose stack retains its own procedure in section 5.
-
-Run the commands from the selected component's directory, with its local
-`scripts/` and `production/` directories present in the checkout. No native MediaMTX executable
-is required for `configure`.
-
-### Select the component and ports
-
-For a **Manager**:
+Skip creation if `setup` already prepared the instance. Use `configure` for
+an existing installation or a MediaMTX-only container with host networking:
 
 ```bash
 cd /opt/esup-runner/manager
 python3 scripts/install_mediamtx.py configure --instance manager \
   --rtmp-address 0.0.0.0:1935
-```
 
-`0.0.0.0:1935` accepts RTMP connections on all host interfaces. Prefer a specific
-private interface address where possible; restrict access to authorized encoders
-and Runners with the firewall and MediaMTX `ips` settings. Use a private network
-or configure RTMPS when transporting credentials across untrusted networks.
-Without this override, the template's default is `127.0.0.1:1935`.
-
-For a **Live Runner**:
-
-```bash
 cd /opt/esup-runner/runner
 python3 scripts/install_mediamtx.py configure --instance runner
 ```
 
-The Runner pulls the Manager's stream; encoders do not connect to the Runner.
-The Runner's RTMP listener and both roles' API/metrics listeners default to
-loopback. The first Runner uses ports `2935`, `10997`, and `10998` respectively;
-the Manager uses `1935`, `9997`, and `9998`.
-
-Prepare only one Runner MediaMTX instance per Runner server. All Runner processes
-and Live workers on that server use it; adding capacity does not require another
-configuration or service. If the Manager and Runner share a host, keep their
-separate role instances on the distinct default ports shown above.
+Each component selects its own `production/mediamtx-live.yml` template.
+All listeners default to loopback; the Manager example opens RTMP on all
+interfaces. Prefer a private interface and restrict firewall access and YAML
+`ips` lists to authorized clients. Use RTMPS or a private network for credentials
+crossing untrusted networks.
 
 ### Files and options
 
-The script reads the [Manager](../production/mediamtx-live.yml) or
-[Runner](../../runner/production/mediamtx-live.yml) template and creates:
-
-| File | Contents and permissions |
+| Generated path | Permissions / purpose |
 | --- | --- |
-| `~/.config/esup-runner/<instance>/mediamtx.yml` | Role-specific MediaMTX configuration with separate generated passwords; mode `0600`, owned by the service account |
-| `~/.config/esup-runner/<instance>/mediamtx.env` | The three listener addresses as `MTX_*ADDRESS` overrides; mode `0640`, readable by the service account's primary group |
+| `~/.config/esup-runner/<instance>/` | `0750`; one directory per role |
+| `mediamtx.yml` | `0600`; separate random account passwords |
+| `mediamtx.env` | `0640`; RTMP/API/metrics listener overrides |
 
-The instance directory uses mode `0750`. Files belong to the logged-in account,
-which also runs the user services. `--user` defaults to that account; selecting
-a different owner requires appropriate administrative privileges. Regular
-installation and configuration of your own instances need no ownership changes.
-An existing configuration is retained verbatim: later `configure`/`setup` calls
-**do not reapply the requested role, account or addresses**. Edit the files to
-change an existing instance. Partial configurations and symlink destinations are
-reported as errors and left unchanged.
+Files belong to the service account. Existing complete configurations are
+retained verbatim: rerunning `configure`/`setup` does not change passwords,
+addresses or ownership. Partial configurations and symlink destinations fail.
 
-| Option | Applies to | Purpose |
-| --- | --- | --- |
-| `--dry-run` | All commands | Preview without downloading, writing files or generating secrets |
-| `--version 1.21.2` | `install`, `setup` | Download this release if the destination is absent; minimum/default: 1.21.1. Reuse any supported existing executable; does not change Compose image tags |
-| `--binary /absolute/path/mediamtx` | `install`, `setup` | Select an executable to reuse or a destination for a new installation |
-| `--instance NAME` | `configure`, `setup` | Required unique instance name, e.g. `manager` or `runner` |
-| `--rtmp-address IP:PORT` | `configure`, `setup` | RTMP listener; defaults to the selected template |
-| `--api-address IP:PORT` | `configure`, `setup` | Control API listener; defaults to the selected template |
-| `--metrics-address IP:PORT` | `configure`, `setup` | Metrics listener; defaults to the selected template |
-| `--user USER` | `configure`, `setup` | File owner and primary group; defaults to the current account |
-| `--config-root PATH` | `configure`, `setup` | Absolute parent of the instance directory; defaults to `~/.config/esup-runner` |
+| Option (`configure` / `setup`) | Purpose |
+| --- | --- |
+| `--instance NAME` | Required; standard names: `manager`, `runner` |
+| `--rtmp-address IP:PORT` | RTMP bind address |
+| `--api-address IP:PORT` | Control API bind address |
+| `--metrics-address IP:PORT` | Metrics bind address |
+| `--config-root /absolute/path` | Parent directory; default: `~/.config/esup-runner` |
+| `--user USER` | Owner; defaults to caller; another owner requires privileges |
+| `--dry-run` | Preview without writes or secret generation |
 
-Use `[::1]:PORT` for IPv6 loopback addresses. Run commands in the intended service
-account's session. If changing the configuration root, also adapt the service
-unit or Docker command in sections 4–5. Ensure the account can traverse all
-parent directories.
+Use `[::1]:PORT` for IPv6. Custom binary/configuration paths require manual unit
+adaptation; the `start` helper below manages the standard home-local layout.
 
 ### Connect authentication settings
 
-New configurations already contain random passwords generated with Python's
-`secrets` module. The script stores them in the protected YAML and does not print
-them. Review that file locally and set `ips` lists for the actual client addresses;
-an empty list permits any client IP with valid credentials:
+Passwords are stored only in the private YAML; the installer does not print them.
+Review credentials and client `ips` lists locally:
 
 ```bash
-# Replace manager with the selected instance name.
 nano "$HOME/.config/esup-runner/manager/mediamtx.yml"
 ```
 
-Retain the template's restricted permissions and path expressions. The
-[connection helper in section 6](#6-connect-the-applications-and-verify) copies
-application credentials automatically. Configure the publisher credentials in
-the encoder itself:
-
-| YAML user | Where the matching credentials are used |
+| YAML account | Matching application/client credential |
 | --- | --- |
-| Manager `publisher` | Encoder RTMP publishing settings |
-| Manager `relay` | Each associated Runner's `LIVE_UPSTREAM_RTMP_URL` |
-| Manager `control` | Manager `LIVE_MEDIAMTX_API_USER` / `LIVE_MEDIAMTX_API_PASSWORD` |
-| Runner `transcoder` | That Runner's `LIVE_LOCAL_RTMP_URL` |
-| Runner `control` | That Runner's `LIVE_MEDIAMTX_API_USER` / `LIVE_MEDIAMTX_API_PASSWORD` |
+| Manager `publisher` | Encoder publishing settings |
+| Manager `relay` | Runner `LIVE_UPSTREAM_RTMP_URL` |
+| Manager `control` | Manager `LIVE_MEDIAMTX_API_PASSWORD` |
+| Runner `transcoder` | Runner `LIVE_LOCAL_RTMP_URL` |
+| Runner `control` | Runner `LIVE_MEDIAMTX_API_PASSWORD` |
 
-The script configures MediaMTX only: the Manager/Runner application environments
-remain under your control. Configure each encoder with a path allowed by the
-template, such as `live/amphi-a`, where `amphi-a` is the public broadcaster name.
-The Manager discovers accepted RTMP publications without a `LIVE_SOURCES`
-declaration and uses the broadcaster name as `source_id`. That optional setting
-declares sources before publication, for example
-`LIVE_SOURCES={"amphi-a":"live/amphi-a"}`. The Manager template uses
-`overridePublisher: true` so the next authenticated publisher on the same path
-replaces the current one. Apply this setting manually to existing installations
-before restarting MediaMTX. Follow
-[Manager configuration](LIVE.md#manager-configuration) and the encoder's
-authentication options. Keep the generated passwords private; broadcaster names
-are public identifiers, not authentication secrets.
+Section 6 copies application credentials automatically. Configure the encoder
+separately with H.264/AAC and an allowed path such as `live/amphi-a`. The Manager
+discovers accepted publications; `amphi-a` is the public `source_id`, not a secret.
+`LIVE_SOURCES` optionally declares sources before publication; it is not an
+allowlist. Keep the template's path permissions and `overridePublisher: true`
+(new authenticated publishers on the same path replace the current publisher).
 
 ## 4) Start the native systemd service
 
-Skip this section for Docker. Run these commands in the service account's login
-session, on the host where the corresponding MediaMTX instance will run.
+Skip this section for Docker. Run as the service account in its login session.
 
-### 4.1) Understand the shared template and instance names
+### Standard startup
 
-[`esup-runner-mediamtx@.service`](../../runner/production/esup-runner-mediamtx@.service) is a
-**shared systemd template**. Install this file **once per account on each host**.
-The standard setup uses `manager` on the Manager host and one `runner` instance
-on each Runner server. All Runner processes and Live workers on that server
-share the `runner` service and its configuration.
-
-The name supplied to `--instance` in sections 2–3 determines both the
-configuration directory and the service name:
-
-| MediaMTX used by | Installer directory | `--instance` | Configuration directory | Service to start |
-| --- | --- | --- | --- | --- |
-| Manager | `manager/` | `manager` | `~/.config/esup-runner/manager/` | `esup-runner-mediamtx@manager.service` |
-| All Runners on one Runner server | `runner/` | `runner` | `~/.config/esup-runner/runner/` | `esup-runner-mediamtx@runner.service` |
-
-For example, `setup --instance manager` from `manager/` prepares the Manager's
-configuration, while `configure --instance runner` from `runner/` prepares the
-shared Runner configuration. **These installer commands prepare files; each role's
-instance must then be started on its host.** Starting
-`esup-runner-mediamtx@manager.service` starts only the Manager's MediaMTX;
-`esup-runner-mediamtx@runner.service` starts the MediaMTX shared by that Runner
-server. If both roles use the same host, start both instances there.
-
-Keep the template filename `esup-runner-mediamtx@.service`: there is no need to copy or
-rename it for each instance. In the template, systemd replaces `%i` with the name
-between `@` and `.service`, and `%h` with the service account's home directory.
-For `esup-runner-mediamtx@runner.service`, it therefore loads
-`~/.config/esup-runner/runner/mediamtx.env` and
-`~/.config/esup-runner/runner/mediamtx.yml`. The component-local installer selects the initial YAML
-contents; the instance name selects which prepared files systemd loads.
-
-Use the exact names chosen during configuration. `manager` and `runner` are the
-recommended names; custom names are supported when supplied consistently to the
-installer, helper and systemd service. If both roles run on one host, their
-listener ports must remain distinct, as shown in section 3. On separate hosts,
-follow this procedure for the local role instance on each host.
-
-### 4.2) Install the shared template once
-
-If a sparse checkout contains only `manager/`, first add the template directory:
+On the Manager host:
 
 ```bash
-cd /opt/esup-runner
-git sparse-checkout add runner/production
+cd /opt/esup-runner/manager
+python3 scripts/install_mediamtx.py start --instance manager
 ```
 
-This retrieves templates; the Manager does not need the Runner application.
-Prepare the executable path and install the template once. If both are already
-ready for this account, continue directly with the instance startup commands
-below. Retain and review an existing customized unit instead of copying over it:
+On each Runner host:
 
 ```bash
-(
-set -eu
-cd /opt/esup-runner/manager  # Use /opt/esup-runner/runner on a Runner host.
-python3 scripts/install_mediamtx.py install
-LIVE_USER_UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-mkdir -p "$LIVE_USER_UNIT_DIR"
-install -m 0644 /opt/esup-runner/runner/production/esup-runner-mediamtx@.service \
-  "$LIVE_USER_UNIT_DIR/esup-runner-mediamtx@.service"
-systemctl --user daemon-reload
-)
+cd /opt/esup-runner/runner
+python3 scripts/install_mediamtx.py start --instance runner
 ```
 
-Existing installations are not renamed automatically. Before switching to the
-new instance names, stop and disable the old MediaMTX user services, prepare and
-validate the `manager` and `runner` configurations, and confirm their listener
-ports are available. Existing configuration directories and service units are
-left untouched by the installer.
+Run both on a shared host. The helper:
 
-The default executable is `~/.local/bin/mediamtx`, either the installed binary
-or a link to an existing `PATH` installation. The `install` command ensures
-that this path exists without reinstalling a matching executable or changing
-instance configurations and passwords.
+1. Checks the prepared files and reuses/installs the default executable.
+2. Validates YAML with the listener overrides from `mediamtx.env`.
+3. Checks the user bus, then installs the component-local shared unit once.
+4. Reloads systemd, enables/starts the instance and checks that it is active.
 
-If you explicitly chose `--binary`, use the same option above and change both
-`MEDIAMTX_BIN` in the startup examples and the installed unit's `ExecStart` to
-that path. A custom `--config-root` also requires adapting `MTX_CONFIG_DIR`,
-`EnvironmentFile` and the YAML argument in `ExecStart`. Run
-`systemctl --user daemon-reload` after editing the installed template.
+Add `--dry-run` to preview. A failure stops subsequent operations. Existing
+passwords/configurations are preserved; an active service is never restarted.
+Custom units, symlinks and unsupported environment overrides are refused without
+replacement. After startup, verify the API in section 6 as well.
 
-### 4.3) Start the Manager's MediaMTX (`manager`)
+The identical template shipped in each component uses `%h` for the account's
+home and `%i` for the instance name. It reads
+`~/.config/esup-runner/<instance>/mediamtx.env` and `mediamtx.yml` and runs
+`~/.local/bin/mediamtx`. Units are installed in
+`${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/`.
+No other component's checkout is needed.
 
-Run this block on the Manager's MediaMTX host, after preparing `manager` in
-section 2 or 3. The subshell stops at the first failed command, so validation
-must succeed before this block enables and starts the service:
+### Custom units and paths
 
-```bash
-MTX_INSTANCE=manager
-MTX_CONFIG_DIR="$HOME/.config/esup-runner/$MTX_INSTANCE"
-MEDIAMTX_BIN="$HOME/.local/bin/mediamtx"
-(
-set -eu
-"$MEDIAMTX_BIN" --validate-conf="$MTX_CONFIG_DIR/mediamtx.yml"
-systemctl --user enable --now "esup-runner-mediamtx@$MTX_INSTANCE.service"
-systemctl --user status "esup-runner-mediamtx@$MTX_INSTANCE.service" --no-pager
-)
-```
+For an existing customized deployment, retain its unit. For new custom paths,
+copy the component's `production/esup-runner-mediamtx@.service` to the user unit
+directory and adapt `ExecStart` and `EnvironmentFile`. Validate with the same
+`MTX_*` environment as the service before `systemctl --user daemon-reload` and
+`systemctl --user enable --now esup-runner-mediamtx@<instance>.service`.
+Do not replace an active deployment's executable/unit to add another role.
+Before changing old instance names, finish broadcasts, stop/disable the old
+units, and check that the replacement ports are available.
 
-### 4.4) Start the Runner's MediaMTX (`runner`)
-
-Run this block on the Runner's MediaMTX host, after preparing `runner` in
-section 2 or 3. **If `manager` and `runner` are on the same host, run both
-startup blocks.** The shared template from section 4.2 is already installed;
-only the instance name and its configuration directory change:
+### Logs, restarts and boot persistence
 
 ```bash
-MTX_INSTANCE=runner
-MTX_CONFIG_DIR="$HOME/.config/esup-runner/$MTX_INSTANCE"
-MEDIAMTX_BIN="$HOME/.local/bin/mediamtx"
-(
-set -eu
-"$MEDIAMTX_BIN" --validate-conf="$MTX_CONFIG_DIR/mediamtx.yml"
-systemctl --user enable --now "esup-runner-mediamtx@$MTX_INSTANCE.service"
-systemctl --user status "esup-runner-mediamtx@$MTX_INSTANCE.service" --no-pager
-)
-```
-
-All Runner processes and Live application instances on this server share the
-`runner` MediaMTX service. Do not repeat the block to add a process or Live
-worker. A different Runner server prepares and starts its own local `runner`
-instance.
-
-These units run MediaMTX. Continue with section 6 for the application settings
-and with [Live Runner service setup](../../runner/docs/LIVE.md#service-and-hls-exposure)
-to start all application groups through `esup-runner-runner.service`, using
-`RUNNER_TASK_TYPES` and `LIVE_*` in `runner/.env`. The name `runner` selects
-MediaMTX files and ports; it does not enable Live in the Runner by itself.
-There is no additional application `runner.env` file to create here.
-
-### 4.5) Check logs and manage an instance
-
-Always select the instance explicitly before inspecting or restarting it:
-
-```bash
-MTX_INSTANCE=runner  # Use manager for the Manager's MediaMTX.
+MTX_INSTANCE=runner  # Use manager on the Manager host.
 systemctl --user status "esup-runner-mediamtx@$MTX_INSTANCE.service" --no-pager
 journalctl --user -u "esup-runner-mediamtx@$MTX_INSTANCE.service" -n 50 --no-pager
-```
-
-The service restarts automatically after a failure. After configuration changes,
-restart the selected instance outside an active Live session:
-
-```bash
+# After deliberate configuration changes, between broadcasts:
 systemctl --user restart "esup-runner-mediamtx@$MTX_INSTANCE.service"
 ```
 
-### 4.6) Keep user services running after logout and at boot
+The unit restarts automatically after failures, with `NoNewPrivileges=true` and
+`UMask=0077`. `enable --now` does not reload an active service's environment.
+For boot/logout persistence, check `loginctl show-user "$(id -un)" -p Linger`.
+If disabled, an administrator enables lingering once with
+`loginctl enable-linger esup-runner` (adapt the account).
 
-These commands need an active user service manager. Prefer logging in directly
-as the service account (for example over SSH); a plain `su` shell may lack the
-user bus. Check with `systemctl --user is-system-running`. A `degraded` result
-means the bus is available but one or more user units have failed; inspect them.
-`Failed to connect to bus` requires fixing the login session/user manager first.
-
-To run at boot and remain active after logout, enable **lingering** once for the
-service account. Check its status with:
-
-```bash
-loginctl show-user "$(id -un)" -p Linger
-```
-
-If it is disabled, an administrator can run `loginctl enable-linger esup-runner`
-with administrative privileges (substitute the actual account). Some local
-policies allow users to enable their own lingering. This is host provisioning;
-routine MediaMTX start/stop/restart commands remain `systemctl --user`.
-See the [systemd loginctl reference](https://github.com/systemd/systemd/blob/main/man/loginctl.xml).
-
-The user units retain `NoNewPrivileges=true` and a private `UMask=0077`.
-They allow access to home-local files and avoid filesystem namespace directives
-that depend on privileged or enabled unprivileged user namespaces. See the
-[systemd execution reference](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml).
-
-Continue with section 6 to connect the application.
+`Failed to connect to bus` requires a working login/user-manager session; a plain
+`su` shell may lack it. A `degraded` result from
+`systemctl --user is-system-running` means the bus works but a unit has failed.
+See [systemd lingering](https://github.com/systemd/systemd/blob/main/man/loginctl.xml).
+Continue with section 6 to connect the applications and with
+[Runner service setup](../../runner/docs/LIVE.md#service-and-hls-exposure)
+for the application groups; starting MediaMTX alone does not enable Live.
 
 ## 5) Run MediaMTX in Docker
 

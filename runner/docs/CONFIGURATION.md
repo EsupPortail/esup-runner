@@ -63,6 +63,37 @@ The command uses the same loader and validators as the Runner, reports all
 detected errors together, excludes secrets from its summary, and returns exit
 code `0` when valid or `2` when invalid.
 
+## HAProxy and other reverse proxies
+
+When publishing the Runner through HAProxy, explicitly configure the trusted
+proxy addresses in `runner/.env`. Configure `manager/.env` too if the Manager
+is published through the proxy:
+
+```dotenv
+# Replace with the HAProxy source IP as seen by this application.
+FORWARDED_ALLOW_IPS=10.0.0.10
+```
+
+`FORWARDED_ALLOW_IPS` is a native Uvicorn/Gunicorn environment setting. The
+ESUP-Runner launchers load `.env` before starting these servers, so this setting
+works without an application configuration field or code change. It controls
+which peers may supply `X-Forwarded-Proto` and `X-Forwarded-For`, allowing the
+application to recognize HTTPS and the original client IP, including for HLS
+viewer tracking.
+
+Use the proxy's source IP after any NAT, rather than the public DNS name or
+the Runner's destination address. For redundant proxies, use a comma-separated
+list such as `10.0.0.10,10.0.0.11`. IP addresses and CIDR networks are supported;
+prefer individual proxy IPs. The server default is `127.0.0.1,::1`, which covers
+loopback connections only. Avoid `*`, which trusts forwarding headers from any
+peer, and restrict direct access to the application ports.
+
+HAProxy must set the forwarding headers and preserve the public `Host` header;
+see the [Live HAProxy example](LIVE.md#haproxy-with-one-rule-for-multiple-instances).
+Restart the affected services completely after changing this setting; an
+application configuration reload does not reconfigure the HTTP servers.
+See the [Uvicorn HTTP settings](https://uvicorn.dev/settings/#http).
+
 ## Example configuration
 
 ```properties

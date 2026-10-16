@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional, Set
 from urllib.parse import urlparse
 
+from app.core._check_config import _DEFER_CONFIG_VALIDATION
 from app.core.live_config import LiveSettings
 
 SUPPORTED_TASK_TYPES = frozenset({"encoding", "studio", "transcription", "live"})
@@ -941,6 +942,7 @@ def _is_pytest_run() -> bool:
     )
 
 
-# Auto-validate configuration on module load (skip under pytest to avoid failing imports)
-if not _is_pytest_run():
+# Diagnostics validate explicitly so incomplete Live setup can be reported as warnings.
+# Skip under pytest to avoid failing imports during collection.
+if not _is_pytest_run() and not _DEFER_CONFIG_VALIDATION.get():
     config.validate_configuration()

@@ -38,46 +38,15 @@ flowchart LR
     H --> V[hls.js / VLC player]
 ```
 
-The encoder always publishes to the MediaMTX instance associated with the Manager.
-The Manager discovers publications by periodically querying MediaMTX's private
-HTTP Control API (polling).
+The encoder publishes to the Manager's MediaMTX (normally RTMP port `1935`).
+With `LIVE_ENABLED=true` and `LIVE_AUTO_START=true`, the Manager queries its
+private Control API (`GET /v3/paths/list` and `/v3/paths/get/{path}`), identifies
+each RTMP publication by connection UUID, and dispatches a session to an
+available Live Runner. If capacity is exhausted, it retries on subsequent scans.
 
-```mermaid
-sequenceDiagram
-    participant E as Encoder
-    participant X as Manager MediaMTX
-    participant M as Manager
-    participant R as Live Runner
-
-    E->>X: RTMP publication — port 1935
-    M->>X: GET /v3/paths/list — port 9997
-    X-->>M: Available streams and RTMP connections
-    M->>M: Create session and reserve an available Runner
-    M->>R: Dispatch Live task
-```
-
-The automatic discovery cycle works as follows:
-
-1. MediaMTX receives and authenticates the encoder's RTMP publication, normally
-   on port `1935`.
-2. The Manager lists runtime paths through `GET /v3/paths/list`. The API URL is
-   configured by `LIVE_MEDIAMTX_API_URL`, which defaults to
-   `http://127.0.0.1:9997`. HTTP Basic authentication uses
-   `LIVE_MEDIAMTX_API_USER` and `LIVE_MEDIAMTX_API_PASSWORD`; the default account
-   is `control`.
-3. The Manager selects available paths associated with RTMP connections and
-   checks each source individually through `GET /v3/paths/get/{path}`. The RTMP
-   connection UUID identifies the publication, distinguishes reconnections and
-   prevents duplicate automatic sessions for the same publication.
-4. For a new publication, the Manager creates a Live session and dispatches it
-   to an available Live Runner. If all suitable Runners are busy, the Manager
-   retries allocation on subsequent scans.
-
-Discovery requires `LIVE_ENABLED=true` and `LIVE_AUTO_START=true`; automatic
-startup is enabled by default when Live is enabled. The reconciliation loop
-waits **five seconds between passes**, so detection normally takes a few seconds.
-Control API calls and Runner availability can extend the delay before a session
-starts. The polling interval is an internal default, not an `.env` setting.
+Discovery waits **five seconds between passes**; API latency and Runner
+availability can extend startup. The interval is an internal default.
+Control authentication and ports are documented under [configuration](#manager-configuration).
 
 The broadcaster name is the source identifier: `live/amphi-a` becomes
 `source_id=amphi-a`. It is the final RTMP path component and, when Pod integration
@@ -489,36 +458,19 @@ Manager.
 
 ## Installation and security
 
-Follow [MediaMTX installation](MEDIAMTX_SETUP.md) for the native executable,
-systemd service or Docker image, requiring **1.21.1 or newer**. The guide covers Debian
-12/13 and other Linux distributions, on CPU and GPU machines. Reuse an existing
-installation on the same host; only the configuration and process/container
-must be separate for each Manager and Live Runner. No additional Python package
-is required.
+Follow [Live installation](LIVE_INSTALLATION.md) for native startup or Compose,
+and [MediaMTX setup](MEDIAMTX_SETUP.md) for custom paths and manual upgrades.
+The installer generates separate private credentials for publisher, relay,
+control and transcoder accounts; review YAML `ips` lists for authorized clients.
 
-Use [`production/mediamtx-live.yml`](../production/mediamtx-live.yml) for the
-Manager and the [Runner example](../../runner/production/mediamtx-live.yml).
-Replace all secrets, generate long keys (`openssl rand -hex 24`), restrict `ips`
-to authorized encoders and Runners, and make configuration files readable only
-by the service account. Some encoders accept RTMP credentials as
-`?user=...&pass=...`; configure authentication according to their RTMP client.
+Expose the required RTMP input and HTTPS HLS frontend. Keep Control APIs,
+metrics and Runner APIs private; use RTMPS or a private network for credentials.
+Clients select source identifiers, not arbitrary URLs or FFmpeg options.
+Responses omit RTMP keys and raw FFmpeg diagnostics.
 
-Expose only the required RTMP input and the HTTPS frontend. Keep MediaMTX APIs,
-metrics and Runner APIs on loopback or a filtered administration network. Use
-RTMPS or a private network to transport credentials. API sources are configured
-identifiers: clients cannot submit arbitrary URLs or FFmpeg options. Responses
-do not contain RTMP keys. Raw FFmpeg diagnostics are not exposed.
-
-The [native service procedure](MEDIAMTX_SETUP.md#4-start-the-native-systemd-service)
-uses `~/.config/esup-runner/manager/mediamtx.yml`, `mediamtx.env` and the
-`esup-runner-mediamtx@manager` user service, managed with `systemctl --user`. For the
-Manager application, adapt its existing service with a separate `EnvironmentFile`,
-`CONFIG_ENV_PATH`, `MANAGER_PORT`,
-`MANAGER_DATA_DIR` and `LOG_DIR`. Each native MediaMTX instance must have its own
-ports. Use data and log directories writable by the service account, for example
-`/home/esup-runner/.local/share/esup-runner/manager` and
-`/home/esup-runner/.local/state/esup-runner/manager`. Environment files need
-absolute paths; adapt the account's home instead of writing `$HOME` or `~` there.
+Independent Managers require distinct environment/data/log files, tokens,
+addresses and MediaMTX instances. Use absolute environment-file paths and
+service-account-writable storage; workers of one Manager share its data directory.
 
 ### Docker Compose
 

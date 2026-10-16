@@ -298,6 +298,149 @@ def test_setup_installs_and_configures(tmp_path, config_options, release):
     assert (tmp_path / "config/manager/mediamtx.yml").is_file()
 
 
+@pytest.fixture
+def prepared_service(isolated_home, release, monkeypatch):
+    """Prepare a real home-local configuration and intercept only service operations."""
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setattr(installer.shutil, "which", lambda _: None)
+    assert installer.main(["setup", "--instance", "manager"]) == 0
+    calls = []
+    original_run = installer.subprocess.run
+
+    def run(command, **kwargs):
+        if command[-1] == "--version":
+            return original_run(command, **kwargs)
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(installer.subprocess, "run", run)
+    return isolated_home / ".config/esup-runner/manager", calls
+
+
+def test_start_validates_overrides_then_enables_without_restarting(
+    prepared_service, isolated_home, monkeypatch
+):
+    directory, calls = prepared_service
+    monkeypatch.setenv("MTX_APIADDRESS", "unrelated-caller-override")
+    monkeypatch.setenv("MTX_AUTHINTERNALUSERS", "unrelated-caller-secret")
+    (directory / "mediamtx.env").write_text("# listeners\n\nMTX_APIADDRESS=127.0.0.1:19997\n")
+    before = {path: path.read_bytes() for path in directory.iterdir()}
+    assert installer.main(["start", "--instance", "manager"]) == 0
+    validate, options = calls[0]
+    assert validate[-1] == f"--validate-conf={directory / 'mediamtx.yml'}"
+    assert options["env"]["MTX_APIADDRESS"] == "127.0.0.1:19997"
+    assert "MTX_AUTHINTERNALUSERS" not in options["env"]
+    assert all(options["capture_output"] and options["check"] for _, options in calls)
+    service = "esup-runner-mediamtx@manager.service"
+    assert [command for command, _ in calls[1:]] == [
+        ["systemctl", "--user", "show-environment"],
+        ["systemctl", "--user", "daemon-reload"],
+        ["systemctl", "--user", "enable", "--now", service],
+        ["systemctl", "--user", "is-active", "--quiet", service],
+    ]
+    unit = isolated_home / ".config/systemd/user/esup-runner-mediamtx@.service"
+    assert unit.stat().st_mode & 0o777 == 0o644
+    inode = unit.stat().st_ino
+    assert installer.main(["start", "--instance", "manager"]) == 0
+    assert unit.stat().st_ino == inode
+    assert before == {path: path.read_bytes() for path in directory.iterdir()}
+
+
+def test_start_dry_run_and_xdg_destination(prepared_service, tmp_path, monkeypatch):
+    _, calls = prepared_service
+    config = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    assert installer.main(["start", "--instance", "manager", "--dry-run"]) == 0
+    assert not config.exists()
+    assert not calls
+    assert installer.main(["start", "--instance", "manager"]) == 0
+    assert (config / "systemd/user/esup-runner-mediamtx@.service").is_file()
+
+
+@pytest.mark.parametrize("failure", ["validation", "bus", "enable", "inactive"])
+def test_start_stops_at_failed_check_without_leaking_output(
+    prepared_service, isolated_home, monkeypatch, capsys, failure
+):
+    _, calls = prepared_service
+    original_run = installer.subprocess.run
+    marker = {
+        "validation": "--validate-conf=",
+        "bus": "show-environment",
+        "enable": "enable",
+        "inactive": "is-active",
+    }[failure]
+
+    def run(command, **kwargs):
+        if any(marker in part for part in command):
+            calls.append((command, kwargs))
+            raise subprocess.CalledProcessError(1, command, output=b"private-password")
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(installer.subprocess, "run", run)
+    assert installer.main(["start", "--instance", "manager"]) == 1
+    assert marker in " ".join(calls[-1][0])
+    assert "private-password" not in capsys.readouterr().err
+    if failure in ("validation", "bus"):
+        assert not (isolated_home / ".config/systemd").exists()
+
+
+@pytest.mark.parametrize("kind", ["customized", "symlink", "symlink_parent", "relative_xdg"])
+def test_start_preserves_custom_or_unsafe_units(
+    prepared_service, isolated_home, tmp_path, monkeypatch, kind
+):
+    _, calls = prepared_service
+    units = isolated_home / ".config/systemd/user"
+    units.mkdir(parents=True)
+    unit = units / "esup-runner-mediamtx@.service"
+    outside = tmp_path / "outside"
+    outside.write_text("custom unit")
+    if kind == "customized":
+        unit.write_text("custom unit")
+    elif kind == "symlink":
+        unit.symlink_to(outside)
+    elif kind == "symlink_parent":
+        units.rmdir()
+        units.symlink_to(tmp_path)
+    else:
+        monkeypatch.setenv("XDG_CONFIG_HOME", "relative")
+    assert installer.main(["start", "--instance", "manager"]) == 1
+    assert not calls
+    assert outside.read_text() == "custom unit"
+    if kind == "customized":
+        assert unit.read_text() == "custom unit"
+
+
+@pytest.mark.parametrize(
+    "content", ["MTX_AUTHMETHOD=http", "MTX_APIADDRESS=private-password", "invalid"]
+)
+def test_start_rejects_unsupported_environment_without_output(prepared_service, capsys, content):
+    directory, calls = prepared_service
+    (directory / "mediamtx.env").write_text(content)
+    assert installer.main(["start", "--instance", "manager"]) == 1
+    assert not calls
+    assert "private-password" not in capsys.readouterr().err
+
+
+def test_start_uses_only_its_component_files(prepared_service, tmp_path, monkeypatch):
+    """Startup needs only this component's template, including in a sparse checkout."""
+    import shutil
+
+    component = tmp_path / "checkout" / installer.ROOT.name
+    production = component / "production"
+    production.mkdir(parents=True)
+    shutil.copyfile(
+        installer.ROOT / "production/esup-runner-mediamtx@.service",
+        production / "esup-runner-mediamtx@.service",
+    )
+    monkeypatch.setattr(installer, "ROOT", component)
+    assert installer.main(["start", "--instance", "manager"]) == 0
+
+
+def test_start_requires_prepared_configuration(isolated_home):
+    assert installer.main(["start", "--instance", "manager"]) == 1
+    assert not (isolated_home / ".config").exists()
+
+
 def test_setup_defaults_work_without_ownership_changes(isolated_home, release, monkeypatch):
     """A service user can install/configure in its home without chown or sudo."""
     monkeypatch.setattr(installer.shutil, "which", lambda _: None)

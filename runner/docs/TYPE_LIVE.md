@@ -24,7 +24,7 @@ The client-facing API is documented in the [Manager Live guide](../../manager/do
 The `live` task pulls an incoming RTMP stream from the Manager's MediaMTX
 instance and transcodes it into adaptive HLS with FFmpeg.
 
-1. An encoder publishes RTMP to a source declared on the Manager. With
+1. An encoder publishes RTMP to the Manager's MediaMTX. With
    `LIVE_AUTO_START=true` (default when Live is enabled), the Manager detects
    it and reserves an available Runner declaring `live` in its task types.
    No client start request is needed.

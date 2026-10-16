@@ -40,6 +40,8 @@ Use the appropriate repository skills for significant changes; read their
 
 - [Testing](.agents/skills/esup-runner-testing/SKILL.md): Python validation, tests,
   coverage, and CI failures.
+- [Documentation](.agents/skills/esup-runner-documentation/SKILL.md): concise,
+  consistent repository documentation and changelog entries.
 - [Change verification](.agents/skills/esup-runner-change-verification/SKILL.md):
   final review before declaring a significant change complete or PR-ready.
 - [Architecture](.agents/skills/esup-runner-architecture/SKILL.md): substantial

@@ -64,7 +64,9 @@ merely because it looks old, or add speculative compatibility layers.
   state the blocker instead of declaring the change verified.
 - Check documentation for changed behavior, configuration, APIs, deployment,
   or recovery procedures. Use `DEVELOPMENT.md`, component `docs/OPERATIONS.md`,
-  `docs/CONFIGURATION.md`, and `docs/CHANGELOG.md` as applicable. Consult
+  `docs/CONFIGURATION.md`, and `docs/CHANGELOG.md` as applicable. Follow the
+  [documentation skill](../esup-runner-documentation/SKILL.md) for concise,
+  consistent content without duplication. Consult
   `.github/pull_request_template.md` when preparing a PR; ordinary changes do
   not require a version bump.
 - For added or changed environment parameters, require corresponding updates in

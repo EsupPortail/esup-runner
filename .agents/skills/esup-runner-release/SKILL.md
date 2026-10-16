@@ -63,6 +63,9 @@ checks, and changelog promotion. Identify dependency upgrades, optional runtime
 extras, and tool installation before execution. Do not repeat orchestrated steps
 manually or update tooling unless that is appropriate to the request.
 
+Follow the [documentation skill](../esup-runner-documentation/SKILL.md) when
+drafting changelog entries or release notes.
+
 Derive expected changed files from the helper's release paths and version
 updater, including lockfile and changelog changes. Check whether invoked quality
 targets also format other files; inspect those changes rather than silently

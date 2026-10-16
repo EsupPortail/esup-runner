@@ -1,6 +1,6 @@
 # Manager Parameters
 
-This page summarizes the environment variables consumed by the manager. Values are parsed in [app/core/config.py](../app/core/config.py) and validated at startup.
+This page summarizes the environment variables consumed by the manager. Application settings are parsed in [app/core/config.py](../app/core/config.py) and validated at startup; native HTTP server settings are identified separately below.
 
 ## Quick start (.env snippet)
 ```properties
@@ -37,6 +37,7 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 - `MANAGER_PUBLIC_URL` (default computed from `MANAGER_PROTOCOL://MANAGER_HOST:MANAGER_PORT`): Complete browser-facing HTTP(S) URL of the administration interface, also advertised as an alternative task completion address. It does not configure the socket. Runners may use it when their own `MANAGER_URL` matches and the proxy exposes the Manager API. Set it explicitly when a reverse proxy changes the public scheme, host, port or path. Credentials, query strings and fragments are rejected. One trailing slash is normalized away; the optional path becomes FastAPI's `root_path`. Changing it requires a Manager restart.
 - `MANAGER_URL` (computed, not an environment variable of the Manager): Private API base URL assembled from `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`. It is advertised alongside `MANAGER_PUBLIC_URL` for task completion callbacks. The `MANAGER_URL` configured in each Runner must match one of these base addresses.
 - `MANAGER_ROOT_PATH` (computed, not an environment variable): FastAPI deployment prefix derived from the path in `MANAGER_PUBLIC_URL`.
+- `FORWARDED_ALLOW_IPS` (native Gunicorn/Uvicorn setting, default `127.0.0.1,::1`): Trusted proxy IPs or CIDR networks, comma-separated. Recommended behind HAProxy: add its source IPs as seen by the application to `manager/.env` (and `runner/.env` if proxied) so HTTPS and client IP forwarding headers are honored. Avoid `*`; restart the affected services completely. This setting is read by the HTTP server, outside application configuration validation. See [proxy configuration](CONFIGURATION.md#trust-haproxy-forwarding-headers).
 - `ENVIRONMENT` (default `development`): Environment name used by runtime/deployment wrappers.
 - `UVICORN_WORKERS` (int, default `4`): Worker count for production process managers.
 - `CLEANUP_TASK_FILES_DAYS` (int, default `30`): Retention for all tasks managed by cleanup services, regardless of status. Set `0` to disable age-based cleanup. Keeping this value low and non-zero is recommended to limit task accumulation and Manager memory usage; choose the shortest retention that meets your task-history needs.

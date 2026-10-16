@@ -79,6 +79,26 @@ interface does the process listen?”. They can be equal, but do not need to be.
 - `CLEANUP_TASK_FILES_DAYS` controls cleanup retention for all task files (all statuses). Set `0` to disable age-based cleanup. Keeping this value low and non-zero is recommended to limit task accumulation and Manager memory usage; choose the shortest retention that meets your task-history needs.
 - `UVICORN_WORKERS` is used in production process setups (Gunicorn/Uvicorn workers).
 
+## Trust HAProxy forwarding headers
+
+Set `FORWARDED_ALLOW_IPS` in `manager/.env` to HAProxy's source IP as seen by the
+application (after NAT). Configure `runner/.env` too if HLS uses the proxy:
+
+```dotenv
+FORWARDED_ALLOW_IPS=10.0.0.10
+```
+
+This Gunicorn/Uvicorn setting trusts `X-Forwarded-Proto` and `X-Forwarded-For`
+from these proxies for HTTPS redirects, cookies and client IPs.
+
+- Use comma-separated IPs for redundant proxies. Default: `127.0.0.1,::1` (loopback only).
+- Avoid `*` and restrict direct access to application ports.
+- Set `MANAGER_PUBLIC_URL` to the full public HTTPS URL, including any path prefix.
+- Restart affected services after changes; configuration reloads do not apply this setting.
+
+HAProxy must set the forwarding headers and preserve the public `Host` header;
+see the [deployment instructions](INSTALLATION.md#trust-haproxy-forwarding-headers).
+
 ## Authentication
 
 ### API tokens (`AUTHORIZED_TOKENS__*`)

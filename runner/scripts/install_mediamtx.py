@@ -3,8 +3,8 @@
 
 Run from runner/ as the service account, without sudo; defaults use its home directory.
 Uses only the Python standard library. Run with --help for installation,
-configuration-only (including Docker), and combined setup commands. Existing
-executables and configurations are never overwritten; services are not started.
+configuration-only (including Docker), combined setup, and explicit service startup.
+Existing executables, configurations and customized user units are never overwritten.
 """
 
 import argparse
@@ -77,6 +77,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     "--" + option.replace("_", "-"),
                     help="IP:port (IPv6: [IP]:port); defaults to this component's YAML template",
                 )
+    start = commands.add_parser("start", help="Validate and start a prepared default user service")
+    start.add_argument("--instance", required=True, help="Prepared instance name")
+    start.add_argument("--dry-run", action="store_true", help="Preview without downloads or writes")
+    start.set_defaults(binary=None, version=VERSION)
     args = parser.parse_args(argv)
     if args.command != "configure" and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version):
         parser.error("--version must be a fixed release such as 1.21.1")
@@ -93,6 +97,99 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         if path is not None and (not path.is_absolute() or ".." in path.parts):
             parser.error(f"--{option.replace('_', '-')} must be absolute without '..'")
     return args
+
+
+def service_environment(directory: Path) -> dict[str, str]:
+    """Read the generated listener overrides without shell evaluation or secret output.
+
+    Custom EnvironmentFile syntax or other overrides require manual service
+    management. Discard caller MTX_* overrides to validate the prepared instance.
+    """
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("MTX_")}
+    for line in (directory / "mediamtx.env").read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        if not separator or key not in {entry[1] for entry in ADDRESS_KEYS.values()}:
+            raise ValueError("Custom mediamtx.env overrides require manual service management")
+        try:
+            validate_address(value)
+        except ValueError as exc:
+            raise ValueError("Invalid listener override in mediamtx.env") from exc
+        environment[key] = value
+    return environment
+
+
+def validate_service_configuration(directory: Path, environment: dict[str, str]) -> None:
+    """Validate YAML with the service's overrides, hiding potentially secret parser output."""
+    binary = Path.home() / ".local/bin/mediamtx"
+    try:
+        subprocess.run(
+            [str(binary), f"--validate-conf={directory / 'mediamtx.yml'}"],
+            env=environment,
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+    except subprocess.SubprocessError as exc:
+        raise ValueError(
+            "MediaMTX validation failed; review the YAML and listener overrides"
+        ) from exc
+
+
+def start_service(args: argparse.Namespace) -> None:
+    """Validate a standard home-local instance and enable its systemd user service.
+
+    Reuse an identical unit, refuse customized or symlinked destinations, and
+    never restart an active service. Validation uses the service's listener
+    overrides; subprocess output is captured to keep credentials private.
+    """
+    directory = Path.home() / ".config/esup-runner" / args.instance
+    reject_symlinks(directory)
+    if not existing_configuration(directory):
+        raise ValueError("Prepare this instance with setup or configure before starting it")
+    environment = service_environment(directory)
+    template = ROOT / "production/esup-runner-mediamtx@.service"
+    content = template.read_text().rstrip() + "\n"
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    if not config_home.is_absolute():
+        raise ValueError("XDG_CONFIG_HOME must be absolute")
+    unit = config_home / "systemd/user/esup-runner-mediamtx@.service"
+    reject_symlinks(unit)
+    if unit.exists() and unit.read_text().rstrip() + "\n" != content:
+        raise ValueError(f"Customized unit retained: {unit}; manage this service manually")
+    install_binary(args)
+    if args.dry_run:
+        print(f"Would validate {directory / 'mediamtx.yml'} with its listener overrides")
+        print(f"Would install or reuse {unit}, reload systemd and enable/start {args.instance}")
+        return
+    validate_service_configuration(directory, environment)
+    try:
+        subprocess.run(
+            ["systemctl", "--user", "show-environment"],
+            check=True,
+            capture_output=True,
+            timeout=15,
+        )
+    except subprocess.SubprocessError as exc:
+        raise ValueError(
+            "A working systemd user session is required; log in as the service account"
+        ) from exc
+    unit.parent.mkdir(parents=True, exist_ok=True)
+    if not unit.exists():
+        with unit.open("x") as output:
+            output.write(content)
+            os.fchmod(output.fileno(), 0o644)
+    service = f"esup-runner-mediamtx@{args.instance}.service"
+    for command in (
+        ["daemon-reload"],
+        ["enable", "--now", service],
+        ["is-active", "--quiet", service],
+    ):
+        subprocess.run(
+            ["systemctl", "--user", *command], check=True, capture_output=True, timeout=30
+        )
+    print(f"Service active: {service}. An already active service was not restarted.")
 
 
 def reject_symlinks(path: Path) -> None:
@@ -378,6 +475,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if platform.system() != "Linux":
             raise ValueError("This installer supports Linux only")
+        if args.command == "start":
+            start_service(args)
+            return 0
         if args.command != "install":
             configuration_plan(args)
             existing_configuration(args.config_root / args.instance)

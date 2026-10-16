@@ -4,18 +4,10 @@ For the shortest end-to-end path, start with the Manager's
 [Live installation guide](../../manager/docs/LIVE_INSTALLATION.md). This page
 keeps the Runner-specific MediaMTX details and validation links.
 
-A Runner server needs one **MediaMTX >= 1.21.1** service to pull the Manager's
-RTMP sources. All Runner processes and Live instances declared in their
-`RUNNER_TASK_TYPES` share it. The installation procedure is shared with the Manager:
-follow the [MediaMTX installation guide](../../manager/docs/MEDIAMTX_SETUP.md).
-It covers Debian 12/13 and other Linux distributions, a native executable with
-systemd user services, and Docker.
-
-**If a supported MediaMTX version is already installed on this machine, do not reinstall it.** Reuse
-the executable or Docker image and prepare one Runner configuration and
-service/container for this server, separate from the Manager’s MediaMTX. Adding
-Runner processes or `[2x(live)]` / `[4x(live)]` needs no extra MediaMTX process:
-the instances create separate UUID relay paths through the same Control API.
+A Runner server needs one **MediaMTX >= 1.21.1** service, shared by all its Live
+instances and separate from the Manager's MediaMTX. Reuse a supported executable
+or Docker image already installed on the host. For native or Docker installation,
+follow the [shared guide](../../manager/docs/MEDIAMTX_SETUP.md).
 
 ## Installation path
 
@@ -34,6 +26,7 @@ Run it as the service account, without `sudo`:
 ```bash
 cd /opt/esup-runner/runner
 python3 scripts/install_mediamtx.py setup --instance runner
+python3 scripts/install_mediamtx.py start --instance runner
 ```
 
 The defaults are `~/.local/bin/mediamtx` and
@@ -42,14 +35,14 @@ installer creates a link at the default binary path without copying or
 reinstalling it. Rerun `install` if an earlier setup reused the executable
 without creating this link. An explicit `--binary` instead requires adapting
 the unit's `ExecStart`, as described in the shared guide.
-The user units are installed under
-`~/.config/systemd/user/` (or under `XDG_CONFIG_HOME` when set) and managed with
-`systemctl --user`.
-See the shared guide for prerequisites, lingering for boot/logout persistence,
-and the explicit service startup step.
-Use `configure` instead of `setup` when using Docker or when only configuration
-is needed. Add `--dry-run` to preview the operation. Existing files and passwords
-are preserved; the script does not start or restart services.
+`start` validates YAML with the listener overrides, installs the component-local
+user unit, reloads systemd and enables/starts the prepared instance. A working
+`systemctl --user` login session is required. Existing customized units are
+retained and require manual management; active services are never restarted.
+The unit directory follows `XDG_CONFIG_HOME`, defaulting to
+`~/.config/systemd/user/`. See the shared guide for boot/logout persistence.
+Use `configure` instead of `setup` for Docker. Add `--dry-run` to preview either
+operation. `setup`/`configure` only prepare files and preserve passwords.
 
 ### Version selection and manual upgrades
 

@@ -1,6 +1,6 @@
 # Runner Parameters
 
-This page summarizes the environment variables consumed by the runner. Values are parsed in [app/core/config.py](../app/core/config.py) and validated at startup.
+This page summarizes the environment variables consumed by the runner. Application settings are parsed in [app/core/config.py](../app/core/config.py) and validated at startup; native HTTP server settings are identified separately below.
 
 ## Quick start (.env snippet)
 ```properties
@@ -33,6 +33,7 @@ WHISPER_LANGUAGE=auto
 - `RUNNER_MONITORING` (bool, default `False`): If true, the launcher monitors and restarts instances.
 
 ## Networking and auth
+- `FORWARDED_ALLOW_IPS` (native Uvicorn setting, default `127.0.0.1,::1`): Trusted proxy IPs or CIDR networks, comma-separated. Recommended behind HAProxy: add its source IPs as seen by the application to `runner/.env` (and `manager/.env` if proxied) so HTTPS and client IP forwarding headers are honored. Avoid `*`; restart the affected services completely. This setting is read by the HTTP server, outside application configuration validation. See [proxy configuration](CONFIGURATION.md#haproxy-and-other-reverse-proxies).
 - `RUNNER_TOKEN` (required): Token used to authenticate runner <-> manager calls in both directions.
 - `MANAGER_URL` (default `http://127.0.0.1:8081`): Manager API URL used for registration, health checks and callbacks. It must match either the Manager's `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`, or its `MANAGER_PUBLIC_URL`. Prefer the private API; a public reverse proxy must also expose the API. Route paths such as `/api/health` are appended automatically.
 - `MANAGER_PUBLIC_URL` (optional, default empty): Browser-facing Manager HTTP(S) base URL used for email links. Set it in the Runner environment to the same public address as the Manager, including any reverse-proxy path prefix. The "Open manager" button appends `/admin` unless the URL already ends with it. When unset or blank, links use `MANAGER_URL`. This setting does not change API calls or completion callbacks.

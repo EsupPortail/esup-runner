@@ -210,6 +210,9 @@ Run `check_config.py` first after editing `.env`. It validates the same effectiv
 configuration used at Runner startup, prints only non-sensitive summary values,
 and returns `2` when one or more settings are invalid.
 
+Resource and storage checks warn and continue when Live setup is incomplete.
+Runner startup and `check_config.py` still require valid Live settings.
+
 ### Live resource estimates
 
 `check_runner_resources.py` includes Live when `RUNNER_TASK_TYPES` declares

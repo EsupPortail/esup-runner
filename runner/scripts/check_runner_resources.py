@@ -34,6 +34,7 @@ RUNNER_ROOT = Path(__file__).resolve().parents[1]
 if str(RUNNER_ROOT) not in sys.path:
     sys.path.insert(0, str(RUNNER_ROOT))
 
+from app.core._check_config import load_config_for_checks
 from app.core._check_output import format_check, format_status
 from app.core.live_config import LiveSettings
 
@@ -149,15 +150,14 @@ def _ensure_import_path() -> None:
 
 
 def _load_config():
-    """Load config and parsing helpers from app.core.config."""
+    """Load config and parsing helpers, warning about incomplete Live setup."""
     _ensure_import_path()
-    from app.core.config import (  # type: ignore
-        _parse_grouped_task_types_spec,
-        _parse_task_types_csv,
-        get_config,
+    config_module = load_config_for_checks()
+    return (
+        config_module.get_config(),
+        config_module._parse_grouped_task_types_spec,
+        config_module._parse_task_types_csv,
     )
-
-    return get_config(), _parse_grouped_task_types_spec, _parse_task_types_csv
 
 
 def _read_meminfo_gb() -> float:
@@ -955,7 +955,11 @@ def _print_live_network_impact(settings: LiveSettings, viewers: int) -> None:
 def main() -> int:
     """Entry point for the resource check script."""
     args = _parse_args()
-    cfg, parse_grouped, parse_csv = _load_config()
+    try:
+        cfg, parse_grouped, parse_csv = _load_config()
+    except ValueError as error:
+        print(format_status(str(error), level="error"))
+        return 2
     resources = _get_resources()
     task_sets = _get_task_sets(cfg, parse_grouped, parse_csv)
     counts = _get_task_counts(task_sets)

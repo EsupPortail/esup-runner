@@ -26,6 +26,7 @@ if str(RUNNER_ROOT) not in sys.path:
     sys.path.insert(0, str(RUNNER_ROOT))
 
 from app.core import storage_checks as _storage_checks
+from app.core._check_config import load_config_for_checks
 from app.core._check_output import colorize, format_prefix, format_status
 
 os = _storage_checks.os
@@ -55,11 +56,9 @@ def _ensure_import_path() -> None:
 
 
 def _load_config():
-    """Load config from app.core.config."""
+    """Load config, warning about incomplete Live setup."""
     _ensure_import_path()
-    from app.core.config import get_config  # type: ignore
-
-    return get_config()
+    return load_config_for_checks().get_config()
 
 
 def _directory_size_bytes(path: Path) -> int:
@@ -174,7 +173,11 @@ def _print_report(statuses: Dict[str, DirectoryStatus]) -> None:
 
 def main() -> int:
     """Entry point for storage checks."""
-    cfg = _load_config()
+    try:
+        cfg = _load_config()
+    except ValueError as error:
+        print(format_status(str(error), level="error"))
+        return 2
     rules = _build_rules(cfg)
     statuses = {key: _evaluate_rule(rule) for key, rule in rules.items()}
     _print_report(statuses)

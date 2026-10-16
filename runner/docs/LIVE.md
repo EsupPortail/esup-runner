@@ -468,9 +468,25 @@ one frontend/backend routing rule per Live instance. For example, with
 `RUNNER_BASE_PORT=8082`, `/runner-2/hls/<live_id>/...` is rewritten to
 `/hls/<live_id>/...` and sent to port `8084`.
 
+When using HAProxy, explicitly set `FORWARDED_ALLOW_IPS` in `runner/.env`, and
+in `manager/.env` if the Manager is also proxied:
+
+```dotenv
+# Replace with the HAProxy source IP as seen by the application.
+FORWARDED_ALLOW_IPS=10.0.0.10
+```
+
+This is a native Uvicorn/Gunicorn setting. The launchers load it from `.env`
+before starting the servers. List the actual proxy source IPs, comma-separated
+for redundant proxies; avoid `*`. The loopback-only default does not trust a
+remote HAProxy. Restart the affected services completely after any change.
+See [proxy configuration](CONFIGURATION.md#haproxy-and-other-reverse-proxies)
+for address selection and the role of the forwarding headers.
+
 The following is the relevant part of an HTTP-mode frontend. Merge it into the
 existing HTTPS frontend and replace `be_application` with the deployment's
-normal backend:
+normal backend. This example assumes HAProxy terminates HTTPS and receives
+client connections directly:
 
 ```haproxy
 frontend https
@@ -485,12 +501,17 @@ frontend https
 
 backend be_runner_hls
     mode http
+    # Set forwarding headers from this trusted HTTPS proxy.
+    http-request set-header X-Forwarded-Proto https
+    http-request set-header X-Forwarded-For %[src]
+    # Fix the destination IP to this Runner host.
+    http-request set-dst ipv4(127.0.0.1)
     # Port = RUNNER_BASE_PORT + instance index.
-    http-request set-var(txn.runner_port) path,regsub(^/runner-([0-9]+)/hls/.*,\1),int,add(8082)
+    http-request set-var(txn.runner_port) path,field(2,/),field(2,-),add(8082)
     http-request set-dst-port var(txn.runner_port)
     # Keep the Runner's original /hls/... route.
     http-request set-path %[path,regsub(^/runner-[0-9]+,)]
-    server runner 127.0.0.1:8082
+    server runner 0.0.0.0:0
 ```
 
 Validate the merged configuration before reloading HAProxy:
@@ -499,12 +520,16 @@ Validate the merged configuration before reloading HAProxy:
 haproxy -c -f /etc/haproxy/haproxy.cfg
 ```
 
-Change `8082` in `add(8082)` and the `server` line to the Runner's
-`RUNNER_BASE_PORT`. Restrict the ACL to instance indices that really exist;
+Change `8082` in `add(8082)` to the Runner's `RUNNER_BASE_PORT`. Keep
+`server runner 0.0.0.0:0` so HAProxy uses the destination IP and port set by
+`set-dst` and `set-dst-port`, as described in the
+[HAProxy configuration manual](https://docs.haproxy.org/3.2/configuration.html#http-request%20set-dst-port).
+Restrict the ACL to instance indices that really exist;
 the example allows 0–11. These indices include VOD instances, and each instance
 listens on `RUNNER_BASE_PORT + instance_id`. Keep the Runner ports reachable
-only from HAProxy. If HAProxy is on another host, replace `127.0.0.1` with the
-Runner host's private address and apply equivalent network filtering.
+only from HAProxy. If HAProxy is on another host, replace `127.0.0.1` in
+`set-dst ipv4(127.0.0.1)` with the Runner host's private IPv4 address and apply
+equivalent network filtering.
 
 This arithmetic mapping assumes all instances are on one host, the ports are
 consecutive, and the configured ports are available. If instances use different

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Shorten Live installation and MediaMTX documentation, using one explicit service-start command per role.
+- Document and recommend `FORWARDED_ALLOW_IPS` for HAProxy deployments.
+
+### Fixed
+
+- Warn instead of failing resource and storage checks when Live setup is incomplete.
+
+### Added
+
+- Add `scripts/install_mediamtx.py start --instance NAME` to validate and start
+  MediaMTX without replacing custom units or restarting active services.
 
 ## [1.10.0] - 2026-10-14
 

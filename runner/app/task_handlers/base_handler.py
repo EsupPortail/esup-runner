@@ -518,6 +518,7 @@ class BaseTaskHandler(ABC):
             "divx",
             "flv",
             "m2p",
+            "m4a",
             "m4v",
             "mkv",
             "mov",

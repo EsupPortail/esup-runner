@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Accept `.m4a` source files for encoding and transcription tasks.
 - Add `scripts/install_mediamtx.py start --instance NAME` to validate and start
   MediaMTX without replacing custom units or restarting active services.
 

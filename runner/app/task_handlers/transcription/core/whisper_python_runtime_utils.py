@@ -17,6 +17,55 @@ from . import (
     segment_filter_utils,
     vtt_postprocess_utils,
 )
+from .runtime_args_utils import _MAX_VTT_FINAL_GAP_SECONDS, _MIN_VTT_COVERAGE_RATIO
+
+
+def _last_segment_end_seconds(result: Dict[str, object]) -> float:
+    """Return the latest valid segment end in a Whisper result, or zero."""
+    segments = result.get("segments")
+    if not isinstance(segments, list):
+        return 0.0
+    ends = (
+        segment_filter_utils.safe_float(segment.get("end"))
+        for segment in segments
+        if isinstance(segment, dict)
+    )
+    return max((end for end in ends if end is not None and end > 0), default=0.0)
+
+
+def _should_retry_with_chunks(
+    result: Dict[str, object],
+    audio_path: Path,
+    chunk_duration_sec: int,
+    chunk_threshold_sec: int,
+    debug: bool,
+) -> bool:
+    """Retry truncated single-pass output when multiple chunks can be used.
+
+    Apply the final VTT coverage thresholds to filtered segments and exclude
+    confirmed trailing silence. Preserve empty no-speech results and disabled
+    chunking; an already chunked run is never retried here.
+    """
+    last_end_sec = _last_segment_end_seconds(result)
+    if chunk_duration_sec <= 0 or chunk_threshold_sec <= 0 or last_end_sec <= 0:
+        return False
+
+    duration_sec = runtime_media_utils.probe_duration_seconds(audio_path, debug)
+    if duration_sec <= chunk_duration_sec or duration_sec > chunk_threshold_sec:
+        return False
+    if (
+        last_end_sec >= duration_sec * _MIN_VTT_COVERAGE_RATIO
+        or duration_sec - last_end_sec <= _MAX_VTT_FINAL_GAP_SECONDS
+    ):
+        return False
+
+    effective_duration_sec = runtime_media_utils.probe_effective_duration_seconds(audio_path, debug)
+    if 0 < effective_duration_sec < duration_sec:
+        duration_sec = effective_duration_sec
+    return (
+        last_end_sec < duration_sec * _MIN_VTT_COVERAGE_RATIO
+        and duration_sec - last_end_sec > _MAX_VTT_FINAL_GAP_SECONDS
+    )
 
 
 def extract_audio_chunk(
@@ -338,7 +387,12 @@ def run_whisper_python(
     vtt_max_line_width: int,
     debug: bool,
 ) -> tuple[int, Optional[str]]:
-    """Run Whisper via Python API and write VTT with custom writer options."""
+    """Write VTT via Whisper's Python API, retrying truncated output once.
+
+    Reuse the loaded model for a chunked retry of incomplete single-pass output.
+    Keep the original result if the retry fails or does not extend coverage;
+    final VTT validation remains responsible for rejecting incomplete output.
+    """
     torch, whisper, get_writer = runtime_cli_utils.import_whisper_modules(use_gpu=use_gpu)
     if not torch or not whisper or not get_writer:
         return 255, None
@@ -357,19 +411,20 @@ def run_whisper_python(
     if rc != 0 or wmodel is None:
         return 10, None
 
-    rc, result, detected_code = run_whisper_python_transcription(
-        wmodel=wmodel,
-        audio_path=audio_path,
-        out_dir=out_dir,
-        language=language,
-        vad_filter=vad_filter,
-        device=device,
-        timeout_sec=timeout_sec,
-        chunk_duration_sec=chunk_duration_sec,
-        chunk_overlap_sec=chunk_overlap_sec,
-        chunk_threshold_sec=chunk_threshold_sec,
-        debug=debug,
-    )
+    transcription_options: Dict[str, Any] = {
+        "wmodel": wmodel,
+        "audio_path": audio_path,
+        "out_dir": out_dir,
+        "language": language,
+        "vad_filter": vad_filter,
+        "device": device,
+        "timeout_sec": timeout_sec,
+        "chunk_duration_sec": chunk_duration_sec,
+        "chunk_overlap_sec": chunk_overlap_sec,
+        "chunk_threshold_sec": chunk_threshold_sec,
+        "debug": debug,
+    }
+    rc, result, detected_code = run_whisper_python_transcription(**transcription_options)
     if rc != 0:
         return rc, detected_code
     if result is None:
@@ -385,6 +440,30 @@ def run_whisper_python(
         expected_language=expected_language,
         debug=debug,
     )
+    if _should_retry_with_chunks(
+        result, audio_path, chunk_duration_sec, chunk_threshold_sec, debug
+    ):
+        print(
+            "Whisper output appears truncated; retrying once with chunked transcription "
+            f"(chunk_duration={chunk_duration_sec}s, chunk_overlap={chunk_overlap_sec}s)"
+        )
+        retry_rc, retry_result, retry_detected_code = run_whisper_python_transcription(
+            **{**transcription_options, "chunk_threshold_sec": 0}
+        )
+        if retry_rc == 0 and retry_result is not None:
+            retry_result = segment_filter_utils.filter_result_segments(
+                retry_result,
+                expected_language=expected_language,
+                debug=debug,
+            )
+            if _last_segment_end_seconds(retry_result) > _last_segment_end_seconds(result):
+                result = retry_result
+                detected_code = retry_detected_code or detected_code
+        else:
+            print(
+                "Chunked transcription retry did not produce a usable result "
+                f"(return code={retry_rc})"
+            )
     detected_code = language_utils.normalize_language_code(
         segment_filter_utils.extract_detected_language(result) or detected_code
     )

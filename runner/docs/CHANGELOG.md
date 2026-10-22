@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Warn instead of failing resource and storage checks when Live setup is incomplete.
+- Retry truncated single-pass Whisper output once with overlapping chunks, keeping
+  final coverage validation and confirmed trailing-silence handling.
 
 ### Added
 

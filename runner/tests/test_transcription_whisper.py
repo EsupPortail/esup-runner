@@ -2,6 +2,7 @@
 
 import types
 
+import pytest
 from transcription_test_helpers import load_transcription_core_module as _load_core_module
 
 
@@ -301,3 +302,150 @@ def test_whisper_python_runtime_utils_run_whisper_python_branches(monkeypatch, t
     rc, detected = whisper_runtime.run_whisper_python(**base_kwargs_auto)
     assert rc == 0
     assert detected == "fr"
+
+
+@pytest.mark.parametrize(
+    "language,retry_rc,retry_segments,expected_end,coverage_rc",
+    [
+        ("fr", 0, [{"start": 764.0, "end": 990.0, "text": "fin"}], 990.0, 0),
+        ("auto", 0, [{"start": 764.0, "end": 990.0, "text": "fin"}], 990.0, 0),
+        ("fr", 0, [{"start": 340.0, "end": 600.0, "text": "suite"}], 600.0, 7),
+        ("fr", 0, [{"start": 1.0, "end": 100.0, "text": "début"}], 338.82, 7),
+        ("fr", 0, [], 338.82, 7),
+        ("fr", 0, [{"start": 764.0, "end": 990.0, "text": "Sous-titres"}], 338.82, 7),
+        ("fr", 0, None, 338.82, 7),
+        ("fr", 22, None, 338.82, 7),
+    ],
+)
+def test_truncated_single_pass_retries_once_and_keeps_coverage_guard(
+    monkeypatch, tmp_path, capsys, language, retry_rc, retry_segments, expected_end, coverage_rc
+):
+    """Recover late speech without accepting an empty or still truncated retry."""
+    runtime = _load_core_module("whisper_python_runtime_utils")
+    validation = _load_core_module("output_validation_runtime_utils")
+    model = object()
+    loads = []
+    calls = []
+    vtt_path = tmp_path / "audio.vtt"
+
+    monkeypatch.setattr(
+        runtime.runtime_cli_utils,
+        "import_whisper_modules",
+        lambda **_k: (object(), types.SimpleNamespace(__version__="test"), object()),
+    )
+
+    def load_model(**kwargs):
+        loads.append(kwargs)
+        return 0, model, "cuda"
+
+    def transcribe(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return (
+                0,
+                {
+                    "language": "fr",
+                    "segments": [
+                        {"start": 1.84, "end": 338.82, "text": "début"},
+                        {"start": 764.0, "end": 1000.0, "text": "Sous-titres"},
+                    ],
+                },
+                "fr",
+            )
+        assert len(calls) == 2
+        retry_result = (
+            {"language": "fr", "segments": retry_segments} if retry_segments is not None else None
+        )
+        return retry_rc, retry_result, "fr"
+
+    def write_result(result, *_args):
+        cues = [
+            f"{validation.format_vtt_timestamp(segment['start'])} --> "
+            f"{validation.format_vtt_timestamp(segment['end'])}\n{segment['text']}"
+            for segment in result["segments"]
+        ]
+        vtt_path.write_text("WEBVTT\n\n" + "\n\n".join(cues) + "\n", encoding="utf-8")
+        return True
+
+    monkeypatch.setattr(runtime, "load_whisper_runtime_model", load_model)
+    monkeypatch.setattr(runtime, "run_whisper_python_transcription", transcribe)
+    monkeypatch.setattr(runtime, "write_vtt_result", write_result)
+    monkeypatch.setattr(runtime.runtime_media_utils, "probe_duration_seconds", lambda *_a: 1002.0)
+    monkeypatch.setattr(
+        runtime.runtime_media_utils, "probe_effective_duration_seconds", lambda *_a: 1002.0
+    )
+
+    rc, detected = runtime.run_whisper_python(
+        audio_path=tmp_path / "audio.mp3",
+        out_dir=tmp_path,
+        language=language,
+        model="turbo",
+        whisper_models_dir=None,
+        use_gpu=True,
+        gpu_device=0,
+        vad_filter=False,
+        timeout_sec=8016,
+        chunk_duration_sec=300,
+        chunk_overlap_sec=3,
+        chunk_threshold_sec=1800,
+        vtt_highlight_words=False,
+        vtt_max_line_count=2,
+        vtt_max_line_width=40,
+        debug=False,
+    )
+
+    assert (rc, detected) == (0, "fr")
+    assert len(loads) == 1
+    assert len(calls) == 2
+    assert calls[0]["wmodel"] is model
+    assert calls[1] == {**calls[0], "chunk_threshold_sec": 0}
+    assert validation.read_last_vtt_cue_end_seconds(vtt_path) == (True, True, expected_end)
+    assert validation.validate_vtt_coverage(vtt_path, 1002.0, 0.75, 300.0, False) == coverage_rc
+    assert "retrying once with chunked transcription" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "result,duration,effective_duration,chunk_duration,chunk_threshold,expected",
+    [
+        ({"segments": [{"end": 338.82}]}, 1002.0, 1002.0, 300, 1800, True),
+        ({"segments": [{"end": 338.82}]}, 1002.0, 0.0, 300, 1800, True),
+        ({"segments": [{"end": 338.82}]}, 1002.0, 1200.0, 300, 1800, True),
+        ({"segments": [{"end": 338.82}]}, 1002.0, 340.0, 300, 1800, False),
+        ({"segments": [{"end": 338.82}]}, 1002.0, 1002.0, 0, 1800, False),
+        ({"segments": [{"end": 338.82}]}, 1002.0, 1002.0, 300, 0, False),
+        ({"segments": [{"end": 338.82}]}, 1002.0, 1002.0, 300, 800, False),
+        ({"segments": [{"end": 100.0}]}, 200.0, 200.0, 300, 1800, False),
+        ({"segments": [{"end": 338.82}]}, 0.0, 0.0, 300, 1800, False),
+        ({"segments": [{"end": 752.0}]}, 1002.0, 1002.0, 300, 1800, False),
+        ({"segments": [{"end": 310.0}]}, 600.0, 600.0, 300, 1800, False),
+        ({"segments": []}, 1002.0, 1002.0, 300, 1800, False),
+        ({"segments": "invalid"}, 1002.0, 1002.0, 300, 1800, False),
+        ({"segments": [None, {}, {"end": "invalid"}]}, 1002.0, 1002.0, 300, 1800, False),
+        ({"segments": [{"end": 1000.0}, {"end": 338.82}]}, 1002.0, 1002.0, 300, 1800, False),
+    ],
+)
+def test_chunked_retry_respects_duration_silence_and_existing_chunking(
+    monkeypatch,
+    tmp_path,
+    result,
+    duration,
+    effective_duration,
+    chunk_duration,
+    chunk_threshold,
+    expected,
+):
+    """Limit retries to truncated single-pass results with a usable chunk plan."""
+    runtime = _load_core_module("whisper_python_runtime_utils")
+    monkeypatch.setattr(runtime.runtime_media_utils, "probe_duration_seconds", lambda *_a: duration)
+    monkeypatch.setattr(
+        runtime.runtime_media_utils,
+        "probe_effective_duration_seconds",
+        lambda *_a: effective_duration,
+    )
+
+    assert (
+        runtime._should_retry_with_chunks(
+            result, tmp_path / "audio.mp3", chunk_duration, chunk_threshold, False
+        )
+        is expected
+    )

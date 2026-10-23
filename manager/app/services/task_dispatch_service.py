@@ -9,6 +9,7 @@ import httpx
 from fastapi import HTTPException, status
 
 from app.models.models import Runner, Task, TaskRequest
+from app.services.runner_selection import rank_runners
 
 
 async def execute_task_background(
@@ -252,7 +253,8 @@ async def queue_task_execution(
             detail="Non-priority domain rejected: maximum other-domain task quota reached",
         )
 
-    for runner_id, runner in context.runners.items():
+    for runner in rank_runners(context.runners.values()):
+        runner_id = runner.id
         context.logger.info("Checking runner: %s", runner_id)
         try:
             async with context.httpx.AsyncClient(timeout=5.0) as client:

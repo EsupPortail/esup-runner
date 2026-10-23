@@ -21,6 +21,7 @@ from app.models.live import LiveInfo, LiveResponse, LiveStartRequest
 from app.models.models import Runner, Task
 from app.services.live_sources import known_sources, pod_broadcaster_slug
 from app.services.mediamtx import MediaMTXClient, MediaMTXError, path_metrics
+from app.services.runner_selection import rank_runners
 
 logger = setup_default_logging()
 TERMINAL = {"completed", "failed"}
@@ -136,7 +137,7 @@ def _allocate(
         if existing.live.source_id == request.source_id and existing.live.state not in TERMINAL:
             raise HTTPException(409, "Source already has an active Live")
     live_id = str(uuid.uuid4())
-    for runner in state.runners.values():
+    for runner in rank_runners(state.runners.values()):
         if (
             "live" not in runner.task_types
             or runner.availability != "available"

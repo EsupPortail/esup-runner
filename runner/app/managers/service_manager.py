@@ -107,7 +107,12 @@ class BackgroundServiceManager:
             and config.LIVE.mediamtx_health_check_interval_hours > 0
             and get_runner_instance_id()
             == next(
-                i for i, types in enumerate(config.RUNNER_TASK_TYPES_BY_INSTANCE) if "live" in types
+                (
+                    i
+                    for i, types in enumerate(config.RUNNER_TASK_TYPES_BY_INSTANCE)
+                    if "live" in types
+                ),
+                None,
             )
         ):
             services.append(("mediamtx_health_check_loop", mediamtx_health_check_loop()))

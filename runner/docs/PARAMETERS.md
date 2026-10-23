@@ -147,13 +147,14 @@ Compatibility note:
 
 See [LIVE.md](LIVE.md) for the lifecycle, profiles and examples, and
 [TYPE_LIVE.md](TYPE_LIVE.md) for the task request and output contract.
-Time values are in seconds and bitrates are in bit/s.
+Time values are in seconds unless stated otherwise; bitrates are in bit/s.
 
 | Parameter | Default |
 | --- | --- |
 | `LIVE_MEDIAMTX_API_URL` | `http://127.0.0.1:10997` |
 | `LIVE_MEDIAMTX_API_USER` | `control` |
 | `LIVE_MEDIAMTX_API_PASSWORD` | `` |
+| `LIVE_MEDIAMTX_HEALTH_CHECK_INTERVAL_HOURS` | `12` (non-negative whole hours; `0` disables monitoring) |
 | `LIVE_POD_URL` | `` |
 | `LIVE_POD_USERNAME` | `` |
 | `LIVE_POD_PASSWORD` | `` |
@@ -166,6 +167,10 @@ Time values are in seconds and bitrates are in bit/s.
 | `LIVE_CPU_FALLBACK` | `true` |
 | `LIVE_NVDEC` | `false` |
 | `LIVE_VARIANTS` | `HIGH 1280×720 1100000/128000 ; MID 720×406 560000/96000 ; LOW 480×270 280000/64000` |
+
+When Live is declared in `RUNNER_TASK_TYPES`, the first Live instance checks the
+Runner MediaMTX at startup and at this interval, emailing `MANAGER_EMAIL` on each
+failure. See [automatic MediaMTX monitoring](OPERATIONS.md#automatic-mediamtx-monitoring).
 
 `LIVE_TRANSCODER` selects Live encoding independently of `ENCODING_TYPE`.
 The former `auto` value is no longer accepted. Set `LIVE_TRANSCODER=nvenc`

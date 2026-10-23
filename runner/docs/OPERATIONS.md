@@ -143,33 +143,19 @@ changing these settings.
 
 ## Automatic NVIDIA driver monitoring
 
-With `ENCODING_TYPE=GPU`, the runner checks `nvidia-smi` once at startup and
-every 12 hours by default, even when no tasks are running. Instance 0 performs
-the check for the shared host, avoiding duplicate warnings from sibling
-instances. Keep instance 0 running for this monitoring to remain active.
+With `ENCODING_TYPE=GPU`, instance 0 checks `nvidia-smi` at startup and every
+`GPU_HEALTH_CHECK_INTERVAL_HOURS` hours (default `12`; `0` disables).
+Each failure emails `MANAGER_EMAIL` using the existing SMTP settings.
+Keep instance 0 running and restart the Runner after configuration changes.
 
-Configure the existing `SMTP_SERVER`, `SMTP_PORT`, `SMTP_SENDER` and
-`MANAGER_EMAIL` settings in the Runner environment; use an administrator address
-or mailing list for `MANAGER_EMAIL`. Optional STARTTLS and authentication use
-`SMTP_USE_TLS`, `SMTP_USERNAME` and `SMTP_PASSWORD`.
+## Automatic MediaMTX monitoring
 
-```properties
-ENCODING_TYPE=GPU
-GPU_HEALTH_CHECK_INTERVAL_HOURS=12
-```
-
-Set the interval to `24` for one periodic check per day, or `0` to disable
-monitoring. Restart the Runner after changing its environment. This control is
-enabled only by `ENCODING_TYPE=GPU`, independently of Live configuration.
-
-A missing command, non-zero exit status or 10-second timeout logs a warning and
-sends an email identifying the runner/host and including the failure diagnostics.
-While the failure persists, one reminder is sent per check interval; startup
-checks also send a warning if needed. Successful checks only produce a log entry.
-SMTP configuration or delivery failures are logged, and monitoring retries on
-the next scheduled check. Monitoring does not stop tasks, change readiness or
-attempt driver repairs. A successful `nvidia-smi` check does not validate FFmpeg,
-CUDA or NVENC capabilities; use the GPU diagnostic scripts for those checks.
+When `RUNNER_TASK_TYPES` includes `live`, the first Live instance checks the
+Runner's shared MediaMTX Control API at startup and every
+`LIVE_MEDIAMTX_HEALTH_CHECK_INTERVAL_HOURS` hours (default `12`; `0` disables).
+Each failure emails `MANAGER_EMAIL` using the same format and SMTP settings as
+[GPU alerts](#automatic-nvidia-driver-monitoring). Keep this instance running
+and restart the Runner after configuration changes.
 
 ## Multi-instance checks
 

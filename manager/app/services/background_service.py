@@ -7,6 +7,7 @@ import asyncio
 from typing import Dict, List
 
 from app.core.setup_logging import setup_default_logging
+from app.services.mediamtx_health_service import mediamtx_health_check_loop
 from app.services.runner_service import check_runners_activity
 from app.services.task_service import (
     check_task_timeouts,
@@ -50,6 +51,8 @@ class BackgroundServiceManager:
             from app.services.live_service import reconcile_forever
 
             services.append(("reconcile_live_sessions", reconcile_forever()))
+            if config.LIVE.mediamtx_health_check_interval_hours > 0:
+                services.append(("mediamtx_health_check_loop", mediamtx_health_check_loop()))
 
         for name, service in services:
             task = asyncio.create_task(service, name=name)

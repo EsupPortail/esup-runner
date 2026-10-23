@@ -1,4 +1,4 @@
-"""Email notifications for manager-side task warnings."""
+"""Email notifications for manager-side task and health warnings."""
 
 import asyncio
 import smtplib
@@ -53,7 +53,7 @@ def _compose_notify_retry_exhausted_email(
     error_message: str | None,
 ) -> EmailMessage:
     """Compose the notification sent after callback retry exhaustion."""
-    subject = f"[esup-runner-manager] Task {task_id} notify callback warning"
+    subject = f"[esup-runner] Task {task_id} notify callback warning"
     body_lines = [
         f"Task: {task_id}",
         f"Status: {status}",
@@ -108,6 +108,50 @@ async def send_notify_retry_exhausted_email(
         attempts=attempts,
         error_message=error_message,
     )
+    return await _send_notification_email(message, f"task {task_id} notify retry exhaustion")
+
+
+async def send_mediamtx_health_warning_email(*, error_message: str) -> bool:
+    """Send a Manager MediaMTX warning using the existing branded email format."""
+    if not _is_email_configured():
+        logger.warning(
+            "SMTP_SERVER or MANAGER_EMAIL not configured: MediaMTX warning email skipped"
+        )
+        return False
+
+    details = [
+        ("Host", config.MANAGER_HOST),
+        ("Manager URL", config.MANAGER_PUBLIC_URL),
+        ("Service", "MediaMTX"),
+        ("Check interval", f"{config.LIVE.mediamtx_health_check_interval_hours} hours"),
+    ]
+    summary = "The Manager MediaMTX health check failed. Live streaming may be unavailable."
+    message = build_branded_email_message(
+        subject=f"[esup-runner] MediaMTX warning on {config.MANAGER_HOST}: health check failed",
+        sender=_build_sender_address(),
+        recipient=config.MANAGER_EMAIL,
+        text_body="\n".join(
+            [summary, "", *(f"{label}: {value}" for label, value in details), "", error_message]
+        ),
+        product_name="ESUP-Runner Manager",
+        eyebrow="MediaMTX health warning",
+        title="Manager MediaMTX unavailable",
+        summary=summary,
+        status_label="WARNING",
+        tone="warning",
+        details=details,
+        primary_block_title="MediaMTX diagnostics",
+        primary_block_body=error_message,
+        action_label="Open manager",
+        action_url=f"{config.MANAGER_PUBLIC_URL.rstrip('/')}/admin",
+        footer="This message was generated automatically by the ESUP-Runner manager.",
+        logo_path=_LOGO_PATH,
+    )
+    return await _send_notification_email(message, f"MediaMTX health on {config.MANAGER_HOST}")
+
+
+async def _send_notification_email(message: EmailMessage, context: str) -> bool:
+    """Deliver a composed notification through SMTP without blocking the event loop."""
 
     def _send() -> None:
         """Send the composed email through the configured SMTP server."""
@@ -120,8 +164,8 @@ async def send_notify_retry_exhausted_email(
 
     try:
         await asyncio.to_thread(_send)
-        logger.info("Notify retry exhausted email sent for task %s", task_id)
+        logger.info("Email notification sent for %s", context)
         return True
     except Exception as exc:
-        logger.error("Failed to send notify retry exhausted email for task %s: %s", task_id, exc)
+        logger.error("Failed to send email for %s: %s", context, exc)
         return False

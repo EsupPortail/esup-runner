@@ -19,6 +19,7 @@ ENVIRONMENT_FIELDS = (
     "mediamtx_api_url",
     "mediamtx_api_user",
     "mediamtx_api_password",
+    "mediamtx_health_check_interval_hours",
     "mediamtx_log_unit",
     "mediamtx_log_file",
 )
@@ -35,6 +36,7 @@ class LiveSettings(BaseModel):
     mediamtx_api_url: str = "http://127.0.0.1:9997"
     mediamtx_api_user: str = "control"
     mediamtx_api_password: str = ""
+    mediamtx_health_check_interval_hours: int = Field(default=12, ge=0)
     mediamtx_log_unit: str = Field(
         default="", pattern=r"^(?:[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}\.service)?$"
     )

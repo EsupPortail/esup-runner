@@ -180,8 +180,37 @@ Section 6 copies application credentials automatically. Configure the encoder
 separately with H.264/AAC and an allowed path such as `live/amphi-a`. The Manager
 discovers accepted publications; `amphi-a` is the public `source_id`, not a secret.
 `LIVE_SOURCES` optionally declares sources before publication; it is not an
-allowlist. Keep the template's path permissions and `overridePublisher: true`
+allowlist. Keep the template's `overridePublisher: true`
 (new authenticated publishers on the same path replace the current publisher).
+
+### Multiple publisher accounts
+
+In the Manager's active `mediamtx.yml`, add one entry per account under
+`authInternalUsers`. Keep `relay` and `control`; no Manager or Runner settings
+need changing:
+
+```yaml
+  - user: publisherDroit
+    pass: "YOUR_DROIT_PASSWORD"
+    ips: []
+    permissions:
+      - action: publish
+        path: "~^live/[A-Za-z0-9_-]+$"
+  - user: publisherMedecine
+    pass: "YOUR_MEDECINE_PASSWORD"
+    ips: []
+    permissions:
+      - action: publish
+        path: "~^live/[A-Za-z0-9_-]+$"
+```
+
+Use each account in the encoder's `user` and `pass` URL parameters, for example
+`droit-amphi-a?user=publisherDroit&pass=YOUR_DROIT_PASSWORD` as the stream key.
+The shared regex allows both accounts to publish on any matching path. To
+separate permissions, use `~^live/droit-[A-Za-z0-9_-]+$` for `publisherDroit`
+and `~^live/medecine-[A-Za-z0-9_-]+$` for `publisherMedecine`.
+Keep `source: publisher` in `paths`: it is a MediaMTX source type, not an account
+name. MediaMTX [reloads the file automatically](https://mediamtx.org/docs/features/configuration).
 
 ## 4) Start the native systemd service
 

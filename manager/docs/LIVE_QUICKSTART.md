@@ -97,6 +97,8 @@ encoder and `YOUR_PUBLISHER_PASSWORD` with the **publisher** password from
 step 3. URL-encode reserved characters in the password. If the encoder accepts
 one URL, use `rtmp://manager.example.org:1935/live/amphi-a?user=publisher&pass=YOUR_PUBLISHER_PASSWORD`.
 Give simultaneous broadcasts different names (`amphi-a`, `amphi-b`, etc.).
+For separate encoder credentials, see
+[multiple publisher accounts](MEDIAMTX_SETUP.md#multiple-publisher-accounts).
 
 Start publishing. In `/admin/live`, wait for `running` and `hls_ready=true`, then
 open the exact playback URL in an HLS player. Stop publishing and check that the

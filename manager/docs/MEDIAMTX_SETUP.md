@@ -1,6 +1,7 @@
 # MediaMTX installation for Live streaming
 
-For a first deployment, follow [Live installation](LIVE_INSTALLATION.md).
+For a first native deployment, start with the [Manager quickstart](LIVE_QUICKSTART.md).
+For Docker, use [Live Compose installation](LIVE_INSTALLATION.md#docker-compose-shortcut).
 This reference covers alternative ports, Docker, service management and upgrades.
 
 Live requires **MediaMTX >= 1.21.1** on Linux (including Debian 12/13).
@@ -410,8 +411,9 @@ cd /opt/esup-runner/runner
 uv run scripts/configure_live.py --instance runner
 ```
 
-The second command assumes that the Manager's `manager` MediaMTX configuration
-is on this same machine. `--instance` defaults to `manager` for the Manager and
+The second command assumes that both roles share the same machine and service
+account, with the Manager's `manager` MediaMTX configuration in that account's
+configuration directory. `--instance` defaults to `manager` for the Manager and
 `runner` for the Runner, so both options can be omitted for the standard setup.
 Use `--manager-instance another-name` when the local Manager has another name.
 

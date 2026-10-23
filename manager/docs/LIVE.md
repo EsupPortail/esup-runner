@@ -1,6 +1,6 @@
 # Live: Manager, API contract and Pod integration
 
-> **Starting a new deployment?** Follow the [short installation path](LIVE_INSTALLATION.md).
+> **Starting a new native deployment?** Complete steps 1–4 of the [Manager quickstart](LIVE_QUICKSTART.md), follow the [Runner quickstart](../../runner/docs/LIVE_QUICKSTART.md), then return to Manager step 5 for the first broadcast.
 > **Operating an installed deployment?** Use the [Live operations runbook](LIVE_OPERATIONS.md).
 > This page is the detailed API, configuration and architecture reference.
 
@@ -458,8 +458,9 @@ Manager.
 
 ## Installation and security
 
-Follow [Live installation](LIVE_INSTALLATION.md) for native startup or Compose,
-and [MediaMTX setup](MEDIAMTX_SETUP.md) for custom paths and manual upgrades.
+Start with the [Manager quickstart](LIVE_QUICKSTART.md) for native installation
+or [Live Compose installation](LIVE_INSTALLATION.md#docker-compose-shortcut)
+for Docker. Use [MediaMTX setup](MEDIAMTX_SETUP.md) for custom paths and manual upgrades.
 The installer generates separate private credentials for publisher, relay,
 control and transcoder accounts; review YAML `ips` lists for authorized clients.
 

@@ -3,8 +3,9 @@
 This document centralizes day-to-day production operations for the manager.
 
 For RTMP-to-HLS Live operations, use the dedicated
-[Live operations runbook](LIVE_OPERATIONS.md). For a new Live deployment, start
-with the [short installation path](LIVE_INSTALLATION.md).
+[Live operations runbook](LIVE_OPERATIONS.md). For a new native Live deployment,
+start with the [Manager quickstart](LIVE_QUICKSTART.md). For Docker, use
+[Live Compose installation](LIVE_INSTALLATION.md#docker-compose-shortcut).
 
 ## Scope and assumptions
 

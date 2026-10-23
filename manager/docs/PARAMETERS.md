@@ -130,10 +130,15 @@ See [LIVE.md](LIVE.md) for the complete configuration and Esup-Pod contract.
 | `LIVE_MEDIAMTX_API_URL` | `http://127.0.0.1:9997` |
 | `LIVE_MEDIAMTX_API_USER` | `control` |
 | `LIVE_MEDIAMTX_API_PASSWORD` | `` |
+| `LIVE_MEDIAMTX_HEALTH_CHECK_INTERVAL_HOURS` | `12` (non-negative whole hours; `0` disables monitoring) |
 | `LIVE_MEDIAMTX_LOG_UNIT` | `` (optional systemd user service, e.g. `esup-runner-mediamtx@manager.service`) |
 | `LIVE_MEDIAMTX_LOG_FILE` | `` (alternative absolute path to the Manager MediaMTX plain log) |
 
-Time values are in seconds. `LIVE_SOURCES` optionally declares broadcaster names and private MediaMTX paths before publication, for example `{"amphi-a":"live/amphi-a"}`. Each identifier must equal the final path component: the public broadcaster name, containing at most 100 letters, digits, underscores or hyphens and starting with a letter or digit. Other accepted RTMP publications are discovered automatically using their broadcaster names as `source_id`; this setting is not an allowlist. Bindings persist in `MANAGER_DATA_DIR/.live-sources.json`, even if declarations are removed. The Manager does not transcode and has no Live slot settings. The Manager MediaMTX template allows a new publisher to replace the previous publisher on the same path; see [Live configuration](LIVE.md#manager-configuration).
+With `LIVE_ENABLED=true`, one worker checks the Manager MediaMTX at startup and
+at this interval, emailing `MANAGER_EMAIL` on each failure. See
+[automatic MediaMTX monitoring](OPERATIONS.md#automatic-mediamtx-monitoring).
+
+Other time values are in seconds. `LIVE_SOURCES` optionally declares broadcaster names and private MediaMTX paths before publication, for example `{"amphi-a":"live/amphi-a"}`. Each identifier must equal the final path component: the public broadcaster name, containing at most 100 letters, digits, underscores or hyphens and starting with a letter or digit. Other accepted RTMP publications are discovered automatically using their broadcaster names as `source_id`; this setting is not an allowlist. Bindings persist in `MANAGER_DATA_DIR/.live-sources.json`, even if declarations are removed. The Manager does not transcode and has no Live slot settings. The Manager MediaMTX template allows a new publisher to replace the previous publisher on the same path; see [Live configuration](LIVE.md#manager-configuration).
 Paths must be unique when automatic startup is enabled. Reconciliation and
 RTMP discovery run every 5 seconds (internal default). See
 [automatic operation](LIVE.md#automatic-rtmp-to-hls-operation) for capacity,

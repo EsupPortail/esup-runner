@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Monitor the Manager MediaMTX at startup and every 12 hours when Live is enabled,
+  with administrator email alerts and `LIVE_MEDIAMTX_HEALTH_CHECK_INTERVAL_HOURS`.
 - Add `scripts/install_mediamtx.py start --instance NAME` to validate and start
   MediaMTX without replacing custom units or restarting active services.
 

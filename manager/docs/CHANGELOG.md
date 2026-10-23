@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `scripts/install_mediamtx.py start --instance NAME` to validate and start
   MediaMTX without replacing custom units or restarting active services.
 
+### Fixed
+
+- Treat unavailable runners during `update-stack.sh` smoke tests as a warning,
+  reporting `skipped (No runners available)` in the console and update email.
+
 ## [1.10.0] - 2026-10-14
 
 ### Changed

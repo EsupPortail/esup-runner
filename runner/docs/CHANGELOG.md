@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Treat unavailable runners during `update-stack.sh` smoke tests as a warning,
+  reporting `skipped (No runners available)` in the console and update email.
 - Preserve MP4 video duration on sparse variable-frame-rate sources during CPU
   and GPU encoding.
 - Remove duplicate CORS headers from the documented Nginx HLS proxy examples.

@@ -1,6 +1,6 @@
 # runner/app/services/email_service.py
 """
-Email notification service for Runner tasks and GPU health warnings.
+Email notification service for Runner tasks and health warnings.
 """
 
 import asyncio
@@ -192,6 +192,47 @@ async def send_gpu_health_warning_email(*, error_message: str) -> bool:
         logo_path=_LOGO_PATH,
     )
     return await _send_notification_email(message, f"GPU health on {runner_id}")
+
+
+async def send_mediamtx_health_warning_email(*, error_message: str) -> bool:
+    """Send a MediaMTX warning with the same format and SMTP settings as GPU alerts."""
+    if not _is_email_configured():
+        logger.warning(
+            "SMTP_SERVER or MANAGER_EMAIL not configured: MediaMTX warning email skipped"
+        )
+        return False
+
+    runner_id = get_runner_id() or "unknown-runner"
+    details = [
+        ("Runner", runner_id),
+        ("Host", config.RUNNER_HOST),
+        ("Runner URL", get_runner_instance_url() or "unknown-url"),
+        ("Service", "MediaMTX"),
+        ("Check interval", f"{config.LIVE.mediamtx_health_check_interval_hours} hours"),
+    ]
+    summary = "The Runner MediaMTX health check failed. Live streaming may be unavailable."
+    message = build_branded_email_message(
+        subject=f"[esup-runner] MediaMTX warning on {runner_id}: health check failed",
+        sender=_build_sender_address(),
+        recipient=config.MANAGER_EMAIL,
+        text_body="\n".join(
+            [summary, "", *(f"{label}: {value}" for label, value in details), "", error_message]
+        ),
+        product_name="ESUP-Runner",
+        eyebrow="MediaMTX health warning",
+        title="Runner MediaMTX unavailable",
+        summary=summary,
+        status_label="WARNING",
+        tone="warning",
+        details=details,
+        primary_block_title="MediaMTX diagnostics",
+        primary_block_body=error_message,
+        action_label="Open manager",
+        action_url=_action_url(_manager_admin_url()),
+        footer="This message was generated automatically by the ESUP-Runner runner.",
+        logo_path=_LOGO_PATH,
+    )
+    return await _send_notification_email(message, f"MediaMTX health on {runner_id}")
 
 
 async def _send_notification_email(message: EmailMessage, context: str) -> bool:

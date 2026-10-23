@@ -12,6 +12,7 @@ from app.core.state import get_runner_instance_id
 from app.managers.storage_manager import storage_manager
 from app.services.gpu_health_service import gpu_health_check_loop
 from app.services.manager_service import heartbeat_loop, reconnect_loop
+from app.services.mediamtx_health_service import mediamtx_health_check_loop
 from app.services.pod_sync import retry_loop as pod_sync_loop
 from app.services.task_monitor import task_process_check_loop
 
@@ -100,6 +101,16 @@ class BackgroundServiceManager:
         ]
         if "live" in config.RUNNER_TASK_TYPES and config.LIVE.pod_url:
             services.append(("pod_sync_loop", pod_sync_loop()))
+        # MediaMTX is shared: only the first Live instance monitors it.
+        if (
+            "live" in config.RUNNER_TASK_TYPES
+            and config.LIVE.mediamtx_health_check_interval_hours > 0
+            and get_runner_instance_id()
+            == next(
+                i for i, types in enumerate(config.RUNNER_TASK_TYPES_BY_INSTANCE) if "live" in types
+            )
+        ):
+            services.append(("mediamtx_health_check_loop", mediamtx_health_check_loop()))
         # NVIDIA driver health is shared by all instances on this host.
         if (
             config.ENCODING_TYPE == "GPU"

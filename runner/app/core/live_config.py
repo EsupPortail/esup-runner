@@ -14,6 +14,7 @@ ENVIRONMENT_FIELDS = (
     "mediamtx_api_url",
     "mediamtx_api_user",
     "mediamtx_api_password",
+    "mediamtx_health_check_interval_hours",
     "pod_url",
     "pod_username",
     "pod_password",
@@ -46,6 +47,7 @@ class LiveSettings(BaseModel):
     mediamtx_api_url: str = "http://127.0.0.1:10997"
     mediamtx_api_user: str = "control"
     mediamtx_api_password: str = ""
+    mediamtx_health_check_interval_hours: int = Field(default=12, ge=0)
     pod_url: str = ""
     pod_username: str = ""
     pod_password: str = ""

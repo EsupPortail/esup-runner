@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Shorten Live installation and MediaMTX documentation, using one explicit service-start command per role.
+- Separate native Live installation into Manager and Runner quickstarts, with
+  an explicit handoff before the first broadcast.
 - Document and recommend `FORWARDED_ALLOW_IPS` for HAProxy deployments.
 
 ### Added

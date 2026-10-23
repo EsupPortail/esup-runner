@@ -123,7 +123,7 @@ At a high level, the manager:
 
 - Maintains an in-memory registry of runners (with heartbeats) and tasks.
 - Accepts task submissions (`POST /task/execute`) from client applications.
-- Selects the first runner that is:
+- Tries runners on the least occupied hosts first, then selects one that is:
   - reachable (`GET {runner.url}/runner/ping`),
   - `available` and `registered`,
   - and advertises support for the requested `task_type`.
@@ -131,6 +131,11 @@ At a high level, the manager:
 - Receives completion notifications from runners (`POST /task/completion`).
 - Optionally notifies the client application back via `notify_url`.
 - Exposes an admin dashboard (`/admin`) and API endpoints for status/results.
+
+All task types, including Live, share a busy/online instance ratio per host.
+Mixed instances count once; ties and instances are randomized. Hosts are grouped
+by their registered URL hostname, ignoring ports: use the same hostname or IP
+for all instances on a server.
 
 ## Authentication and version compatibility
 

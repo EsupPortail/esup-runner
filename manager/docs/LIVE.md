@@ -60,8 +60,9 @@ With automatic startup,
 each new publication starts a session when capacity is available. The optional
 API mode can reserve a session before the source appears.
 
-The Manager selects an available Runner whose `task_types` includes `"live"` and persists the task
-before reserving it. The atomic reservation in the existing registry records the
+The Manager uses the [shared host occupancy ranking](README.md#what-the-manager-does)
+to select an available Runner whose `task_types` includes `"live"` and persists
+the task before reserving it. The atomic reservation in the existing registry records the
 `live_id`. Heartbeats and re-registration cannot clear it. A stale callback cannot
 release a newer session. Workers of the same Manager share the files and locks
 in `MANAGER_DATA_DIR`; two independent Managers must use separate directories,

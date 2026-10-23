@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Distribute new Live, encoding, transcription and studio tasks across hosts by
+  their occupied/online Runner ratio, randomizing ties instead of using registry
+  order. Count all task types and each mixed instance once.
 - Separate native Live installation into Manager and Runner quickstarts, with
   an explicit handoff before the first broadcast.
 - Document and recommend `FORWARDED_ALLOW_IPS` for HAProxy deployments.

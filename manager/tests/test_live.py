@@ -211,6 +211,24 @@ async def test_four_runners_four_lives_and_no_fifth(setup_live):
 
 
 @pytest.mark.asyncio
+async def test_live_spreads_first_five_streams_across_hosts(setup_live):
+    """A 2/4/4/4/4 deployment uses all five hosts before allocating a second slot."""
+    task_types = state.runners["runner-1"].task_types
+    state.runners.clear()
+    for host, capacity in enumerate((2, 4, 4, 4, 4)):
+        for instance in range(capacity):
+            worker = runner(f"worker-{host}-{instance}", 8001 + instance)
+            worker.url = f"http://192.0.2.{host + 1}:{8001 + instance}"
+            worker.task_types = task_types
+            state.runners.register(worker)
+    started = await asyncio.gather(
+        *(live.start(request(f"room{i}", f"event{i}"), "pod") for i in range(5))
+    )
+    assert len({state.runners[item.runner].url.rsplit(":", 1)[0] for item in started}) == 5
+    assert sum(bool(worker.live_task_id) for worker in state.runners.values()) == 5
+
+
+@pytest.mark.asyncio
 async def test_duplicate_source_and_event_conflicts_and_owner(setup_live):
     first = await live.start(request(), "pod")
     assert (await live.start(request(), "pod")).live_id == first.live_id
@@ -633,6 +651,7 @@ async def test_sources_and_metrics_routes_are_authenticated(setup_live, monkeypa
 async def test_reservation_race_retries_another_runner_and_deduplicates_winner(
     setup_live, monkeypatch
 ):
+    monkeypatch.setattr("app.services.runner_selection.random.shuffle", lambda groups: None)
     state.runners.register(runner("runner-2", 8083))
     reserve = state.runners.reserve_live
     monkeypatch.setattr(

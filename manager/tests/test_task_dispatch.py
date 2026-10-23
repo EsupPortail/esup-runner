@@ -26,6 +26,77 @@ from app.models.models import Task, TaskRequest
 __all__ = ["clean_state", "client", "task_module"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_type", ["encoding", "transcription", "studio"])
+@pytest.mark.parametrize(
+    "failure", [None, "timeout", "busy", "unregistered", "unsupported", "race"]
+)
+async def test_dispatch_prefers_idle_host_and_retains_fallbacks(
+    monkeypatch, task_module, clean_state, task_type, failure
+):
+    """All file-based types share host ranking and retry unsuitable candidates."""
+    fallback = _runner("fallback", url="http://a.example:8001")
+    busy = _runner("busy", url="http://a.example:8002")
+    busy.availability = "busy"
+    busy.task_types = ["live"]
+    preferred = _runner("preferred", url="http://b.example:8001")
+    for worker in (fallback, busy, preferred):
+        runners[worker.id] = worker
+    monkeypatch.setattr("app.services.runner_selection.random.shuffle", lambda groups: None)
+    monkeypatch.setattr(task_module.config, "PRIORITIES_ENABLED", False)
+    monkeypatch.setattr(task_module, "get_tasks_snapshot", lambda: dict(tasks))
+    monkeypatch.setattr(task_module, "save_tasks", lambda: None)
+    visited = []
+
+    def ping(request):
+        visited.append(str(request.url))
+        unavailable = request.url.host == "b.example" and failure is not None
+        if unavailable and failure == "timeout":
+            raise httpx.ConnectTimeout("unreachable", request=request)
+        return httpx.Response(
+            200,
+            json={
+                "available": not (unavailable and failure == "busy"),
+                "registered": not (unavailable and failure == "unregistered"),
+                "task_types": (
+                    ["other"] if unavailable and failure == "unsupported" else [task_type]
+                ),
+            },
+        )
+
+    http_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        task_module.httpx,
+        "AsyncClient",
+        lambda **kwargs: http_client(transport=httpx.MockTransport(ping), **kwargs),
+    )
+    if failure == "race":
+        reserve = task_module._try_reserve_runner_for_dispatch
+        monkeypatch.setattr(
+            task_module,
+            "_try_reserve_runner_for_dispatch",
+            lambda identifier: None if identifier == preferred.id else reserve(identifier),
+        )
+    monkeypatch.setattr(task_module.asyncio, "create_task", lambda coroutine: coroutine.close())
+    result = await task_module._queue_task_execution(
+        TaskRequest(
+            etab_name="university",
+            app_name="pod",
+            task_type=task_type,
+            source_url="https://media.example/input",
+            notify_url="",
+        ),
+        "client",
+    )
+    selected = fallback if failure else preferred
+    assert tasks[result["task_id"]].runner_id == selected.id
+    assert tasks[result["task_id"]].task_type == task_type
+    assert runners[selected.id].availability == "busy"
+    assert visited == ["http://b.example:8001/runner/ping"] + (
+        ["http://a.example:8001/runner/ping"] if failure else []
+    )
+
+
 def test_view_tasks_filters_and_renders(client, clean_state):
     """Validate View tasks filters and renders."""
     runners["r1"] = _runner("r1")

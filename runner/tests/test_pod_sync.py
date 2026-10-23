@@ -287,6 +287,7 @@ async def test_background_retry_service_is_scoped_to_live_instances(
     monkeypatch.setattr(config, "RUNNER_TASK_TYPES", types)
     monkeypatch.setattr(config, "ENCODING_TYPE", "CPU")
     monkeypatch.setattr(config.LIVE, "pod_url", pod_url)
+    monkeypatch.setattr(config.LIVE, "mediamtx_health_check_interval_hours", 0)
 
     async def sleeper():
         await asyncio.Event().wait()

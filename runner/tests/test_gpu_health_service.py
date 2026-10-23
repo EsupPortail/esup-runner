@@ -225,6 +225,7 @@ async def test_service_manager_starts_monitoring_only_on_enabled_primary_gpu_ins
 
 @pytest.mark.asyncio
 async def test_service_manager_stops_active_gpu_monitor_and_rechecks_after_restart(monkeypatch):
+    monkeypatch.setattr(service_manager_module.config, "RUNNER_TASK_TYPES", {"encoding"})
     monkeypatch.setattr(service_manager_module.config, "ENCODING_TYPE", "GPU")
     monkeypatch.setattr(service_manager_module.config, "GPU_HEALTH_CHECK_INTERVAL_HOURS", 12)
     monkeypatch.setattr(service_manager_module, "get_runner_instance_id", lambda: 0)

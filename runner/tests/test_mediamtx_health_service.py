@@ -175,26 +175,23 @@ async def test_health_alert_format_delivery_and_failure(monkeypatch, secure):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "task_types,interval,instance,enabled",
+    "task_types,interval,instance,groups,enabled",
     [
-        ({"encoding"}, 12, 0, False),
-        ({"live"}, 0, 1, False),
-        ({"live"}, 12, 1, True),
-        ({"live"}, 12, 2, False),
-        ({"live"}, 12, 0, True),
+        ({"encoding"}, 12, 0, [{"encoding"}, {"live"}], False),
+        ({"live"}, 0, 1, [{"encoding"}, {"live"}], False),
+        ({"live"}, 12, 1, [{"encoding"}, {"live"}, {"live"}], True),
+        ({"live"}, 12, 2, [{"encoding"}, {"live"}, {"live"}], False),
+        ({"live"}, 12, 0, [{"live"}, {"live"}], True),
+        ({"live"}, 12, 0, [], False),
+        ({"live"}, 12, 0, [{"encoding"}], False),
     ],
 )
 async def test_starts_only_on_first_enabled_live_instance(
-    monkeypatch, task_types, interval, instance, enabled
+    monkeypatch, task_types, interval, instance, groups, enabled
 ):
     from app.managers import service_manager as services
 
     monkeypatch.setattr(services.config, "RUNNER_TASK_TYPES", task_types)
-    groups = (
-        [{"live"}, {"live"}]
-        if instance == 0 and "live" in task_types
-        else [{"encoding"}, {"live"}, {"live"}]
-    )
     monkeypatch.setattr(services.config, "RUNNER_TASK_TYPES_BY_INSTANCE", groups)
     monkeypatch.setattr(services.config.LIVE, "mediamtx_health_check_interval_hours", interval)
     monkeypatch.setattr(services.config.LIVE, "pod_url", "")

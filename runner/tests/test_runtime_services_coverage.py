@@ -444,6 +444,7 @@ async def test_storage_cleanup_loop_handles_initial_and_periodic_errors(monkeypa
 @pytest.mark.asyncio
 async def test_background_service_manager_start_stop_and_status(monkeypatch):
     """Validate Background service manager start stop and status."""
+    monkeypatch.setattr(service_manager_module.config, "RUNNER_TASK_TYPES", {"encoding"})
     monkeypatch.setattr(service_manager_module.config, "ENCODING_TYPE", "CPU")
     monkeypatch.setattr(service_manager_module.config.LIVE, "pod_url", "")
 

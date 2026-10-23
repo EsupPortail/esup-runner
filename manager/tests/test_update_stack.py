@@ -238,8 +238,10 @@ def _prepare_update(tmp_path, repository):
     return checkout, env, email_path
 
 
-def _run_update(checkout, env, *options):
+def _run_update(checkout, env, *options, run_test=False):
     """Run the real update workflow against a local Git remote and mocked services."""
+    if not run_test:
+        options = ("--skip-test", *options)
     return subprocess.run(
         [
             "bash",
@@ -250,7 +252,6 @@ def _run_update(checkout, env, *options):
             "--runner-sync-mode",
             "base",
             "--no-restart",
-            "--skip-test",
             *options,
         ],
         check=False,
@@ -266,6 +267,118 @@ def _email_content(message, subtype):
     body = message.get_body((subtype,))
     assert body is not None
     return body.get_content()
+
+
+@pytest.fixture
+def smoke_update(tmp_path, configuration_repository):
+    """Enable the smoke test with mocked task execution, delay, and SMTP."""
+    checkout, env, email_path = _prepare_update(tmp_path, configuration_repository)
+    with (checkout / "runner/.env").open("a", encoding="utf-8") as runner_env:
+        runner_env.write("RUNNER_TOKEN=test-token\nMANAGER_URL=http://manager.example.invalid\n")
+    for command, content in {
+        "uv": '#!/bin/sh\nprintf "%s\\n" "$TEST_SMOKE_OUTPUT" >&2\n'
+        'exit "$TEST_SMOKE_EXIT_CODE"\n',
+        "sleep": "#!/bin/sh\nexit 0\n",
+    }.items():
+        path = tmp_path / "bin" / command
+        path.write_text(content, encoding="utf-8")
+        path.chmod(0o755)
+    env.update(
+        TEST_SMOKE_OUTPUT="⚠ WARNING: Task submission skipped (encoding): No runners available",
+        TEST_SMOKE_EXIT_CODE="2",
+    )
+    return checkout, env, email_path
+
+
+@pytest.mark.parametrize(
+    "smoke_exit_code,smoke_output,expected_status,expected_exit_code",
+    [
+        (0, "Encoding check completed", "ok", 0),
+        (
+            2,
+            "⚠ WARNING: Task submission skipped (encoding): No runners available",
+            "skipped (No runners available)",
+            0,
+        ),
+        (
+            2,
+            "Encoding check completed\n"
+            "⚠ WARNING: Task submission skipped (transcription): No runners available",
+            "skipped (No runners available)",
+            0,
+        ),
+        (1, "HTTP 401: Unauthorized", "failed", 1),
+        (1, "Cannot connect to manager", "failed", 1),
+        (2, "error: unrecognized arguments", "failed", 1),
+        (1, "Task execution failed: No runners available", "failed", 1),
+        (
+            1,
+            "⚠ WARNING: Task submission skipped (encoding): No runners available",
+            "failed",
+            1,
+        ),
+    ],
+)
+def test_update_stack_reports_smoke_result_in_console_and_email(
+    smoke_update,
+    smoke_exit_code,
+    smoke_output,
+    expected_status,
+    expected_exit_code,
+):
+    """Skip unavailable capacity while preserving real failures and both email formats."""
+    checkout, env, email_path = smoke_update
+    env.update(TEST_SMOKE_OUTPUT=smoke_output, TEST_SMOKE_EXIT_CODE=str(smoke_exit_code))
+
+    result = _run_update(checkout, env, run_test=True)
+
+    assert result.returncode == expected_exit_code, result.stdout + result.stderr
+    summary = next(line for line in result.stdout.splitlines() if "Post-update test:" in line)
+    assert summary.split(":", 1)[1].strip() == expected_status
+    assert smoke_output in result.stdout
+    message = BytesParser(policy=policy.default).parsebytes(email_path.read_bytes())
+    email_status = (
+        expected_status if expected_status.startswith("skipped") else expected_status.upper()
+    )
+    for subtype in ("plain", "html"):
+        assert email_status in _email_content(message, subtype)
+    if expected_status.startswith("skipped"):
+        assert "[WARN] Post-update test skipped (No runners available)." in result.stderr
+        assert "Post-update test failed" not in result.stdout + result.stderr
+        assert "FAILED" not in str(message)
+        assert "SUCCESS" in message["Subject"]
+    elif expected_status == "failed":
+        assert "Post-update test failed" in result.stderr
+        assert "COMPLETED WITH WARNINGS" in message["Subject"]
+
+
+@pytest.mark.parametrize("failure", ["configuration", "mktemp", "tee"])
+def test_unavailable_runners_do_not_hide_other_update_failures(
+    tmp_path, configuration_repository, smoke_update, failure
+):
+    """Keep earlier errors and output-capture failures visible in the final result."""
+    checkout, env, email_path = smoke_update
+    if failure == "configuration":
+        _commit_files(configuration_repository, {"runner/.env.example": 'A="invalid\n'})
+    else:
+        command = tmp_path / "bin" / failure
+        content = "cat >/dev/null\n" if failure == "tee" else ""
+        command.write_text(f"#!/bin/sh\n{content}exit 1\n", encoding="utf-8")
+        command.chmod(0o755)
+
+    result = _run_update(checkout, env, run_test=True)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    expected_status = "skipped (No runners available)" if failure == "configuration" else "failed"
+    summary = next(line for line in result.stdout.splitlines() if "Post-update test:" in line)
+    assert summary.split(":", 1)[1].strip() == expected_status
+    message = BytesParser(policy=policy.default).parsebytes(email_path.read_bytes())
+    assert "COMPLETED WITH WARNINGS" in message["Subject"]
+    for subtype in ("plain", "html"):
+        body = _email_content(message, subtype)
+        assert (expected_status if failure == "configuration" else "FAILED") in body
+        if failure == "configuration":
+            assert "Configuration comparison failed" in body
 
 
 def test_update_stack_reports_configuration_in_console_and_email(

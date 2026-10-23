@@ -10,6 +10,54 @@ import pytest
 import scripts.check_pipeline_tasks as pipeline
 
 
+@pytest.mark.parametrize("task_type", ["encoding", "transcription"])
+@pytest.mark.parametrize("overview_fails", [False, True])
+@pytest.mark.asyncio
+async def test_unavailable_runners_warn_and_exit_with_capacity_status(
+    monkeypatch, capsys, task_type, overview_fails
+):
+    """Keep capacity distinguishable from errors, including failed diagnostics."""
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setattr(
+        pipeline,
+        "submit_task",
+        AsyncMock(side_effect=RuntimeError("HTTP 503 -> No runners available")),
+    )
+    overview = AsyncMock(
+        return_value={"runners": []},
+        side_effect=RuntimeError("Overview unavailable") if overview_fails else None,
+    )
+    monkeypatch.setattr(pipeline, "get_runners_overview", overview)
+
+    with pytest.raises(SystemExit) as exc_info:
+        await pipeline.submit_task_or_exit(
+            AsyncMock(), "http://manager", "token", {"task_type": task_type}
+        )
+
+    assert exc_info.value.code == 2
+    output = capsys.readouterr().out
+    assert f"⚠ WARNING: Task submission skipped ({task_type}): No runners available" in output
+    assert "ERROR" not in output
+    overview.assert_awaited_once()
+
+
+@pytest.mark.parametrize("message", ["HTTP 401 -> Unauthorized", "HTTP 503 -> Service unavailable"])
+@pytest.mark.asyncio
+async def test_other_submission_errors_remain_failures(monkeypatch, message):
+    """Do not confuse authentication or other HTTP errors with unavailable capacity."""
+    monkeypatch.setattr(pipeline, "submit_task", AsyncMock(side_effect=RuntimeError(message)))
+    overview = AsyncMock()
+    monkeypatch.setattr(pipeline, "get_runners_overview", overview)
+
+    with pytest.raises(SystemExit) as exc_info:
+        await pipeline.submit_task_or_exit(
+            AsyncMock(), "http://manager", "token", {"task_type": "encoding"}
+        )
+
+    assert exc_info.value.code == message
+    overview.assert_not_awaited()
+
+
 def test_resolve_task_download_dir_uses_configured_workspace(monkeypatch, tmp_path):
     """Store downloaded checks in the task workspace, not the current directory."""
     monkeypatch.setattr(

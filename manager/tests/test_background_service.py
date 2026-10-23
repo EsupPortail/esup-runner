@@ -15,6 +15,7 @@ from app.services import background_service
 async def test_start_and_stop_all_services(monkeypatch, live_enabled):
     """Start and stop the expected services independently of the local Live setting."""
     monkeypatch.setattr(config.LIVE, "enabled", live_enabled)
+    monkeypatch.setattr(config.LIVE, "mediamtx_health_check_interval_hours", 12)
     started = []
 
     async def fake_service(name: str):
@@ -38,6 +39,9 @@ async def test_start_and_stop_all_services(monkeypatch, live_enabled):
     )
 
     expected_started = {"runners", "cleanup", "timeouts", "reconcile"}
+    monkeypatch.setattr(
+        background_service, "mediamtx_health_check_loop", lambda: fake_service("mediamtx-health")
+    )
     expected_services = {
         "check_runners_activity",
         "cleanup_old_tasks",
@@ -46,7 +50,9 @@ async def test_start_and_stop_all_services(monkeypatch, live_enabled):
     }
     if live_enabled:
         expected_started.add("live")
+        expected_started.add("mediamtx-health")
         expected_services.add("reconcile_live_sessions")
+        expected_services.add("mediamtx_health_check_loop")
 
     mgr = background_service.BackgroundServiceManager()
     await mgr.start_all_services()

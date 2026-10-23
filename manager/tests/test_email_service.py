@@ -55,7 +55,7 @@ def test_compose_notify_retry_exhausted_email(monkeypatch):
         error_message=None,
     )
 
-    assert message["Subject"] == "[esup-runner-manager] Task task-1 notify callback warning"
+    assert message["Subject"] == "[esup-runner] Task task-1 notify callback warning"
     assert message["From"] == "esup-runner-manager@example.org"
     assert message["To"] == "ops@example.org"
     assert message.is_multipart()

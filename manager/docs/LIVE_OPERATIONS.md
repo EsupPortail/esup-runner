@@ -5,7 +5,8 @@ MediaMTX services installed. It focuses on the actions that matter during a
 broadcast: start, observe, stop, restart, inspect logs and recover from a
 failure.
 
-For installation, use [Live installation](LIVE_INSTALLATION.md). For the full
+For native installation, start with the [Manager quickstart](LIVE_QUICKSTART.md).
+For Docker, use [Live Compose installation](LIVE_INSTALLATION.md#docker-compose-shortcut). For the full
 API and configuration reference, use [Manager Live](LIVE.md) and
 [Runner Live](../../runner/docs/LIVE.md).
 

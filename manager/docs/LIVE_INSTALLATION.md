@@ -1,150 +1,16 @@
 # Live installation
 
-Install Live on top of a working [Manager](INSTALLATION.md) and
-[Runner](../../runner/docs/INSTALLATION.md). This guide uses the standard native
-layout and CPU transcoding; see [MediaMTX setup](MEDIAMTX_SETUP.md) for custom
-ports/paths and [Compose](#docker-compose-shortcut) for a container deployment.
+## Native installation
 
-## Before you start
+For the standard Linux/systemd layout with one CPU Live instance, follow this
+order:
 
-- Linux, Python 3.11+, `uv`, the application's dependencies (`make sync`), and
-  the service account's checkout at `/opt/esup-runner` on each host.
-- Normal application `.env` files and user service units already prepared,
-  with matching Manager/Runner tokens and an administrator account.
-- FFmpeg/ffprobe with libx264 and AAC on the Runner; see
-  [FFmpeg setup](../../runner/docs/FFMPEG_SETUP.md).
-- A working `systemctl --user` login session. Enable
-  [lingering](MEDIAMTX_SETUP.md#logs-restarts-and-boot-persistence) for startup
-  at boot and after logout.
-- Encoder and Runner access to the Manager's RTMP port, and a private
-  Manager/Runner application network. Keep Control APIs private.
+1. Complete **steps 1–4** of the [Manager quickstart](LIVE_QUICKSTART.md) on the Manager host.
+2. Complete the [Runner quickstart](../../runner/docs/LIVE_QUICKSTART.md) on the Runner host, even if both roles share a machine.
+3. Return to [Manager step 5](LIVE_QUICKSTART.md#5-publish-the-first-broadcast) to publish and test the first broadcast.
 
-Two MediaMTX services are needed, even on one host: the Manager's receives RTMP;
-the Runner's relays it to FFmpeg. Every Live worker on a Runner server shares
-that server's MediaMTX. One worker handles one broadcast until cleanup finishes.
-Remote viewers also need an HTTPS route to each worker's `/hls/` endpoint.
-
-## Recommended native installation
-
-Run commands as the service account, without `sudo`. MediaMTX defaults to
-**1.21.1**, the minimum supported version; newer stable installations are reused.
-Existing complete configurations and passwords are preserved.
-
-### 1. Prepare and start MediaMTX
-
-On the Manager host (prefer a specific private interface where possible):
-
-```bash
-cd /opt/esup-runner/manager
-python3 scripts/install_mediamtx.py setup --instance manager \
-  --rtmp-address 0.0.0.0:1935
-python3 scripts/install_mediamtx.py start --instance manager
-```
-
-On each Runner host:
-
-```bash
-cd /opt/esup-runner/runner
-python3 scripts/install_mediamtx.py setup --instance runner
-python3 scripts/install_mediamtx.py start --instance runner
-```
-
-On a shared host, run both pairs. `setup` installs/reuses the executable and
-prepares private YAML/environment files. `start` validates the prepared
-configuration, installs the user unit, enables/starts it and checks its state.
-Add `--dry-run` to preview. It preserves customized units and does not restart
-an already active service; see [service management](MEDIAMTX_SETUP.md#4-start-the-native-systemd-service).
-
-### 2. Connect the applications
-
-On the Manager host:
-
-```bash
-cd /opt/esup-runner/manager
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
-uv run scripts/configure_live.py --instance manager
-```
-
-On the Runner host:
-
-```bash
-cd /opt/esup-runner/runner
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
-uv run scripts/configure_live.py --instance runner \
-  --manager-rtmp-host manager.example.org
-```
-
-Replace the hostname with the Manager's RTMP address reachable from the Runner.
-Enter the Manager MediaMTX `relay` password from its private YAML when prompted.
-On a shared host, omit `--manager-rtmp-host` to read it locally.
-The helpers update connection settings and save private `.env` backups.
-The Manager helper enables Live; retain the default `LIVE_AUTO_START=true`.
-
-Set capacity and public routing in `runner/.env`, for example:
-
-```dotenv
-RUNNER_TASK_TYPES=[1x(encoding,studio),2x(live)]
-RUNNER_HOST=runner.example.org
-LIVE_PUBLIC_HLS_BASE_URL=https://live.example.org/runner-{instance_id}/hls
-```
-
-This starts VOD at instance 0 and Lives at instances 1 and 2, normally ports
-8082, 8083 and 8084. Route `/runner-1/hls/` and `/runner-2/hls/` to the matching
-workers using the [proxy examples](../../runner/docs/LIVE.md#service-and-hls-exposure).
-For direct local HTTP testing, omit `LIVE_PUBLIC_HLS_BASE_URL` and use
-`RUNNER_HOST=127.0.0.1`; the application derives each URL from its actual port.
-HLS defaults to `/dev/shm/hls`, writable by the service account.
-
-### 3. Start the applications
-
-Add the [Runner service drop-in](../../runner/docs/LIVE.md#use-the-main-runner-service-with-a-mixed-or-grouped-env)
-so the main Runner service depends on MediaMTX and stops all workers/FFmpeg
-together. Run `systemctl --user daemon-reload` after editing units.
-Start each normal application service on its host:
-
-```bash
-systemctl --user enable --now esup-runner-manager.service  # Manager host
-systemctl --user enable --now esup-runner-runner.service   # Runner host
-```
-
-For applications already running, finish active tasks/broadcasts and use
-`systemctl --user restart <service>` to load the edited `.env`.
-`enable --now` does not reload an active application's environment.
-
-### 4. Check readiness
-
-On the relevant hosts, check each application and its MediaMTX service:
-
-```bash
-systemctl --user --no-pager status esup-runner-mediamtx@manager.service esup-runner-manager.service
-systemctl --user --no-pager status esup-runner-mediamtx@runner.service esup-runner-runner.service
-```
-
-Check each local Control API using that instance's `control` password:
-
-```bash
-curl --fail --show-error --user control http://127.0.0.1:9997/v3/paths/list
-curl --fail --show-error --user control http://127.0.0.1:10997/v3/paths/list
-```
-
-Both should return HTTP 200 with an `items` list. Log into the Manager's
-`/admin/live` and confirm at least one available Live Runner.
-
-### 5. Perform the first Live test
-
-Configure the encoder for H.264/AAC, the Manager's RTMP address, the `publisher`
-credentials from its private YAML, and an allowed path, for example:
-
-```text
-rtmp://manager.example.org:1935/live/amphi-a?user=publisher&pass=...
-```
-
-URL-encode reserved characters in credentials. Publishing starts the session
-automatically. Within the next discovery passes, `/admin/live` should show
-`running`, `hls_ready=true` and a playback URL. Use that exact URL in the player.
-Stop publishing and confirm the Runner becomes available after cleanup.
-For a repeatable CPU-only test, use the
-[smoke test](LIVE.md#reproducible-test-without-streaming-hardware).
+For custom ports, a MediaMTX-only container or upgrades, use the
+[MediaMTX reference](MEDIAMTX_SETUP.md).
 
 ## Docker Compose shortcut
 
@@ -264,10 +130,18 @@ confirm that the Live Runner is available. Inspect startup logs with:
 docker compose -p live-a logs --tail=100 manager runner manager-media runner-media
 ```
 
-Perform the [first Live test](#5-perform-the-first-live-test), using the Docker
-host's reachable RTMP address and published port for the encoder. For a local
-publisher, these default to `127.0.0.1:1935`. Wait for `running` and `hls_ready=true`,
-then use the exact displayed `hls_url` in the player.
+Configure the encoder for H.264/AAC and publish using the `publisher` password
+from `manager-mediamtx.yml`:
+
+```text
+rtmp://127.0.0.1:1935/live/amphi-a?user=publisher&pass=YOUR_PUBLISHER_PASSWORD
+```
+
+Replace `127.0.0.1:1935` with the Docker host's reachable RTMP address and published
+port for a remote encoder. URL-encode reserved characters in the password.
+Wait for `running` and `hls_ready=true`, then use the exact displayed `hls_url`
+in the player. Stop publishing and confirm that the Runner becomes available
+after cleanup.
 
 Before adding workers or publishing production traffic, follow the
 [Compose reference](LIVE.md#docker-compose) for networking, persistent volumes

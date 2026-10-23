@@ -32,7 +32,7 @@ Each project has its own `pyproject.toml`, documentation, release process, etc.
 - Upgrade: [manager/docs/UPGRADE.md](manager/docs/UPGRADE.md)
 - Configuration: [manager/docs/CONFIGURATION.md](manager/docs/CONFIGURATION.md)
 - Parameters: [manager/docs/PARAMETERS.md](manager/docs/PARAMETERS.md)
-- Live quick installation: [manager/docs/LIVE_INSTALLATION.md](manager/docs/LIVE_INSTALLATION.md)
+- Live quickstart (steps 1–4, then Runner): [manager/docs/LIVE_QUICKSTART.md](manager/docs/LIVE_QUICKSTART.md)
 - Live operations: [manager/docs/LIVE_OPERATIONS.md](manager/docs/LIVE_OPERATIONS.md)
 - Changelog: [manager/docs/CHANGELOG.md](manager/docs/CHANGELOG.md)
 - Versioning: [manager/docs/VERSION_MANAGEMENT.md](manager/docs/VERSION_MANAGEMENT.md)
@@ -45,6 +45,7 @@ Each project has its own `pyproject.toml`, documentation, release process, etc.
 - Upgrade: [runner/docs/UPGRADE.md](runner/docs/UPGRADE.md)
 - Configuration: [runner/docs/CONFIGURATION.md](runner/docs/CONFIGURATION.md)
 - Parameters: [runner/docs/PARAMETERS.md](runner/docs/PARAMETERS.md)
+- Live quickstart (then Manager step 5): [runner/docs/LIVE_QUICKSTART.md](runner/docs/LIVE_QUICKSTART.md)
 - Changelog: [runner/docs/CHANGELOG.md](runner/docs/CHANGELOG.md)
 - Versioning: [runner/docs/VERSION_MANAGEMENT.md](runner/docs/VERSION_MANAGEMENT.md)
 

@@ -2,11 +2,12 @@
 
 This document describes how to install and run the **ESUP Runner Manager** on a Debian/Ubuntu-like system.
 For Docker-based deployment, see [DOCKER.md](DOCKER.md).
-For Live streaming, start with [LIVE_INSTALLATION.md](LIVE_INSTALLATION.md) after
-creating the service account and fetching the sources. It links to the detailed
-[MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md) reference for MediaMTX >= 1.21.1
-installation as a native executable or Docker container, including reuse of an
-existing installation on the same machine.
+For Live streaming, follow this guide through **Synchronize Python dependencies**,
+then continue with the [Manager Live quickstart](LIVE_QUICKSTART.md). It covers
+MediaMTX and application startup in steps 1–4. Follow the separate
+[Runner Live quickstart](../../runner/docs/LIVE_QUICKSTART.md), then return to
+Manager step 5 for encoder settings and the first broadcast.
+For a complete Docker Live stack, see [Live Compose installation](LIVE_INSTALLATION.md#docker-compose-shortcut).
 
 ## Version compatibility note (Runner & Manager)
 
@@ -55,7 +56,7 @@ Install `uv` as the service account (`esup-runner` by default):
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Re-open your shell session (recommended) or reload your shell init files, then verify:
+Re-open your shell session (recommended) or reload your shell init files (via `source .bashrc`), then verify:
 
 ```bash
 uv --version
@@ -264,6 +265,10 @@ make sync
 ```
 
 ### Verification checks
+
+**Installing Live?** Continue with the [Manager Live quickstart](LIVE_QUICKSTART.md)
+now. It includes Live configuration, verification and systemd startup; use it
+for the remaining Live installation steps.
 
 After dependencies are installed, validate the effective configuration first,
 then run the built-in version consistency checks:

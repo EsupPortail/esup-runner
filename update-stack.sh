@@ -224,7 +224,7 @@ print_summary_line() {
     yes|ok|sent|dry-run|0)
       value_color="${COLOR_SUCCESS}"
       ;;
-    no|skipped|disabled)
+    no|skipped*|disabled)
       value_color="${COLOR_WARN}"
       ;;
     failed)
@@ -1176,17 +1176,34 @@ run_post_update_test() {
     return 0
   fi
 
-  if (
+  local test_output
+  local test_pipeline_status=()
+  if ! test_output="$(mktemp)"; then
+    TEST_STATUS="failed"
+    warn "Unable to capture post-update test output."
+    mark_non_fatal_failure
+    return 0
+  fi
+
+  (
     cd "${MANAGER_DIR}" || exit 1
-    env RUNNER_API_TOKEN="${token}" RUNNER_MANAGER_URL="${manager_url}" \
+    env PYTHONUNBUFFERED=1 RUNNER_API_TOKEN="${token}" RUNNER_MANAGER_URL="${manager_url}" \
       uv run scripts/check_pipeline_tasks.py "${test_args[@]}"
-  ); then
+  ) 2>&1 | tee "${test_output}"
+  test_pipeline_status=("${PIPESTATUS[@]}")
+
+  if [[ "${test_pipeline_status[0]}" -eq 0 && "${test_pipeline_status[1]}" -eq 0 ]]; then
     TEST_STATUS="ok"
+  elif [[ "${test_pipeline_status[0]}" -eq 2 && "${test_pipeline_status[1]}" -eq 0 ]] \
+    && grep -Eq 'Task submission skipped \([^)]*\): No runners available' "${test_output}"; then
+    TEST_STATUS="skipped (No runners available)"
+    warn "Post-update test ${TEST_STATUS}."
   else
     TEST_STATUS="failed"
     warn "Post-update test failed."
     mark_non_fatal_failure
   fi
+  rm -f -- "${test_output}"
 }
 
 send_update_email_if_configured() {

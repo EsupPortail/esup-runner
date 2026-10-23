@@ -492,7 +492,8 @@ async def submit_task_or_exit(
 ) -> str:
     """Submit a task, or exit with a friendly message (no traceback).
 
-    This keeps `main()` simple and avoids flake8 C901 complexity.
+    Exit with code 2 and a warning when no runner is available; other submission
+    errors remain failures. This keeps `main()` simple.
     """
     task_type = str(task_request.get("task_type", "") or "").strip() or "<unknown>"
     try:
@@ -503,8 +504,8 @@ async def submit_task_or_exit(
         if _is_no_runners_available_error(message):
             print(
                 format_status(
-                    f"Task submission failed ({task_type}): No runners available",
-                    level="error",
+                    f"Task submission skipped ({task_type}): No runners available",
+                    level="warning",
                 )
             )
             print(

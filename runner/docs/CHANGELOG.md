@@ -9,11 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Shorten Live installation and MediaMTX documentation, using one explicit service-start command per role.
+- Separate native Live installation into Manager and Runner quickstarts, with
+  an explicit handoff before the first broadcast.
 - Document and recommend `FORWARDED_ALLOW_IPS` for HAProxy deployments.
 
 ### Fixed
 
+- Preserve MP4 video duration on sparse variable-frame-rate sources during CPU
+  and GPU encoding.
+- Remove duplicate CORS headers from the documented Nginx HLS proxy examples.
+- Assign the service account's `.cache` directory and new parent directories to
+  `SERVICE_USER` during `make init`, including an existing root-owned `.cache`.
 - Warn instead of failing resource and storage checks when Live setup is incomplete.
 - Retry truncated single-pass Whisper output once with overlapping chunks, keeping
   final coverage validation and confirmed trailing-silence handling.

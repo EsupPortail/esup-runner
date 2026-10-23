@@ -38,8 +38,11 @@ def test_base_handler_register_script_process_covers_empty_task_and_import_error
     handler._register_script_process("task-1", 2222)
 
 
-def test_base_handler_register_script_process_falls_back_to_pid_for_pgid(monkeypatch):
-    """Validate Base handler register script process falls back to pid for pgid."""
+@pytest.mark.parametrize("identity_error", [None, OSError, ValueError, IndexError])
+def test_base_handler_register_script_process_falls_back_to_pid_for_pgid(
+    monkeypatch, identity_error
+):
+    """Validate PGID fallback with available or unreadable process identity."""
     handler = _ConcreteBaseHandler()
     metadata: dict[str, Any] = {}
 
@@ -49,6 +52,15 @@ def test_base_handler_register_script_process_falls_back_to_pid_for_pgid(monkeyp
     )
 
     from app.core import state
+    from app.services import task_monitor
+
+    def _read_process_identity(pid):
+        assert pid == 4321
+        if identity_error is not None:
+            raise identity_error("process identity unavailable")
+        return "S", 6733
+
+    monkeypatch.setattr(task_monitor, "read_process_identity", _read_process_identity)
 
     monkeypatch.setattr(
         state,
@@ -58,7 +70,10 @@ def test_base_handler_register_script_process_falls_back_to_pid_for_pgid(monkeyp
 
     handler._register_script_process("task-pgid", 4321)
 
-    assert metadata == {"task_id": "task-pgid", "process_pid": 4321, "process_pgid": 4321}
+    expected_metadata = {"task_id": "task-pgid", "process_pid": 4321, "process_pgid": 4321}
+    if identity_error is None:
+        expected_metadata["process_start_ticks"] = 6733
+    assert metadata == expected_metadata
 
 
 def test_base_handler_terminate_external_process_covers_fallback_and_wait_error(monkeypatch):

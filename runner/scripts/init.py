@@ -3,6 +3,8 @@
 
 Creates LOG_DIR, STORAGE_DIR, CACHE_DIR and derived cache subdirectories
 for Whisper/Hugging Face/uv, then assigns ownership to SERVICE_USER.
+Also repairs ownership of the service account's .cache directory and assigns
+new parent directories to the same account.
 Legacy alias is accepted for compatibility (LOG_DIRECTORY).
 
 Must be run with sudo to set ownership correctly, but will fall back to current user if not.
@@ -129,8 +131,11 @@ def collect_directories(
     environ: Mapping[str, str] | None = None,
 ) -> Iterable[Path]:
     # Build the list of directories to create from environment/.env/default values.
-    dirs = []
-    seen = set()
+    # make/uv may have already created this parent as root before running init.
+    service_user = resolve_service_user(env, environ)
+    service_cache_dir = Path(f"/home/{service_user}/.cache")
+    dirs = [service_cache_dir]
+    seen = {service_cache_dir}
     for key in ENV_KEYS:
         value = resolve_directory_value(key, env, environ)
         if value:
@@ -143,9 +148,16 @@ def collect_directories(
 
 
 def ensure_directory(path: Path, uid: int, gid: int) -> None:
-    # Create the directory tree and set ownership.
+    """Assign the directory and newly created parents to the service account."""
+    missing_parents = []
+    parent = path.parent
+    while not parent.exists():
+        missing_parents.append(parent)
+        parent = parent.parent
+
     path.mkdir(parents=True, exist_ok=True)
-    os.chown(path, uid, gid)
+    for directory in [*reversed(missing_parents), path]:
+        os.chown(directory, uid, gid, follow_symlinks=False)
 
 
 def main() -> int:

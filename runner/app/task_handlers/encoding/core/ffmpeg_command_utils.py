@@ -112,6 +112,9 @@ def get_cmd_gpu(
         webm_min_output_fps=webm_min_output_fps,
         webm_max_output_fps=webm_max_output_fps,
     )
+    if format == "mp4" and not is_webm:
+        # Keep sparse MP4 timestamps representable without changing CFR or HLS timing.
+        fps_mode_options += "-enc_time_base:v 1:90000 "
     nvenc_rate_control_options = build_nvenc_rate_control_options(is_webm=is_webm)
 
     filename = os.path.splitext(os.path.basename(file))[0]
@@ -171,6 +174,9 @@ def get_cmd_cpu(
         webm_min_output_fps=webm_min_output_fps,
         webm_max_output_fps=webm_max_output_fps,
     )
+    if format == "mp4" and not is_webm:
+        # Keep sparse MP4 timestamps representable without changing CFR or HLS timing.
+        fps_mode_options += "-enc_time_base:v 1:90000 "
     cpu_quality_options = build_cpu_quality_options(is_webm=is_webm)
 
     filename = os.path.splitext(os.path.basename(file))[0]

@@ -2,6 +2,7 @@
 
 import importlib
 import importlib.util
+import shlex
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -488,6 +489,57 @@ def test_get_cmd_gpu_keeps_passthrough_for_non_webm_sources(tmp_path):
 
     assert "-fps_mode passthrough " in cmd
     assert "-rc cbr -cbr 1 " not in cmd
+
+
+@pytest.mark.parametrize("encoding_type", ["cpu", "gpu"])
+@pytest.mark.parametrize("output_format", ["mp4", "m3u8"])
+@pytest.mark.parametrize(
+    "filename,codec,is_webm",
+    [
+        ("input.mp4", "h264", False),
+        ("input.mov", "hevc", False),
+        ("input.webm", "vp8", True),
+        ("input.mkv", "vp9", True),
+    ],
+)
+def test_video_time_base_is_scoped_to_each_passthrough_mp4_output(
+    tmp_path, monkeypatch, encoding_type, output_format, filename, codec, is_webm
+):
+    """Protect every MP4 rendition without changing HLS, CFR, input or cut options."""
+    enc = _load_encoding_script_module()
+    monkeypatch.setattr(enc, "_VIDEOS_DIR", str(tmp_path))
+    monkeypatch.setattr(enc, "_VIDEOS_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(enc, "_SOURCE_VIDEO_FPS", 29.97)
+    monkeypatch.setattr(enc, "SUBTIME", " -ss 2 -to 12 ")
+    monkeypatch.setattr(enc, "_choose_h264_encoder", lambda: ("libx264", ""))
+
+    builder = enc.get_cmd_cpu if encoding_type == "cpu" else enc.get_cmd_gpu
+    args = shlex.split(builder(output_format, codec, 720, filename))
+    input_index = args.index("-i")
+    assert "-enc_time_base:v" not in args[: input_index + 2]
+    assert args[input_index + 1] == str(tmp_path / filename)
+
+    output_paths = {str(tmp_path / f"{height}p_input.{output_format}") for height in (360, 720)}
+    output_indices = [index for index, value in enumerate(args) if value in output_paths]
+    assert len(output_indices) == 2
+    start = input_index + 2
+    for output_index in output_indices:
+        output_args = args[start:output_index]
+        if output_format == "mp4" and not is_webm:
+            assert output_args.count("-enc_time_base:v") == 1
+            assert output_args[output_args.index("-enc_time_base:v") + 1] == "1:90000"
+        else:
+            assert "-enc_time_base:v" not in output_args
+        assert output_args[output_args.index("-fps_mode") + 1] == (
+            "cfr" if is_webm else "passthrough"
+        )
+        if is_webm:
+            assert output_args[output_args.index("-r") + 1] == "30"
+        else:
+            assert "-r" not in output_args
+        assert output_args[output_args.index("-ss") + 1] == "2"
+        assert output_args[output_args.index("-to") + 1] == "12"
+        start = output_index + 1
 
 
 def test_bitrate_helpers_cover_error_and_kilobit_formatting():

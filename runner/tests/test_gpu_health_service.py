@@ -188,6 +188,7 @@ async def test_gpu_health_loop_propagates_cancellation_during_check(monkeypatch)
 async def test_service_manager_starts_monitoring_only_on_enabled_primary_gpu_instance(
     monkeypatch, encoding_type, interval_hours, instance_id, enabled
 ):
+    monkeypatch.setattr(service_manager_module.config, "RUNNER_TASK_TYPES", {"encoding"})
     monkeypatch.setattr(service_manager_module.config.LIVE, "pod_url", "")
     monkeypatch.setattr(service_manager_module.config, "ENCODING_TYPE", encoding_type)
     monkeypatch.setattr(

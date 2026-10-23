@@ -176,7 +176,7 @@ three use [task handlers](../app/task_handlers); Live uses a dedicated runtime.
 - Capacity: one task at a time per instance, including mixed Live/VOD instances. Live instances in one deployment share MediaMTX and resolve their HLS URLs and directories from templates.
 - CPU/GPU: libx264 or NVIDIA NVENC, selected through the Live configuration.
 - Contract, payloads, outputs and errors: [TYPE_LIVE.md](TYPE_LIVE.md).
-- End-to-end installation: [manager/docs/LIVE_INSTALLATION.md](../../manager/docs/LIVE_INSTALLATION.md).
+- Installation: [Manager quickstart](../../manager/docs/LIVE_QUICKSTART.md) steps 1–4, then [Runner quickstart](LIVE_QUICKSTART.md), then Manager step 5 for the first broadcast.
 - Operations and recovery: [manager/docs/LIVE_OPERATIONS.md](../../manager/docs/LIVE_OPERATIONS.md).
 - Runner configuration and validation: [LIVE.md](LIVE.md).
 

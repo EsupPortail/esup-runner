@@ -3,11 +3,10 @@
 This guide describes how to install and run the **Esup-Runner Runner** service on a Debian/Ubuntu server.
 For Docker-based deployment, see [DOCKER.md](DOCKER.md).
 For day-to-day operations after installation, see [OPERATIONS.md](OPERATIONS.md).
-For any Runner declaring `live`, start with the Manager's
-[LIVE_INSTALLATION.md](../../manager/docs/LIVE_INSTALLATION.md), then use
-[MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md) for Runner-specific details. MediaMTX >= 1.21.1
-installation is the same on CPU and GPU machines; reuse an existing installation
-on the host and prepare one MediaMTX service shared by the Runner’s Live instances.
+For Live streaming, complete steps 1–4 of the [Manager quickstart](../../manager/docs/LIVE_QUICKSTART.md)
+first. Follow this guide through **Install Python dependencies**, then continue
+with the [Runner Live quickstart](LIVE_QUICKSTART.md) for MediaMTX, connection
+settings, HLS routing and service startup. Return to Manager step 5 for the first broadcast.
 
 ## Version compatibility note (Runner & Manager)
 
@@ -62,7 +61,7 @@ Install `uv` as the service account (`esup-runner` by default):
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Re-open your shell session (recommended) or reload your shell init files, then verify:
+Re-open your shell session (recommended) or reload your shell init files (via `source .bashrc`), then verify:
 
 ```bash
 uv --version
@@ -130,6 +129,8 @@ Notes:
 ### Initialize required directories
 
 This creates required directories based on your `.env` values (storage, logs, etc.).
+It also assigns new parent directories and `/home/<SERVICE_USER>/.cache` to
+`SERVICE_USER`. Rerun this command to repair a `.cache` directory owned by root.
 
 ```bash
 sudo make init
@@ -139,7 +140,7 @@ sudo make init
 
 From `/opt/esup-runner/runner`:
 
-- If this runner achieve only **encoding** ot **studio** tasks, install the default:
+- For **encoding**, **studio** or **live** without transcription, install the default:
 
 ```bash
 make sync
@@ -184,6 +185,10 @@ After either command, apply the lockfile on the target host with the appropriate
 For the CUDA 12 profile, use `make sync-transcription-gpu-cuda12`.
 
 ### Verification checks
+
+**Installing Live?** Continue with the [Runner Live quickstart](LIVE_QUICKSTART.md)
+now. It includes Live configuration, verification and systemd startup; use it
+for the remaining Live installation steps.
 
 Before starting the service, you can run a few built-in checks from `/opt/esup-runner/runner`.
 

@@ -1,6 +1,6 @@
 # Live Runner: media, operations and validation
 
-> For a new deployment, follow the Manager's [short Live installation path](../../manager/docs/LIVE_INSTALLATION.md).
+> For a new native deployment, complete steps 1–4 of the [Manager quickstart](../../manager/docs/LIVE_QUICKSTART.md), follow the [Runner quickstart](LIVE_QUICKSTART.md), then return to Manager step 5 for the first broadcast.
 > This page is the Runner-side configuration, exposure, recovery and validation reference.
 
 For the task contract, Manager parameters, request examples and outputs, see
@@ -453,12 +453,17 @@ location /runner-1/hls/ {
     proxy_buffering off;
     proxy_cache off;
     access_log off;
-    add_header Access-Control-Allow-Origin "https://pod.univ.fr" always;
 }
 ```
 
 For the second Live in the three-instance example, add an equivalent
 `/runner-2/hls/` location targeting port `8084`.
+
+The Runner sets CORS headers through `CORS_ALLOW_ORIGINS` in `runner/.env`
+(`*` by default with credentials disabled). To restrict browser playback to Pod,
+set `CORS_ALLOW_ORIGINS=https://pod.univ.fr` and restart the Runner. Let Nginx
+forward these headers; adding `Access-Control-Allow-Origin` again at the proxy
+creates duplicate headers and can prevent browser playback.
 
 ### HAProxy with one rule for multiple instances
 

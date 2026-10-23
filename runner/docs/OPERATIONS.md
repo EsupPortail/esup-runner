@@ -4,8 +4,9 @@ This document centralizes day-to-day production operations for the runner.
 
 For RTMP-to-HLS Live operations and recovery, use the Manager's dedicated
 [Live operations runbook](../../manager/docs/LIVE_OPERATIONS.md) and the
-[Runner Live reference](LIVE.md). For a new deployment, start with the
-[short installation path](../../manager/docs/LIVE_INSTALLATION.md).
+[Runner Live reference](LIVE.md). For a new native deployment, start with the
+[Manager quickstart](../../manager/docs/LIVE_QUICKSTART.md). For Docker, use
+[Live Compose installation](../../manager/docs/LIVE_INSTALLATION.md#docker-compose-shortcut).
 
 ## Scope and assumptions
 

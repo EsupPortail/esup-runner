@@ -1,8 +1,10 @@
 # MediaMTX setup for Live Runners
 
-For the shortest end-to-end path, start with the Manager's
-[Live installation guide](../../manager/docs/LIVE_INSTALLATION.md). This page
-keeps the Runner-specific MediaMTX details and validation links.
+For a first native deployment, start with the
+[Manager quickstart](../../manager/docs/LIVE_QUICKSTART.md), then follow the
+[Runner quickstart](LIVE_QUICKSTART.md). For Docker, use
+[Live Compose installation](../../manager/docs/LIVE_INSTALLATION.md#docker-compose-shortcut).
+This page keeps the Runner-specific MediaMTX details and validation links.
 
 A Runner server needs one **MediaMTX >= 1.21.1** service, shared by all its Live
 instances and separate from the Manager's MediaMTX. Reuse a supported executable

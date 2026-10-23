@@ -181,6 +181,9 @@ This example includes optional fields (`app_version`, `affiliation`, `completion
 ```
 
 ## Error handling
+- MP4 outputs that preserve the source frame cadence use a 1/90000-second video
+  encoder time base on CPU and GPU to prevent timestamp overflow on sparse
+  variable-frame-rate sources. HLS and WebM constant-frame-rate handling are unchanged.
 - HLS/MP4 outputs that stop more than five seconds before their expected stream
   duration fail the task, even if FFmpeg exits successfully. The error identifies
   the first incomplete file/stream, its produced and expected durations, and the

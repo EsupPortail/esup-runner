@@ -161,7 +161,7 @@ make sync-transcription-gpu
 Notes:
 - `sync-transcription-cpu` installs a CPU-only torch profile on Linux x86_64, which avoids `nvidia-*` packages.
 - `sync-transcription-gpu` keeps the default `torch` resolution, intended for GPU/CUDA environments.
-- `sync-transcription-gpu-cuda12` installs the legacy CUDA 12-compatible PyTorch stack (`torch==2.10.0+cu128` from the PyTorch `cu128` index).
+- `sync-transcription-gpu-cuda12` installs the CUDA 12.6 PyTorch stack (`torch==2.13.0+cu126` from the PyTorch `cu126` index).
 - On Debian/Ubuntu GPU transcription hosts, install OS build headers before first runs:
   `sudo apt install -y build-essential python3-dev` (prevents `fatal error: Python.h: No such file or directory` from Triton runtime JIT).
 - Current transcription dependency support:

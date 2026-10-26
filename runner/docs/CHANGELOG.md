@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Require torch 2.13.0 or newer to fix CVE-2025-3000. Move the CUDA 12
+  transcription profile to `torch==2.13.0+cu126`; run
+  `make sync-transcription-gpu-cuda12` to update existing installations.
 - Require Pillow 13.0.0 or newer to fix image parsing, TIFF encoding, and
   Ghostscript argument injection vulnerabilities.
 

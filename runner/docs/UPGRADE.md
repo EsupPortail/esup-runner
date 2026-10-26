@@ -150,7 +150,7 @@ Notes:
 - Current transcription dependency support:
   - `transcription-cpu`: supported on Linux x86_64 and macOS Apple Silicon (`arm64`).
   - `transcription-gpu`: supported on Linux x86_64 GPU/CUDA hosts.
-  - `transcription-gpu-cuda12`: legacy CUDA 12-compatible GPU profile, pinned to `torch==2.10.0+cu128`.
+  - `transcription-gpu-cuda12`: CUDA 12.6 GPU profile, pinned to `torch==2.13.0+cu126`.
   - macOS Intel (`x86_64`) is not supported for transcription with the current `torch` stack because upstream wheels are no longer published for that platform.
 - On Debian/Ubuntu GPU transcription hosts, ensure OS build headers are present:
   `sudo apt install -y build-essential python3-dev` (avoids `fatal error: Python.h: No such file or directory` when Triton JIT compiles helper modules).

@@ -92,7 +92,8 @@ async def verify_csrf(request: Request) -> None:
     """Reject unsafe admin requests before any handler side effects.
 
     Routes must also depend on verify_admin. API token authentication and runner
-    callbacks do not use this dependency.
+    callbacks do not use this dependency. Close parsed form uploads when token
+    validation rejects a request.
     """
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
@@ -112,4 +113,5 @@ async def verify_csrf(request: Request) -> None:
         value = form.get("csrf_token")
         token = value if isinstance(value, str) else ""
     if not _valid_token(request, token):
+        await request.close()
         raise HTTPException(status_code=403, detail="Invalid CSRF token; reload the page and retry")

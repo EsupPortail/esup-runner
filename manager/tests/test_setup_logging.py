@@ -28,6 +28,23 @@ from app.core.setup_logging import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_uvicorn_loggers():
+    """Restore existing handlers and close the handlers created by each test."""
+    loggers = [logging.getLogger(name) for name in ("uvicorn", "uvicorn.error", "uvicorn.access")]
+    original_handlers = [logger.handlers[:] for logger in loggers]
+    for logger in loggers:
+        logger.handlers = []
+
+    yield
+
+    handlers = {handler for logger in loggers for handler in logger.handlers}
+    for logger, original in zip(loggers, original_handlers):
+        logger.handlers = original
+    for handler in handlers:
+        handler.close()
+
+
 def test_json_formatter_includes_custom_fields():
     """Validate Json formatter includes custom fields."""
     formatter = JSONFormatter()

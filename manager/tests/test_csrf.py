@@ -8,6 +8,7 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from starlette.datastructures import UploadFile
 from task_routes_helpers import make_task
 
 from app.api.routes import admin, task
@@ -51,7 +52,8 @@ def _request(*, method="POST", authorization="Basic test", **headers):
 
 
 def _app(root_path=""):
-    application = FastAPI(root_path=root_path)
+    application = FastAPI()
+    application.root_path = root_path
     application.include_router(admin.router)
     application.include_router(task.router)
     application.add_middleware(RootPathProxyCompatibilityMiddleware)
@@ -312,7 +314,15 @@ def test_form_token_survives_another_worker_and_reverse_proxy(
     assert effects == ["_upsert_admin_user_in_env", "reload", "publish"]
 
 
-def test_header_token_takes_precedence_over_form_and_files_are_not_tokens(csrf_client):
+def test_header_token_takes_precedence_over_form_and_files_are_not_tokens(csrf_client, monkeypatch):
+    closed_uploads = []
+    original_close = UploadFile.close
+
+    async def close_upload(upload):
+        await original_close(upload)
+        closed_uploads.append(upload.file.closed)
+
+    monkeypatch.setattr(UploadFile, "close", close_upload)
     client, effects = csrf_client
     token = _page_token(client)
     response = client.post(
@@ -327,6 +337,7 @@ def test_header_token_takes_precedence_over_form_and_files_are_not_tokens(csrf_c
         files={"csrf_token": ("token.txt", token)},
     )
     assert response.status_code == 403
+    assert closed_uploads == [True]
     assert effects == []
 
 

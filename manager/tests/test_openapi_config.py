@@ -227,10 +227,10 @@ def test_custom_openapi_preserves_configured_servers():
 
 def test_public_openapi_route_honors_root_path():
     """Expose the request root path as the first server in public mode."""
-    app = FastAPI(root_path="/manager")
+    app = FastAPI()
     setup_openapi_config(app)
 
-    with TestClient(app) as client:
+    with TestClient(app, root_path="/manager") as client:
         response = client.get("/openapi.json")
 
     assert response.status_code == 200
@@ -239,7 +239,7 @@ def test_public_openapi_route_honors_root_path():
 
 def test_openapi_schema_for_request_reuses_existing_root_path_server():
     """Avoid duplicating a root-path server already present in the schema."""
-    app = FastAPI(root_path="/manager")
+    app = FastAPI()
     schema = {"openapi": "3.1.0", "servers": [{"url": "/manager"}]}
     app.openapi = lambda: schema  # type: ignore[method-assign]
     request = Request(
@@ -389,7 +389,7 @@ def test_setup_protected_openapi_routes_without_token_keeps_plain_openapi_url_an
 
 def test_protected_openapi_routes_honor_root_path(monkeypatch):
     """Prefix the protected schema URL and scope its authentication cookie."""
-    app = FastAPI(root_path="/manager", openapi_url=None, docs_url=None, redoc_url=None)
+    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
     setup_protected_openapi_routes(app)
 
     from app.core.auth import verify_openapi_token
@@ -399,7 +399,7 @@ def test_protected_openapi_routes_honor_root_path(monkeypatch):
     monkeypatch.setattr(config, "OPENAPI_COOKIE_MAX_AGE_SECONDS", 900)
     app.dependency_overrides[verify_openapi_token] = lambda: "root-path-token"
 
-    with TestClient(app) as client:
+    with TestClient(app, root_path="/manager") as client:
         docs = client.get("/docs")
         redoc = client.get("/redoc")
         schema = client.get("/openapi.json")

@@ -98,10 +98,15 @@ def test_manager_health_includes_counts(client, clean_state, path):
 
 def test_manager_health_openapi_path_with_root_path():
     """Keep the API path distinct from the public Manager prefix."""
-    test_app = FastAPI(root_path="/manager")
+    test_app = FastAPI()
     test_app.include_router(manager_router)
 
-    paths = test_app.openapi()["paths"]
+    with TestClient(test_app, root_path="/manager") as client:
+        response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schema = response.json()
+    paths = schema["paths"]
     assert "/api/health" in paths
     assert "/manager/health" not in paths
-    assert f"{test_app.root_path}/api/health" == "/manager/api/health"
+    assert f'{schema["servers"][0]["url"]}/api/health' == "/manager/api/health"

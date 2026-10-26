@@ -43,14 +43,17 @@ def test_static_assets_are_served_with_configured_root_path(monkeypatch, request
     assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
 
 
-def test_lifespan_adds_protected_openapi_when_private(monkeypatch):
-    """Validate Lifespan adds protected openapi when private."""
+@pytest.mark.parametrize("root_path", ["", "/manager"])
+def test_lifespan_adds_protected_openapi_when_private(monkeypatch, root_path):
+    """Initialize private docs and health links with the configured deployment prefix."""
     orig_visibility = config.API_DOCS_VISIBILITY
 
     # Force private docs so both openapi_config and lifespan branch run
     monkeypatch.setattr(config, "API_DOCS_VISIBILITY", "private")
+    monkeypatch.setattr(config, "MANAGER_ROOT_PATH", root_path)
 
     reloaded_main = importlib.reload(main)
+    assert reloaded_main.app.root_path == root_path
 
     async def _noop(*_, **__):
         return None
@@ -70,8 +73,10 @@ def test_lifespan_adds_protected_openapi_when_private(monkeypatch):
         reloaded_main.app.state.routers_included = False
 
     with TestClient(reloaded_main.app) as client:
-        client.get("/")
+        response = client.get("/")
 
+    assert response.status_code == 200
+    assert response.json()["health_check"] == f"{root_path}/api/health"
     assert reloaded_main.openapi_config["docs_url"] is None
     assert reloaded_main.openapi_config["redoc_url"] is None
     assert reloaded_main.openapi_config["openapi_url"] is None

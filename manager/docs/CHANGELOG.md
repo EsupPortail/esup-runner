@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.11.0] - 2026-10-26
+
 ### Security
 
 - Require Pillow 13.0.0 or newer to fix image parsing, TIFF encoding, and

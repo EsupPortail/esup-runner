@@ -106,7 +106,10 @@ if config.API_DOCS_VISIBILITY == "private":
     openapi_config["redoc_url"] = None
     openapi_config["openapi_url"] = None
 
-app = FastAPI(lifespan=lifespan, root_path=config.MANAGER_ROOT_PATH, **openapi_config)
+app = FastAPI(lifespan=lifespan, **openapi_config)
+# Preserve the configured prefix for every ASGI server without using FastAPI's
+# deprecated constructor parameter.
+app.root_path = config.MANAGER_ROOT_PATH
 
 # Rate limiting configuration
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])

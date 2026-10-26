@@ -129,6 +129,7 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 pythonpath = ["./app"]
 python_files = "test_*.py"
+asyncio_default_fixture_loop_scope = "function"
 timeout = 30
 timeout_method = "thread"
 filterwarnings = [

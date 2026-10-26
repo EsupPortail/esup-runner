@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Require Pillow 13.0.0 or newer to fix image parsing, TIFF encoding, and
+  Ghostscript argument injection vulnerabilities.
+
 ### Changed
 
 - Separate native Live installation into Manager and Runner quickstarts, with

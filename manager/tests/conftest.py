@@ -1,6 +1,7 @@
 """Pytest configuration and fixtures for the Manager test suite."""
 
 import asyncio
+import atexit
 import os
 import sys
 import tempfile
@@ -176,6 +177,7 @@ from app.core.config import config
 # Configure this before importing state; fixture teardown restores that same safe
 # backend, and the temporary directory is removed after state shuts down.
 _test_data = tempfile.TemporaryDirectory(prefix="esup-manager-tests-")
+atexit.register(_test_data.cleanup)
 config.MANAGER_DATA_DIR = _test_data.name
 from app.core import state as state_module
 

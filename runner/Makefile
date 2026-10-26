@@ -176,9 +176,9 @@ lock-upgrade:
 # Generate a lockfile compatible with CUDA 12 on Linux x86_64.
 # Strategy:
 # - Use the persistent transcription-gpu-cuda12 extra.
-# - Resolve torch from the PyTorch cu128 index (torch 2.10.0+cu128).
+# - Resolve torch from the PyTorch cu126 index (torch 2.13.0+cu126).
 lock-upgrade-gpu-12:
-	@echo "==> uv lock --upgrade with dev + transcription-gpu-cuda12 (torch 2.10.0+cu128)"
+	@echo "==> uv lock --upgrade with dev + transcription-gpu-cuda12 (torch 2.13.0+cu126)"
 	@$(MAKE) lock-upgrade EXTRAS=dev,transcription-gpu-cuda12
 
 # lock-upgrade-gpu-latest

@@ -184,7 +184,9 @@ Declare Live in `RUNNER_TASK_TYPES`, for example
 All Live instances in this `.env` share MediaMTX, credentials, encoder settings,
 variants and timeouts. `LIVE_PUBLIC_HLS_BASE_URL` accepts `{port}` (the actual
 API port) and `{instance_id}` (the zero-based index including VOD groups);
-resolved public URLs must differ. `LIVE_HLS_DIRECTORY` accepts `{instance_id}`; use `/dev/shm/hls` on Linux
+resolved public URLs must differ. When the URL path ends in `/hls`, the worker
+also serves that path directly, allowing proxies to preserve the public prefix.
+`LIVE_HLS_DIRECTORY` accepts `{instance_id}`; use `/dev/shm/hls` on Linux
 for temporary HLS output in memory (see [storage and sizing](LIVE.md#hls-storage-in-memory-on-linux));
 a static root is also valid because each session owns a UUID subdirectory.
 Age cleanup is disabled for all groups sharing an environment with Live.

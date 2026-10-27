@@ -89,7 +89,7 @@ loopback connections only. Avoid `*`, which trusts forwarding headers from any
 peer, and restrict direct access to the application ports.
 
 HAProxy must set the forwarding headers and preserve the public `Host` header;
-see the [Live HAProxy example](LIVE.md#haproxy-with-one-rule-for-multiple-instances).
+see the [Live HAProxy example](LIVE.md#haproxy-with-static-routes).
 Restart the affected services completely after changing this setting; an
 application configuration reload does not reconfigure the HTTP servers.
 See the [Uvicorn HTTP settings](https://uvicorn.dev/settings/#http).

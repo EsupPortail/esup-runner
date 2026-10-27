@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Accept configured public HLS prefixes such as `/runner-0/hls/` without proxy URL rewriting.
+
 
 ## [1.11.0] - 2026-10-26
 

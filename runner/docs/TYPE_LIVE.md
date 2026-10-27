@@ -234,8 +234,9 @@ deleted. Scaling preserves the source aspect ratio within each configured box.
 The public master URL is
 `<LIVE_PUBLIC_HLS_BASE_URL>/<live_id>/master.m3u8`. Clients must use the exact
 `hls_url` returned by the Manager, which accounts for the configured public domain
-and proxy prefix. The Runner's local serving route is
-`/hls/<live_id>/<filename>`.
+and proxy prefix. The Runner serves `/hls/<live_id>/<filename>` and, when the
+configured public base URL ends in `/hls`, its full public path too, for example
+`/runner-0/hls/<live_id>/<filename>`. Proxies can preserve this path unchanged.
 
 The general task status stays `running` while the Live session is active.
 Detailed progress is recorded in the Runner's `live` metadata and exposed by the

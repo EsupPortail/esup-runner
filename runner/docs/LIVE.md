@@ -155,9 +155,9 @@ By default, HLS uses `RUNNER_PROTOCOL://RUNNER_HOST:{port}/hls` and the
 `{port}` is the actual port chosen by the launcher, including its fallback when
 a planned port is occupied. For a reverse proxy, use a stable path such as
 `https://live.univ.fr/runner-{instance_id}/hls` and route the prefix to that
-instance's API. The application computes the URL; it does not create proxy
-rules. See the HAProxy example below for a single calculated route across
-instances on one host.
+instance's API. When the URL path ends in `/hls`, the Runner also accepts that
+full path directly; the proxy can preserve it unchanged. The application does
+not create proxy rules. See the [static HAProxy example](#haproxy-with-static-routes).
 Only these literal placeholders are supported, without Python expressions or
 format modifiers.
 
@@ -437,10 +437,11 @@ Runner shutdown or forced restart once cleanup completes and its RTMP source
 is still active. An explicit stop remains effective. Otherwise republish the
 RTMP source for a new automatic session, or have the client request one explicitly.
 
-The Runner serves files through `/hls/<live_id>/...`. Expose only this prefix on
-the public frontend and keep `/task`, `/runner` and `/docs` on the internal
-network. Use a readable, stable public prefix containing the Runner's instance
-index, for example
+The Runner serves files through `/hls/<live_id>/...` and the configured public
+path when it ends in `/hls`, for example `/runner-3/hls/<live_id>/...`. Expose
+only the instance's HLS prefix on the public frontend and keep `/task`, `/runner`
+and `/docs` on the internal network. Use a readable, stable public prefix
+containing the Runner's instance index, for example
 `https://live.univ.fr/runner-3/hls/<live_id>/master.m3u8`. The index is the
 Runner instance index, not its position among Live instances; it starts at 0
 and includes VOD instances. Pod uses the exact `hls_url` returned by the Manager.
@@ -449,7 +450,7 @@ Nginx example, with the upstream and public prefix adjusted as needed:
 
 ```nginx
 location /runner-1/hls/ {
-    proxy_pass http://127.0.0.1:8083/hls/;
+    proxy_pass http://127.0.0.1:8083;
     proxy_buffering off;
     proxy_cache off;
     access_log off;
@@ -465,13 +466,13 @@ set `CORS_ALLOW_ORIGINS=https://pod.univ.fr` and restart the Runner. Let Nginx
 forward these headers; adding `Access-Control-Allow-Origin` again at the proxy
 creates duplicate headers and can prevent browser playback.
 
-### HAProxy with one rule for multiple instances
+### HAProxy with static routes
 
-When all Runner instances are on the same host and use consecutive ports,
-HAProxy can derive the destination port from the instance index. This avoids
-one frontend/backend routing rule per Live instance. For example, with
-`RUNNER_BASE_PORT=8082`, `/runner-2/hls/<live_id>/...` is rewritten to
-`/hls/<live_id>/...` and sent to port `8084`.
+Route each public HLS prefix to its worker and preserve the full path. With
+`LIVE_PUBLIC_HLS_BASE_URL=https://live.univ.fr/runner-{instance_id}/hls`, no URL
+rewriting or regular expressions are needed. For the three-instance example
+above (`RUNNER_BASE_PORT=8082`), Live instances 1 and 2 listen on ports 8083 and
+8084; instance 0 handles VOD.
 
 When using HAProxy, explicitly set `FORWARDED_ALLOW_IPS` in `runner/.env`, and
 in `manager/.env` if the Manager is also proxied:
@@ -498,31 +499,61 @@ frontend https
     bind :443 ssl crt /etc/haproxy/certs/live.pem
     mode http
 
-    # Example for 12 configured instances (indices 0 through 11).
-    # Restrict this ACL to the actual instance indices in this deployment.
-    acl live_hls path_reg ^/runner-(0|[1-9]|1[01])/hls/
-    use_backend be_runner_hls if live_hls
+    acl live_1 path_beg /runner-1/hls/
+    acl live_2 path_beg /runner-2/hls/
+    use_backend be_runner_1 if live_1
+    use_backend be_runner_2 if live_2
     default_backend be_application
 
-backend be_runner_hls
+backend be_runner_1
     mode http
-    # Set forwarding headers from this trusted HTTPS proxy.
     http-request set-header X-Forwarded-Proto https
     http-request set-header X-Forwarded-For %[src]
-    # Fix the destination IP to this Runner host.
-    http-request set-dst ipv4(127.0.0.1)
-    # Port = RUNNER_BASE_PORT + instance index.
-    http-request set-var(txn.runner_port) path,field(2,/),field(2,-),add(8082)
-    http-request set-dst-port var(txn.runner_port)
-    # Keep the Runner's original /hls/... route.
-    http-request set-path %[path,regsub(^/runner-[0-9]+,)]
-    server runner 0.0.0.0:0
+    server runner_1 runner.internal:8083 check
+
+backend be_runner_2
+    mode http
+    http-request set-header X-Forwarded-Proto https
+    http-request set-header X-Forwarded-For %[src]
+    server runner_2 runner.internal:8084 check
 ```
+
+Replace `runner.internal` with the Runner host's DNS name or private IP. Repeat
+the ACL and backend for each Live instance, using its resolved prefix and actual
+port. A request for `/runner-2/hls/<live_id>/master.m3u8` reaches
+`http://runner.internal:8084/runner-2/hls/<live_id>/master.m3u8` unchanged.
+Fixed backend ports must remain available: if the launcher falls back to another
+port, update HAProxy to match. Keep worker ports reachable only from HAProxy and
+the internal services that need them. Manager routing is configured separately;
+see [Manager configuration](../../manager/docs/CONFIGURATION.md).
 
 Validate the merged configuration before reloading HAProxy:
 
 ```bash
 haproxy -c -f /etc/haproxy/haproxy.cfg
+```
+
+### HAProxy with one rule for multiple instances
+
+Alternatively, when all instances are on one host with consecutive ports,
+HAProxy can derive the destination port from the instance index. This uses a
+regular expression for matching but still preserves the full public path.
+Use the same HTTPS frontend, forwarding headers and trusted proxy configuration
+as above, replacing the static ACLs and HLS backends with:
+
+```haproxy
+    # In the frontend: restrict this ACL to the deployed instance indices.
+    acl live_hls path_reg ^/runner-(0|[1-9]|1[01])/hls/
+    use_backend be_runner_hls if live_hls
+
+backend be_runner_hls
+    mode http
+    http-request set-header X-Forwarded-Proto https
+    http-request set-header X-Forwarded-For %[src]
+    http-request set-dst ipv4(127.0.0.1)
+    http-request set-var(txn.runner_port) path,field(2,/),field(2,-),add(8082)
+    http-request set-dst-port var(txn.runner_port)
+    server runner 0.0.0.0:0
 ```
 
 Change `8082` in `add(8082)` to the Runner's `RUNNER_BASE_PORT`. Keep
@@ -545,9 +576,8 @@ at the Runner; avoid adding a second conflicting CORS header at HAProxy.
 
 The server returns HLS/TS MIME types and `no-store` playlists. Do not enable
 persistent playlist caching. Adjust CORS on the Runner and frontend to avoid
-duplicate headers. The HAProxy example above provides the same prefix routing
-without per-instance locations. The frontend must enforce viewer access control
-for private streams; a session UUID is not an authorization mechanism.
+duplicate headers. The frontend must enforce viewer access control for private
+streams; a session UUID is not an authorization mechanism.
 Successful HLS requests are filtered out of the Uvicorn access log; errors
 remain visible. Application logs track transitions rather than individual
 segments.

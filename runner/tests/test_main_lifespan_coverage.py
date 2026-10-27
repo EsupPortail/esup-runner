@@ -6,8 +6,18 @@ from fastapi import FastAPI
 import app.main as main_module
 
 
-def test_include_api_routers_is_idempotent():
+@pytest.mark.parametrize("task_type", ["live", "encoding"])
+@pytest.mark.parametrize("public_path", ["/hls", "/runner-0/hls", "/external"])
+def test_include_api_routers_is_idempotent(monkeypatch, task_type, public_path):
     """Validate API routers are included only once."""
+    monkeypatch.setattr(main_module.config, "RUNNER_TASK_TYPES", {task_type})
+    monkeypatch.setattr(
+        main_module.config,
+        "LIVE",
+        main_module.config.LIVE.model_copy(
+            update={"public_hls_base_url": f"https://public.example{public_path}"}
+        ),
+    )
     test_app = FastAPI()
 
     main_module._include_api_routers(test_app)

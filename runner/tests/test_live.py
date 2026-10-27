@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 from app.api.routes import task
 from app.api.routes.live import hls_file, hls_file_endpoint
@@ -363,6 +364,111 @@ async def test_ready_requires_all_variants_and_public_files_are_contained(live_e
         await hls_file(live_env.task_id, "../../status.json")
     (directory / "low" / "segment_2.ts").unlink()
     assert not hls_ready(directory, config.LIVE)
+
+
+@pytest.mark.parametrize(
+    "instance,base_port,public_path",
+    [
+        (0, 8081, "/runner-{instance_id}/hls"),
+        (0, 8001, "/runner-{instance_id}/hls"),
+        (1, 8001, "/runner-{instance_id}/hls"),
+        (2, 8001, "/runner-{instance_id}/hls"),
+        (3, 8001, "/runner-{instance_id}/hls"),
+        (2, 8001, "/campus/runner-{instance_id}/hls/"),
+    ],
+)
+def test_public_hls_prefix_serves_complete_playlists_and_segments(
+    live_env, monkeypatch, instance, base_port, public_path
+):
+    """A path-preserving proxy reaches the owning worker's complete HLS output."""
+    from app.main import _include_api_routers
+
+    config.LIVE.public_hls_base_url = f"https://live.example{public_path}"
+    monkeypatch.setattr(config, "LIVE", config.LIVE.for_instance(instance, base_port + instance))
+    monkeypatch.setattr(hls_viewers, "_viewers", {})
+    tracked(live_env)
+    write_hls(live.directory_for(live_env.task_id), config.LIVE)
+    live.update(live_env.task_id, hls_ready=True)
+    application = FastAPI()
+    _include_api_routers(application)
+    prefix = public_path.replace("{instance_id}", str(instance)).rstrip("/")
+    with TestClient(
+        application, base_url=f"http://runner.internal:{base_port + instance}"
+    ) as client:
+        master = client.get(f"{prefix}/{live_env.task_id}/master.m3u8?viewer=example")
+        assert master.status_code == 200
+        assert master.headers["content-type"] == "application/vnd.apple.mpegurl"
+        assert master.headers["cache-control"] == "no-store"
+        variants = [line for line in master.text.splitlines() if not line.startswith("#")]
+        assert len(variants) == len(config.LIVE.variants)
+        for variant in variants:
+            playlist = client.get(master.url.join(variant))
+            assert playlist.status_code == 200
+            assert playlist.headers["cache-control"] == "no-store"
+            segments = [line for line in playlist.text.splitlines() if not line.startswith("#")]
+            for segment in segments:
+                media = client.get(playlist.url.join(segment))
+                assert media.status_code == 200
+                assert media.content == b"media"
+                assert media.headers["content-type"] == "video/mp2t"
+                assert media.headers["cache-control"] == "public, max-age=60"
+        direct = client.get(f"/hls/{live_env.task_id}/master.m3u8")
+        assert direct.content == master.content
+    assert hls_viewers.count(live_env.task_id) == 1
+
+
+def test_public_hls_prefix_keeps_readiness_ownership_and_path_guards(live_env, tmp_path):
+    """A public HLS prefix cannot expose controls, other sessions or unsafe files."""
+    from app.main import _include_api_routers
+
+    config.LIVE.public_hls_base_url = "https://live.example/runner-0/hls"
+    directory = live.directory_for(live_env.task_id)
+    write_hls(directory, config.LIVE)
+    sibling_id = str(uuid4())
+    write_hls(live.directory_for(sibling_id), config.LIVE)
+    application = FastAPI()
+    _include_api_routers(application)
+    path = f"/runner-0/hls/{live_env.task_id}"
+    with TestClient(application) as client:
+        assert client.get(f"{path}/master.m3u8").status_code == 404
+        tracked(live_env)
+        live.update(live_env.task_id, hls_ready=True)
+        assert client.get(f"{path}/master.m3u8").status_code == 200
+        for hidden in (
+            f"/runner-1/hls/{live_env.task_id}/master.m3u8",
+            f"/runner-00/hls/{live_env.task_id}/master.m3u8",
+            f"/runner-0/hls/{sibling_id}/master.m3u8",
+            f"{path}/high/%2e%2e%2fmaster.m3u8",
+            "/runner-0/task/status/example",
+            "/runner-0/runner/health",
+            "/runner-0/docs",
+        ):
+            assert client.get(hidden).status_code == 404
+        assert client.get("/runner/ping").status_code == 200
+        outside = tmp_path / "private.ts"
+        outside.write_bytes(b"private")
+        segment = directory / "high" / "segment_1.ts"
+        segment.unlink()
+        segment.symlink_to(outside)
+        assert client.get(f"{path}/high/segment_1.ts").status_code == 404
+        live.update(live_env.task_id, hls_ready=False)
+        assert client.get(f"{path}/master.m3u8").status_code == 404
+
+
+def test_public_hls_prefix_is_not_enabled_on_a_vod_worker(live_env, monkeypatch):
+    """Media settings do not publish an HLS alias on a worker without Live."""
+    from app.main import _include_api_routers
+
+    config.LIVE.public_hls_base_url = "https://live.example/runner-0/hls"
+    monkeypatch.setattr(config, "RUNNER_TASK_TYPES", {"encoding"})
+    tracked(live_env)
+    write_hls(live.directory_for(live_env.task_id), config.LIVE)
+    live.update(live_env.task_id, hls_ready=True)
+    application = FastAPI()
+    _include_api_routers(application)
+    with TestClient(application) as client:
+        for prefix in ("/hls", "/runner-0/hls"):
+            assert client.get(f"{prefix}/{live_env.task_id}/master.m3u8").status_code == 404
 
 
 @pytest.mark.asyncio
@@ -1190,11 +1296,13 @@ async def test_live_storage_never_uses_age_based_vod_cleanup(live_env, monkeypat
     await service_manager.storage_cleanup_loop()
 
 
-def test_successful_hls_access_logging_is_filtered(live_env):
+@pytest.mark.parametrize("prefix", ["", "/runner-2", "/campus/runner-2"])
+def test_successful_hls_access_logging_is_filtered(live_env, prefix):
     import logging
 
     from app.api.routes.live import LiveAccessFilter, configure_access_logging
 
+    config.LIVE.public_hls_base_url = f"https://public.example{prefix}/hls"
     access = logging.getLogger("uvicorn.access")
     previous = list(access.filters)
     try:
@@ -1210,8 +1318,12 @@ def test_successful_hls_access_logging_is_filtered(live_env):
             ("client", "GET", "/hls/id/high/segment_1.ts", "1.1", 200),
             None,
         )
-        assert not LiveAccessFilter().filter(record)
-        record.args = ("client", "GET", "/hls/id/high/segment_1.ts", "1.1", 404)
+        for path in ("/hls/id/high/segment_1.ts", f"{prefix}/hls/id/high/segment_1.ts"):
+            record.args = ("client", "GET", path, "1.1", 200)
+            assert not LiveAccessFilter().filter(record)
+            record.args = ("client", "GET", path, "1.1", 404)
+            assert LiveAccessFilter().filter(record)
+        record.args = ("client", "GET", "/runner/ping", "1.1", 200)
         assert LiveAccessFilter().filter(record)
         record.args = None
         assert LiveAccessFilter().filter(record)

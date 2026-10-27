@@ -2,6 +2,7 @@
 
 import logging
 import re
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -15,6 +16,12 @@ from app.services.live_runtime import directory_for
 router = APIRouter(tags=["Live HLS"])
 
 
+def public_hls_prefix() -> str:
+    """Return the instance's configured public prefix when its URL ends in /hls."""
+    path = urlsplit(config.LIVE.public_hls_base_url).path.rstrip("/")
+    return path.removesuffix("/hls") if path.endswith("/hls") else ""
+
+
 class LiveAccessFilter(logging.Filter):
     """Keep errors while avoiding one log record per successful HLS segment."""
 
@@ -23,7 +30,9 @@ class LiveAccessFilter(logging.Filter):
         args = record.args
         if isinstance(args, tuple) and len(args) == 5:
             return not (
-                str(args[2]).startswith("/hls/") and isinstance(args[4], int) and args[4] < 400
+                str(args[2]).startswith(("/hls/", f"{public_hls_prefix()}/hls/"))
+                and isinstance(args[4], int)
+                and args[4] < 400
             )
         return True
 

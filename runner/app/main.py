@@ -56,6 +56,9 @@ def _include_api_routers(app: FastAPI) -> None:
 
     app.include_router(task.router)
     app.include_router(live.router)
+    public_prefix = live.public_hls_prefix()
+    if public_prefix and "live" in config.RUNNER_TASK_TYPES:
+        app.include_router(live.router, prefix=public_prefix)
     live.configure_access_logging()
     app.include_router(runner.router)
     app.state.api_routers_included = True

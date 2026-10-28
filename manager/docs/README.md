@@ -536,6 +536,10 @@ If the original task request has a non-empty `notify_url`, the manager POSTs:
 }
 ```
 
+The callback's `script_output` omits Unicode characters above `U+FFFF`, including
+four-byte emoji, to support Pod databases using MySQL `utf8mb3`. Accents and line
+breaks are preserved. The Manager retains the original output in its task history.
+
 ## Admin dashboard
 
 - `/admin` provides a web UI (HTTP Basic auth).

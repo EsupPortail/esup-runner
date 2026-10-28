@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Remove four-byte Unicode characters from callback `script_output` to avoid
+  MySQL encoding errors in Pod, preserving accents and the Manager's full logs.
 
 ## [1.11.0] - 2026-10-26
 

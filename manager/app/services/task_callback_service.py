@@ -3,6 +3,7 @@
 import asyncio
 import ipaddress
 import json
+import re
 import socket
 from datetime import datetime
 from typing import Any, List, cast
@@ -110,12 +111,19 @@ async def validate_notify_url(context: Any, url: str) -> str:
     return url
 
 
+def _sanitize_script_output(script_output: str | None) -> str | None:
+    """Remove non-BMP characters so callback output fits MySQL utf8mb3 columns."""
+    if script_output is None:
+        return None
+    return re.sub(r"[\U00010000-\U0010ffff]", "", script_output)
+
+
 async def send_notify_callback(
     context: Any,
     task: Task,
     notification: TaskCompletionNotification,
 ) -> tuple[bool, str | None]:
-    """Send a single notify URL callback attempt."""
+    """Send a notify URL callback with utf8mb3-compatible script output."""
     if not task.notify_url:
         return False, "notify_url is empty"
 
@@ -135,7 +143,7 @@ async def send_notify_callback(
         "task_id": notification.task_id,
         "status": notification.status,
         "error_message": getattr(notification, "error_message", None),
-        "script_output": notification.script_output,
+        "script_output": _sanitize_script_output(notification.script_output),
     }
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     headers = {"Accept": "application/json", "Content-Type": "application/json"}

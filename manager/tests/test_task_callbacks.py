@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -244,16 +245,34 @@ def test_task_completion_appends_stats_errors_are_logged(
 
 
 @pytest.mark.asyncio
-async def test_send_notify_callback_success(monkeypatch, task_module, clean_state):
-    """Validate Send notify callback success."""
+@pytest.mark.parametrize(
+    ("script_output", "expected_output"),
+    [
+        (None, None),
+        ("", ""),
+        ("ok", "ok"),
+        (
+            "Video encoded — café, résumé, 中文, €\r\n\tDone\n",
+            "Video encoded — café, résumé, 中文, €\r\n\tDone\n",
+        ),
+        ("🔹 Reading video 🎬.mp4\n", " Reading video .mp4\n"),
+        ("🔹🎬😀", ""),
+        ("\uffff\U00010000\U0010ffff", "\uffff"),
+    ],
+)
+async def test_send_notify_callback_success(
+    monkeypatch, task_module, clean_state, script_output, expected_output
+):
+    """Send utf8mb3-compatible output while retaining the original task diagnostics."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed", notify_url="https://example.com/notify")
+    tasks["t1"].script_output = script_output
 
     notification = TaskCompletionNotification(
         task_id="t1",
         status="completed",
         error_message=None,
-        script_output="ok",
+        script_output=script_output,
     )
 
     class FakeResponse:
@@ -290,6 +309,14 @@ async def test_send_notify_callback_success(monkeypatch, task_module, clean_stat
     assert "Authorization" not in (captured["headers"] or {})
     assert captured["headers"].get("Content-Type") == "application/json"
     assert isinstance(captured["content"], (bytes, bytearray))
+    assert json.loads(captured["content"].decode("utf-8")) == {
+        "task_id": "t1",
+        "status": "completed",
+        "error_message": None,
+        "script_output": expected_output,
+    }
+    assert notification.script_output == script_output
+    assert tasks["t1"].script_output == script_output
     assert captured["timeout"].connect == 5.0
     assert captured["timeout"].read == 15.0
     assert captured["timeout"].write == 5.0

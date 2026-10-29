@@ -27,7 +27,9 @@ if (refreshBtn) {
   });
 }
 
-const acknowledgeFeedback = document.querySelector("[data-acknowledge-feedback]");
+const acknowledgeFeedback = document.querySelector(
+  "[data-acknowledge-feedback]",
+);
 if (acknowledgeFeedback) {
   const currentUrl = new URL(window.location.href);
   if (currentUrl.searchParams.get("acknowledged") === "1") {

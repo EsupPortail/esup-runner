@@ -44,7 +44,7 @@
         <img src="{{ root_path }}/static/logo.png?version={{ version }}" alt="ESUP-Runner" class="admin-brand-logo">
         <h1 class="mb-0">Runners Monitoring</h1>
       </div>
-      <!-- Reload config button -->
+      <!-- Auto-refresh controls -->
       <div class="d-flex align-items-center gap-2">
         <span
           id="auto-refresh-status"
@@ -63,22 +63,6 @@
           <i class="bi bi-pause-fill" aria-hidden="true"></i>
           <span id="auto-refresh-toggle-label">Pause refresh</span>
         </button>
-        <button
-          id="reload-config-btn"
-          type="button"
-          class="btn btn-outline-warning btn-sm reload-config-btn"
-          title="Reload manager config"
-          data-bs-toggle="tooltip">
-          <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
-          Reload config
-        </button>
-        <span
-          id="reload-config-status"
-          class="small text-subtle"
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        ></span>
         <span
           id="copy-task-feedback"
           class="visually-hidden"
@@ -565,7 +549,6 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    const managerRootPath = {{ root_path | tojson }};
     // Activate all tooltips
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function (tooltipTriggerEl) {
@@ -583,8 +566,6 @@
     const autoRefreshToggleLabel = document.getElementById('auto-refresh-toggle-label');
     const autoRefreshToggleIcon = autoRefreshToggle ? autoRefreshToggle.querySelector('i') : null;
     const autoRefreshFeedback = document.getElementById('auto-refresh-feedback');
-    const reloadBtn = document.getElementById('reload-config-btn');
-    const reloadStatus = document.getElementById('reload-config-status');
     const copyTaskFeedback = document.getElementById('copy-task-feedback');
     const copyTaskButtons = document.querySelectorAll('[data-copy-task-id]');
     const taskRows = document.querySelectorAll('[data-task-detail-url]');
@@ -823,43 +804,6 @@
         form.submit();
       });
     });
-
-    if (reloadBtn && reloadStatus) {
-      reloadBtn.addEventListener('click', async () => {
-        reloadBtn.disabled = true;
-        reloadStatus.textContent = 'Reloading…';
-
-        try {
-          const response = await fetch(`${managerRootPath}/admin/reload-config`, {
-            method: 'POST',
-            headers: {
-              'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
-              'Accept': 'application/json'
-            }
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-
-          const data = await response.json();
-          const authorizedTokensCount = Number.isInteger(data.authorized_tokens_count)
-            ? data.authorized_tokens_count
-            : (Array.isArray(data.authorized_tokens) ? data.authorized_tokens.length : 0);
-          const adminUsersCount = Number.isInteger(data.admin_users_count)
-            ? data.admin_users_count
-            : (Array.isArray(data.admin_users) ? data.admin_users.length : 0);
-          reloadStatus.textContent = `Reload OK (admins: ${adminUsersCount}, authorized tokens: ${authorizedTokensCount})`;
-        } catch (error) {
-          reloadStatus.textContent = 'Reload failed';
-        } finally {
-          setTimeout(() => {
-            reloadStatus.textContent = '';
-          }, 4000);
-          reloadBtn.disabled = false;
-        }
-      });
-    }
   </script>
 </body>
 

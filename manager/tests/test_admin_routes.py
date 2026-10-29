@@ -924,12 +924,13 @@ def test_admin_template_renders_copy_task_id_controls():
 
     assert '<meta name="csrf-token" content="test-csrf-token">' in html
     assert 'name="csrf_token" value="test-csrf-token"' in html
-    assert "'X-CSRF-Token': document.querySelector('meta[name=\"csrf-token\"]').content" in html
     assert 'id="copy-task-feedback"' in html
     assert 'id="auto-refresh-status"' in html
     assert 'id="auto-refresh-toggle"' in html
     assert 'id="auto-refresh-feedback"' in html
-    assert 'title="Reload manager config"' in html
+    assert 'id="reload-config-btn"' not in html
+    assert 'id="reload-config-status"' not in html
+    assert "/admin/reload-config" not in html
     assert "AUTO_REFRESH_INTERVAL_SECONDS = 15" in html
     assert "AUTO_REFRESH_STORAGE_KEY" in html
     assert "localStorage" in html
@@ -1225,7 +1226,7 @@ def test_admin_routes_honor_reverse_proxy_root_path(monkeypatch, admin_csrf_head
     assert 'href="/manager/static/esup-runner.css?' in dashboard.text
     assert 'src="/manager/static/logo.png?' in dashboard.text
     assert 'href="/manager/admin/credentials"' in dashboard.text
-    assert 'const managerRootPath = "/manager";' in dashboard.text
+    assert 'action="/manager/admin/toggle-theme"' in dashboard.text
 
     assert theme.headers["location"] == "/manager/admin"
     assert "Path=/manager" in theme.headers["set-cookie"]

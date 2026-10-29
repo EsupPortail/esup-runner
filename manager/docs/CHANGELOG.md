@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remove configuration reload from the dashboard and clarify that the access
+  page reloads tokens and administrators; other configuration changes require
+  a Manager restart.
+- Show a "Task acknowledged" confirmation after acknowledging an incident from
+  the dashboard or task details.
+- Allow incident acknowledgment in the Nginx reverse-proxy example. Existing
+  deployments must [update the proxy allowlist](INSTALLATION.md#publish-the-manager-below-a-url-prefix).
 - Remove four-byte Unicode characters from callback `script_output` to avoid
   MySQL encoding errors in Pod, preserving accents and the Manager's full logs.
 

@@ -383,8 +383,8 @@ Recommendations:
 
 - Expose only the reverse proxy publicly on `443` (HTTPS).
 - Keep the manager service on a private interface, or localhost only when possible.
-- Forward only admin endpoints (`/admin`, `/tasks`, `/logs`, `/statistics`, `/static` and protected documentation routes) through the proxy.
-- Keep private API namespaces (`/api`, `/runner`, `/task`) inaccessible from the public proxy.
+- Forward only admin endpoints (`/admin`, `/tasks`, `/logs`, `/statistics`, `/static`), incident acknowledgment (`/task/acknowledge/...`) and protected documentation routes through the proxy.
+- Keep private API namespaces (`/api`, `/runner` and the rest of `/task`) inaccessible from the public proxy.
 - Avoid direct public access to the manager process on `MANAGER_PORT`.
 
 ### Trust HAProxy forwarding headers
@@ -436,8 +436,8 @@ location = /manager/ {
     return 302 /manager/admin;
 }
 
-# Allow only administration pages, assets and protected API documentation.
-location ~ ^/manager/(?:admin|tasks|logs|statistics|static|docs|redoc)(?:/|$)|^/manager/openapi\.json$ {
+# Allow administration pages, incident acknowledgment, assets and protected API documentation.
+location ~ ^/manager/(?:admin|tasks|task/acknowledge|logs|statistics|static|docs|redoc)(?:/|$)|^/manager/openapi\.json$ {
     rewrite ^/manager(/.*)$ $1 break;
     proxy_pass http://127.0.0.1:8081;
     proxy_set_header Host $host;
@@ -451,7 +451,9 @@ location /manager/ {
 }
 ```
 
-The rewrite maps `/manager/admin` to the Manager's internal `/admin` route and `/manager/static/...` to `/static/...`. No public location matches the private namespaces `/api`, `/runner` or `/task`; they receive a `404`. Keep the Manager listening port restricted to the private network as a second layer of protection.
+The rewrite maps `/manager/admin` to the Manager's internal `/admin` route and `/manager/static/...` to `/static/...`. The `/manager/task/acknowledge/...` exception allows incident acknowledgment, protected by admin authentication and CSRF validation. Other routes under `/api`, `/runner` and `/task` receive a `404`. Keep the Manager listening port restricted to the private network as a second layer of protection.
+
+Existing deployments using this allowlist must add `task/acknowledge`, validate the configuration with `sudo nginx -t`, then reload Nginx with `sudo systemctl reload nginx`.
 
 The path derived from `MANAGER_PUBLIC_URL` does not rename the Manager's internal routes. A Runner must use the private API base URL built from the Manager's `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`:
 

@@ -11,6 +11,14 @@ This document describes the Manager runtime configuration (`manager/.env`) with 
   - `ENV_FILE=/path/to/.env` (legacy-compatible override)
 - If no `.env` file is found, built-in defaults are used.
 
+## Applying changes
+
+Restart the Manager service after changing its configuration. For manual edits
+to `AUTHORIZED_TOKENS__*` or `ADMIN_USERS__*`, use **Reload tokens and
+administrators** on **Access Configuration** (`/admin/credentials`) to apply
+access changes without restarting. Entries created or deleted from that page
+are saved and applied automatically. **Refresh page** only updates the display.
+
 ## Validate before startup
 
 After changing `.env`, run the configuration preflight before starting or

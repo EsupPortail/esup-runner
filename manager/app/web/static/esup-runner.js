@@ -27,6 +27,18 @@ if (refreshBtn) {
   });
 }
 
+const acknowledgeFeedback = document.querySelector("[data-acknowledge-feedback]");
+if (acknowledgeFeedback) {
+  const currentUrl = new URL(window.location.href);
+  if (currentUrl.searchParams.get("acknowledged") === "1") {
+    acknowledgeFeedback.className = "alert alert-success mt-3";
+    acknowledgeFeedback.textContent = "Task acknowledged";
+    // Consume the notice so later refreshes do not repeat it.
+    currentUrl.searchParams.delete("acknowledged");
+    window.history.replaceState(window.history.state, "", currentUrl);
+  }
+}
+
 document.querySelectorAll("[data-acknowledge-task-id]").forEach((button) => {
   button.addEventListener("click", async (event) => {
     event.preventDefault();
@@ -49,7 +61,9 @@ document.querySelectorAll("[data-acknowledge-task-id]").forEach((button) => {
       if (!response.ok) {
         throw new Error(payload.detail || "Unable to acknowledge task");
       }
-      window.location.reload();
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set("acknowledged", "1");
+      window.location.replace(currentUrl);
     } catch (error) {
       if (feedback) {
         feedback.className = "alert alert-danger mt-3";

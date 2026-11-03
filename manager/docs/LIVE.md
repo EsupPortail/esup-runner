@@ -98,6 +98,29 @@ single standard master playlist with a stable address throughout the session,
 without combining separate MediaMTX HLS outputs. There is no passthrough mode.
 See the [Runner configuration](../../runner/docs/LIVE.md).
 
+### Optional MediaMTX high availability
+
+The Manager's MediaMTX can run as an active/passive pair on separate hosts
+behind one virtual IP, for example with Keepalived, on a network that supports
+moving that address. This uses existing Esup-Runner configuration without
+application code changes:
+
+| Component | Setting or address |
+| --- | --- |
+| Manager | Point `LIVE_MEDIAMTX_API_URL` to the virtual IP's Control API |
+| Runners | Point `LIVE_UPSTREAM_RTMP_URL` to the virtual IP's RTMP endpoint, with read credentials |
+| Encoders | Publish to the virtual IP's RTMP endpoint |
+
+Keep each Runner's `LIVE_MEDIAMTX_API_URL` pointing to its own MediaMTX.
+Configure matching paths, credentials and permissions on both ingress servers.
+Set up Keepalived with MediaMTX health checks and keep the Control API private.
+This protects media ingress; it does not make the Manager application redundant.
+
+Failover interrupts RTMP connections and requires encoder reconnection. In
+automatic mode, republication creates a new Live session and HLS URL. Validate
+encoder reconnection and Pod/player recovery with a real failover test before
+using this deployment in production.
+
 ## Manager configuration
 
 Keep the existing installation and authentication. After installing MediaMTX,

@@ -14,7 +14,9 @@ The MediaMTX executable/image is identical for CPU and GPU hosts.
 - [Choose an installation method](#1-choose-an-installation-method)
 - [Install the native executable](#2-install-the-native-executable)
 - [Prepare one instance](#3-prepare-one-instance)
+- [Optional RTMPS publishing](#optional-rtmps-publishing)
 - [Start the native systemd service](#4-start-the-native-systemd-service)
+- [System service for port 443](#system-service-for-port-443)
 - [Run MediaMTX in Docker](#5-run-mediamtx-in-docker)
 - [Connect the applications and verify](#6-connect-the-applications-and-verify)
 - [Manual upgrades](#manual-upgrades)
@@ -212,6 +214,48 @@ and `~^live/medecine-[A-Za-z0-9_-]+$` for `publisherMedecine`.
 Keep `source: publisher` in `paths`: it is a MediaMTX source type, not an account
 name. MediaMTX [reloads the file automatically](https://mediamtx.org/docs/features/configuration).
 
+### Optional RTMPS publishing
+
+**Not all encoders support RTMPS. Check the encoder's capabilities first.**
+
+Point a DNS name such as `live.example.org` to the Manager's ingress address.
+Use a trusted certificate covering that name. Make `fullchain.pem` (server certificate
+and intermediates) and `privkey.pem` readable by the MediaMTX service account;
+keep the private key owned by that account with mode `0600`.
+
+For the default **user service on port 1936**, add these top-level settings to
+`~/.config/esup-runner/manager/mediamtx.yml`, adapting the absolute paths and
+keeping existing accounts and `paths`:
+
+```yaml
+rtmpEncryption: optional
+rtmpsAddress: :1936
+rtmpServerKey: /home/esup-runner/.config/esup-runner/manager/privkey.pem
+rtmpServerCert: /home/esup-runner/.config/esup-runner/manager/fullchain.pem
+```
+
+`optional` keeps the Runners' RTMP relay on port `1935`. In `mediamtx.env`,
+`MTX_RTMPADDRESS` overrides only the plain RTMP listener; use a private address
+reachable by the Runners and restrict access to that network.
+
+Allow TCP `1936` from encoders. Set the encoder server to
+`rtmps://live.example.org:1936/live` and keep the stream key, for example
+`amphi-a?user=publisher&pass=YOUR_PUBLISHER_PASSWORD` (URL-encode the password).
+
+Restart the user service between broadcasts, then publish from the encoder:
+
+```bash
+systemctl --user restart esup-runner-mediamtx@manager.service
+```
+
+For **direct RTMPS on port 443**, use the
+[system service below](#system-service-for-port-443) and set `rtmpsAddress: :443`.
+Encoders connect directly to `rtmps://live.example.org:443/live`; **no port
+redirection is needed**. Omit `:443` if the encoder uses it by default.
+
+Keep MediaMTX's certificate files updated when renewing the certificate.
+For Docker, mount them read-only and expose the chosen RTMPS port.
+
 ## 4) Start the native systemd service
 
 Skip this section for Docker. Run as the service account in its login session.
@@ -250,6 +294,80 @@ home and `%i` for the instance name. It reads
 `~/.local/bin/mediamtx`. Units are installed in
 `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/`.
 No other component's checkout is needed.
+
+### System service for port 443
+
+This optional **Manager-only** mode runs MediaMTX as the existing service account
+with `CAP_NET_BIND_SERVICE`. It can bind privileged ports without running as root.
+The Manager application and Runner services keep their current user-service setup.
+
+Prepare the standard home-local executable and configuration as the service
+account first. Configure the DNS name and certificates in the
+[RTMPS section](#optional-rtmps-publishing), then set `rtmpsAddress: :443` in the
+Manager's YAML. Keep `rtmpEncryption: optional` and the private RTMP listener for
+Runners. Allow TCP `443` from encoders and check that no other listener uses it
+on the same address.
+
+Finish active broadcasts before migrating. Run these commands from `manager/`
+as the service account (`esup-runner` here; adapt the account name):
+
+```bash
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+uv run scripts/configure_live.py --service-mode system
+# Existing user-service installations only:
+systemctl --user disable --now esup-runner-mediamtx@manager.service
+# Preview; omit --dry-run below to install and start:
+sudo env UV_CACHE_DIR=/tmp/esup-runner-uv-cache "$(command -v uv)" run --no-sync python \
+  scripts/install_mediamtx.py start --instance manager --service-mode system \
+  --user esup-runner --dry-run
+```
+
+The installer requires root for actual installation and an explicit **non-root**
+`--user`. It reuses that account's `~/.local/bin/mediamtx` and
+`~/.config/esup-runner/manager/` files. It validates the existing executable and
+YAML as that account, without downloads or configuration changes. It creates an
+instance unit in `/etc/systemd/system/esup-runner-mediamtx@manager.service`, with
+explicit paths, `User=esup-runner`, `AmbientCapabilities=CAP_NET_BIND_SERVICE`,
+`CapabilityBoundingSet=CAP_NET_BIND_SERVICE`, `NoNewPrivileges=true` and boot
+target `multi-user.target`. The capability permits privileged ports generally,
+not only 443. Other instance names must be unique across accounts on the host.
+
+An enabled or active counterpart blocks startup; stop and disable it explicitly.
+Customized units, drop-ins and symlink destinations are retained/refused. An
+already active service is not restarted. Custom configuration roots or user
+systemd directories require manual service management. Executable paths cannot
+contain quotes, backslashes or `$`.
+
+After installation, restart the Manager to load the selected diagnostic scope:
+
+```bash
+systemctl --user restart esup-runner-manager.service
+sudo systemctl status esup-runner-mediamtx@manager.service --no-pager
+sudo journalctl -u esup-runner-mediamtx@manager.service -n 50 --no-pager
+```
+
+`configure_live.py --service-mode system` writes
+`LIVE_MEDIAMTX_SERVICE_MODE=system` to `manager/.env`, preserving the existing log
+source. Without the option, the helper preserves this choice; the default is
+`user`. Changing `.env` alone never installs, stops or migrates a service.
+The Manager reads only the selected unit's accessible journal entries. Check
+diagnostics as its account; if access is unavailable, use the existing
+`LIVE_MEDIAMTX_LOG_FILE` alternative rather than granting broad journal access.
+
+Publish to `rtmps://live.example.org:443/live` with the usual stream key, omitting
+`:443` if the encoder uses it by default. Verify automatic Live/HLS operation.
+Later MediaMTX restarts use `sudo systemctl restart esup-runner-mediamtx@manager.service`;
+the Manager itself still uses `systemctl --user` and needs its existing boot setup.
+
+To roll back, stop/disable the system unit with
+`sudo systemctl disable --now esup-runner-mediamtx@manager.service`, restore a
+non-privileged RTMPS port such as `1936`, then run as the service account:
+
+```bash
+uv run scripts/configure_live.py --service-mode user
+uv run scripts/install_mediamtx.py start --instance manager
+systemctl --user restart esup-runner-manager.service
+```
 
 ### Custom units and paths
 
@@ -515,8 +633,11 @@ The local Runner's control and transcoder credentials are read from its own file
 ### Custom deployments and upgrades
 
 Automatic connection supports the installer's internal-authentication, plain
-RTMP/HTTP profile and its listener environment overrides. For external
-authentication, hashed credentials, RTMPS/HTTPS, systemd environment overrides or
+RTMP/HTTP profile and its listener environment overrides. The **Manager** helper
+also accepts `rtmpEncryption: optional` with an HTTP Control API, retaining the
+Runners' plain RTMP relay. Select its installed service scope with `--service-mode
+user|system`. For external authentication, hashed credentials, strict RTMPS,
+HTTPS APIs, systemd environment overrides or
 a full Docker private network, use explicit application settings from the table
 below. The helper cannot infer remote hosts, container DNS or proxy routing.
 These remain supported operator choices; no fixed password is built into the code.

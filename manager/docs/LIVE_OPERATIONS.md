@@ -137,10 +137,11 @@ projection recognizes safe markers such as `RTMP_AUTH_FAILED`,
 paths. It is a recent diagnostic view, not a replacement for system logs.
 
 For native MediaMTX authentication failures, the Manager must be configured
-with the actual user unit, for example:
+with the actual unit and its installed service mode, for example:
 
 ```dotenv
 LIVE_MEDIAMTX_LOG_UNIT=esup-runner-mediamtx@manager.service
+# LIVE_MEDIAMTX_SERVICE_MODE=system  # Default: user
 ```
 
 MediaMTX must use `logLevel: info`; otherwise refused RTMP publications may not

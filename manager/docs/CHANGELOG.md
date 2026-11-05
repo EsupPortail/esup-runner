@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Support an optional Manager MediaMTX system service running as the service
+  account with `CAP_NET_BIND_SERVICE` for direct RTMPS on port 443. Select its
+  diagnostic scope with `LIVE_MEDIAMTX_SERVICE_MODE`; existing installations
+  keep user mode. See [setup and migration](MEDIAMTX_SETUP.md#system-service-for-port-443).
+- Allow the Manager connection helper to configure optional RTMPS while retaining
+  its internal RTMP relay and HTTP Control API.
 
 ## [1.11.1] - 2026-10-29
 

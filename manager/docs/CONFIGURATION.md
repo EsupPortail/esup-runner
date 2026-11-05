@@ -402,9 +402,12 @@ not filter publications. Discovered identifiers and private paths persist in
 statistics. An RTMP publication can override it with the URL query parameter
 `etablishment`; the value is URL-decoded and recorded as the task requester.
 For MediaMTX diagnostics in administration, configure either
-`LIVE_MEDIAMTX_LOG_UNIT` (a service in the Manager's systemd user journal) or
+`LIVE_MEDIAMTX_LOG_UNIT` (a service in the journal selected by
+`LIVE_MEDIAMTX_SERVICE_MODE=user|system`, default `user`) or
 `LIVE_MEDIAMTX_LOG_FILE` (an absolute path to a readable plain log). MediaMTX must
 use `logLevel: info`; see [Live diagnostics](LIVE.md#live-diagnostics-in-the-log-viewer).
+Changing the mode does not install or migrate a service. For native MediaMTX
+on port 443, use the [system service procedure](MEDIAMTX_SETUP.md#system-service-for-port-443).
 
 See [LIVE.md](LIVE.md) for Live Runner reservations, MediaMTX, the dynamic `hls_url` contract for Pod and multi-instance deployments.
 

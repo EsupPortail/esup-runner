@@ -131,7 +131,8 @@ See [LIVE.md](LIVE.md) for the complete configuration and Esup-Pod contract.
 | `LIVE_MEDIAMTX_API_USER` | `control` |
 | `LIVE_MEDIAMTX_API_PASSWORD` | `` |
 | `LIVE_MEDIAMTX_HEALTH_CHECK_INTERVAL_HOURS` | `12` (non-negative whole hours; `0` disables monitoring) |
-| `LIVE_MEDIAMTX_LOG_UNIT` | `` (optional systemd user service, e.g. `esup-runner-mediamtx@manager.service`) |
+| `LIVE_MEDIAMTX_SERVICE_MODE` | `user` (`user` or `system`; select the installed MediaMTX service scope for diagnostics; installation/migration is explicit) |
+| `LIVE_MEDIAMTX_LOG_UNIT` | `` (optional systemd service, e.g. `esup-runner-mediamtx@manager.service`) |
 | `LIVE_MEDIAMTX_LOG_FILE` | `` (alternative absolute path to the Manager MediaMTX plain log) |
 
 With `LIVE_ENABLED=true`, one worker checks the Manager MediaMTX at startup and

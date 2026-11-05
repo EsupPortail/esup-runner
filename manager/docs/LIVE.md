@@ -608,6 +608,8 @@ Choose one source for the Manager to read:
 ```dotenv
 # Native deployment: Manager and MediaMTX use the same systemd user account.
 LIVE_MEDIAMTX_LOG_UNIT=esup-runner-mediamtx@manager.service
+# For MediaMTX installed as a system service (the Manager stays unprivileged):
+# LIVE_MEDIAMTX_SERVICE_MODE=system
 # Alternative for Docker/remote log shipping: leave LOG_UNIT empty and mount a file.
 # LIVE_MEDIAMTX_LOG_FILE=/var/log/esup-runner/mediamtx.log
 ```

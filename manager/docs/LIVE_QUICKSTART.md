@@ -99,6 +99,10 @@ one URL, use `rtmp://manager.example.org:1935/live/amphi-a?user=publisher&pass=Y
 Give simultaneous broadcasts different names (`amphi-a`, `amphi-b`, etc.).
 For separate encoder credentials, see
 [multiple publisher accounts](MEDIAMTX_SETUP.md#multiple-publisher-accounts).
+For RTMPS with DNS and certificates, see
+[optional RTMPS publishing](MEDIAMTX_SETUP.md#optional-rtmps-publishing).
+For direct RTMPS on port 443, use the
+[optional system service](MEDIAMTX_SETUP.md#system-service-for-port-443).
 
 Start publishing. In `/admin/live`, wait for `running` and `hls_ready=true`, then
 open the exact playback URL in an HLS player. Stop publishing and check that the

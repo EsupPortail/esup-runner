@@ -85,6 +85,42 @@ def test_docker_omits_journal(installation):
     assert "LIVE_MEDIAMTX_LOG_UNIT" not in dotenv_values(env)
 
 
+def test_optional_rtmps_and_system_mode_are_idempotent_and_preserve_credentials(installation):
+    root, env = installation
+    media = root / "manager/mediamtx.yml"
+    media.write_text(media.read_text() + "\nrtmpEncryption: optional\nrtmpsAddress: :443\n")
+    original = media.read_bytes()
+    assert helper.main(options(installation) + ["--service-mode", "system"]) == 0
+    values = dotenv_values(env)
+    assert values["LIVE_MEDIAMTX_SERVICE_MODE"] == "system"
+    assert values["LIVE_MEDIAMTX_LOG_UNIT"] == "esup-runner-mediamtx@manager.service"
+    assert values["LIVE_MEDIAMTX_API_PASSWORD"] == "manager-CONTROL-secret"
+    first = env.read_bytes()
+    assert helper.main(options(installation)) == 0
+    assert env.read_bytes() == first
+    assert media.read_bytes() == original
+    assert helper.main(options(installation) + ["--service-mode", "user"]) == 0
+    assert "LIVE_MEDIAMTX_SERVICE_MODE" not in dotenv_values(env)
+
+
+@pytest.mark.parametrize("extra", ["rtmpEncryption: strict", "apiEncryption: true"])
+def test_unsupported_tls_profiles_still_leave_environment_unchanged(installation, extra):
+    root, env = installation
+    media = root / "manager/mediamtx.yml"
+    media.write_text(media.read_text() + "\n" + extra + "\n")
+    original = env.read_bytes()
+    assert helper.main(options(installation)) == 1
+    assert env.read_bytes() == original
+
+
+def test_invalid_persisted_service_mode_does_not_write(installation):
+    _, env = installation
+    env.write_text("LIVE_MEDIAMTX_SERVICE_MODE=automatic\n")
+    original = env.read_bytes()
+    assert helper.main(options(installation)) == 1
+    assert env.read_bytes() == original
+
+
 @pytest.mark.parametrize(
     "broken",
     [

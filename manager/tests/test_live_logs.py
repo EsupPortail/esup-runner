@@ -112,6 +112,30 @@ def test_journal_is_scoped_bounded_and_without_shell(settings, monkeypatch):
     assert "RTMP_AUTH_FAILED" in live_logs.read_media_logs()[0]["message"]
 
 
+def test_system_journal_keeps_unit_filter_without_user_scope_or_sudo(settings, monkeypatch):
+    settings.mediamtx_service_mode = "system"
+    settings.mediamtx_log_unit = "esup-runner-mediamtx@manager.service"
+
+    def run(args, **kwargs):
+        assert args == [
+            "journalctl",
+            "--unit",
+            settings.mediamtx_log_unit,
+            "--lines",
+            "2000",
+            "--no-pager",
+            "--output=cat",
+            "--quiet",
+        ]
+        assert kwargs == {"capture_output": True, "check": True, "timeout": 3}
+        raise subprocess.CalledProcessError(1, args, stderr=b"private-journal-error")
+
+    monkeypatch.setattr(live_logs.subprocess, "run", run)
+    result = live_logs.read_media_logs()
+    assert "MEDIA_LOG_UNAVAILABLE" in result[0]["message"]
+    assert "private-journal-error" not in str(result)
+
+
 @pytest.mark.parametrize(
     "error",
     [

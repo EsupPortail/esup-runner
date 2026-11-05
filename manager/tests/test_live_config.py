@@ -39,6 +39,15 @@ def test_automatic_establishment_defaults_to_unknown():
     assert LiveSettings().auto_etab_name == "unknown"
 
 
+def test_mediamtx_service_mode_is_explicit_and_defaults_to_user(monkeypatch):
+    assert LiveSettings().mediamtx_service_mode == "user"
+    monkeypatch.setenv("LIVE_MEDIAMTX_SERVICE_MODE", "system")
+    assert LiveSettings.from_environment().mediamtx_service_mode == "system"
+    monkeypatch.setenv("LIVE_MEDIAMTX_SERVICE_MODE", "automatic")
+    with pytest.raises(ValueError):
+        LiveSettings.from_environment()
+
+
 @pytest.mark.parametrize(
     "settings, message",
     [

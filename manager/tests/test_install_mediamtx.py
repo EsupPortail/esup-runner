@@ -441,6 +441,42 @@ def test_start_requires_prepared_configuration(isolated_home):
     assert not (isolated_home / ".config").exists()
 
 
+@pytest.mark.parametrize(
+    "active, enabled, refused",
+    [
+        ("active", "disabled", True),
+        ("inactive", "enabled", True),
+        ("inactive", "disabled", False),
+    ],
+)
+def test_user_start_refuses_a_system_counterpart_before_writing(
+    prepared_service, isolated_home, tmp_path, monkeypatch, active, enabled, refused
+):
+    _, calls = prepared_service
+    units = tmp_path / "system"
+    units.mkdir()
+    system_unit = units / "esup-runner-mediamtx@manager.service"
+    system_unit.write_text("retain system deployment")
+    monkeypatch.setattr(installer, "SYSTEMD_SYSTEM_DIR", units)
+    original_run = installer.subprocess.run
+
+    def run(command, **kwargs):
+        if "show" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=f"LoadState=loaded\nActiveState={active}\nUnitFileState={enabled}\n",
+            )
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(installer.subprocess, "run", run)
+    assert installer.main(["start", "--instance", "manager"]) == (1 if refused else 0)
+    assert system_unit.read_text() == "retain system deployment"
+    if refused:
+        assert not calls
+        assert not (isolated_home / ".config/systemd").exists()
+
+
 def test_setup_defaults_work_without_ownership_changes(isolated_home, release, monkeypatch):
     """A service user can install/configure in its home without chown or sudo."""
     monkeypatch.setattr(installer.shutil, "which", lambda _: None)

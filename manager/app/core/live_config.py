@@ -4,6 +4,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,6 +21,7 @@ ENVIRONMENT_FIELDS = (
     "mediamtx_api_user",
     "mediamtx_api_password",
     "mediamtx_health_check_interval_hours",
+    "mediamtx_service_mode",
     "mediamtx_log_unit",
     "mediamtx_log_file",
 )
@@ -37,6 +39,7 @@ class LiveSettings(BaseModel):
     mediamtx_api_user: str = "control"
     mediamtx_api_password: str = ""
     mediamtx_health_check_interval_hours: int = Field(default=12, ge=0)
+    mediamtx_service_mode: Literal["user", "system"] = "user"
     mediamtx_log_unit: str = Field(
         default="", pattern=r"^(?:[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}\.service)?$"
     )

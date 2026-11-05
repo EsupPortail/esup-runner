@@ -96,7 +96,7 @@ def parse_media_line(line: str) -> dict[str, str] | None:
 
 
 def media_lines() -> list[str]:
-    """Read recent media logs from an operator-selected user unit or regular file.
+    """Read bounded logs from a user/system service or an operator-selected file.
 
     Journal reads have a three-second timeout and a line limit. File reads are
     limited to the final MiB. Only one source is configured; no request parameter
@@ -107,7 +107,7 @@ def media_lines() -> list[str]:
         result = subprocess.run(
             [
                 "journalctl",
-                "--user",
+                *(["--user"] if settings.mediamtx_service_mode == "user" else []),
                 "--unit",
                 settings.mediamtx_log_unit,
                 "--lines",

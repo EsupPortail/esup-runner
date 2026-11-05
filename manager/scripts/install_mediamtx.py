@@ -4,7 +4,8 @@
 Run from manager/ as the service account, without sudo; defaults use its home directory.
 Uses only the Python standard library. Run with --help for installation,
 configuration-only (including Docker), combined setup, and explicit service startup.
-Existing executables, configurations and customized user units are never overwritten.
+System startup requires root and an explicit non-root --user; it reuses an installed binary.
+Existing executables, configurations and customized units are never overwritten.
 """
 
 import argparse
@@ -27,6 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "1.21.1"  # Minimum supported release and default download.
 MAX_ARCHIVE_SIZE = 256 * 1024 * 1024
+SYSTEMD_SYSTEM_DIR = Path("/etc/systemd/system")
 ADDRESS_KEYS = {
     "rtmp_address": ("rtmpAddress", "MTX_RTMPADDRESS"),
     "api_address": ("apiAddress", "MTX_APIADDRESS"),
@@ -77,11 +79,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     "--" + option.replace("_", "-"),
                     help="IP:port (IPv6: [IP]:port); defaults to this component's YAML template",
                 )
-    start = commands.add_parser("start", help="Validate and start a prepared default user service")
+    start = commands.add_parser(
+        "start", help="Validate and start a prepared user or system service"
+    )
     start.add_argument("--instance", required=True, help="Prepared instance name")
+    start.add_argument("--service-mode", choices=("user", "system"), default="user")
+    start.add_argument("--user", help="Existing non-root service account; required in system mode")
     start.add_argument("--dry-run", action="store_true", help="Preview without downloads or writes")
     start.set_defaults(binary=None, version=VERSION)
     args = parser.parse_args(argv)
+    validate_start_options(args, parser)
     if args.command != "configure" and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version):
         parser.error("--version must be a fixed release such as 1.21.1")
     if args.command != "configure" and tuple(map(int, args.version.split("."))) < tuple(
@@ -97,6 +104,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         if path is not None and (not path.is_absolute() or ".." in path.parts):
             parser.error(f"--{option.replace('_', '-')} must be absolute without '..'")
     return args
+
+
+def validate_start_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Require an explicit account only when starting a system service."""
+    if args.command == "start" and bool(args.user) != (args.service_mode == "system"):
+        parser.error("start --user is required only with --service-mode system")
 
 
 def service_environment(directory: Path) -> dict[str, str]:
@@ -138,7 +151,15 @@ def validate_service_configuration(directory: Path, environment: dict[str, str])
 
 
 def start_service(args: argparse.Namespace) -> None:
-    """Validate a standard home-local instance and enable its systemd user service.
+    """Validate a prepared instance and enable its explicitly selected service mode."""
+    if args.service_mode == "system":
+        start_system_service(args)
+    else:
+        start_user_service(args)
+
+
+def start_user_service(args: argparse.Namespace) -> None:
+    """Enable a prepared user service without replacing units or restarting active services.
 
     Reuse an identical unit, refuse customized or symlinked destinations, and
     never restart an active service. Validation uses the service's listener
@@ -158,6 +179,8 @@ def start_service(args: argparse.Namespace) -> None:
     reject_symlinks(unit)
     if unit.exists() and unit.read_text().rstrip() + "\n" != content:
         raise ValueError(f"Customized unit retained: {unit}; manage this service manually")
+    if not args.dry_run:
+        refuse_system_service_conflict(args.instance)
     install_binary(args)
     if args.dry_run:
         print(f"Would validate {directory / 'mediamtx.yml'} with its listener overrides")
@@ -190,6 +213,226 @@ def start_service(args: argparse.Namespace) -> None:
             ["systemctl", "--user", *command], check=True, capture_output=True, timeout=30
         )
     print(f"Service active: {service}. An already active service was not restarted.")
+
+
+def refuse_system_service_conflict(instance: str) -> None:
+    """Check a potentially installed system counterpart before enabling a user unit."""
+    if any(
+        (SYSTEMD_SYSTEM_DIR / name).exists()
+        for name in ("esup-runner-mediamtx@.service", f"esup-runner-mediamtx@{instance}.service")
+    ):
+        refuse_service_conflict(["systemctl"], instance)
+
+
+def service_properties(command: list[str], instance: str, **options) -> dict[str, str]:
+    """Read service state and source paths, refusing inconclusive manager queries."""
+    service = f"esup-runner-mediamtx@{instance}.service"
+    result = subprocess.run(
+        [
+            *command,
+            "show",
+            service,
+            "--property=LoadState,ActiveState,UnitFileState,FragmentPath,DropInPaths",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+        **options,
+    )
+    properties = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    if properties.get("LoadState") != "not-found" and (
+        result.returncode or "ActiveState" not in properties
+    ):
+        raise ValueError(
+            "Cannot check the other MediaMTX service; inspect it before switching modes"
+        )
+    return properties
+
+
+def refuse_service_conflict(command: list[str], instance: str, **options) -> None:
+    """Refuse an active or enabled service in the other scope, including failed queries."""
+    properties = service_properties(command, instance, **options)
+    if properties.get("LoadState") == "not-found":
+        return
+    if properties["ActiveState"] not in ("inactive", "failed") or properties.get(
+        "UnitFileState", ""
+    ).startswith("enabled"):
+        raise ValueError("Stop and disable the other MediaMTX service before switching modes")
+
+
+def refuse_custom_system_unit(unit: Path, instance: str) -> None:
+    """Avoid shadowing a runtime/vendor unit or applying loaded custom drop-ins."""
+    properties = service_properties(["systemctl"], instance)
+    if properties.get("LoadState") != "not-found" and (
+        properties.get("FragmentPath") != str(unit) or properties.get("DropInPaths")
+    ):
+        raise ValueError("Customized loaded system unit retained; manage this service manually")
+
+
+def system_unit_path(path: Path, *, executable: bool = False, quoted: bool = True) -> str:
+    """Quote an absolute path for a unit file, preserving literal specifiers and dollars."""
+    value = str(path)
+    if not path.is_absolute() or ".." in path.parts or any(c in value for c in "\r\n\x00"):
+        raise ValueError("System service paths must be absolute without control characters or '..'")
+    value = value.replace("%", "%%")
+    if not quoted:
+        return value
+    value = value.replace("\\", "\\\\").replace('"', '\\"')
+    if executable:
+        value = value.replace("$", "$$")
+    return '"' + value + '"'
+
+
+def require_system_owned(path: Path) -> None:
+    """Require a root-owned unit destination that is not writable by other accounts."""
+    metadata = path.stat()
+    if metadata.st_uid != 0 or metadata.st_mode & 0o022:
+        raise ValueError(
+            f"System service destination must be root-owned and not writable by others: {path}"
+        )
+
+
+def system_service_plan(
+    args: argparse.Namespace,
+) -> tuple[pwd.struct_passwd, Path, Path, Path, str]:
+    """Resolve the service account's existing files and refuse customized system units."""
+    try:
+        account = pwd.getpwnam(args.user)
+    except KeyError as exc:
+        raise ValueError(
+            "Create the non-root service account before installing the system service"
+        ) from exc
+    if account.pw_uid == 0 or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*\$?", account.pw_name):
+        raise ValueError("The system service requires a valid non-root account")
+    home = Path(account.pw_dir)
+    directory = home / ".config/esup-runner" / args.instance
+    reject_symlinks(directory)
+    if not existing_configuration(directory):
+        raise ValueError("Prepare the instance as the service account before system startup")
+    binary = home / ".local/bin/mediamtx"
+    if not binary.is_file() or re.search(r"""['"\\$\x00-\x1f\x7f]""", str(binary)):
+        raise ValueError(
+            "MediaMTX executable missing or path unsupported by systemd; "
+            "use a path without quotes, backslashes or '$'"
+        )
+    service = f"esup-runner-mediamtx@{args.instance}.service"
+    unit = SYSTEMD_SYSTEM_DIR / service
+    reject_symlinks(unit)
+    require_system_owned(unit.parent)
+    content = (
+        (ROOT / "production/esup-runner-mediamtx-system@.service")
+        .read_text()
+        .format(
+            user=account.pw_name,
+            group=account.pw_gid,
+            home=system_unit_path(home, quoted=False),
+            environment=system_unit_path(directory / "mediamtx.env", quoted=False),
+            binary=system_unit_path(binary, executable=True),
+            configuration=system_unit_path(directory / "mediamtx.yml", executable=True),
+        )
+    )
+    if unit.exists():
+        require_system_owned(unit)
+        if unit.read_text() != content:
+            raise ValueError(f"Customized unit retained: {unit}; manage this service manually")
+    for name in (service, "esup-runner-mediamtx@.service"):
+        if (unit.parent / (name + ".d")).exists():
+            raise ValueError("Customized system service drop-ins require manual service management")
+    return account, directory, binary, unit, content
+
+
+def start_system_service(args: argparse.Namespace) -> None:
+    """Enable a root-managed instance with only the privileged-port capability.
+
+    Resolve paths from the explicit non-root account. Validate its binary and
+    YAML after dropping privileges; never replace units or restart active services.
+    """
+    if not args.dry_run and os.geteuid() != 0:
+        raise ValueError("System service installation requires root; use --dry-run to preview")
+    account, directory, binary, unit, content = system_service_plan(args)
+    home = Path(account.pw_dir)
+    if args.dry_run:
+        print(f"Would validate MediaMTX and its configuration as {account.pw_name}")
+        print(f"Would install or reuse {unit} with CAP_NET_BIND_SERVICE and enable/start it")
+        return
+    environment = {
+        "HOME": str(home),
+        "USER": account.pw_name,
+        "LOGNAME": account.pw_name,
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "XDG_RUNTIME_DIR": f"/run/user/{account.pw_uid}",
+        "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{account.pw_uid}/bus",
+        **{
+            key: value
+            for key, value in service_environment(directory).items()
+            if key.startswith("MTX_")
+        },
+    }
+    identity = {
+        "user": account.pw_uid,
+        "group": account.pw_gid,
+        "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid),
+    }
+    service = unit.name
+    user_units = home / ".config/systemd/user"
+    if any(
+        (target / service).exists() or (target / service).is_symlink()
+        for target in user_units.glob("*.wants")
+    ):
+        raise ValueError("Stop and disable the user MediaMTX service before system startup")
+    if Path(environment["XDG_RUNTIME_DIR"], "bus").exists():
+        refuse_service_conflict(["systemctl", "--user"], args.instance, env=environment, **identity)
+    refuse_custom_system_unit(unit, args.instance)
+    validate_system_binary(binary, directory, environment, identity)
+    if not unit.exists():
+        with unit.open("x") as output:
+            output.write(content)
+            os.fchmod(output.fileno(), 0o644)
+    for command in (
+        ["daemon-reload"],
+        ["enable", "--now", service],
+        ["is-active", "--quiet", service],
+    ):
+        subprocess.run(["systemctl", *command], check=True, capture_output=True, timeout=30)
+    print(f"System service active: {service}. An already active service was not restarted.")
+
+
+def validate_system_binary(
+    binary: Path,
+    directory: Path,
+    environment: dict[str, str],
+    identity: dict,
+) -> None:
+    """Check the prepared executable version and YAML as the service account, hiding output."""
+    try:
+        version = subprocess.run(
+            [str(binary), "--version"],
+            env=environment,
+            **identity,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        ).stdout.strip()
+        if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", version) or tuple(
+            map(int, version[1:].split("."))
+        ) < tuple(map(int, VERSION.split("."))):
+            raise ValueError(
+                "Install a supported stable MediaMTX version as the service account first"
+            )
+        subprocess.run(
+            [str(binary), f"--validate-conf={directory / 'mediamtx.yml'}"],
+            env=environment,
+            **identity,
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+    except subprocess.SubprocessError as exc:
+        raise ValueError(
+            "MediaMTX validation failed as the service account; review binary, YAML and certificate permissions"
+        ) from exc
 
 
 def reject_symlinks(path: Path) -> None:

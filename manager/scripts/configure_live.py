@@ -34,6 +34,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--config-root", type=Path, default=Path.home() / ".config/esup-runner")
     parser.add_argument(
+        "--service-mode",
+        choices=("user", "system"),
+        help="MediaMTX service mode; preserve the .env choice, otherwise use user",
+    )
+    parser.add_argument(
         "--env-file", type=Path, default=ROOT / ".env", help="Default: manager/.env"
     )
     parser.add_argument(
@@ -62,8 +67,8 @@ def read_private_input(path: Path) -> str:
 def load_media(directory: Path) -> dict:
     """Read installed YAML and listener overrides without evaluating dotenv interpolation.
 
-    This helper supports the installer's plain RTMP/HTTP, internal-authentication
-    profile. Nonstandard TLS/authentication or other environment overrides require
+    This helper supports RTMP or optional RTMPS with internal authentication and
+    a plain HTTP Control API. Other TLS/authentication or environment overrides require
     explicit application settings instead of guessing connection credentials.
     """
     configuration = yaml.safe_load(read_private_input(directory / "mediamtx.yml"))
@@ -87,12 +92,12 @@ def load_media(directory: Path) -> dict:
     if (
         configuration.get("authMethod", "internal") != "internal"
         or configuration.get("apiEncryption", False)
-        or configuration.get("rtmpEncryption", "no") != "no"
+        or configuration.get("rtmpEncryption", "no") not in ("no", "optional")
         or not configuration.get("api", False)
         or not configuration.get("rtmp", False)
     ):
         raise ValueError(
-            "Automatic connection requires the installer's internal-auth, plain RTMP/HTTP profile"
+            "Automatic connection requires internal auth, RTMP/optional RTMPS and an HTTP API"
         )
     return configuration
 
@@ -145,11 +150,15 @@ def endpoint(address: str) -> str:
 def connection_settings(args: argparse.Namespace, current: dict) -> dict[str, str]:
     """Derive Manager connection keys, preserving the operator's diagnostic source."""
     media = load_media(args.config_root / args.instance)
+    service_mode = args.service_mode or current.get("LIVE_MEDIAMTX_SERVICE_MODE", "user")
+    if service_mode not in ("user", "system"):
+        raise ValueError("LIVE_MEDIAMTX_SERVICE_MODE must be user or system")
     values = {
         "LIVE_MEDIAMTX_API_URL": "http://" + endpoint(media.get("apiAddress")),
         "LIVE_MEDIAMTX_API_USER": "control",
         "LIVE_MEDIAMTX_API_PASSWORD": credential(media, "control", "api"),
         "LIVE_ENABLED": "true",
+        "LIVE_MEDIAMTX_SERVICE_MODE": service_mode,
     }
     credential(media, "relay", "read")
     if (
@@ -164,6 +173,7 @@ def connection_settings(args: argparse.Namespace, current: dict) -> dict[str, st
 def render_environment(original: str, values: dict[str, str], role: str) -> str:
     """Replace owned assignments, omit connection defaults and preserve unrelated text."""
     defaults = {
+        "LIVE_MEDIAMTX_SERVICE_MODE": "user",
         "LIVE_MEDIAMTX_API_USER": "control",
         "LIVE_MEDIAMTX_API_URL": "http://127.0.0.1:" + ("9997" if role == "manager" else "10997"),
     }

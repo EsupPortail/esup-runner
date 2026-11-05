@@ -1,0 +1,19 @@
+# Rendered by scripts/install_mediamtx.py start --service-mode system.
+[Unit]
+Description=MediaMTX for Esup-Runner instance %i
+
+[Service]
+User={user}
+Group={group}
+WorkingDirectory={home}
+EnvironmentFile={environment}
+ExecStart={binary} {configuration}
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

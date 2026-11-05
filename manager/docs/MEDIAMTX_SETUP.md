@@ -304,9 +304,11 @@ The Manager application and Runner services keep their current user-service setu
 Prepare the standard home-local executable and configuration as the service
 account first. Configure the DNS name and certificates in the
 [RTMPS section](#optional-rtmps-publishing), then set `rtmpsAddress: :443` in the
-Manager's YAML. Keep `rtmpEncryption: optional` and the private RTMP listener for
-Runners. Allow TCP `443` from encoders and check that no other listener uses it
-on the same address.
+Manager's YAML. Keep `rtmpEncryption: optional`. Allow TCP `443` from encoders
+and check that no other listener uses it on the same address.
+
+In `mediamtx.env`, `MTX_RTMPADDRESS` sets the private RTMP listener used to relay
+streams to Runners.
 
 Finish active broadcasts before migrating. Run these commands from `manager/`
 as the service account (`esup-runner` here; adapt the account name):

@@ -551,8 +551,12 @@ breaks are preserved. The Manager retains the original output in its task histor
 
 ## Diagrams
 
-- `architecture.png` gives an overview of components.
-- `tree.png` shows the repository structure.
+- [architecture.png](architecture.png) gives an overview of components.
+- [tree.png](tree.png) shows the repository structure.
+- [Encoding workflow](../../runner/docs/TYPE_ENCODING.md#what-it-does) shows media preparation, FFmpeg encoding and result files.
+- [Studio workflow](../../runner/docs/TYPE_STUDIO.md#what-it-does) shows composition and reuse of the encoding pipeline.
+- [Transcription workflow](../../runner/docs/TYPE_TRANSCRIPTION.md#what-it-does) shows audio preparation, Whisper and optional translation.
+- [Live workflow](../../runner/docs/TYPE_LIVE.md#what-it-does) shows MediaMTX relays, Runner transcoding and HLS delivery.
 
 ## License
 

@@ -140,9 +140,19 @@ to cover the incident; `MemoryCurrent` reflects usage after any restart.
 
 ## Running task reconciliation
 
-The Manager checks running file-based tasks with their Runner every hour and
-saves terminal statuses. With updated Runners, results from previous execution
-attempts are ignored. See [Runner periodic verification](../../runner/docs/OPERATIONS.md#periodic-running-task-verification)
+The Manager checks running file-based tasks with their Runner at startup and
+every hour, and saves terminal statuses. Results from previous execution
+attempts are ignored with updated Runners.
+
+If the assigned Runner returns `not_found` for a task last updated at least
+60 seconds ago, the Manager checks again after 10 seconds. A second matching
+`not_found` response marks the unchanged task as `failed`, allowing **Restart**
+in the task interface. Network errors, HTTP errors and missing Runners do not
+count as confirmation. This does not restart the encoding automatically or
+change the Runner's availability. Restarting the Manager triggers this check;
+restarting a Runner can only recover tasks from its retained state and outputs.
+
+See [Runner periodic verification](../../runner/docs/OPERATIONS.md#periodic-running-task-verification)
 for the Runner's local checks.
 
 ## Task retention behavior

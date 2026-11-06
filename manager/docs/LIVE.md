@@ -23,20 +23,7 @@ It reserves an entire Runner instance until cleanup is complete.
 Four simultaneous streams require four Runner instances; they can be launched
 from one `RUNNER_TASK_TYPES=[4x(live)]` declaration. No global limit is imposed.
 
-```mermaid
-flowchart LR
-    E[Extron / Kast / OBS] -->|RTMP H.264 + AAC| M[Manager MediaMTX]
-    P[Esup-Pod] -->|Authenticated API| A[Manager]
-    A -->|Discover accepted RTMP publications| M
-    A -->|Reservation + Live task| R[Live Runner]
-    M -->|Native RTMP pull relay| X[Runner MediaMTX]
-    R -->|Local API: temporary path| X
-    X --> F[FFmpeg CPU / NVENC]
-    F --> H[Adaptive HLS: master.m3u8]
-    R -->|Status + public URL| A
-    A -->|hls_url| P
-    H --> V[hls.js / VLC player]
-```
+[![Live streaming architecture: Esup-Pod, Manager, MediaMTX, Runner, FFmpeg and HLS delivery](../../runner/docs/live-workflow.png)](../../runner/docs/live-workflow.png)
 
 The encoder publishes to the Manager's MediaMTX (normally RTMP port `1935`).
 With `LIVE_ENABLED=true` and `LIVE_AUTO_START=true`, the Manager queries its

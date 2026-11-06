@@ -19,6 +19,8 @@ from app.models.models import Runner, Task
 logger = setup_default_logging()
 
 _RUNNER_REPORTED_STATUSES = {"running", "completed", "failed", "timeout"}
+_MISSING_TASK_GRACE_SECONDS = 60
+_MISSING_TASK_RECHECK_SECONDS = 10
 
 
 def _cleanup_days_from_config() -> int:
@@ -281,6 +283,45 @@ def _get_running_task_ids() -> list[str]:
     return [task_id for task_id, task in snapshot.items() if task.status == "running"]
 
 
+async def _confirm_missing_runner_task(task: Task, runner: Runner) -> dict | None:
+    """Recheck an unknown task after dispatch grace without overwriting newer state."""
+    try:
+        updated_at = datetime.fromisoformat(task.updated_at.replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc) - updated_at.astimezone(timezone.utc)).total_seconds()
+    except (ValueError, OverflowError):
+        logger.warning(
+            "Skipping missing-task reconciliation for %s: invalid updated_at", task.task_id
+        )
+        return None
+    if age < _MISSING_TASK_GRACE_SECONDS:
+        return None
+
+    expected_state = (task.status, task.run_id, task.runner_id, task.updated_at)
+    task_id = task.task_id
+    await asyncio.sleep(_MISSING_TASK_RECHECK_SECONDS)
+    payload = await _fetch_runner_task_status(runner, task_id)
+    current = get_task_from_state(task_id)
+    if (
+        current is None
+        or (current.status, current.run_id, current.runner_id, current.updated_at) != expected_state
+    ):
+        return None
+    if (
+        payload is not None
+        and payload.get("task_id") == task_id
+        and payload.get("status") == "not_found"
+    ):
+        return {
+            **payload,
+            "status": "failed",
+            "error_message": (
+                f"Task is no longer known to assigned runner {runner.id} "
+                "(confirmed by two status checks)"
+            ),
+        }
+    return payload
+
+
 async def _reconcile_single_running_task(task_id: str) -> bool:
     """Reconcile one running task against its assigned runner."""
     task = get_task_from_state(task_id)
@@ -304,11 +345,23 @@ async def _reconcile_single_running_task(task_id: str) -> bool:
 
     expected_run_id = task.run_id
     payload = await _fetch_runner_task_status(runner, task_id)
+    if (
+        payload is not None
+        and payload.get("task_id") == task_id
+        and payload.get("status") == "not_found"
+        and payload.get("execution_id") in (None, expected_run_id)
+    ):
+        payload = await _confirm_missing_runner_task(task, runner)
     if payload is None:
         return False
 
     task = get_task_from_state(task_id)
-    if task is None or task.status != "running" or task.run_id != expected_run_id:
+    if (
+        task is None
+        or task.status != "running"
+        or task.run_id != expected_run_id
+        or task.runner_id != runner.id
+    ):
         return False
     if payload.get("execution_id") is not None and payload["execution_id"] != expected_run_id:
         return False
@@ -345,8 +398,8 @@ async def reconcile_running_tasks_with_runners(
     """
     Periodically reconcile manager running tasks with runner-reported statuses.
 
-    Runs every hour by default and updates each running task based on runner
-    status endpoint responses (`running`, `completed`, `failed`, `timeout`).
+    Runs at startup, then every hour by default. Applies runner statuses and
+    marks tasks failed when the assigned runner confirms they are unknown.
     """
     logger.info("Starting running-task reconciliation service")
     while True:
@@ -354,12 +407,12 @@ async def reconcile_running_tasks_with_runners(
             logger.info("Stopping running-task reconciliation service")
             break
 
-        await asyncio.sleep(poll_interval)
-
         try:
             await _reconcile_running_tasks_once()
         except Exception as exc:
             logger.error("Error during running-task reconciliation: %s", exc, exc_info=True)
+
+        await asyncio.sleep(poll_interval)
 
 
 def update_task_status(task_id: str, status: str, error_message: Optional[str] = None) -> bool:

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add diagrams for encoding, studio, transcription and Live workflows, with
+  README links to task workflows, architecture and repository structure.
+
+### Fixed
+
+- Complete Debian GPU installation prerequisites with kernel/header metapackages
+  and DKMS so future kernel upgrades also install matching headers.
 
 ## [1.11.1] - 2026-10-29
 

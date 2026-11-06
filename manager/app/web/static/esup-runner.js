@@ -180,13 +180,16 @@ window.esupConfirm = function esupConfirm(options) {
   cancelButton.textContent = options.cancelLabel || "Cancel";
   confirmLabelElement.textContent = options.confirmLabel || "Confirm";
   const action = {
-    stop: { icon: "bi-stop-circle", label: "Stop playback" },
-    restart: { icon: "bi-arrow-clockwise", label: "Restart playback" },
+    stop: { icon: "bi-stop-circle", label: "Stop" },
+    restart: { icon: "bi-arrow-clockwise", label: "Restart" },
   }[options.action] || { icon: "bi-trash3", label: "Destructive action" };
-  const isRestart = options.action === "restart";
-  modalElement.classList.toggle("confirmation-modal-restart", isRestart);
-  confirmButton.classList.toggle("btn-danger", !isRestart);
-  confirmButton.classList.toggle("btn-primary", isRestart);
+  const isInformational =
+    options.action === "stop" || options.action === "restart";
+  modalElement.classList.toggle("confirmation-modal-info", isInformational);
+  confirmButton.classList.toggle("btn-danger", !isInformational);
+  confirmButton.classList.toggle("btn-primary", isInformational);
+  modalElement.querySelector(".confirmation-modal-warning i").className =
+    `bi ${isInformational ? "bi-info-circle-fill" : "bi-exclamation-triangle-fill"}`;
   modalElement.querySelector(".confirmation-modal-icon i").className =
     `bi ${action.icon}`;
   modalElement.querySelector(".confirmation-modal-kicker").textContent =

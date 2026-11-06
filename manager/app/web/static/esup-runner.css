@@ -609,21 +609,21 @@ body[data-bs-theme="light"] {
   flex: 0 0 auto;
 }
 
-.confirmation-modal.confirmation-modal-restart .modal-content::before {
+.confirmation-modal.confirmation-modal-info .modal-content::before {
   background: linear-gradient(90deg, #0a58ca, var(--bs-primary), #6ea8fe);
 }
 
-.confirmation-modal.confirmation-modal-restart .confirmation-modal-icon {
+.confirmation-modal.confirmation-modal-info .confirmation-modal-icon {
   color: var(--bs-primary);
   background-color: rgba(var(--bs-primary-rgb), 0.12);
   box-shadow: 0 0 0 0.6rem rgba(var(--bs-primary-rgb), 0.06);
 }
 
-.confirmation-modal.confirmation-modal-restart .confirmation-modal-kicker {
+.confirmation-modal.confirmation-modal-info .confirmation-modal-kicker {
   color: var(--bs-primary);
 }
 
-.confirmation-modal.confirmation-modal-restart .confirmation-modal-warning {
+.confirmation-modal.confirmation-modal-info .confirmation-modal-warning {
   border-color: rgba(var(--bs-primary-rgb), 0.22);
   color: var(--bs-primary-text-emphasis);
   background: rgba(var(--bs-primary-rgb), 0.08);

@@ -242,6 +242,7 @@ async def view_logs(
                 "auto_refresh": auto_refresh,
             },
             "dark_mode_enabled": dark_mode,
+            "live_enabled": config.LIVE.enabled,
             "now": datetime.now(),
             "version": __version__,
             "root_path": request_root_path(request),

@@ -223,6 +223,7 @@ async def statistics_dashboard(
             "request": request,
             "total_tasks": total_tasks,
             "live_sessions": by_type.get("live", 0),
+            "live_enabled": config.LIVE.enabled,
             "unique_types": len(by_type),
             "unique_etabs": len(by_etab),
             "date_range": date_range,

@@ -107,12 +107,14 @@
         <div class="card border-0">
           <div class="card-body">
             <div class="row align-items-center">
+              {% if live_enabled %}
               <div class="col-12 mb-3">
                 <a class="btn btn-sm btn-outline-primary" href="{{ root_path }}/logs/?search=%5BLIVE%5D">
                   <i class="bi bi-broadcast" aria-hidden="true"></i> Live diagnostics
                 </a>
                 <span class="small text-subtle ms-2">RTMP authentication, source detection and Live session events</span>
               </div>
+              {% endif %}
               <fieldset class="col-md-8">
                 <legend class="mb-2 h6">Filter by level:</legend>
                 <div class="btn-group" role="group">

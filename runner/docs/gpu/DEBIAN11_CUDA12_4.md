@@ -22,9 +22,15 @@ Install NVIDIA drivers and CUDA on Debian 11 for runner GPU mode.
 
 ## 1) Prepare Debian and add the NVIDIA CUDA repository
 
+The commands below use Debian's standard amd64 kernel. Keep the kernel and header
+metapackages installed so future kernel upgrades also install headers for DKMS.
+For other kernel flavors or backports, use matching kernel and header metapackages
+from the same repository suite.
+
 ```bash
 sudo apt update
-sudo apt install -y locales software-properties-common wget build-essential python3-dev
+sudo apt install -y locales software-properties-common wget build-essential python3-dev \
+  linux-image-amd64 linux-headers-amd64 "linux-headers-$(uname -r)" dkms
 
 # Enable the contrib component if needed
 sudo add-apt-repository contrib

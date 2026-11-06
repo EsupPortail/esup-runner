@@ -3,6 +3,9 @@
 This page documents the **`transcription`** runner task type: what it does and which parameters the Manager can pass.
 
 ## What it does
+
+[![Transcription workflow: audio preparation, Whisper, optional translation and WebVTT results](transcription-workflow.png)](transcription-workflow.png)
+
 The `transcription` task downloads a media file and generates subtitles using Whisper.
 
 Behavior depends on the requested final `language` and optional spoken `source_language`:

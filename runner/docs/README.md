@@ -22,6 +22,7 @@ This README explains what the runner service does, how it is started, and the ta
 - [Minimal .env example](#minimal-env-example)
 - [Additional references](#additional-references)
 - [Live streaming](#live-streaming)
+- [Diagrams](#diagrams)
 
 ## Installation
 
@@ -145,6 +146,7 @@ The runner supports `encoding`, `studio`, `transcription` and `live`. The first
 three use [task handlers](../app/task_handlers); Live uses a dedicated runtime.
 
 ### Encoding (`encoding`)
+- Workflow diagram: [TYPE_ENCODING.md](TYPE_ENCODING.md#what-it-does).
 - Handler: [app/task_handlers/encoding/encoding_handler.py](../app/task_handlers/encoding/encoding_handler.py)
 - Entrypoint: [app/task_handlers/encoding/encoding.py](../app/task_handlers/encoding/encoding.py)
 - Core runtime package: [app/task_handlers/encoding/core](../app/task_handlers/encoding/core)
@@ -153,6 +155,7 @@ three use [task handlers](../app/task_handlers); Live uses a dedicated runtime.
 - CPU/GPU: honors `ENCODING_TYPE` and GPU-specific env vars for hwaccel.
 
 ### Studio (`studio`)
+- Workflow diagram: [TYPE_STUDIO.md](TYPE_STUDIO.md#what-it-does).
 - Handler: [app/task_handlers/studio/studio_handler.py](../app/task_handlers/studio/studio_handler.py)
 - Entrypoint: [app/task_handlers/studio/studio.py](../app/task_handlers/studio/studio.py)
 - Core runtime package: [app/task_handlers/studio/core](../app/task_handlers/studio/core)
@@ -161,6 +164,7 @@ three use [task handlers](../app/task_handlers); Live uses a dedicated runtime.
 - Parameters: accepts presenter/layout overrides, encoding parameters (`cut`, `rendition`, `dressing`) and tracking metadata (`video_id`, `video_slug`, `video_title`) passed through to the second stage.
 
 ### Transcription (`transcription`)
+- Workflow diagram: [TYPE_TRANSCRIPTION.md](TYPE_TRANSCRIPTION.md#what-it-does).
 - Handler: [app/task_handlers/transcription/transcription_handler.py](../app/task_handlers/transcription/transcription_handler.py)
 - Entrypoint: [app/task_handlers/transcription/transcription.py](../app/task_handlers/transcription/transcription.py)
 - Core runtime package: [app/task_handlers/transcription/core](../app/task_handlers/transcription/core)
@@ -168,7 +172,7 @@ three use [task handlers](../app/task_handlers); Live uses a dedicated runtime.
 - Parameters: `language` (final subtitle language), `source_language` (optional spoken source language hint), `format` (currently `vtt`), `model` (small|medium|large|turbo), `normalize` (audio pre-normalization toggle), plus tracking metadata (`video_id`, `video_slug`, `video_title`). GPU use follows `ENCODING_TYPE`.
 
 ### Live (`live`)
-
+- Workflow diagram: [TYPE_LIVE.md](TYPE_LIVE.md#what-it-does).
 - Marker package: [app/task_handlers/live](../app/task_handlers/live).
 - Runtime: [app/services/live_runtime.py](../app/services/live_runtime.py).
 - Purpose: pull an RTMP source through MediaMTX and transcode it into adaptive HLS with FFmpeg.
@@ -228,3 +232,8 @@ See [TYPE_LIVE.md](TYPE_LIVE.md) for the task contract, request examples and HLS
 See [LIVE.md](LIVE.md) for explicit `live` declarations in `runner/.env`, mixed or grouped instances, MediaMTX, adaptive transcoding and recovery.
 For native or Docker installation of MediaMTX >= 1.21.1 on CPU/GPU machines, see
 [MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md), which links to the shared Manager guide.
+
+## Diagrams
+
+- [architecture.png](architecture.png) gives an overview of components.
+- [tree.png](tree.png) shows the repository structure.

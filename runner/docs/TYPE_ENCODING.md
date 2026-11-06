@@ -20,6 +20,9 @@ This page documents the **`encoding`** runner task type: what it does and which 
 - [Common pitfalls](#common-pitfalls)
 
 ## What it does
+
+[![Encoding workflow: source download, optional preparation, FFmpeg processing and result files](encoding-workflow.png)](encoding-workflow.png)
+
 The `encoding` task downloads a media file from `source_url` into a per-task workspace and runs the FFmpeg pipeline implemented in:
 - [app/task_handlers/encoding/encoding_handler.py](../app/task_handlers/encoding/encoding_handler.py)
 - [app/task_handlers/encoding/encoding.py](../app/task_handlers/encoding/encoding.py)

@@ -3,6 +3,9 @@
 This page documents the **`studio`** runner task type: what it does and which **parameters** the Manager can pass.
 
 ## What it does
+
+[![Studio workflow: Opencast inputs, FFmpeg composition and reuse of the encoding pipeline in the same Runner instance](studio-workflow.png)](studio-workflow.png)
+
 The `studio` task is a **two-stage pipeline**:
 
 1) **Studio generation stage**: build a single base MP4 (`studio_base.mp4`) from an OpenCast Mediapackage XML.

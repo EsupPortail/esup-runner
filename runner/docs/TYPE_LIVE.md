@@ -21,6 +21,8 @@ The client-facing API is documented in the [Manager Live guide](../../manager/do
 
 ## What it does
 
+[![Live workflow: encoder publication, Manager discovery, MediaMTX relay, Runner transcoding and HLS delivery](live-workflow.png)](live-workflow.png)
+
 The `live` task pulls an incoming RTMP stream from the Manager's MediaMTX
 instance and transcodes it into adaptive HLS with FFmpeg.
 

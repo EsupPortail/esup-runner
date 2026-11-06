@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keep user mode. See [setup and migration](MEDIAMTX_SETUP.md#system-service-for-port-443).
 - Allow the Manager connection helper to configure optional RTMPS while retaining
   its internal RTMP relay and HTTP Control API.
+- Reference the shared Runner workflow diagrams from the Live guide and README,
+  and link the architecture and repository structure diagrams.
+
+### Fixed
+
+- Reconcile running tasks at Manager startup and mark confirmed unknown Runner
+  tasks as failed, so orphaned executions can be restarted from the task interface.
+- Keep newer task updates when persisted timestamps use different UTC offsets.
+- Hide Live diagnostics on the logs page and the Live session summary and
+  monitoring link on the statistics page when `LIVE_ENABLED=false`.
+- Use shared blue information dialogs for task stop and restart confirmations.
 
 ## [1.11.1] - 2026-10-29
 

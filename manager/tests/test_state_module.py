@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from app.core import state
 from app.models.models import Task
@@ -158,6 +160,21 @@ def test_parse_updated_at_branches():
     """Validate Parse updated at branches."""
     assert state._parse_updated_at(None) == datetime.min
     assert state._parse_updated_at("not-a-date") == datetime.min
+
+
+@pytest.mark.parametrize("offset_hours", [-5, 0, 2])
+def test_pick_newest_task_compares_instants_across_timezones(offset_hours):
+    """Keep newer worker updates when persisted timestamps use another timezone."""
+    now = datetime.now().astimezone()
+    offset = timezone(timedelta(hours=offset_hours))
+    local = _task("t1", updated_at=now.replace(tzinfo=None).isoformat())
+    older = (now - timedelta(minutes=1)).astimezone(offset)
+    persisted = _task("t1", updated_at=older.isoformat())
+    assert state._pick_newest_task(local, persisted) is local
+
+    newer = (now + timedelta(minutes=1)).astimezone(offset)
+    persisted.updated_at = newer.isoformat()
+    assert state._pick_newest_task(local, persisted) is persisted
 
 
 def test_get_deleted_task_ids_handles_exception(monkeypatch):

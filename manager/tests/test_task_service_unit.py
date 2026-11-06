@@ -581,6 +581,198 @@ async def test_reconciliation_does_not_override_a_newer_task_run(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("timestamp_format", ["local", "utc", "offset", "z"])
+async def test_startup_reconciliation_persists_confirmed_orphan(
+    monkeypatch, clean_tasks, clean_runners, tmp_path, timestamp_format
+):
+    """Recover persisted orphan tasks at startup and retain their restart parameters."""
+    from app.core import state
+    from app.core.persistence import SafeDailyJSONPersistence
+
+    old = datetime.now() - timedelta(minutes=5)
+    if timestamp_format != "local":
+        old = datetime.now(timezone.utc) - timedelta(minutes=5)
+    if timestamp_format == "offset":
+        old = old.astimezone(timezone(timedelta(hours=2)))
+    task = _task("orphan", "running", updated_at=old)
+    if timestamp_format == "z":
+        task.updated_at = task.updated_at.replace("+00:00", "Z")
+    task.run_id = "current-run"
+    task.parameters = {"video_id": 5030, "rendition": {"720": {"resolution": "1280x720"}}}
+    task.client_token = "client-token"
+    initial = task.model_dump()
+    unrelated = _task("unrelated", "completed")
+    backend = SafeDailyJSONPersistence(str(tmp_path))
+    assert backend.upsert_tasks({task.task_id: task, unrelated.task_id: unrelated})
+    monkeypatch.setattr(state, "persistence", backend)
+    monkeypatch.setattr(state, "IS_PRODUCTION", True)
+    monkeypatch.setattr(task_service, "save_tasks", state.save_tasks)
+    runners["r1"] = _runner()
+    stop = asyncio.Event()
+    events = []
+
+    async def fetch(_runner, task_id):
+        events.append("fetch")
+        return {"task_id": task_id, "status": "not_found"}
+
+    async def sleep(delay):
+        events.append(delay)
+        if delay == 3600:
+            stop.set()
+
+    monkeypatch.setattr(task_service, "_fetch_runner_task_status", fetch)
+    monkeypatch.setattr(task_service.asyncio, "sleep", sleep)
+    await task_service.reconcile_running_tasks_with_runners(stop_event=stop)
+
+    assert events == ["fetch", 10, "fetch", 3600]
+    saved = backend.load_task("orphan")
+    assert saved["status"] == "failed"
+    assert "no longer known" in saved["error"]
+    assert saved["updated_at"] != initial["updated_at"]
+    for field in initial.keys() - {"status", "error", "updated_at"}:
+        assert saved[field] == initial[field]
+    assert backend.load_task("unrelated") == unrelated.model_dump()
+    assert runners["r1"].availability == "busy"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("updated_at", ["recent", "recent-utc", "future", "invalid"])
+async def test_missing_task_waits_for_dispatch_grace(
+    monkeypatch, clean_tasks, clean_runners, updated_at
+):
+    """Ignore unknown tasks during dispatch and when their age cannot be trusted."""
+    task = _task("t1", "running", created_at=datetime.now() - timedelta(days=2))
+    task.updated_at = {
+        "recent": datetime.now().isoformat(),
+        "recent-utc": datetime.now(timezone.utc).isoformat(),
+        "future": (datetime.now() + timedelta(hours=1)).isoformat(),
+        "invalid": "invalid",
+    }[updated_at]
+    tasks["t1"] = task
+    runners["r1"] = _runner()
+    initial = task.model_dump()
+    calls = []
+
+    async def fetch(_runner, task_id):
+        calls.append(task_id)
+        return {"task_id": task_id, "status": "not_found"}
+
+    monkeypatch.setattr(task_service, "_fetch_runner_task_status", fetch)
+    assert await task_service._reconcile_single_running_task("t1") is False
+    assert calls == ["t1"]
+    assert task.model_dump() == initial
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "confirmed_payload,expected_status,changed",
+    [
+        ({"task_id": "t1", "status": "running"}, "running", True),
+        ({"task_id": "t1", "status": "completed"}, "completed", True),
+        (None, "running", False),
+        ({"task_id": "other", "status": "not_found"}, "running", False),
+        ({"status": "not_found"}, "running", False),
+        ({"task_id": "t1", "status": "bogus"}, "running", False),
+        (
+            {"task_id": "t1", "status": "not_found", "execution_id": "old-run"},
+            "running",
+            False,
+        ),
+    ],
+)
+async def test_missing_task_requires_a_second_matching_response(
+    monkeypatch, clean_tasks, clean_runners, confirmed_payload, expected_status, changed
+):
+    """Accept recovery and leave uncertain or stale runner responses untouched."""
+    task = _task("t1", "running", updated_at=datetime.now() - timedelta(minutes=5))
+    task.run_id = "current-run"
+    tasks["t1"] = task
+    runners["r1"] = _runner()
+    initial = task.model_dump()
+    responses = iter([{"task_id": "t1", "status": "not_found"}, confirmed_payload])
+
+    async def fetch(_runner, _task_id):
+        return next(responses)
+
+    async def sleep(delay):
+        assert delay == 10
+
+    monkeypatch.setattr(task_service, "_fetch_runner_task_status", fetch)
+    monkeypatch.setattr(task_service.asyncio, "sleep", sleep)
+    assert await task_service._reconcile_single_running_task("t1") is changed
+    assert task.status == expected_status
+    if not changed:
+        assert task.model_dump() == initial
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["relaunch", "terminal", "deleted", "runner", "refreshed"])
+async def test_missing_task_confirmation_preserves_concurrent_updates(
+    monkeypatch, clean_tasks, clean_runners, change
+):
+    """Keep another worker's completion, reassignment, deletion or newer execution."""
+    tasks["t1"] = _task("t1", "running", updated_at=datetime.now() - timedelta(minutes=5))
+    tasks["t1"].run_id = "current-run"
+    runners["r1"] = _runner()
+    calls = []
+    expected = []
+
+    async def fetch(_runner, task_id):
+        calls.append(task_id)
+        if len(calls) == 2:
+            if change == "relaunch":
+                tasks[task_id].run_id = "next-run"
+            elif change == "terminal":
+                tasks[task_id].status = "completed"
+            elif change == "deleted":
+                tasks.pop(task_id)
+            elif change == "runner":
+                tasks[task_id].runner_id = "r2"
+            else:
+                tasks[task_id].updated_at = datetime.now().isoformat()
+            expected.append(tasks[task_id].model_dump() if task_id in tasks else None)
+        return {"task_id": task_id, "status": "not_found"}
+
+    async def sleep(_delay):
+        pass
+
+    monkeypatch.setattr(task_service, "_fetch_runner_task_status", fetch)
+    monkeypatch.setattr(task_service.asyncio, "sleep", sleep)
+    assert await task_service._reconcile_single_running_task("t1") is False
+    assert (tasks["t1"].model_dump() if "t1" in tasks else None) == expected[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"task_id": "other", "status": "not_found"},
+        {"status": "not_found"},
+        {"task_id": "t1", "status": "not_found", "execution_id": "old-run"},
+    ],
+)
+async def test_missing_task_ignores_unrelated_initial_response(
+    monkeypatch, clean_tasks, clean_runners, payload
+):
+    """Require the requested identity before starting orphan confirmation."""
+    task = _task("t1", "running", updated_at=datetime.now() - timedelta(minutes=5))
+    task.run_id = "current-run"
+    tasks["t1"] = task
+    runners["r1"] = _runner()
+    initial = task.model_dump()
+    calls = []
+
+    async def fetch(_runner, task_id):
+        calls.append(task_id)
+        return payload
+
+    monkeypatch.setattr(task_service, "_fetch_runner_task_status", fetch)
+    assert await task_service._reconcile_single_running_task("t1") is False
+    assert calls == ["t1"]
+    assert task.model_dump() == initial
+
+
+@pytest.mark.asyncio
 async def test_reconciliation_accepts_current_execution_identity(
     monkeypatch, clean_tasks, clean_runners
 ):

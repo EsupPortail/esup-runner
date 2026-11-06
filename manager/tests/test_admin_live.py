@@ -836,6 +836,7 @@ async def test_view_source_sessions_uses_exact_id_and_preserves_pagination(monke
 
 @pytest.mark.asyncio
 async def test_live_historical_statistics_date_filter(tmp_path, monkeypatch):
+    monkeypatch.setattr(config.LIVE, "enabled", True)
     monkeypatch.setattr(config, "MANAGER_DATA_DIR", str(tmp_path))
     (tmp_path / "task_stats.csv").write_text(
         "task_id,date,task_type,status,etab_name\na,2026-09-01,live,completed,U\nb,2026-09-02,live,failed,U\nc,2026-09-02,encoding,completed,U\n"

@@ -52,10 +52,12 @@ logger.info(f"Loaded {len(tasks)} tasks from persistence")
 
 
 def _parse_updated_at(value: Optional[str]) -> datetime:
+    """Normalize task timestamps to local naive datetimes for state ordering."""
     if not value:
         return datetime.min
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.astimezone().replace(tzinfo=None) if parsed.tzinfo is not None else parsed
     except Exception:
         return datetime.min
 

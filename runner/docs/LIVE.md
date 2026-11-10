@@ -288,15 +288,15 @@ The Manager forwards the internal `broadcaster_id` as the Live source identifier
 It derives this identifier from the final component of the RTMP source path and
 uses that same name as `source_id`. Set the matching broadcaster's `source_id`
 in Pod to this value; the Pod slug can be different. With automatic RTMP
-discovery, use the optional `etablishment` publication parameter for the
+discovery, use the optional `establishment` publication parameter for the
 establishment recorded in task statistics and `equipment` for the encoder
 identifier; neither is the Pod source identifier. For example:
 
 ```text
-rtmp://manager.univ.fr:1935/live/lecture-hall-a?user=publisher&pass=...&etablishment=Universit%C3%A9%20de%20Montpellier&equipment=SMP351
+rtmp://manager.univ.fr:1935/live/lecture-hall-a?user=publisher&pass=...&establishment=Universit%C3%A9%20de%20Montpellier&equipment=SMP351
 ```
 
-If `etablishment` is absent or invalid, the Manager uses `unknown` by default
+If `establishment` is absent or invalid, the Manager uses `unknown` by default
 or the configured `LIVE_AUTO_ETAB_NAME` fallback. The Runner compares this
 result with `LIVE_POD_ESTABLISHMENT_NAME` when the Pod filter is configured.
 

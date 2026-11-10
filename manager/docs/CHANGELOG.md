@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Correct the RTMP publication query parameter to `establishment`. Update existing
   encoder URLs to use this name; see [automatic Live publishing](LIVE.md#automatic-rtmp-to-hls-operation).
+- Use matching pie sizes and side legends for task type and establishment
+  statistics, stacking the legends below the pies on small screens.
+
+### Fixed
+
+- Keep all establishments visible in the statistics chart legend, with wrapping
+  labels beside the pie on wider screens and below it on small screens.
 
 ## [1.11.2] - 2026-11-06
 

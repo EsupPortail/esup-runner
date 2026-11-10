@@ -122,15 +122,18 @@
     {% endif %}
     <!-- Chart -->
     <div class="row g-3 mb-4">
-      <div class="col-12 col-lg-6">
+      <div class="col-12 col-xxl-5">
         <div class="card border-0 shadow-sm h-100">
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
               <h2 class="h5 mb-0">Tasks by type</h2>
               <span class="text-subtle small">Pie chart</span>
             </div>
-            <div class="ratio" style="--bs-aspect-ratio: 50%;">
-              <canvas id="tasksByTypeChart"></canvas>
+            <div id="tasksByTypeContent" class="statistics-pie-chart">
+              <div class="statistics-pie-canvas">
+                <canvas id="tasksByTypeChart"></canvas>
+              </div>
+              <ul id="tasksByTypeLegend" class="statistics-pie-legend" aria-label="Task types"></ul>
             </div>
             <div id="tasksByTypeEmpty" class="text-center text-muted py-4" style="display: none;">
               No data available for chart
@@ -138,15 +141,18 @@
           </div>
         </div>
       </div>
-      <div class="col-12 col-lg-6">
+      <div class="col-12 col-xxl-7">
         <div class="card border-0 shadow-sm h-100">
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
               <h2 class="h5 mb-0">Tasks by establishment</h2>
               <span class="text-subtle small">Pie chart</span>
             </div>
-            <div class="ratio" style="--bs-aspect-ratio: 50%;">
-              <canvas id="tasksByEtabChart"></canvas>
+            <div id="tasksByEtabContent" class="statistics-pie-chart">
+              <div class="statistics-pie-canvas">
+                <canvas id="tasksByEtabChart"></canvas>
+              </div>
+              <ul id="tasksByEtabLegend" class="statistics-pie-legend" aria-label="Establishments"></ul>
             </div>
             <div id="tasksByEtabEmpty" class="text-center text-muted py-4" style="display: none;">
               No data available for chart
@@ -290,18 +296,13 @@
       const statsData = JSON.parse(document.getElementById('statistics-data')?.textContent || '{}');
       const typeLabels = (statsData.by_type || []).map(item => item.label);
       const typeCounts = (statsData.by_type || []).map(item => item.count);
-      const MAX_ETAB_LABEL_LENGTH = 50;
-      const truncateEtabLabel = (label) => {
+      const formatEtabLabel = (label) => {
         const rawLabel = String(label || '').trim();
         const slashIndex = rawLabel.indexOf('/');
         const slashTrimmed = slashIndex > -1 ? rawLabel.slice(0, slashIndex).trim() : rawLabel;
-        const effectiveLabel = slashTrimmed || rawLabel;
-        if (effectiveLabel.length <= MAX_ETAB_LABEL_LENGTH) {
-          return effectiveLabel;
-        }
-        return `${effectiveLabel.slice(0, MAX_ETAB_LABEL_LENGTH - 3).trimEnd()}...`;
+        return slashTrimmed || rawLabel;
       };
-      const etabLabels = (statsData.by_etab || []).map(item => truncateEtabLabel(item.label));
+      const etabLabels = (statsData.by_etab || []).map(item => formatEtabLabel(item.label));
       const etabCounts = (statsData.by_etab || []).map(item => item.count);
       const dateLabels = (statsData.by_date || []).map(item => item.label);
       const dateCounts = (statsData.by_date || []).map(item => item.count);
@@ -313,14 +314,45 @@
       const monthCanvas = document.getElementById('tasksByMonthChart');
       const monthEmpty = document.getElementById('tasksByMonthEmpty');
 
+      const renderPieLegend = (chart, legendId, fullLabels) => {
+        const legend = document.getElementById(legendId);
+        chart.options.plugins.legend.labels.generateLabels(chart).forEach(item => {
+          const entry = document.createElement('li');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'statistics-pie-legend-button';
+          button.title = fullLabels[item.index];
+          button.setAttribute('aria-pressed', 'true');
+
+          const swatch = document.createElement('span');
+          swatch.className = 'statistics-pie-legend-swatch';
+          swatch.style.backgroundColor = item.fillStyle;
+          swatch.setAttribute('aria-hidden', 'true');
+
+          const label = document.createElement('span');
+          label.textContent = item.text;
+          button.append(swatch, label);
+          button.addEventListener('click', () => {
+            chart.toggleDataVisibility(item.index);
+            chart.update();
+            const visible = chart.getDataVisibility(item.index);
+            button.setAttribute('aria-pressed', String(visible));
+            button.classList.toggle('is-hidden', !visible);
+          });
+          entry.appendChild(button);
+          legend.appendChild(entry);
+        });
+      };
+
       if (!typeLabels.length || !chartCanvas) {
+        document.getElementById('tasksByTypeContent').hidden = true;
         if (emptyState) emptyState.style.display = 'block';
       } else {
         const colors = [
           '#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
           '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab'
         ];
-        new Chart(chartCanvas, {
+        const typeChart = new Chart(chartCanvas, {
           type: 'pie',
           data: {
             labels: typeLabels,
@@ -331,26 +363,26 @@
             }],
           },
           options: {
+            maintainAspectRatio: false,
             plugins: {
               legend: {
-                position: 'bottom',
-                labels: {
-                  color: getComputedStyle(document.body).getPropertyValue('--bs-body-color') || '#fff',
-                }
+                display: false,
               }
             }
           }
         });
+        renderPieLegend(typeChart, 'tasksByTypeLegend', typeLabels);
       }
 
       if (!etabLabels.length || !etabCanvas) {
+        document.getElementById('tasksByEtabContent').hidden = true;
         if (etabEmpty) etabEmpty.style.display = 'block';
       } else {
         const colors = [
           '#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
           '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab'
         ];
-        new Chart(etabCanvas, {
+        const etabChart = new Chart(etabCanvas, {
           type: 'pie',
           data: {
             labels: etabLabels,
@@ -361,16 +393,16 @@
             }],
           },
           options: {
+            maintainAspectRatio: false,
             plugins: {
               legend: {
-                position: 'bottom',
-                labels: {
-                  color: getComputedStyle(document.body).getPropertyValue('--bs-body-color') || '#fff',
-                }
+                display: false,
               }
             }
           }
         });
+
+        renderPieLegend(etabChart, 'tasksByEtabLegend', statsData.by_etab.map(item => item.label));
       }
 
       const monthlyMap = new Map();

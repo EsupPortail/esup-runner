@@ -89,6 +89,69 @@ body[data-bs-theme="light"] {
     box-shadow 0.15s ease;
 }
 
+.statistics-pie-chart {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex-grow: 1;
+  gap: 1rem;
+  align-items: center;
+}
+
+.statistics-pie-canvas {
+  position: relative;
+  width: 100%;
+  max-width: 16rem;
+  height: 16rem;
+  justify-self: center;
+}
+
+.statistics-pie-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.statistics-pie-legend-button {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.125rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.statistics-pie-legend-button:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: 2px;
+}
+
+.statistics-pie-legend-button.is-hidden {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.statistics-pie-legend-swatch {
+  flex: 0 0 0.75rem;
+  height: 0.75rem;
+  margin-top: 0.375rem;
+  border-radius: 0.125rem;
+}
+
+@media (min-width: 768px) {
+  .statistics-pie-chart {
+    grid-template-columns: 16rem minmax(0, 1fr);
+  }
+}
+
 .dashboard-shortcut-card {
   cursor: pointer;
   justify-content: center;

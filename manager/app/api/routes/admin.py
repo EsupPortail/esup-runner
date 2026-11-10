@@ -726,6 +726,7 @@ async def admin_dashboard(request: Request):
         "admin.html",
         {
             "request": request,
+            "admin_title": config.ADMIN_TITLE,
             "runners": runners_data,
             "tasks": tasks_data_sorted,
             "total_runners": len(runners_data),

@@ -11,6 +11,7 @@ import pytest
 from fastapi import Request
 from fastapi.testclient import TestClient
 from jinja2 import Environment, FileSystemLoader
+from markupsafe import escape
 
 from app.api.routes import admin as admin_routes
 from app.api.routes import statistics as statistics_routes
@@ -672,8 +673,12 @@ def test_task_detail_template_enables_stop_for_running_task():
     assert "Task status 'running' cannot be stopped" not in html
 
 
-def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
-    """Validate Admin dashboard renders and orders tasks."""
+@pytest.mark.parametrize("admin_title", ["Runners Monitoring", "Runners - Préprod & <Service>"])
+def test_admin_dashboard_renders_and_orders_tasks(
+    admin_client, clean_state, monkeypatch, admin_title
+):
+    """Validate the dashboard title is escaped and tasks are ordered."""
+    monkeypatch.setattr(config, "ADMIN_TITLE", admin_title)
     runners["r1"] = _make_runner("r1", seconds_ago=10)
 
     tasks["t_old"] = _make_task("t_old", "r1", created_at="2026-01-01T00:00:00")
@@ -689,6 +694,8 @@ def test_admin_dashboard_renders_and_orders_tasks(admin_client, clean_state):
     admin_client.cookies.set("theme", "dark")
     resp = admin_client.get("/admin")
     assert resp.status_code == 200
+    assert f"<title>{escape(admin_title)}</title>" in resp.text
+    assert f'<h1 class="mb-0">{escape(admin_title)}</h1>' in resp.text
 
     # Newer task should appear before older one in rendered HTML
     assert resp.text.find("t_new") < resp.text.find("t_old")

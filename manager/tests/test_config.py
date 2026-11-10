@@ -84,6 +84,7 @@ def test_clear_config_env_vars_removes_only_managed(monkeypatch):
     monkeypatch.setenv("RUNNERS_STORAGE_DIR", "/tmp/storage")
     monkeypatch.setenv("AUTHORIZED_TOKENS__A", "token-a")
     monkeypatch.setenv("ADMIN_USERS__bob", "hash")
+    monkeypatch.setenv("ADMIN_TITLE", "Production")
     monkeypatch.setenv("SOME_OTHER", "keep")
 
     cfg._clear_config_env_vars()
@@ -97,6 +98,26 @@ def test_clear_config_env_vars_removes_only_managed(monkeypatch):
     assert "RUNNERS_STORAGE_DIR" not in cfg.os.environ
     assert "AUTHORIZED_TOKENS__A" not in cfg.os.environ
     assert "ADMIN_USERS__bob" not in cfg.os.environ
+    assert "ADMIN_TITLE" not in cfg.os.environ
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, "Runners Monitoring"),
+        ("", "Runners Monitoring"),
+        ("   ", "Runners Monitoring"),
+        ("  Runners - Préproduction  ", "Runners - Préproduction"),
+    ],
+)
+def test_admin_title_uses_configured_value_or_default(monkeypatch, value, expected):
+    """Keep a useful dashboard title when the setting is missing or blank."""
+    from app.core.config import Config
+
+    if value is not None:
+        monkeypatch.setenv("ADMIN_TITLE", value)
+
+    assert Config().ADMIN_TITLE == expected
 
 
 def test_load_environment_variables_override_and_default_paths(monkeypatch, capsys):

@@ -43,6 +43,7 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 - `CLEANUP_TASK_FILES_DAYS` (int, default `30`): Retention for all tasks managed by cleanup services, regardless of status. Set `0` to disable age-based cleanup. Keeping this value low and non-zero is recommended to limit task accumulation and Manager memory usage; choose the shortest retention that meets your task-history needs.
 
 ## Authentication and admin access
+- `ADMIN_TITLE` (default `Runners Monitoring`): Plain-text browser tab title and heading of the `/admin` dashboard. Empty or whitespace-only values use the default. Restart the Manager after changing it.
 - `AUTHORIZED_TOKENS__*`: Defines accepted API tokens (headers: `Authorization: Bearer <token>` or `X-API-Token: <token>`).
 - `ADMIN_USERS__*`: Defines admin users for `/admin` with bcrypt hashes.
 - If no `AUTHORIZED_TOKENS__*` is configured, the manager logs a warning and protected API access is effectively blocked.

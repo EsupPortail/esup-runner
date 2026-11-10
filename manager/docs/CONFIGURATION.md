@@ -19,6 +19,18 @@ administrators** on **Access Configuration** (`/admin/credentials`) to apply
 access changes without restarting. Entries created or deleted from that page
 are saved and applied automatically. **Refresh page** only updates the display.
 
+## Administration dashboard title
+
+Set `ADMIN_TITLE` to distinguish Manager dashboards in browser tabs and windows:
+
+```properties
+ADMIN_TITLE="Runners Monitoring - Production"
+```
+
+This plain-text value sets both the `/admin` browser tab title and dashboard
+heading. The default is `Runners Monitoring`, including when the value is empty
+or contains only whitespace. Restart the Manager after changing it.
+
 ## Validate before startup
 
 After changing `.env`, run the configuration preflight before starting or
@@ -400,7 +412,7 @@ not filter publications. Discovered identifiers and private paths persist in
 `MANAGER_DATA_DIR/.live-sources.json`. Set `LIVE_AUTO_START=false` for exclusively API-driven sessions.
 `LIVE_AUTO_ETAB_NAME` sets the fallback establishment for automatic session
 statistics. An RTMP publication can override it with the URL query parameter
-`etablishment`; the value is URL-decoded and recorded as the task requester.
+`establishment`; the value is URL-decoded and recorded as the task requester.
 For MediaMTX diagnostics in administration, configure either
 `LIVE_MEDIAMTX_LOG_UNIT` (a service in the journal selected by
 `LIVE_MEDIAMTX_SERVICE_MODE=user|system`, default `user`) or

@@ -83,6 +83,7 @@ _CONFIG_ENV_KEYS = [
     "LOG_DIR",
     "LOG_DIRECTORY",
     "LOG_LEVEL",
+    "ADMIN_TITLE",
     "API_DOCS_VISIBILITY",
     "RUNNERS_STORAGE_ENABLED",
     "RUNNERS_STORAGE_DIR",
@@ -714,6 +715,8 @@ class Config:
 
     def _load_business_configuration(self) -> None:
         """Load runtime and task-priority business settings."""
+
+        self.ADMIN_TITLE: str = os.getenv("ADMIN_TITLE", "").strip() or "Runners Monitoring"
 
         # Production settings (development/production)
         self.ENVIRONMENT: str = (os.getenv("ENVIRONMENT", "development") or "").strip().lower()

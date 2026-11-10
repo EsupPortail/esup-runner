@@ -92,23 +92,23 @@ def test_equipment_rejects_too_many_query_fields():
         (None, None),
         ("user=publisher&pass=secret", None),
         (
-            "etablishment=Universit%C3%A9%20de%20Montpellier",
+            "establishment=Universit%C3%A9%20de%20Montpellier",
             "Université de Montpellier",
         ),
-        ("etablishment=   Universit%C3%A9+de+Lorraine  ", "Université de Lorraine"),
-        ("etablishment=", None),
-        ("etablishment=" + "x" * 201, None),
-        ("etablishment=one&etablishment=two", None),
+        ("establishment=   Universit%C3%A9+de+Lorraine  ", "Université de Lorraine"),
+        ("establishment=", None),
+        ("establishment=" + "x" * 201, None),
+        ("establishment=one&establishment=two", None),
     ],
 )
-def test_etablishment_is_decoded_and_rejects_ambiguous_or_empty_values(query, expected):
-    assert auto.extract_etablishment(query) == expected
+def test_establishment_is_decoded_and_rejects_ambiguous_or_empty_values(query, expected):
+    assert auto.extract_establishment(query) == expected
 
 
-def test_etablishment_rejects_too_many_query_fields():
+def test_establishment_rejects_too_many_query_fields():
     query = "&".join(f"field{index}=value" for index in range(65))
 
-    assert auto.extract_etablishment(query) is None
+    assert auto.extract_establishment(query) is None
 
 
 @pytest.mark.asyncio
@@ -118,7 +118,7 @@ async def test_automatic_publication_query_sets_equipment_and_path_slug(media):
     media.get_rtmp_connection.return_value = {
         "query": (
             "user=publisher&pass=secret&equipment=SMP351-01&"
-            "etablishment=Universit%C3%A9%20de%20Montpellier"
+            "establishment=Universit%C3%A9%20de%20Montpellier"
         )
     }
 

@@ -36,12 +36,12 @@ def extract_equipment(query: str | None) -> str | None:
     return value
 
 
-def extract_etablishment(query: str | None) -> str | None:
+def extract_establishment(query: str | None) -> str | None:
     """Extract one decoded RTMP establishment name without retaining credentials."""
     if not isinstance(query, str) or len(query) > 8192:
         return None
     try:
-        values = parse_qs(query, keep_blank_values=True, max_num_fields=64).get("etablishment", [])
+        values = parse_qs(query, keep_blank_values=True, max_num_fields=64).get("establishment", [])
     except ValueError:
         return None
     if len(values) != 1:
@@ -227,7 +227,7 @@ async def reconcile_source(source_id: str, client: MediaMTXClient) -> None:
             if isinstance(connection_payload, dict):
                 query = connection_payload.get("query")
                 equipment = extract_equipment(query)
-                etab_name = extract_etablishment(query) or etab_name
+                etab_name = extract_establishment(query) or etab_name
         request = LiveStartRequest(
             source_id=source_id,
             event_id=event,

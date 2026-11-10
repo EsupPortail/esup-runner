@@ -197,9 +197,9 @@ otherwise stopped systemd service.
    The encoder does not need an Esup-Runner API token. For FFmpeg, a typical URL
    is `rtmp://manager.example.org:1935/live/<broadcaster>?user=publisher&pass=<password>`.
   To populate the Live **Establishment** and **Equipment** fields automatically,
-  add the optional `etablishment` and `equipment` query parameters, for example:
-  `rtmp://manager.example.org:1935/live/lecture-hall-a?user=publisher&pass=<password>&etablishment=Universit%C3%A9%20de%20Montpellier&equipment=SMP351`.
-  The URL-decoded `etablishment` value becomes the task requester and therefore
+  add the optional `establishment` and `equipment` query parameters, for example:
+  `rtmp://manager.example.org:1935/live/lecture-hall-a?user=publisher&pass=<password>&establishment=Universit%C3%A9%20de%20Montpellier&equipment=SMP351`.
+  The URL-decoded `establishment` value becomes the task requester and therefore
   the establishment in `task_stats.csv`; when it is absent or invalid, the
   configured `LIVE_AUTO_ETAB_NAME` fallback is used (`unknown` by default).
   The Manager URL-decodes and accepts one identifier of 1 to 200 characters:
@@ -254,7 +254,7 @@ because capacity was initially exhausted. Streams are not recorded or buffered
 while waiting for a Runner. A publication shorter than a scan can be missed.
 
 Automatic sessions are marked `automatic=true`, use the decoded RTMP
-`etablishment` parameter or `LIVE_AUTO_ETAB_NAME` (default `unknown`) for
+`establishment` parameter or `LIVE_AUTO_ETAB_NAME` (default `unknown`) for
 establishment statistics and `MediaMTX` as the application
 name. Their event identifier is derived from the MediaMTX RTMP connection UUID.
 Shared locks and persistent checkpoints prevent duplicate allocation across

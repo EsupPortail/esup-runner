@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `ADMIN_TITLE` to customize the administration dashboard heading and browser
+  tab title, defaulting to `Runners Monitoring`.
+
+### Changed
+
+- Correct the RTMP publication query parameter to `establishment`. Update existing
+  encoder URLs to use this name; see [automatic Live publishing](LIVE.md#automatic-rtmp-to-hls-operation).
 
 ## [1.11.2] - 2026-11-06
 

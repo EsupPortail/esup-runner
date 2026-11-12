@@ -287,6 +287,13 @@ overhead remains outside this script's model. HLS segments under `/dev/shm/hls`
 also consume RAM and are not measured by the script; validate their retained size
 and the tmpfs capacity separately, especially for custom high-bitrate profiles.
 
+## Disk space maintenance
+
+Use the [shared disk space guide](../../manager/docs/OPERATIONS.md#disk-space-maintenance)
+for filesystem/inode checks, deleted files still open, log retention and Docker cleanup.
+For Live HLS, also check `df -h /dev/shm`: the default output uses memory-backed
+storage. See [HLS storage](LIVE.md#hls-storage-in-memory-on-linux).
+
 ## Storage and retention operations
 
 Task outputs/manifests are stored under `STORAGE_DIR`.
@@ -298,7 +305,12 @@ Automatic cleanup behavior:
   - `> 0` enables age-based deletion
 - `CLEANUP_INTERVAL_HOURS` controls periodic cleanup cadence
 
-Manual cleanup helper:
+If any group includes `live`, automatic age cleanup is disabled for **all groups**
+in that environment. Delete finished VOD results through the Runner API
+(`DELETE /task/delete/{task_id}`), or use a separate VOD environment for automatic
+retention. Preserve Live recovery files.
+
+Manual cleanup helper (VOD-only storage; deletes by age without checking task status):
 
 ```bash
 cd /opt/esup-runner/runner
@@ -315,6 +327,13 @@ Recommended maintenance flow for aggressive cleanup:
 4. Start the runner service.
 5. Verify `/runner/health` and `/runner/ping` on each instance.
 
+## Free disk space: uv cache
+
+Follow the [shared uv cache cleanup procedure](../../manager/docs/OPERATIONS.md#free-disk-space-uv-cache).
+Use the paths from `runner/.env` and stop/start `esup-runner-runner` on each
+Runner host. If the Manager shares these caches, stop/start it as well.
+This preserves `.venv` and transcription model caches.
+
 ## Transcription cache operations
 
 For transcription-enabled runners, monitor cache directories:
@@ -329,6 +348,16 @@ Operational notes:
 - Keep enough free space before first model download or model upgrades.
 - Use `uv run scripts/check_runner_storage.py` to validate free space and writability.
 - If caches are intentionally purged, next transcription tasks will re-download model assets.
+
+To remove unused models, wait for active tasks to finish and stop every Runner
+sharing the cache. Use the configured paths above:
+
+- Whisper: delete only unused `<model>.pt` files in `WHISPER_MODELS_DIR`.
+- Hugging Face: delete only unused `models--<organization>--<model>` directories
+  in `HUGGINGFACE_MODELS_DIR`; keep the internal `blobs`/`snapshots` structure of retained models intact.
+
+Restart the stopped Runners. Removed models require network access and will be
+downloaded again if requested. See the [Hugging Face cache layout](https://huggingface.co/docs/huggingface_hub/en/guides/manage-cache#file-based-caching).
 
 ## Manager registration troubleshooting
 

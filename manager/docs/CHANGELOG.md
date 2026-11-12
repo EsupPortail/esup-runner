@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `ADMIN_TITLE` to customize the administration dashboard heading and browser
   tab title, defaulting to `Runners Monitoring`.
+- Document [passwordless RTMP publishing](MEDIAMTX_SETUP.md#passwordless-publishing-from-trusted-encoder-ips)
+  for trusted encoder IPs, with per-stream permission examples.
 
 ### Changed
 
@@ -18,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   encoder URLs to use this name; see [automatic Live publishing](LIVE.md#automatic-rtmp-to-hls-operation).
 - Use matching pie sizes and side legends for task type and establishment
   statistics, stacking the legends below the pies on small screens.
+- Document [disk space maintenance](OPERATIONS.md#disk-space-maintenance),
+  including uv/Docker cleanup, log retention and the distinction between
+  Manager history and Runner output retention.
 
 ### Fixed
 

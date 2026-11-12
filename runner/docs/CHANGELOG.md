@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Document [disk space maintenance](OPERATIONS.md#disk-space-maintenance),
+  including uv/model cache cleanup and storage retention limits for Live and
+  mixed task groups.
 
 ## [1.11.2] - 2026-11-06
 

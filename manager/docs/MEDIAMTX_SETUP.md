@@ -14,6 +14,7 @@ The MediaMTX executable/image is identical for CPU and GPU hosts.
 - [Choose an installation method](#1-choose-an-installation-method)
 - [Install the native executable](#2-install-the-native-executable)
 - [Prepare one instance](#3-prepare-one-instance)
+- [Passwordless publishing from trusted encoder IPs](#passwordless-publishing-from-trusted-encoder-ips)
 - [Optional RTMPS publishing](#optional-rtmps-publishing)
 - [Start the native systemd service](#4-start-the-native-systemd-service)
 - [System service for port 443](#system-service-for-port-443)
@@ -213,6 +214,39 @@ separate permissions, use `~^live/droit-[A-Za-z0-9_-]+$` for `publisherDroit`
 and `~^live/medecine-[A-Za-z0-9_-]+$` for `publisherMedecine`.
 Keep `source: publisher` in `paths`: it is a MediaMTX source type, not an account
 name. MediaMTX [reloads the file automatically](https://mediamtx.org/docs/features/configuration).
+
+### Passwordless publishing from trusted encoder IPs
+
+To let selected encoders publish without a username or password, add this entry
+to the existing `authInternalUsers` list in the Manager's active
+`~/.config/esup-runner/manager/mediamtx.yml`. Keep the existing `publisher`,
+`relay` and `control` entries:
+
+```yaml
+  - user: any
+    pass: ""
+    ips:
+      - "192.0.2.10/32"
+      - "198.51.100.20/32"
+    permissions:
+      - action: publish
+        path: "~^live/[A-Za-z0-9_-]+$"
+```
+
+Replace the example IPs with the encoders' source IPs **as seen by MediaMTX**.
+Behind NAT, use the outgoing IP; all devices sharing it receive this permission.
+`user: any` includes anonymous clients and ignores the password. Keep `ips`
+restricted: `ips: []` would allow publishing without credentials from any IP.
+Only publication is granted; reading and Control API access keep their existing
+authentication. Other IPs still need a valid publisher account.
+
+Set the encoder server to `rtmp://manager.example.org:1935/live`, the stream key
+to `amphi-a`, and leave username/password empty, without `user` or `pass` query
+parameters. To restrict an encoder to one stream, use `path: "live/amphi-a"`
+with a separate entry for each IP/path pair.
+
+No Manager or Runner `.env` changes are needed. MediaMTX
+[reloads the YAML automatically](https://mediamtx.org/docs/features/configuration).
 
 ### Optional RTMPS publishing
 

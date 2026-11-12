@@ -167,6 +167,7 @@ Important:
 
 - This retention applies to persisted task JSON data.
 - It does not purge `data/task_stats.csv` (statistics history CSV).
+- It does not delete Runner outputs in `STORAGE_DIR`; see [Runner storage maintenance](../../runner/docs/OPERATIONS.md#storage-and-retention-operations).
 
 ## Statistics maintenance (`data/task_stats.csv`)
 
@@ -222,6 +223,81 @@ Notes:
 - Expected columns: `task_id,date,task_type,status,app_name,app_version,etab_name`.
 - You can download the current CSV from `/statistics/task-stats.csv` before maintenance.
 - When date filters are active on `/statistics`, the CSV download link exports only the selected period.
+
+## Disk space maintenance
+
+### Diagnose usage
+
+Adapt these paths to `SERVICE_USER`, `LOG_DIR`, `STORAGE_DIR` and `CACHE_DIR` in
+`.env`; omit paths absent from this host:
+
+```bash
+df -h                         # Filesystem space
+df -i                         # Inodes (too many small files can exhaust them)
+du -xhd1 /opt/esup-runner/manager/data /var/log/esup-runner \
+  /tmp/esup-runner /home/esup-runner/.cache
+```
+
+If space remains occupied after deletion, use `sudo lsof +L1` to find deleted
+files still open. Restart their owning service during maintenance to release space.
+
+### Log retention
+
+Manager/Runner application logs in `LOG_DIR` already rotate at 10 MiB with
+10 backups per file. Systemd journals have separate retention:
+
+```bash
+journalctl --user --disk-usage
+# Optional: remove archived journals older than 14 days across the whole host
+sudo journalctl --rotate --vacuum-time=14d
+```
+
+Configure ongoing journal limits in `journald.conf`. Rotate MediaMTX file logs
+separately; see [MediaMTX diagnostics](MEDIAMTX_SETUP.md#authentication-diagnostics-in-administration).
+
+### Docker images and build cache
+
+Run on each Docker host, using the same daemon as the deployment:
+
+```bash
+docker system df -v            # Images, build cache and volumes
+docker builder prune          # Remove dangling build cache
+docker image prune            # Remove dangling images
+```
+
+These commands affect all projects on that daemon and preserve volumes.
+Keep application data and model-cache volumes; avoid volume pruning.
+See Docker's [build cache](https://docs.docker.com/reference/cli/docker/builder/prune/)
+and [image cleanup](https://docs.docker.com/reference/cli/docker/image/prune/) references.
+
+## Free disk space: uv cache
+
+Run as `SERVICE_USER` (default: `esup-runner`) on each host. Check `CACHE_DIR`
+and `UV_CACHE_DIR` in each component's `.env` and any shell/service overrides.
+Common cache locations are:
+
+- `/home/esup-runner/.cache/uv`: uv's default Linux cache (`$XDG_CACHE_HOME/uv` if set).
+- `/home/esup-runner/.cache/esup-runner/uv`: the project's default (`UV_CACHE_DIR`, otherwise `CACHE_DIR/uv`).
+
+Adapt the paths to your configuration. Wait for active Runner tasks to finish,
+then stop the services sharing these caches. Omit services not installed on this
+host and restart only those stopped:
+
+```bash
+systemctl --user stop esup-runner-manager
+systemctl --user stop esup-runner-runner
+
+uv cache prune --cache-dir /home/esup-runner/.cache/uv
+uv cache prune --cache-dir /home/esup-runner/.cache/esup-runner/uv
+
+systemctl --user start esup-runner-manager
+systemctl --user start esup-runner-runner
+```
+
+`prune` removes unused cache entries. To clear all uv cache entries, replace
+`prune` with `clean`; subsequent dependency operations may download packages
+again. Existing `.venv` environments and Runner model caches are preserved.
+Do not remove the entire `CACHE_DIR`, which also contains transcription models.
 
 ## Backup checklist (before risky operations)
 

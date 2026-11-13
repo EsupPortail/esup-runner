@@ -51,7 +51,26 @@ operation. `setup`/`configure` only prepare files and preserve passwords.
 **1.21.1 is the minimum accepted version and the default download.** Any newer
 stable installed version is reused. To download a chosen release at an unused
 destination, pass `--version 1.21.2` to `install` or `setup`; the downloaded
-binary must report that exact release. Existing executables are never replaced.
+binary must report that exact release. `install` and `setup` never replace existing
+executables. To explicitly update a standard native installation with its existing
+configuration, run as the service account:
+
+**On shared Manager/Runner hosts, prefer running the update from `manager/`,
+once per service account for both roles.** The Manager installer is required
+for system MediaMTX services, including RTMPS on port 443.
+
+```bash
+cd /opt/esup-runner/runner  # Use manager/ on a shared Manager/Runner host.
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+uv run --no-sync python scripts/install_mediamtx.py update --version 1.21.3 --dry-run
+uv run --no-sync python scripts/install_mediamtx.py update --version 1.21.3
+```
+
+The command validates existing configuration, backs up the installation, replaces
+the executable and restarts active MediaMTX services, with rollback on detected
+activation failure. Account-local executable symlinks are replaced without changing
+their targets. See the shared [native update reference](../../manager/docs/MEDIAMTX_SETUP.md#native-update-command)
+for supported layouts, shared hosts, backups and post-update checks.
 
 Follow the shared [manual upgrade procedure](../../manager/docs/MEDIAMTX_SETUP.md#manual-upgrades)
 for native services or Docker, including backups, configuration validation and

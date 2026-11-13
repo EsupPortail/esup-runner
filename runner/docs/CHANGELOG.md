@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add an explicit MediaMTX `update --version` command with existing configuration,
+  backups and rollback on detected activation failures. See the shared
+  [update procedure](../../manager/docs/MEDIAMTX_SETUP.md#native-update-command).
+  Reused `PATH` executable links are upgraded locally without changing their targets.
+
 ### Changed
 
 - Document [disk space maintenance](OPERATIONS.md#disk-space-maintenance),

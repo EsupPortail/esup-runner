@@ -3,7 +3,6 @@
 import json
 import os
 import re
-from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -23,7 +22,6 @@ ENVIRONMENT_FIELDS = (
     "mediamtx_health_check_interval_hours",
     "mediamtx_service_mode",
     "mediamtx_log_unit",
-    "mediamtx_log_file",
 )
 
 
@@ -43,7 +41,6 @@ class LiveSettings(BaseModel):
     mediamtx_log_unit: str = Field(
         default="", pattern=r"^(?:[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}\.service)?$"
     )
-    mediamtx_log_file: str = ""
     mediamtx_timeout: float = Field(default=5, gt=0)
     poll_interval: float = Field(default=5, gt=0)
     runner_timeout: float = Field(default=15, gt=0)
@@ -68,7 +65,6 @@ class LiveSettings(BaseModel):
         """
         if not self.enabled:
             return
-        self.validate_log_source()
         if self.auto_start and len(set(self.sources.values())) != len(self.sources):
             raise ValueError("LIVE_SOURCES paths must be unique with LIVE_AUTO_START")
         self.validate_control_url()
@@ -79,13 +75,6 @@ class LiveSettings(BaseModel):
                 raise ValueError("LIVE_SOURCES contains an invalid MediaMTX path")
             if source_id != path.rsplit("/", 1)[-1]:
                 raise ValueError("LIVE_SOURCES identifiers must match broadcaster names")
-
-    def validate_log_source(self) -> None:
-        """Require at most one operator-owned MediaMTX diagnostic source."""
-        if self.mediamtx_log_unit and self.mediamtx_log_file:
-            raise ValueError("Choose LIVE_MEDIAMTX_LOG_UNIT or LIVE_MEDIAMTX_LOG_FILE, not both")
-        if self.mediamtx_log_file and not Path(self.mediamtx_log_file).is_absolute():
-            raise ValueError("LIVE_MEDIAMTX_LOG_FILE must be an absolute path")
 
     def validate_control_url(self) -> None:
         """Reject malformed MediaMTX control URLs and embedded credentials."""

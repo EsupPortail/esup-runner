@@ -96,7 +96,7 @@ def parse_media_line(line: str) -> dict[str, str] | None:
 
 
 def media_lines() -> list[str]:
-    """Read bounded logs from a user/system service or an operator-selected file.
+    """Read bounded logs from a selected service or LOG_DIR/mediamtx_manager.log.
 
     Journal reads have a three-second timeout and a line limit. File reads are
     limited to the final MiB. Only one source is configured; no request parameter
@@ -121,7 +121,7 @@ def media_lines() -> list[str]:
             timeout=3,
         )
         return result.stdout[-MAX_BYTES:].decode("utf-8", errors="replace").splitlines()
-    path = Path(settings.mediamtx_log_file)
+    path = Path(config.LOG_DIR) / "mediamtx_manager.log"
     if not path.is_file():
         raise OSError("Media log unavailable")
     with path.open("rb") as stream:
@@ -134,9 +134,7 @@ def media_lines() -> list[str]:
 
 def read_media_logs() -> list[dict[str, str]]:
     """Return sanitized media diagnostics, or a safe warning if the source is unreadable."""
-    if not config.LIVE.enabled or not (
-        config.LIVE.mediamtx_log_unit or config.LIVE.mediamtx_log_file
-    ):
+    if not config.LIVE.enabled:
         return []
     try:
         return [parsed for line in media_lines() if (parsed := parse_media_line(line))]
@@ -146,6 +144,6 @@ def read_media_logs() -> list[dict[str, str]]:
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "WARNING",
                 "MEDIA_LOG_UNAVAILABLE",
-                "Cannot read MediaMTX diagnostics. Check LIVE_MEDIAMTX_LOG_UNIT or LIVE_MEDIAMTX_LOG_FILE and service-account permissions.",
+                "Cannot read MediaMTX diagnostics. Check LIVE_MEDIAMTX_LOG_UNIT or LOG_DIR/mediamtx_manager.log and service-account permissions.",
             )
         ]

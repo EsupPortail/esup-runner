@@ -14,6 +14,7 @@ The MediaMTX executable/image is identical for CPU and GPU hosts.
 - [Choose an installation method](#1-choose-an-installation-method)
 - [Install the native executable](#2-install-the-native-executable)
 - [Prepare one instance](#3-prepare-one-instance)
+- [Listener addresses and environment overrides](#listener-addresses-and-environment-overrides)
 - [Passwordless publishing from trusted encoder IPs](#passwordless-publishing-from-trusted-encoder-ips)
 - [Optional RTMPS publishing](#optional-rtmps-publishing)
 - [Start the native systemd service](#4-start-the-native-systemd-service)
@@ -162,6 +163,64 @@ addresses or ownership. Partial configurations and symlink destinations fail.
 Use `[::1]:PORT` for IPv6. Custom binary/configuration paths require manual unit
 adaptation; the `start` helper below manages the standard home-local layout.
 
+### Listener addresses and environment overrides
+
+The installer writes `--rtmp-address`, `--api-address` and `--metrics-address`
+values to `~/.config/esup-runner/<instance>/mediamtx.env`. It keeps the template's
+addresses in `mediamtx.yml`, so the two files can show different values.
+**A loaded environment variable takes precedence over its matching YAML setting.**
+If the variable is absent, the YAML value applies.
+
+| Variable in `mediamtx.env` | Replaces in `mediamtx.yml` | Listener |
+| --- | --- | --- |
+| `MTX_RTMPADDRESS` | `rtmpAddress` | Plain RTMP publishing and reading |
+| `MTX_APIADDRESS` | `apiAddress` | HTTP Control API used by the Manager or Runner |
+| `MTX_METRICSADDRESS` | `metricsAddress` | HTTP metrics endpoint for monitoring |
+
+Both native service modes load this file through systemd's `EnvironmentFile`;
+the Docker commands below pass it with `--env-file`. Starting the MediaMTX binary
+with only a YAML argument does not automatically load `mediamtx.env`.
+These variables change addresses only: enabling listeners, authentication and
+TLS remain configured in the YAML (`rtmp`, `api`, `metrics`, etc.).
+
+These are **local listening addresses**, not remote destinations or application
+URLs. Use literal `IP:PORT` values for installer-managed overrides:
+
+| Address example | Effect |
+| --- | --- |
+| `127.0.0.1:9997` | IPv4 loopback only; clients must be on the same host/network namespace |
+| `192.0.2.10:1935` | Only that IPv4 address; it must be assigned to the MediaMTX host |
+| `0.0.0.0:1935` | All local IPv4 interfaces; clients connect to a reachable host IP or DNS name |
+| `[::1]:9997` | IPv6 loopback only |
+
+For example, with this Manager `mediamtx.env` (replace the example IP with the
+server's address):
+
+```dotenv
+MTX_RTMPADDRESS=192.0.2.10:1935
+MTX_APIADDRESS=127.0.0.1:9997
+MTX_METRICSADDRESS=127.0.0.1:9998
+```
+
+RTMP listens on `192.0.2.10:1935`, even if the YAML still says
+`rtmpAddress: 127.0.0.1:1935`. The API and metrics stay on loopback. Keep them
+private; the applications use the Control API, while encoders publish through
+RTMP or RTMPS. The Runner's default ports are `2935`, `10997` and `10998`.
+
+`MTX_RTMPADDRESS` does **not** change the RTMPS listener. With
+`rtmpEncryption: optional`, plain RTMP uses the effective `rtmpAddress` and
+RTMPS uses `rtmpsAddress` from YAML, for example `:443`. Configure RTMPS in
+[the RTMPS section](#optional-rtmps-publishing); the installer and connection
+helpers support only the three environment overrides listed above.
+
+For an existing instance, edit `mediamtx.env` directly: rerunning
+`configure`/`setup` preserves its contents, even with new address options.
+Restart the appropriate MediaMTX user/system service, or recreate its container
+with the updated `--env-file`, between broadcasts. YAML hot reload does not
+reload environment variables. If an address or port changes, also update the
+affected application `LIVE_*` connection settings, manually or with
+[`scripts/configure_live.py`](#6-connect-the-applications-and-verify).
+
 ### Connect authentication settings
 
 Passwords are stored only in the private YAML; the installer does not print them.
@@ -268,9 +327,10 @@ rtmpServerKey: /home/esup-runner/.config/esup-runner/manager/privkey.pem
 rtmpServerCert: /home/esup-runner/.config/esup-runner/manager/fullchain.pem
 ```
 
-`optional` keeps the Runners' RTMP relay on port `1935`. In `mediamtx.env`,
-`MTX_RTMPADDRESS` overrides only the plain RTMP listener; use a private address
-reachable by the Runners and restrict access to that network.
+`optional` keeps plain RTMP enabled for the Runners' relay, on port `1935` by
+default. Its effective address comes from
+[`MTX_RTMPADDRESS`](#listener-addresses-and-environment-overrides); use a private
+address reachable by the Runners and restrict access to that network.
 
 Allow TCP `1936` from encoders. Set the encoder server to
 `rtmps://live.example.org:1936/live` and keep the stream key, for example

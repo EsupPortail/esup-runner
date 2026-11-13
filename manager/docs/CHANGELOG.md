@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Clarify [MediaMTX listener overrides](MEDIAMTX_SETUP.md#listener-addresses-and-environment-overrides),
+  their precedence over YAML and how to apply address changes.
 - Correct the RTMP publication query parameter to `establishment`. Update existing
   encoder URLs to use this name; see [automatic Live publishing](LIVE.md#automatic-rtmp-to-hls-operation).
 - Use matching pie sizes and side legends for task type and establishment

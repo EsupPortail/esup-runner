@@ -136,8 +136,8 @@ projection recognizes safe markers such as `RTMP_AUTH_FAILED`,
 `MEDIA_LOG_UNAVAILABLE`. It removes stream keys, credentials and raw media
 paths. It is a recent diagnostic view, not a replacement for system logs.
 
-For native MediaMTX authentication failures, the Manager must be configured
-with the actual unit and its installed service mode, for example:
+The Manager reads `LOG_DIR/mediamtx_manager.log` by default. To read the native
+MediaMTX journal instead, select the actual unit and installed service mode:
 
 ```dotenv
 LIVE_MEDIAMTX_LOG_UNIT=esup-runner-mediamtx@manager.service
@@ -177,9 +177,10 @@ docker compose -p live-a logs --tail=100 manager runner
 docker compose -p live-a logs --tail=100 manager-media runner-media
 ```
 
-The Compose stack mounts the Manager MediaMTX log read-only into the Manager.
-For a custom container deployment, set `LIVE_MEDIAMTX_LOG_FILE` to a regular
-readable file and rotate it outside the application.
+The Compose stack shares each application log volume with its MediaMTX. For a
+custom container deployment, expose the Manager MediaMTX file at
+`LOG_DIR/mediamtx_manager.log` and leave `LIVE_MEDIAMTX_LOG_UNIT` empty. Rotate
+MediaMTX files with [logrotate](MEDIAMTX_SETUP.md#log-files-and-rotation).
 
 ## Restart and outage behavior
 

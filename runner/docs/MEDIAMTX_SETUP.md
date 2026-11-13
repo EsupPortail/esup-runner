@@ -80,6 +80,9 @@ Perform the change between broadcasts and verify the current HLS URL afterwards.
 Manager/Runner updates and `update-stack.sh` do not upgrade MediaMTX automatically.
 
 The local installer selects the [Runner YAML template](../production/mediamtx-live.yml).
+It writes both stdout and `LOG_DIR/mediamtx_runner.log` for the standard instance.
+Pass `--log-dir` when the application `.env` uses a custom log directory; see
+[log files and rotation](../../manager/docs/MEDIAMTX_SETUP.md#log-files-and-rotation).
 The example ports are RTMP `2935`, Control API `10997`, and metrics `10998`, all on loopback for a
 native application. These ports and credentials are shared by all Live groups
 in the same `.env`. Do not create another MediaMTX instance on this server to

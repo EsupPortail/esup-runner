@@ -149,7 +149,7 @@ crossing untrusted networks.
 
 Files belong to the service account. Existing complete configurations are
 retained verbatim: rerunning `configure`/`setup` does not change passwords,
-addresses or ownership. Partial configurations and symlink destinations fail.
+addresses, logging or ownership. Partial configurations and symlink destinations fail.
 
 | Option (`configure` / `setup`) | Purpose |
 | --- | --- |
@@ -158,6 +158,7 @@ addresses or ownership. Partial configurations and symlink destinations fail.
 | `--api-address IP:PORT` | Control API bind address |
 | `--metrics-address IP:PORT` | Metrics bind address |
 | `--config-root /absolute/path` | Parent directory; default: `~/.config/esup-runner` |
+| `--log-dir /absolute/path` | Log directory; default: exported `LOG_DIR` or `/var/log/esup-runner` |
 | `--user USER` | Owner; defaults to caller; another owner requires privileges |
 | `--dry-run` | Preview without writes or secret generation |
 
@@ -448,8 +449,9 @@ sudo journalctl -u esup-runner-mediamtx@manager.service -n 50 --no-pager
 source. Without the option, the helper preserves this choice; the default is
 `user`. Changing `.env` alone never installs, stops or migrates a service.
 The Manager reads only the selected unit's accessible journal entries. Check
-diagnostics as its account; if access is unavailable, use the existing
-`LIVE_MEDIAMTX_LOG_FILE` alternative rather than granting broad journal access.
+diagnostics as its account; if access is unavailable, clear
+`LIVE_MEDIAMTX_LOG_UNIT` to read `LOG_DIR/mediamtx_manager.log` instead. Ensure
+that file is readable by the Manager account.
 
 Publish to `rtmps://live.example.org:443/live` with the usual stream key, omitting
 `:443` if the encoder uses it by default. Verify automatic Live/HLS operation.
@@ -476,6 +478,42 @@ directory and adapt `ExecStart` and `EnvironmentFile`. Validate with the same
 Do not replace an active deployment's executable/unit to add another role.
 Before changing old instance names, finish broadcasts, stop/disable the old
 units, and check that the replacement ports are available.
+
+### Log files and rotation
+
+New configurations use `logDestinations: [stdout, file]`. Native defaults are:
+
+| MediaMTX instance | Log file |
+| --- | --- |
+| `manager` | `/var/log/esup-runner/mediamtx_manager.log` |
+| `runner` | `/var/log/esup-runner/mediamtx_runner.log` |
+| Another instance | `/var/log/esup-runner/mediamtx_<instance>.log` |
+
+`setup` and `configure` accept `--log-dir /absolute/path`, defaulting to exported
+`LOG_DIR` or `/var/log/esup-runner`. The installer does not load application
+`.env` files: pass their `LOG_DIR` explicitly when it differs from the default.
+It writes the absolute `logFile` into YAML without creating the log directory.
+Prepare that directory with the application's `make init` procedure and make
+it writable by the MediaMTX account before starting the service. For example:
+
+```bash
+uv run scripts/install_mediamtx.py configure --instance manager --log-dir /srv/esup/logs
+```
+
+All Live workers in a Runner deployment share `mediamtx_runner.log`. Separate
+MediaMTX processes sharing a log directory need distinct instance names.
+The Manager's file reader expects `LOG_DIR/mediamtx_manager.log`; use the
+journal unit for a differently named native instance, or expose its file under
+that conventional name in the Manager's filesystem.
+
+Keep `logLevel: info` and `logStructured: false` for administration diagnostics.
+Stdout remains available through `journalctl` and `docker logs`. Rotate only
+`mediamtx_*.log` with `copytruncate`, following the
+[Manager](INSTALLATION.md#5-bonus-production-log-rotation) or
+[Runner](../../runner/docs/INSTALLATION.md#6-bonus-production-log-rotation)
+`logrotate` rule; Python application logs already rotate internally. Docker named
+volumes require a host rotation rule targeting their actual log location, or
+bind-mounted log directories managed by the host's `logrotate`.
 
 ### Logs, restarts and boot persistence
 
@@ -561,10 +599,12 @@ Validate the configuration first, then start the container:
 ```bash
 MTX_INSTANCE=manager
 MTX_CONFIG_DIR="$HOME/.config/esup-runner/$MTX_INSTANCE"
+MTX_LOG_DIR=/var/log/esup-runner  # Match logFile in this instance YAML.
 docker run --rm \
   --user "$(id -u):$(id -g)" \
   --env-file "$MTX_CONFIG_DIR/mediamtx.env" \
   --mount "type=bind,src=$MTX_CONFIG_DIR/mediamtx.yml,dst=/mediamtx.yml,readonly" \
+  --mount "type=bind,src=$MTX_LOG_DIR,dst=$MTX_LOG_DIR" \
   bluenviron/mediamtx:1.21.1 --validate-conf=/mediamtx.yml
 
 docker run -d \
@@ -574,6 +614,7 @@ docker run -d \
   --user "$(id -u):$(id -g)" \
   --env-file "$MTX_CONFIG_DIR/mediamtx.env" \
   --mount "type=bind,src=$MTX_CONFIG_DIR/mediamtx.yml,dst=/mediamtx.yml,readonly" \
+  --mount "type=bind,src=$MTX_LOG_DIR,dst=$MTX_LOG_DIR" \
   bluenviron/mediamtx:1.21.1
 
 docker logs --tail 50 "esup-mediamtx-$MTX_INSTANCE"
@@ -581,7 +622,9 @@ docker logs --tail 50 "esup-mediamtx-$MTX_INSTANCE"
 
 The YAML remains on the host and is mounted read-only. The container runs under
 the service account's numeric UID/GID so that it can read the private YAML.
-API-created Runner relay paths are temporary and do not require writing this file.
+The log directory is mounted writable at its configured absolute path and must
+already exist with permissions for that UID/GID. API-created Runner relay paths
+are temporary and do not require writing the YAML.
 
 Choose either this container or the native MediaMTX service for an instance;
 starting both would occupy the same ports. When the application uses `esup-runner-runner.service`, omit the native
@@ -626,11 +669,12 @@ application `manager.env` / `runner.env` service environment files. For example,
 export `RTMP_BIND_IP` in the shell before running the Compose commands.
 
 Run `docker compose -p live-a config --quiet` after filling the local files and
-before `up`. The Manager has separate mounts for writable application logs
-(`/var/log/esup-runner`) and read-only MediaMTX diagnostics (`/var/log/mediamtx`).
-`LIVE_MEDIAMTX_LOG_FILE` points to `/var/log/mediamtx/mediamtx.log` in the Manager,
-while `MTX_LOGFILE` is `/var/log/esup-runner/mediamtx.log` in `manager-media`.
-Both paths refer to the same file in the `manager-media-logs` volume.
+before `up`. Each MediaMTX shares only its application's writable log volume
+at `/var/log/esup-runner`: `manager-logs` contains `mediamtx_manager.log`, and
+`runner-logs` contains `mediamtx_runner.log`. The Manager reads its MediaMTX file
+automatically when `LIVE_MEDIAMTX_LOG_UNIT` is empty. Compose fixes `LOG_DIR`
+to this mount path for both applications. MediaMTX can also write the other
+logs in that volume; it does not mount application data or the other role's logs.
 
 The `~/.config/esup-runner/` files and host-network containers from sections 3–5 are
 unnecessary for this Compose method. A second Manager/Runner stack uses another
@@ -958,13 +1002,13 @@ It must run under the account that owns that user service. The installation
 script preserves existing configuration files, so their old `warn` level is
 not changed by rerunning `configure`.
 
-The complete Compose stack instead writes a MediaMTX log file into a dedicated
-volume, mounts it read-only at `/var/log/mediamtx` in the Manager and sets
-`LIVE_MEDIAMTX_LOG_FILE=/var/log/mediamtx/mediamtx.log`. The Manager's own
-`/var/log/esup-runner` volume remains writable and separate.
-For an independently deployed container, configure `MTX_LOGDESTINATIONS=stdout,file`,
-set `MTX_LOGFILE` to a writable mounted file and expose that directory read-only
-to the Manager. Arrange log rotation for file-based deployments.
+With no journal unit selected, the Manager reads `LOG_DIR/mediamtx_manager.log`.
+The Compose stack shares the application log volume with its MediaMTX. For an
+independently deployed container, set `MTX_LOGDESTINATIONS=stdout,file` and
+`MTX_LOGFILE` to a writable mounted file, then expose it as
+`LOG_DIR/mediamtx_manager.log` in the Manager. A remote MediaMTX needs log shipping
+or a shared mount; the Control API does not supply this file. See
+[log files and rotation](#log-files-and-rotation).
 
 Open **Logs → Live diagnostics** to see sanitized authentication and source events.
 See [Live diagnostics](LIVE.md#live-diagnostics-in-the-log-viewer) for limits and markers.

@@ -434,7 +434,9 @@ allowed), a MediaMTX-only container with native
 applications, and the complete Live Compose stack.
 
 In that stack, application logs use the writable `/var/log/esup-runner` mount.
-MediaMTX diagnostics use a separate read-only mount at `/var/log/mediamtx`;
-do not overlay the application log directory with the media log volume.
+Each MediaMTX shares its application's log volume, writing `mediamtx_manager.log`
+or `mediamtx_runner.log` alongside the Python logs. Manager diagnostics read
+the conventional file when no journal unit is selected. See
+[log files and rotation](MEDIAMTX_SETUP.md#log-files-and-rotation).
 The image creates `/app/data` owned by the service account so a new named
 volume preserves the Manager's ability to write task state.

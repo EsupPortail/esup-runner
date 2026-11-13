@@ -267,7 +267,10 @@ If your `uv` is installed elsewhere, edit the unit accordingly:
 
 ## 6) Bonus (production): log rotation
 
-If you write logs under `/var/log/esup-runner`, configure `logrotate`.
+**Python application logs rotate internally.**
+
+If you use MediaMTX for Live streaming, configure `logrotate` for its log files
+under `/var/log/esup-runner`:
 
 Create `/etc/logrotate.d/esup-runner`:
 
@@ -278,7 +281,7 @@ sudo nano /etc/logrotate.d/esup-runner
 With content:
 
 ```conf
-/var/log/esup-runner/*.log {
+/var/log/esup-runner/mediamtx_*.log {
     daily
     rotate 14
     compress
@@ -288,4 +291,5 @@ With content:
 }
 ```
 
-Make sure `LOG_DIR` in `.env` matches this path.
+Match this path to `LOG_DIR` in `.env` and MediaMTX `logFile`. Keep
+`copytruncate` so rotation does not require restarting MediaMTX.

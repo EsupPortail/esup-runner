@@ -109,6 +109,9 @@ else
   echo "No MediaMTX or application placeholders remain"
 fi
 docker compose -p live-a config --quiet
+# Initialize application-owned volumes before MediaMTX writes its first log.
+docker compose -p live-a build
+docker compose -p live-a create
 docker compose -p live-a up -d
 docker compose -p live-a ps
 )
@@ -117,8 +120,11 @@ docker compose -p live-a ps
 The `awk` check ignores comment lines and prints filenames only. It does not
 validate password matching or public routing. `config --quiet` validates the
 Compose model without displaying the expanded environment. The Manager's
-writable application logs stay at `/var/log/esup-runner`; it reads MediaMTX
-diagnostics from the separate read-only mount `/var/log/mediamtx/mediamtx.log`.
+application and MediaMTX logs share the writable `manager-logs` volume at
+`/var/log/esup-runner`; diagnostics read `mediamtx_manager.log` automatically.
+The Runner pair shares `runner-logs` with `mediamtx_runner.log`. Leave
+`LIVE_MEDIAMTX_LOG_UNIT` unset in the Manager environment. Configure
+[MediaMTX log rotation](MEDIAMTX_SETUP.md#log-files-and-rotation) on the host.
 
 ### 5. Verify the first session
 

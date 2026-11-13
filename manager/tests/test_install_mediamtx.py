@@ -10,6 +10,7 @@ import tarfile
 from pathlib import Path
 
 import pytest
+import yaml
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "install_mediamtx.py"
 spec = importlib.util.spec_from_file_location("install_mediamtx", SCRIPT)
@@ -24,6 +25,7 @@ def isolated_home(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(installer.Path, "home", classmethod(lambda cls: home))
+    monkeypatch.delenv("LOG_DIR", raising=False)
     return home
 
 
@@ -275,6 +277,7 @@ def test_configure_generates_private_distinct_secrets_and_preserves_them(
     output = capsys.readouterr().out
     assert not any(password in output for password in passwords)
     assert "CHANGE_ME_" not in content
+    assert yaml.safe_load(content)["logFile"] == "/var/log/esup-runner/mediamtx_manager.log"
     if role == "manager":
         assert "overridePublisher: true" in content
     assert "MTX_RTMPADDRESS=0.0.0.0:21935" in env_path.read_text()
@@ -706,3 +709,39 @@ def test_component_role_is_implicit_and_other_role_rejected():
     assert installer.parse_args(["configure", "--instance", "custom"]).role == "manager"
     with pytest.raises(SystemExit):
         installer.parse_args(["configure", "runner", "--instance", "custom"])
+
+
+@pytest.mark.parametrize("source", ["default", "environment", "option"])
+def test_log_directory_and_instance_are_rendered_in_yaml(
+    tmp_path, config_options, monkeypatch, source
+):
+    """Generated paths stay literal YAML and explicit options override exported LOG_DIR."""
+    options = ["configure", *config_options]
+    options[options.index("--instance") + 1] = "independent"
+    directory = "/var/log/esup-runner"
+    if source != "default":
+        directory = str(tmp_path / "exported-logs")
+        monkeypatch.setenv("LOG_DIR", directory)
+    if source == "option":
+        directory = str(tmp_path / 'logs with # and "quotes" and \\backslash')
+        options += ["--log-dir", directory]
+    assert installer.main(options) == 0
+    media = yaml.safe_load((tmp_path / "config/independent/mediamtx.yml").read_text())
+    assert media["logFile"] == str(Path(directory) / "mediamtx_independent.log")
+    assert media["logDestinations"] == ["stdout", "file"]
+    if source != "default":
+        assert not Path(directory).exists()
+
+
+@pytest.mark.parametrize(
+    "path", ["relative/logs", "/tmp/../logs", "/tmp/logs\nother", "/tmp/logs\x00"]
+)
+def test_invalid_log_directory_does_not_create_configuration(tmp_path, config_options, path):
+    """Reject paths that are relative, ambiguous or unsafe before publishing files."""
+    options = ["configure", *config_options, "--log-dir", path]
+    if path.startswith("/tmp/logs"):
+        assert installer.main(options) == 1
+    else:
+        with pytest.raises(SystemExit):
+            installer.main(options)
+    assert not (tmp_path / "config").exists()

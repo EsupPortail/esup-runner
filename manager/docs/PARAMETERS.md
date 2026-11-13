@@ -134,7 +134,6 @@ See [LIVE.md](LIVE.md) for the complete configuration and Esup-Pod contract.
 | `LIVE_MEDIAMTX_HEALTH_CHECK_INTERVAL_HOURS` | `12` (non-negative whole hours; `0` disables monitoring) |
 | `LIVE_MEDIAMTX_SERVICE_MODE` | `user` (`user` or `system`; select the installed MediaMTX service scope for diagnostics; installation/migration is explicit) |
 | `LIVE_MEDIAMTX_LOG_UNIT` | `` (optional systemd service, e.g. `esup-runner-mediamtx@manager.service`) |
-| `LIVE_MEDIAMTX_LOG_FILE` | `` (alternative absolute path to the Manager MediaMTX plain log) |
 
 With `LIVE_ENABLED=true`, one worker checks the Manager MediaMTX at startup and
 at this interval, emailing `MANAGER_EMAIL` on each failure. See
@@ -145,8 +144,10 @@ Paths must be unique when automatic startup is enabled. Reconciliation and
 RTMP discovery run every 5 seconds (internal default). See
 [automatic operation](LIVE.md#automatic-rtmp-to-hls-operation) for capacity,
 disconnect, republication and stop behavior.
-Configure only one MediaMTX log source. These diagnostics supplement `manager.log`
-in administration; they require MediaMTX `logLevel: info` and `logStructured: false`.
+When `LIVE_MEDIAMTX_LOG_UNIT` is empty, diagnostics read
+`LOG_DIR/mediamtx_manager.log`; otherwise they read the selected journal unit.
+These diagnostics supplement `manager.log` in administration and require
+MediaMTX `logLevel: info` and `logStructured: false`.
 See [Live diagnostics](LIVE.md#live-diagnostics-in-the-log-viewer).
 
 ### Internal Live defaults

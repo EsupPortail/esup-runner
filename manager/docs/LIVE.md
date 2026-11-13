@@ -509,12 +509,13 @@ Set these Compose bind/port variables in the invoking shell or `deploy/live/.env
 The service `env_file` entries (`manager.env` and `runner.env`) populate container
 environments and do not control interpolation of host port mappings.
 
-The Manager writes its application logs to the writable `manager-logs` volume
-at `/var/log/esup-runner`. MediaMTX writes `mediamtx.log` to the separate
-`manager-media-logs` volume. The Manager reads that volume at
-`/var/log/mediamtx:ro`, with `LIVE_MEDIAMTX_LOG_FILE=/var/log/mediamtx/mediamtx.log`.
-Do not mount it over the Manager's writable log directory. Task and Runner data
-are persistent named volumes; HLS stays in the Runner container's `/dev/shm`.
+Each application and its MediaMTX share their writable log volume at
+`/var/log/esup-runner`: `manager-logs` holds `mediamtx_manager.log` and
+`runner-logs` holds `mediamtx_runner.log`. MediaMTX also has write access to the
+other logs in its role's volume, but mounts no application data or other role's
+logs. With `LIVE_MEDIAMTX_LOG_UNIT` empty, the Manager reads its MediaMTX file
+automatically. Compose fixes `LOG_DIR` to the shared mount path. Task and Runner
+data are persistent named volumes; HLS stays in the Runner container's `/dev/shm`.
 The images initialize writable application data/log directories for their
 service account. If reusing volumes from another UID/GID, correct ownership
 before startup. Use the selected Compose project's actual volumes, rather than
@@ -527,9 +528,8 @@ docker compose -p live-a run --rm --no-deps --user 0 --entrypoint sh runner \
   -c 'chown -R "${SERVICE_USER}:${SERVICE_USER}" /tmp/esup-runner /var/log/esup-runner'
 ```
 
-These one-off containers change only their application data/log volumes; the
-MediaMTX diagnostic mount stays read-only. Build the application images first
-if this is a new checkout (`docker compose -p live-a build`).
+These one-off containers change only their application data/log volumes. Build
+the application images first if this is a new checkout (`docker compose -p live-a build`).
 
 `depends_on` starts dependencies in order but does not confirm application
 readiness. Check `docker compose -p live-a ps`, logs and the first complete HLS
@@ -590,24 +590,25 @@ unchanged Runner failures do not produce a new transition entry each scan.
 RTMP authentication happens inside MediaMTX, before the Manager sees a source.
 MediaMTX 1.21.1 logs refused RTMP connections at **info**, so `logLevel: warn`
 hides them. The supplied templates use `logLevel: info` and `logStructured: false`.
-Choose one source for the Manager to read:
+With no journal unit selected, the Manager reads `LOG_DIR/mediamtx_manager.log`.
+To use journald instead:
 
 ```dotenv
 # Native deployment: Manager and MediaMTX use the same systemd user account.
 LIVE_MEDIAMTX_LOG_UNIT=esup-runner-mediamtx@manager.service
 # For MediaMTX installed as a system service (the Manager stays unprivileged):
 # LIVE_MEDIAMTX_SERVICE_MODE=system
-# Alternative for Docker/remote log shipping: leave LOG_UNIT empty and mount a file.
-# LIVE_MEDIAMTX_LOG_FILE=/var/log/esup-runner/mediamtx.log
+# For Docker/log shipping, leave LOG_UNIT empty and expose LOG_DIR/mediamtx_manager.log.
 ```
 
 The reader has no public input for command arguments or file paths. It reads at
 most 2,000 recent journal lines with a three-second timeout, or the last MiB of a
 regular file. Diagnostics therefore follow the source's retention and this recent
 window, not the retention of task history. Journal access must work under the
-Manager service account. File sources must be readable there; the supplied Compose
-stack mounts the MediaMTX log directory read-only in the Manager. Manage raw-file
-retention with your deployment's log rotation policy.
+Manager service account. The file must be readable there; Compose shares the
+application log volume with MediaMTX. A configured journal unit takes precedence
+without also reading the file. Manage raw-file retention with
+[logrotate](MEDIAMTX_SETUP.md#log-files-and-rotation).
 
 Only recognized events are shown; raw media lines, ingest paths, query strings,
 usernames and passwords are excluded from the administration projection:

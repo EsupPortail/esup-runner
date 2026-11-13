@@ -161,11 +161,7 @@ def connection_settings(args: argparse.Namespace, current: dict) -> dict[str, st
         "LIVE_MEDIAMTX_SERVICE_MODE": service_mode,
     }
     credential(media, "relay", "read")
-    if (
-        not args.no_journal
-        and not current.get("LIVE_MEDIAMTX_LOG_FILE")
-        and not current.get("LIVE_MEDIAMTX_LOG_UNIT")
-    ):
+    if not args.no_journal and not current.get("LIVE_MEDIAMTX_LOG_UNIT"):
         values["LIVE_MEDIAMTX_LOG_UNIT"] = f"esup-runner-mediamtx@{args.instance}.service"
     return values
 

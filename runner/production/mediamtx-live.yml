@@ -2,6 +2,8 @@
 # Paths are created and deleted with the local Control API, never YAML edits.
 logLevel: info
 logStructured: false
+logDestinations: [stdout, file]
+logFile: /var/log/esup-runner/mediamtx_runner.log
 rtsp: false
 rtmp: true
 rtmpAddress: 127.0.0.1:2935

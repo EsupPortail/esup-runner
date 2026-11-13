@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Write MediaMTX logs to `LOG_DIR/mediamtx_<instance>.log` alongside stdout,
+  including `mediamtx_runner.log` for the shared Runner service, and document
+  targeted logrotate rotation.
 - Document [disk space maintenance](OPERATIONS.md#disk-space-maintenance),
   including uv/model cache cleanup and storage retention limits for Live and
   mixed task groups.

@@ -253,7 +253,7 @@ sudo journalctl --rotate --vacuum-time=14d
 ```
 
 Configure ongoing journal limits in `journald.conf`. Rotate MediaMTX file logs
-separately; see [MediaMTX diagnostics](MEDIAMTX_SETUP.md#authentication-diagnostics-in-administration).
+separately; see [MediaMTX log files and rotation](MEDIAMTX_SETUP.md#log-files-and-rotation).
 
 ### Docker images and build cache
 

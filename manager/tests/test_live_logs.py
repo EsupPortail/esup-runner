@@ -13,9 +13,10 @@ from app.services import live_logs
 
 
 @pytest.fixture
-def settings(monkeypatch):
+def settings(monkeypatch, tmp_path):
     value = LiveSettings(enabled=True, sources={"room": "secret-key/room"})
     monkeypatch.setattr(config, "LIVE", value)
+    monkeypatch.setattr(config, "LOG_DIR", str(tmp_path))
     return value
 
 
@@ -80,16 +81,19 @@ def test_irrelevant_or_malformed_lines_are_not_exposed(line):
     assert live_logs.parse_media_line(line) is None
 
 
-def test_unconfigured_reader_does_not_spawn(settings, monkeypatch):
+def test_disabled_reader_does_not_read(settings, monkeypatch):
     monkeypatch.setattr(live_logs, "media_lines", lambda: pytest.fail("unexpected read"))
-    assert live_logs.read_media_logs() == []
     settings.enabled = False
+    assert live_logs.read_media_logs() == []
     settings.mediamtx_log_unit = "esup-runner-mediamtx@manager.service"
     assert live_logs.read_media_logs() == []
 
 
 def test_journal_is_scoped_bounded_and_without_shell(settings, monkeypatch):
     settings.mediamtx_log_unit = "esup-runner-mediamtx@manager.service"
+    (live_logs.Path(config.LOG_DIR) / "mediamtx_manager.log").write_text(
+        "2026/10/01 11:22:33 INF [RTMP] closed: authentication failed\n"
+    )
 
     def run(args, **kwargs):
         assert args == [
@@ -157,8 +161,7 @@ def test_read_failures_do_not_echo_exception(settings, monkeypatch, error):
 
 
 def test_file_tail_and_manager_filters(settings, tmp_path, monkeypatch):
-    path = tmp_path / "mediamtx.log"
-    settings.mediamtx_log_file = str(path)
+    path = tmp_path / "mediamtx_manager.log"
     assert "MEDIA_LOG_UNAVAILABLE" in live_logs.read_media_logs()[0]["message"]
     path.write_text(
         "truncated-secret-data\n" * 200
@@ -177,12 +180,17 @@ def test_file_tail_and_manager_filters(settings, tmp_path, monkeypatch):
     assert "Live</span>" in html and "RTMP_AUTH_FAILED" in html
 
 
-def test_logging_configuration_rejects_ambiguous_or_unsafe_sources():
+def test_file_reader_reopens_after_rotation(settings, tmp_path):
+    path = tmp_path / "mediamtx_manager.log"
+    path.write_text("2026/10/01 11:22:33 INF [RTMP] closed: authentication failed\n")
+    assert live_logs.read_media_logs()[0]["level"] == "WARNING"
+    path.rename(path.with_suffix(".log.1"))
+    path.write_text("2026/10/01 11:23:33 INF [RTMP] closed: EOF\n")
+    result = live_logs.read_media_logs()
+    assert len(result) == 1
+    assert "RTMP_DISCONNECTED" in result[0]["message"]
+
+
+def test_logging_configuration_rejects_unsafe_unit():
     with pytest.raises(ValueError):
         LiveSettings(mediamtx_log_unit="--all")
-    with pytest.raises(ValueError, match="Choose"):
-        LiveSettings(
-            enabled=True, mediamtx_log_unit="example.service", mediamtx_log_file="/tmp/a"
-        ).validate_enabled()
-    with pytest.raises(ValueError, match="absolute"):
-        LiveSettings(enabled=True, mediamtx_log_file="relative.log").validate_enabled()

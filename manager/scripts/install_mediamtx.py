@@ -88,6 +88,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 default=pwd.getpwuid(os.geteuid()).pw_name,
                 help="File owner (default: current account; changing owner requires privileges)",
             )
+            child.add_argument(
+                "--log-dir",
+                type=Path,
+                default=Path(os.environ.get("LOG_DIR", "/var/log/esup-runner")),
+                help="Log directory (default: exported LOG_DIR or /var/log/esup-runner); must be writable at runtime",
+            )
             for option in ADDRESS_KEYS:
                 child.add_argument(
                     "--" + option.replace("_", "-"),
@@ -120,7 +126,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", args.instance
     ):
         parser.error("--instance must contain 1-64 letters, digits, underscores or hyphens")
-    for option in ("binary", "config_root"):
+    for option in ("binary", "config_root", "log_dir"):
         path = getattr(args, option, None)
         if path is not None and (not path.is_absolute() or ".." in path.parts):
             parser.error(f"--{option.replace('_', '-')} must be absolute without '..'")
@@ -621,7 +627,7 @@ def validate_address(value: str) -> None:
 
 
 def configuration_plan(args: argparse.Namespace) -> tuple[str, str, pwd.struct_passwd]:
-    """Read the role template and validate account, destination and listener overrides."""
+    """Read the role template and validate account, paths, logging and listener overrides."""
     try:
         account = pwd.getpwnam(args.user)
     except KeyError as exc:
@@ -638,6 +644,15 @@ def configuration_plan(args: argparse.Namespace) -> tuple[str, str, pwd.struct_p
             f"Missing {template}; include this component's production directory in the checkout"
         )
     content = template.read_text()
+    log_file = args.log_dir / f"mediamtx_{args.instance}.log"
+    if any(character in str(log_file) for character in "\x00\r\n"):
+        raise ValueError("The MediaMTX log path must not contain control characters")
+    content = re.sub(
+        r"^logFile:.*$",
+        lambda _: "logFile: " + json.dumps(str(log_file)),
+        content,
+        flags=re.MULTILINE,
+    )
     env_lines = []
     ports = []
     for option, (yaml_key, env_key) in ADDRESS_KEYS.items():
@@ -704,6 +719,7 @@ def configure_instance(args: argparse.Namespace) -> None:
             f"Would create {args.role} configuration: {directory} (service account: {args.user})"
         )
         print(environment, end="")
+        print_status(f"MediaMTX log: {args.log_dir / f'mediamtx_{args.instance}.log'}")
         print_status(
             "Would generate separate random passwords; none are generated during a dry run."
         )
@@ -731,6 +747,7 @@ def configure_instance(args: argparse.Namespace) -> None:
             directory.rmdir()
             raise
     print_status(f"Created {args.role} configuration: {directory}")
+    print_status(f"MediaMTX log: {args.log_dir / f'mediamtx_{args.instance}.log'}")
     print(environment, end="")
     print_status(
         "Passwords are stored in mediamtx.yml. Connect the application without copying them manually:"

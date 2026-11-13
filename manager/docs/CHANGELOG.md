@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Write MediaMTX logs to `LOG_DIR/mediamtx_<instance>.log` alongside stdout,
+  with targeted logrotate instructions. Manager diagnostics read
+  `mediamtx_manager.log` automatically unless a journal unit is selected; remove
+  the separate `LIVE_MEDIAMTX_LOG_FILE` setting.
 - Clarify [MediaMTX listener overrides](MEDIAMTX_SETUP.md#listener-addresses-and-environment-overrides),
   their precedence over YAML and how to apply address changes.
 - Correct the RTMP publication query parameter to `establishment`. Update existing

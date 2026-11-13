@@ -64,15 +64,9 @@ def test_connections_are_private_minimal_and_idempotent(installation, capsys):
     assert "secret" not in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    "text",
-    [
-        "LIVE_MEDIAMTX_LOG_FILE=/tmp/media.log\n",
-        "LIVE_MEDIAMTX_LOG_UNIT=custom.service\n",
-    ],
-)
-def test_custom_log_source_preserved(installation, text):
+def test_custom_log_source_preserved(installation):
     _, env = installation
+    text = "LIVE_MEDIAMTX_LOG_UNIT=custom.service\n"
     env.write_text(text)
     assert helper.main(options(installation)) == 0
     assert env.read_text().startswith(text)

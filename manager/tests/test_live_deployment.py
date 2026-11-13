@@ -7,19 +7,21 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_compose_log_mounts_are_distinct_and_manager_logs_are_writable():
+def test_compose_media_logs_share_only_their_application_log_volume():
     services = yaml.safe_load((ROOT / "deploy/live/compose.yml").read_text())["services"]
     for service in services.values():
         targets = [mount.split(":")[1] for mount in service.get("volumes", [])]
         assert len(targets) == len(set(targets))
-    manager = services["manager"]
-    mounts = {mount.split(":")[0]: mount.split(":")[1:] for mount in manager["volumes"]}
-    assert mounts["manager-logs"] == ["/var/log/esup-runner"]
-    assert mounts["manager-media-logs"][-1] == "ro"
-    media_file = PurePosixPath(manager["environment"]["LIVE_MEDIAMTX_LOG_FILE"])
-    assert media_file.parent == PurePosixPath(mounts["manager-media-logs"][0])
-    writer = PurePosixPath(services["manager-media"]["environment"]["MTX_LOGFILE"])
-    assert media_file.name == writer.name
+    for role in ("manager", "runner"):
+        application, media = services[role], services[f"{role}-media"]
+        log_dir = PurePosixPath(application["environment"]["LOG_DIR"])
+        mount = f"{role}-logs:{log_dir}"
+        assert mount in application["volumes"] and mount in media["volumes"]
+        assert media["environment"]["MTX_LOGFILE"] == str(log_dir / f"mediamtx_{role}.log")
+        assert media["environment"]["MTX_LOGDESTINATIONS"] == "stdout,file"
+        assert media["environment"]["MTX_LOGLEVEL"] == "info"
+        assert media["environment"]["MTX_LOGSTRUCTURED"] == "false"
+        assert media["volumes"] == [f"./{role}-mediamtx.yml:/mediamtx.yml:ro", mount]
 
 
 def test_compose_keeps_media_control_private_and_hls_ephemeral():

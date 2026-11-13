@@ -5,6 +5,8 @@
 # RTMP authentication failures are logged at info by MediaMTX.
 logLevel: info
 logStructured: false
+logDestinations: [stdout, file]
+logFile: /var/log/esup-runner/mediamtx_manager.log
 rtsp: false
 rtmp: true
 rtmpAddress: 127.0.0.1:1935

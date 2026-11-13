@@ -3,14 +3,16 @@
 
 Run from manager/ as the service account, without sudo; defaults use its home directory.
 Uses only the Python standard library. Run with --help for installation,
-configuration-only (including Docker), combined setup, and explicit service startup.
+configuration-only (including Docker), combined setup, service startup and explicit updates.
 System startup requires root and an explicit non-root --user; it reuses an installed binary.
-Existing executables, configurations and customized units are never overwritten.
+Only update replaces an existing executable; configurations and units are preserved.
 """
 
 import argparse
+import fcntl
 import hashlib
 import ipaddress
+import json
 import os
 import platform
 import pwd
@@ -22,10 +24,17 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app.core._check_output import Severity, format_status
+
 VERSION = "1.21.1"  # Minimum supported release and default download.
 MAX_ARCHIVE_SIZE = 256 * 1024 * 1024
 SYSTEMD_SYSTEM_DIR = Path("/etc/systemd/system")
@@ -34,6 +43,11 @@ ADDRESS_KEYS = {
     "api_address": ("apiAddress", "MTX_APIADDRESS"),
     "metrics_address": ("metricsAddress", "MTX_METRICSADDRESS"),
 }
+
+
+def print_status(message: str, *, level: Severity = "info") -> None:
+    """Use the shared CLI status style, keeping errors on standard error."""
+    print(format_status(message, level=level), file=sys.stderr if level == "error" else sys.stdout)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -87,6 +101,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     start.add_argument("--user", help="Existing non-root service account; required in system mode")
     start.add_argument("--dry-run", action="store_true", help="Preview without downloads or writes")
     start.set_defaults(binary=None, version=VERSION)
+    update = commands.add_parser(
+        "update", help="Update existing native services, preserving configuration"
+    )
+    update.add_argument("--version", required=True, help="Exact stable release to install")
+    update.add_argument(
+        "--dry-run", action="store_true", help="Preview without downloads or writes"
+    )
     args = parser.parse_args(argv)
     validate_start_options(args, parser)
     if args.command != "configure" and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version):
@@ -95,7 +116,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         map(int, VERSION.split("."))
     ):
         parser.error(f"--version must be at least {VERSION}")
-    if args.command != "install" and not re.fullmatch(
+    if args.command not in ("install", "update") and not re.fullmatch(
         r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", args.instance
     ):
         parser.error("--instance must contain 1-64 letters, digits, underscores or hyphens")
@@ -183,8 +204,10 @@ def start_user_service(args: argparse.Namespace) -> None:
         refuse_system_service_conflict(args.instance)
     install_binary(args)
     if args.dry_run:
-        print(f"Would validate {directory / 'mediamtx.yml'} with its listener overrides")
-        print(f"Would install or reuse {unit}, reload systemd and enable/start {args.instance}")
+        print_status(f"Would validate {directory / 'mediamtx.yml'} with its listener overrides")
+        print_status(
+            f"Would install or reuse {unit}, reload systemd and enable/start {args.instance}"
+        )
         return
     validate_service_configuration(directory, environment)
     try:
@@ -212,7 +235,7 @@ def start_user_service(args: argparse.Namespace) -> None:
         subprocess.run(
             ["systemctl", "--user", *command], check=True, capture_output=True, timeout=30
         )
-    print(f"Service active: {service}. An already active service was not restarted.")
+    print_status(f"Service active: {service}. An already active service was not restarted.")
 
 
 def refuse_system_service_conflict(instance: str) -> None:
@@ -353,8 +376,8 @@ def start_system_service(args: argparse.Namespace) -> None:
     account, directory, binary, unit, content = system_service_plan(args)
     home = Path(account.pw_dir)
     if args.dry_run:
-        print(f"Would validate MediaMTX and its configuration as {account.pw_name}")
-        print(f"Would install or reuse {unit} with CAP_NET_BIND_SERVICE and enable/start it")
+        print_status(f"Would validate MediaMTX and its configuration as {account.pw_name}")
+        print_status(f"Would install or reuse {unit} with CAP_NET_BIND_SERVICE and enable/start it")
         return
     environment = {
         "HOME": str(home),
@@ -395,7 +418,7 @@ def start_system_service(args: argparse.Namespace) -> None:
         ["is-active", "--quiet", service],
     ):
         subprocess.run(["systemctl", *command], check=True, capture_output=True, timeout=30)
-    print(f"System service active: {service}. An already active service was not restarted.")
+    print_status(f"System service active: {service}. An already active service was not restarted.")
 
 
 def validate_system_binary(
@@ -546,21 +569,23 @@ def install_binary(args: argparse.Namespace) -> Path:
                 f"{target} reports v{installed}; MediaMTX >= {VERSION} is required. "
                 "It has been left unchanged; upgrade it manually or select another --binary path."
             )
-        print(f"Reusing MediaMTX {installed}: {target}")
+        print_status(f"Reusing MediaMTX {installed}: {target}")
         local = Path.home() / ".local/bin/mediamtx"
         if args.binary is None and target != local:
             reject_symlinks(local.parent)
             if args.dry_run:
-                print(f"Would link the user service executable: {local} -> {target}")
+                print_status(f"Would link the user service executable: {local} -> {target}")
             else:
                 local.parent.mkdir(parents=True, exist_ok=True)
                 local.symlink_to(target)
-                print(f"Linked the user service executable: {local} -> {target}")
+                print_status(f"Linked the user service executable: {local} -> {target}")
         return target
     architecture = linux_architecture()
     reject_symlinks(target.parent)
     if args.dry_run:
-        print(f"Would download and verify MediaMTX {args.version} (linux/{architecture}): {target}")
+        print_status(
+            f"Would download and verify MediaMTX {args.version} (linux/{architecture}): {target}"
+        )
         return target
     archive_name = f"mediamtx_v{args.version}_linux_{architecture}.tar.gz"
     release = f"https://github.com/bluenviron/mediamtx/releases/download/v{args.version}"
@@ -568,7 +593,7 @@ def install_binary(args: argparse.Namespace) -> Path:
         directory = Path(temporary)
         archive = directory / archive_name
         checksums = directory / "checksums.sha256"
-        print(f"Downloading MediaMTX {args.version} (linux/{architecture})")
+        print_status(f"Downloading MediaMTX {args.version} (linux/{architecture})")
         download(f"{release}/{archive_name}", archive, MAX_ARCHIVE_SIZE)
         download(f"{release}/checksums.sha256", checksums, 1024 * 1024)
         verify_checksum(archive, checksums)
@@ -581,7 +606,7 @@ def install_binary(args: argparse.Namespace) -> Path:
             shutil.copyfile(executable, staged)
             staged.chmod(0o755)
             os.link(staged, target)
-    print(f"Installed MediaMTX {args.version}: {target}")
+    print_status(f"Installed MediaMTX {args.version}: {target}")
     return target
 
 
@@ -669,15 +694,19 @@ def configure_instance(args: argparse.Namespace) -> None:
     content, environment, account = configuration_plan(args)
     directory = args.config_root / args.instance
     if existing_configuration(directory):
-        print(f"Existing configuration retained: {directory}")
-        print(
+        print_status(f"Existing configuration retained: {directory}")
+        print_status(
             "Requested role, account and addresses were not reapplied; review these files to change them."
         )
         return
     if args.dry_run:
-        print(f"Would create {args.role} configuration: {directory} (service account: {args.user})")
+        print_status(
+            f"Would create {args.role} configuration: {directory} (service account: {args.user})"
+        )
         print(environment, end="")
-        print("Would generate separate random passwords; none are generated during a dry run.")
+        print_status(
+            "Would generate separate random passwords; none are generated during a dry run."
+        )
         return
     placeholders = set(re.findall(r"CHANGE_ME_[A-Z_]+", content))
     if not placeholders:
@@ -701,9 +730,9 @@ def configure_instance(args: argparse.Namespace) -> None:
         except OSError:
             directory.rmdir()
             raise
-    print(f"Created {args.role} configuration: {directory}")
+    print_status(f"Created {args.role} configuration: {directory}")
     print(environment, end="")
-    print(
+    print_status(
         "Passwords are stored in mediamtx.yml. Connect the application without copying them manually:"
     )
     print(
@@ -712,14 +741,380 @@ def configure_instance(args: argparse.Namespace) -> None:
     )
 
 
+def update_system_unit(instance: str, user: str, properties: dict[str, str]) -> Path:
+    """Reuse the existing managed system unit without installing or changing it."""
+    _, _, _, unit, _ = system_service_plan(argparse.Namespace(instance=instance, user=user))
+    if properties.get("FragmentPath") != str(unit):
+        raise ValueError("Custom system MediaMTX unit requires a manual update")
+    return unit
+
+
+class UpdateService(NamedTuple):
+    """Describe one existing native service using the account-local executable."""
+
+    command: list[str]
+    name: str
+    directory: Path
+    unit: Path
+    active: bool
+
+
+def update_properties(command: list[str], service: str) -> dict[str, str]:
+    """Read effective service state without exposing its environment or credentials."""
+    result = subprocess.run(
+        [
+            *command,
+            "show",
+            service,
+            "--property=LoadState,ActiveState,FragmentPath,DropInPaths,NeedDaemonReload,User,MainPID",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    properties = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    if result.returncode and properties.get("LoadState") != "not-found":
+        raise ValueError(f"Cannot inspect MediaMTX service: {service}")
+    return properties
+
+
+def update_user_unit(properties: dict[str, str], service: str) -> Path:
+    """Require the loaded user unit to match this component's standard template."""
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    unit = Path(properties.get("FragmentPath", ""))
+    expected = (ROOT / "production/esup-runner-mediamtx@.service").read_text().strip()
+    if not config_home.is_absolute() or unit not in (
+        config_home / "systemd/user/esup-runner-mediamtx@.service",
+        config_home / "systemd/user" / service,
+    ):
+        raise ValueError(f"Custom MediaMTX unit requires a manual update: {service}")
+    reject_symlinks(unit)
+    if unit.read_text().strip() != expected:
+        raise ValueError(f"Custom MediaMTX unit requires a manual update: {service}")
+    return unit
+
+
+def update_service(
+    command: list[str],
+    name: str,
+    account: pwd.struct_passwd,
+) -> UpdateService | None:
+    """Inspect one loaded or configured instance without enabling or starting it."""
+    properties = update_properties(command, name)
+    if properties.get("LoadState") == "not-found":
+        return None
+    if command == ["systemctl"] and properties.get("User") not in (
+        account.pw_name,
+        str(account.pw_uid),
+    ):
+        return None
+    match = re.fullmatch(r"esup-runner-mediamtx@([A-Za-z0-9][A-Za-z0-9_-]{0,63})\.service", name)
+    if not match or properties.get("LoadState") != "loaded":
+        raise ValueError("Unsupported MediaMTX service; use a manual update")
+    if properties.get("DropInPaths") or properties.get("NeedDaemonReload") != "no":
+        raise ValueError(f"Custom or stale MediaMTX unit requires a manual update: {name}")
+    state = properties.get("ActiveState")
+    if state not in ("active", "inactive", "failed"):
+        raise ValueError(f"MediaMTX service is changing state; retry later: {name}")
+    instance = match[1]
+    directory = Path.home() / ".config/esup-runner" / instance
+    reject_symlinks(directory)
+    if not existing_configuration(directory):
+        raise ValueError(f"Incomplete MediaMTX configuration: {instance}")
+    if "--user" in command:
+        unit = update_user_unit(properties, name)
+    else:
+        unit = update_system_unit(instance, account.pw_name, properties)
+    return UpdateService(command, name, directory, unit, state == "active")
+
+
+def update_services() -> list[UpdateService]:
+    """Discover both scopes, including configured instances not currently loaded."""
+    account = pwd.getpwuid(os.geteuid())
+    configured = {
+        f"esup-runner-mediamtx@{path.parent.name}.service"
+        for path in (Path.home() / ".config/esup-runner").glob("*/mediamtx.yml")
+    }
+    services = []
+    for scope in ("user", "system"):
+        command = ["systemctl", "--user"] if scope == "user" else ["systemctl"]
+        result = subprocess.run(
+            [*command, "list-units", "--all", "--output=json", "esup-runner-mediamtx@*.service"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        names = {entry["unit"] for entry in json.loads(result.stdout)} | configured
+        for name in sorted(names):
+            service = update_service(command, name, account)
+            if service is not None:
+                services.append(service)
+    if not services:
+        raise ValueError("No existing native MediaMTX services found; use install/setup first")
+    return sorted(services, key=lambda service: (service.command, service.name))
+
+
+def update_control(service: UpdateService, action: str) -> None:
+    """Control only the discovered unit, using sudo solely for system service actions."""
+    command = service.command
+    if command == ["systemctl"]:
+        command = ["sudo", "-n", "--", *command]
+    scope = "user" if "--user" in service.command else "system"
+    print_status(f"Service action: {action} {service.name} ({scope}).")
+    subprocess.run(
+        [*command, action, service.name],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+
+
+def update_process_matches(service: UpdateService, pid: str, binary: Path) -> bool:
+    """Check the process inode when Linux permits access to its executable."""
+    try:
+        return os.path.samefile(Path("/proc") / pid / "exe", binary)
+    except FileNotFoundError:
+        return False
+    except PermissionError:
+        # CAP_NET_BIND_SERVICE can restrict /proc access even for the same UID.
+        # System units use the validated ExecStart after an explicit stop/start.
+        return service.command == ["systemctl"]
+
+
+def update_check_running(service: UpdateService, binary: Path) -> None:
+    """Require a stable active process, checking its executable where accessible."""
+    previous_pid = None
+    for _ in range(20):
+        properties = update_properties(service.command, service.name)
+        pid = properties.get("MainPID", "")
+        ready = (
+            properties.get("ActiveState") == "active"
+            and pid.isdecimal()
+            and int(pid) > 0
+            and update_process_matches(service, pid, binary)
+        )
+        if ready and pid == previous_pid:
+            return
+        previous_pid = pid if ready else None
+        time.sleep(0.5)
+    raise ValueError(
+        f"MediaMTX service did not start with the installed executable: {service.name}"
+    )
+
+
+def update_backup(binary: Path, services: list[UpdateService]) -> Path:
+    """Keep the old binary, configurations and units in a private persistent directory."""
+    backup = Path(tempfile.mkdtemp(prefix="mediamtx-backup-", dir=binary.parent))
+    print_status(f"Backup directory: {backup}")
+    shutil.copy2(binary, backup / "mediamtx", follow_symlinks=False)
+    for service in services:
+        scope = "user" if "--user" in service.command else "system"
+        destination = backup / f"{scope}-{service.name}"
+        destination.mkdir(mode=0o700)
+        shutil.copy2(service.unit, destination / "unit.service")
+        shutil.copytree(service.directory, destination / "configuration", symlinks=True)
+    return backup
+
+
+def update_restore_binary(binary: Path, backup: Path, staging: Path) -> None:
+    """Restore the saved executable by an atomic rename on the installation filesystem."""
+    try:
+        restored = staging / "rollback"
+        shutil.copy2(backup / "mediamtx", restored, follow_symlinks=False)
+        os.replace(restored, binary)
+    except OSError:
+        raise ValueError(
+            f"Rollback could not restore the executable; restore {backup} manually"
+        ) from None
+
+
+def update_restore(
+    binary: Path,
+    backup: Path,
+    staging: Path,
+    services: list[UpdateService],
+    replaced: bool,
+) -> None:
+    """Restore the previous executable and attempt to recover every originally active unit."""
+    errors = []
+    if replaced:
+        for service in services:
+            try:
+                update_control(service, "stop")
+            except (OSError, subprocess.SubprocessError):
+                errors.append(service.name)
+        update_restore_binary(binary, backup, staging)
+    for service in services:
+        try:
+            update_control(service, "reset-failed")
+            update_control(service, "start")
+            update_check_running(service, binary)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            errors.append(service.name)
+    if errors:
+        raise ValueError(
+            f"Rollback needs manual service recovery: {', '.join(sorted(set(errors)))}; backup: {backup}"
+        )
+
+
+def update_replace(
+    binary: Path,
+    candidate: Path,
+    backup: Path,
+    services: list[UpdateService],
+) -> None:
+    """Replace atomically, restarting active units and rolling back on a detected failure."""
+    active = [service for service in services if service.active]
+    replaced = False
+    try:
+        for service in active:
+            update_control(service, "stop")
+        os.replace(candidate, binary)
+        replaced = True
+        for service in active:
+            update_control(service, "start")
+            update_check_running(service, binary)
+    except (OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt):
+        print_status(
+            "MediaMTX activation failed; restoring the previous installation.", level="warning"
+        )
+        update_restore(binary, backup, candidate.parent, active, replaced)
+        raise ValueError(
+            f"MediaMTX update failed; previous installation recovered. Backup: {backup}"
+        ) from None
+
+
+def update_validate(candidate: Path, services: list[UpdateService]) -> None:
+    """Validate each existing configuration with its listener overrides, hiding parser output."""
+    for service in services:
+        try:
+            subprocess.run(
+                [str(candidate), f"--validate-conf={service.directory / 'mediamtx.yml'}"],
+                env=service_environment(service.directory),
+                cwd=Path.home(),
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
+        except subprocess.SubprocessError:
+            raise ValueError(f"MediaMTX configuration validation failed: {service.name}") from None
+        print_status(f"Configuration validated: {service.name}.")
+
+
+def update_binary_state(binary: Path) -> tuple[tuple[int, ...], ...]:
+    """Track both the account-local entry and its target without considering access times."""
+    return tuple(
+        (metadata.st_dev, metadata.st_ino, metadata.st_mtime_ns, metadata.st_ctime_ns)
+        for metadata in (binary.lstat(), binary.stat())
+    )
+
+
+def print_update_plan(
+    args: argparse.Namespace, binary: Path, installed: str, services: list[UpdateService]
+) -> None:
+    """Summarize versions, paths and affected services using the diagnostic CLI layout."""
+    print("\nUpdate plan:")
+    print(f"  Installed version : {installed}")
+    print(f"  Target version    : {args.version}")
+    print(f"  Executable        : {binary}")
+    print(f"  Mode              : {'dry run' if args.dry_run else 'update'}")
+    if binary.is_symlink():
+        print(f"  Symlink target    : {binary.readlink()}")
+        print_status("The account-local symlink will be replaced; its target stays unchanged.")
+    print("\nMediaMTX services:")
+    for service in services:
+        scope = "user" if "--user" in service.command else "system"
+        action = "restart" if service.active else "keep stopped"
+        print(f"  {service.name} ({scope}): {action}")
+    print_status("Existing configuration and credentials will be preserved.")
+    print_status(
+        "Restarting MediaMTX interrupts Live connections and removes temporary relay paths.",
+        level="warning",
+    )
+
+
+def update_locked(args: argparse.Namespace, binary: Path) -> None:
+    """Prepare and validate the requested release before stopping any existing service."""
+    installed = read_version(binary)
+    if installed == args.version:
+        print("\nConclusion:")
+        print_status(f"MediaMTX {installed} is already installed; no service was restarted.")
+        return
+    if tuple(map(int, args.version.split("."))) < tuple(map(int, installed.split("."))):
+        raise ValueError("update does not downgrade MediaMTX; use the manual rollback procedure")
+    services = update_services()
+    # Validate the environment even for a preview; never evaluate it as shell code.
+    for service in services:
+        service_environment(service.directory)
+    print_update_plan(args, binary, installed, services)
+    if args.dry_run:
+        print_status(
+            "Would download, validate existing configurations, back up and replace the executable."
+        )
+        print("\nConclusion:")
+        print_status("Dry run complete: no files changed or services restarted.")
+        return
+    print_status("Preparing MediaMTX update.")
+    if any(service.active and service.command == ["systemctl"] for service in services):
+        # Authentication remains interactive; all later privileged actions are non-interactive.
+        subprocess.run(["sudo", "-v"], check=True, timeout=60)
+    before = update_binary_state(binary)
+    with tempfile.TemporaryDirectory(prefix=".mediamtx-update-", dir=binary.parent) as temporary:
+        candidate = Path(temporary) / "mediamtx"
+        install_binary(argparse.Namespace(binary=candidate, version=args.version, dry_run=False))
+        update_validate(candidate, services)
+        reject_symlinks(binary.parent)
+        if update_binary_state(binary) != before:
+            raise ValueError("MediaMTX executable changed during preparation; retry the update")
+        if update_services() != services:
+            raise ValueError("MediaMTX services changed during preparation; retry the update")
+        backup = update_backup(binary, services)
+        update_replace(binary, candidate, backup, services)
+    print("\nConclusion:")
+    print_status(f"MediaMTX updated to {args.version}.")
+    print_status("Verify a test broadcast and its current HLS URL.")
+
+
+def update_binary(args: argparse.Namespace) -> None:
+    """Serialize account-local updates, replacing executable symlinks without changing targets."""
+    if os.geteuid() == 0:
+        raise ValueError(
+            "Run update as the non-root service account; sudo is used only for system units"
+        )
+    binary = Path.home() / ".local/bin/mediamtx"
+    reject_symlinks(binary.parent)
+    if not binary.is_file() or binary.lstat().st_uid != os.geteuid():
+        raise ValueError(
+            "update requires an account-owned ~/.local/bin/mediamtx file or symlink to a file"
+        )
+    # A directory lock stays valid across the executable's atomic replacement.
+    lock = os.open(binary.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError(
+                "Another MediaMTX update is already running for this account"
+            ) from None
+        update_locked(args, binary)
+    finally:
+        os.close(lock)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Execute the CLI action, returning a concise error instead of a traceback on failure."""
     args = parse_args(argv)
+    print(f"=== MediaMTX {args.command} ===")
     try:
         if platform.system() != "Linux":
             raise ValueError("This installer supports Linux only")
         if args.command == "start":
             start_service(args)
+            return 0
+        if args.command == "update":
+            update_binary(args)
             return 0
         if args.command != "install":
             configuration_plan(args)
@@ -728,12 +1123,15 @@ def main(argv: list[str] | None = None) -> int:
             install_binary(args)
         if args.command != "install":
             configure_instance(args)
-        print(
+        print_status(
             "No service was started or restarted. Follow MEDIAMTX_SETUP.md for service management."
         )
         return 0
     except (OSError, ValueError, tarfile.TarError, subprocess.SubprocessError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        message = str(exc)
+        if isinstance(exc, subprocess.CalledProcessError):
+            message = f"Command failed (exit code {exc.returncode}): {shlex.join(exc.cmd)}"
+        print_status(message, level="error")
         return 1
 
 

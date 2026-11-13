@@ -96,8 +96,9 @@ An unsupported existing executable is reported and left unchanged.
 | `--version 1.21.2` | Exact release to download if absent; minimum/default: 1.21.1 |
 | `--binary /absolute/path/mediamtx` | Existing binary or unused installation destination; no default-path link |
 
-An installed version is never upgraded or downgraded automatically.
-Use a separate destination for a [manual upgrade](#manual-upgrades).
+`install` and `setup` never replace an installed version. Use the explicit
+[`update` command](#native-update-command) for an existing native deployment,
+or a separate destination for a [manual upgrade](#manual-upgrades).
 Run `python3 scripts/install_mediamtx.py --help` for all commands.
 
 ### Install and configure with one command
@@ -793,9 +794,9 @@ or the [CPU smoke test](LIVE.md#reproducible-test-without-streaming-hardware).
 
 ## Manual upgrades
 
-MediaMTX version changes are an operator decision. The installation helpers and
-`update-stack.sh` leave an existing executable and running MediaMTX services
-unchanged during Manager/Runner updates.
+MediaMTX version changes are an operator decision. `install`, `setup`, `start`
+and `update-stack.sh` leave an existing executable unchanged. Use the explicit
+`update` command below or the manual procedures.
 
 **Plan a maintenance window: restarting or recreating MediaMTX disconnects
 active RTMP publishers and readers and interrupts the Live RTMP-to-HLS path.**
@@ -806,6 +807,53 @@ the change. Encoder reconnection and session recovery may be necessary; verify
 the resulting session and its current HLS URL in administration. A replacement
 session can have a new URL. See
 [Restart and outage behavior](LIVE_OPERATIONS.md#restart-and-outage-behavior).
+
+### Native update command
+
+Run as the non-root service account, with the application environment already
+installed. **Prefer `manager/` whenever the Manager is installed on the host;
+use `runner/` on Runner-only hosts.**
+
+```bash
+cd /opt/esup-runner/manager  # Use runner/ on a Runner-only host.
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+uv run --no-sync python scripts/install_mediamtx.py update --version 1.21.3 --dry-run
+uv run --no-sync python scripts/install_mediamtx.py update --version 1.21.3
+```
+
+The command discovers `esup-runner-mediamtx@*.service` units belonging to that
+account in both systemd scopes, including configured instances that are stopped.
+It downloads and verifies the exact release, validates each existing YAML with
+its `mediamtx.env` listener overrides, and saves
+the old executable, configurations and units in a private
+`~/.local/bin/mediamtx-backup-*` directory. It then replaces the executable
+atomically and restarts only services that were active. It checks that their
+processes remain active and verifies the executable where `/proc` access permits.
+Configuration files, passwords, certificates and units are preserved. A detected
+activation failure triggers restoration of the previous executable and recovery
+of the active services;
+failed recovery reports the backup path for manual intervention.
+
+Update once per service account: both installers handle all detected user
+MediaMTX services sharing its executable. The **Manager installer** is required
+when that account has a system MediaMTX service, including RTMPS on port 443.
+It requests `sudo` authentication for service control only; downloads and binary
+replacement run as the service account. A working systemd user session is required.
+
+`--dry-run` only inspects the installation; it does not download, write, validate
+with the new executable or restart services. An already installed target version
+is a no-op; downgrades are refused. Concurrent updates for the account are refused.
+
+An account-owned `~/.local/bin/mediamtx` symlink, including one created when reusing
+a `PATH` installation, is replaced with a local executable. Its target is left
+unchanged; the backup and rollback preserve the original link. Broken links and
+symlinked parent directories are refused.
+
+Customized units/drop-ins, nonstandard paths and custom environment syntax
+require the manual procedure below. After an update or rollback,
+repeat the [Control API checks](#verify-the-connection), check `/v3/info`, and verify
+a test broadcast and its current HLS URL. Temporary relays and broadcasts are not
+restored by a rollback.
 
 ### Native executable with systemd user services
 

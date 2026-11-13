@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add an explicit MediaMTX `update --version` command that preserves existing
+  configuration, validates and backs up native installations, restarts active
+  services and rolls back detected activation failures. See the
+  [update procedure](MEDIAMTX_SETUP.md#native-update-command). Reused `PATH`
+  executable links are upgraded locally without changing their targets.
 - Add `ADMIN_TITLE` to customize the administration dashboard heading and browser
   tab title, defaulting to `Runners Monitoring`.
 - Document [passwordless RTMP publishing](MEDIAMTX_SETUP.md#passwordless-publishing-from-trusted-encoder-ips)

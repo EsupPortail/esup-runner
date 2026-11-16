@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Allow nested Live publication paths in the default Manager MediaMTX template,
+  with the final segment matching the Manager's broadcaster name constraints.
 - Write MediaMTX logs to `LOG_DIR/mediamtx_<instance>.log` alongside stdout,
   with targeted logrotate instructions. Manager diagnostics read
   `mediamtx_manager.log` automatically unless a journal unit is selected; remove

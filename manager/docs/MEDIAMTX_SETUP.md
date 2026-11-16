@@ -241,8 +241,10 @@ nano "$HOME/.config/esup-runner/manager/mediamtx.yml"
 | Runner `control` | Runner `LIVE_MEDIAMTX_API_PASSWORD` |
 
 Section 6 copies application credentials automatically. Configure the encoder
-separately with H.264/AAC and an allowed path such as `live/amphi-a`. The Manager
-discovers accepted publications; `amphi-a` is the public `source_id`, not a secret.
+separately with H.264/AAC and an allowed path such as `live/amphi-a`. The default
+template also accepts nested paths such as `live/amphi-a/amphi-a`. The Manager
+discovers accepted publications; the final segment (`amphi-a`) is the public
+`source_id`, not a secret.
 `LIVE_SOURCES` optionally declares sources before publication; it is not an
 allowlist. Keep the template's `overridePublisher: true`
 (new authenticated publishers on the same path replace the current publisher).
@@ -259,13 +261,13 @@ need changing:
     ips: []
     permissions:
       - action: publish
-        path: "~^live/[A-Za-z0-9_-]+$"
+        path: "~^live/([A-Za-z0-9_-]+/)*[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
   - user: publisherMedecine
     pass: "YOUR_MEDECINE_PASSWORD"
     ips: []
     permissions:
       - action: publish
-        path: "~^live/[A-Za-z0-9_-]+$"
+        path: "~^live/([A-Za-z0-9_-]+/)*[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
 ```
 
 Use each account in the encoder's `user` and `pass` URL parameters, for example
@@ -291,7 +293,7 @@ to the existing `authInternalUsers` list in the Manager's active
       - "198.51.100.20/32"
     permissions:
       - action: publish
-        path: "~^live/[A-Za-z0-9_-]+$"
+        path: "~^live/([A-Za-z0-9_-]+/)*[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
 ```
 
 Replace the example IPs with the encoders' source IPs **as seen by MediaMTX**.

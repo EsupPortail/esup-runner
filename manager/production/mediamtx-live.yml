@@ -24,13 +24,13 @@ authInternalUsers:
     ips: []
     permissions:
       - action: publish
-        path: "~^live/[A-Za-z0-9_-]+$"
+        path: "~^live/([A-Za-z0-9_-]+/)*[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
   - user: relay
     pass: CHANGE_ME_RELAY_PASSWORD
     ips: []
     permissions:
       - action: read
-        path: "~^live/[A-Za-z0-9_-]+$"
+        path: "~^live/([A-Za-z0-9_-]+/)*[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
   - user: control
     pass: CHANGE_ME_CONTROL_PASSWORD
     ips: []
@@ -38,7 +38,7 @@ authInternalUsers:
       - action: api
       - action: metrics
 paths:
-  "~^live/[A-Za-z0-9_-]+$":
+  "~^live/([A-Za-z0-9_-]+/)*[A-Za-z0-9][A-Za-z0-9_-]{0,99}$":
     source: publisher
     # A new authenticated publisher replaces the current broadcaster input.
     overridePublisher: true

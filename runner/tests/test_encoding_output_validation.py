@@ -141,7 +141,7 @@ def test_validate_video_outputs_accepts_complete_hls_and_mp4(tmp_path):
     assert "video=100.000s" in message
 
 
-def test_validate_video_outputs_rejects_truncated_or_missing_streams(tmp_path):
+def test_validate_video_outputs_warns_for_truncated_but_rejects_missing_streams(tmp_path):
     output = tmp_path / "720p_video.mp4"
     output.write_bytes(b"encoded")
 
@@ -156,9 +156,10 @@ def test_validate_video_outputs_rejects_truncated_or_missing_streams(tmp_path):
         expected_stream_durations={"video": [120], "audio": [120]},
         subprocess_module=_ProbeSubprocess,
     )
-    assert valid is False
-    assert "audio stream 0 stops at 53.000s" in message
-    assert "expected at least 115.000s" in message
+    assert valid is True
+    assert "WARNING: Encoding incomplete:" in message
+    assert "audio stream 0: 53.000s produced, 120.000s expected" in message
+    assert "Output validation failed" not in message
 
     _ProbeSubprocess.response = types.SimpleNamespace(
         returncode=0,

@@ -8,9 +8,16 @@ import pytest
 
 from app.api.routes import task as task_routes
 from app.core import state
-from app.core.encoding_diagnostics import incomplete_output_error, prepend_encoding_warning
+from app.core.encoding_diagnostics import (
+    incomplete_output_error,
+    incomplete_output_warnings,
+    normalize_encoding_warnings,
+    prepend_encoding_warning,
+    read_encoding_warnings,
+)
 from app.models.models import TaskRequest
 from app.services import task_recovery
+from app.services.task_dispatcher import TaskDispatcher
 from app.task_handlers.encoding.core import ffmpeg_runtime_utils as ffmpeg_runtime
 from app.task_handlers.encoding.core import main_orchestration_utils, runtime_flow_utils
 from app.task_handlers.encoding.encoding_handler import VideoEncodingHandler
@@ -19,7 +26,7 @@ from app.task_handlers.studio.studio_handler import StudioEncodingHandler
 
 @pytest.fixture
 def incomplete_encoding(tmp_path, monkeypatch, capsys):
-    """Run the real failure path with successful encoders producing truncated streams."""
+    """Run successful encoding orchestration with truncated audio/video streams."""
     output_dir = tmp_path / "incomplete-task" / "output"
     output_dir.mkdir(parents=True)
     output = output_dir / "360p_timeout_clip.mp4"
@@ -67,35 +74,35 @@ def incomplete_encoding(tmp_path, monkeypatch, capsys):
         encode_log_fn=runtime_flow_utils.encode_log,
         encoding_validation_error_type=runtime_flow_utils.EncodingValidationError,
     )
-    with pytest.raises(SystemExit) as exit_info:
-        main_orchestration_utils.run_main_flow(SimpleNamespace(), context=context)
-    assert exit_info.value.code == 1
+    assert main_orchestration_utils.run_main_flow(SimpleNamespace(), context=context) == 0
     captured = capsys.readouterr()
     handler = VideoEncodingHandler()
     script_result = handler._fill_empty_streams_from_encoding_log(
-        {"success": False, "returncode": 1, "stdout": captured.out, "stderr": captured.err},
+        {"success": True, "returncode": 0, "stdout": captured.out, "stderr": captured.err},
         output_dir,
     )
+    (output_dir.parent / "info_script.log").write_text(script_result["stdout"])
     results = {
-        "success": False,
-        "error": handler._extract_script_error(script_result),
+        "success": True,
+        "warnings": read_encoding_warnings(output_dir),
         "script_output": script_result,
     }
     handler.save_task_metadata("incomplete-task", results, output_dir)
     return output_dir, results
 
 
-def test_incomplete_outputs_fail_with_specific_error_and_chronological_logs(incomplete_encoding):
+def test_incomplete_outputs_succeed_with_warnings_and_chronological_logs(incomplete_encoding):
     output_dir, results = incomplete_encoding
-    error = results["error"]
+    error = results["warnings"][0]
     assert error.startswith("Encoding incomplete: '360p_timeout_clip.mp4', video stream 0:")
     assert "75.920s produced, 283.000s expected, approximately 207.080s missing" in error
     assert "Check source integrity and FFmpeg errors" in error
     assert str(output_dir) not in error
     metadata = json.loads((output_dir / "info_video.json").read_text())
-    assert metadata["encode_result"] is False
-    assert metadata["error"] == error
-    assert "_output_validation_error" not in metadata
+    assert metadata["encode_result"] is True
+    assert "error" not in metadata
+    assert len(results["warnings"]) == 2
+    assert metadata["warnings"] == results["warnings"]
     raw_log = (output_dir / "encoding.log").read_text()
     assert raw_log.lstrip().startswith("Initial encoding details")
     assert "WARNING: " + error in raw_log
@@ -106,14 +113,19 @@ def test_incomplete_outputs_fail_with_specific_error_and_chronological_logs(inco
 async def test_incomplete_diagnostic_survives_callback_persistence_and_recovery(
     incomplete_encoding, tmp_path, monkeypatch
 ):
-    _, results = incomplete_encoding
+    output_dir, results = incomplete_encoding
     status_file = tmp_path / "statuses.json"
     monkeypatch.setenv("RUNNER_TASK_STATUS_FILE", str(status_file))
     monkeypatch.delenv("RUNNER_INSTANCE_ID", raising=False)
     monkeypatch.setattr(state, "_RUNNER_STATE", {**state._RUNNER_STATE, "task_statuses": {}})
     monkeypatch.setattr(task_routes.storage_manager, "base_path", str(tmp_path))
+
+    async def dispatch(task_id, task_request):
+        VideoEncodingHandler().save_task_metadata(task_id, results, output_dir)
+        return await TaskDispatcher()._package_task_results(task_id, output_dir, results)
+
     monkeypatch.setattr(
-        task_routes.task_dispatcher, "dispatch_task", AsyncMock(return_value=results)
+        task_routes.task_dispatcher, "dispatch_task", AsyncMock(side_effect=dispatch)
     )
     notify = AsyncMock()
     email = AsyncMock()
@@ -130,51 +142,56 @@ async def test_incomplete_diagnostic_survives_callback_persistence_and_recovery(
     )
     await task_routes.process_task(request.task_id, request)
     status = state.get_task_status(request.task_id)
-    assert status["status"] == "failed"  # The filename contains 'timeout', not a timeout error.
-    assert status["error_message"] == results["error"]
-    assert status["script_output"].startswith(
-        "WARNING: " + results["error"] + "\n\n[info_script.log]"
-    )
+    assert status["status"] == "completed"
+    assert "error_message" not in status
+    assert status["warnings"] == results["warnings"]
     assert "Initial encoding details" in status["script_output"]
-    assert notify.await_args.args[2:] == ("failed", results["error"], status["script_output"])
-    assert email.await_args.kwargs["error_message"] == results["error"]
-    assert email.await_args.kwargs["script_output"] == status["script_output"]
+    assert notify.await_args.args[2:] == ("completed", None, status["script_output"])
+    notification = task_routes._completion_notification_payload(
+        request.task_id, "completed", None, status["script_output"]
+    )
+    assert notification["warnings"] == results["warnings"]
+    email.assert_not_awaited()
 
-    # Recovery reconstructs the displayed summary from saved error + script results;
-    # no logs or new warning fields are added to the compact status file.
-    persisted = json.loads(status_file.read_text())
-    assert results["error"] in status_file.read_text()
-    assert "script_output" not in status_file.read_text()
-    assert persisted
+    # Completed tasks stay out of compact status persistence; warnings live in outputs.
+    assert not status_file.exists()
+    manifest = json.loads((output_dir.parent / "manifest.json").read_text())
+    assert results["success"] is True
+    assert "360p_timeout_clip.mp4" in manifest["files"]
     state._RUNNER_STATE["task_statuses"].clear()
+    disk_status = await task_routes.get_task_status_endpoint(request.task_id, "manager")
+    assert disk_status["status"] == "completed"
+    assert disk_status["warnings"] == results["warnings"]
     recovered = task_recovery.infer_workspace_terminal_status(
-        request.task_id, {}, runtime=task_routes
+        request.task_id, status, runtime=task_routes
     )
     recovered_status, error, output = recovered
     await task_recovery.finalize_recovered_task(
         request.task_id,
-        {"completion_callback": request.completion_callback},
+        status,
         status=recovered_status,
         error_message=error,
         script_output=output,
         runtime=task_routes,
     )
-    assert notify.await_args.args[2:] == ("failed", results["error"], status["script_output"])
+    assert notify.await_args.args[2:] == ("completed", None, status["script_output"])
     assert state.get_task_status(request.task_id)["script_output"] == status["script_output"]
+    assert state.get_task_status(request.task_id)["warnings"] == results["warnings"]
 
 
-def test_studio_keeps_incomplete_encoding_error(incomplete_encoding):
+def test_studio_keeps_incomplete_encoding_warnings(incomplete_encoding):
     output_dir, encoding = incomplete_encoding
     results = StudioEncodingHandler()._build_results(
         encoding["script_output"], {"success": True}, output_dir, output_dir / "base.mp4"
     )
-    assert results["success"] is False
-    assert results["error"] == encoding["error"]
+    assert results["success"] is True
+    assert "error" not in results
+    assert results["warnings"] == encoding["warnings"]
 
 
-@pytest.mark.parametrize("duration,valid", [(100, True), (95, True), (94.999, False)])
-def test_warning_preserves_five_second_tolerance_and_clears_previous_error(
-    tmp_path, monkeypatch, duration, valid
+@pytest.mark.parametrize("duration,warns", [(100, False), (95, False), (94.999, True)])
+def test_warning_preserves_five_second_tolerance_and_replaces_previous_warnings(
+    tmp_path, monkeypatch, duration, warns
 ):
     output = tmp_path / "output.mp4"
     output.write_bytes(b"encoded")
@@ -189,11 +206,12 @@ def test_warning_preserves_five_second_tolerance_and_clears_previous_error(
         "probe_stream_durations",
         lambda *_args, **_kwargs: ({"video": [duration], "audio": []}, ""),
     )
-    info = {"duration": 100, "_output_validation_error": "previous error"}
+    info = {"duration": 100, "warnings": ["Encoding incomplete: previous run"]}
     actual_valid, log = runtime_flow_utils.validate_video_outputs(info, "input.mov")
-    assert actual_valid is valid
-    assert ("WARNING: Encoding incomplete:" in log) is not valid
-    assert bool(info.get("_output_validation_error")) is not valid
+    assert actual_valid is True
+    assert ("WARNING: Encoding incomplete:" in log) is warns
+    assert bool(info["warnings"]) is warns
+    assert "Encoding incomplete: previous run" not in info["warnings"]
 
 
 def test_incomplete_warning_only_uses_explicit_diagnostics():
@@ -218,5 +236,75 @@ def test_warning_summary_handles_empty_logs_and_is_idempotent():
     assert prepend_encoding_warning(error, None) == summary
     assert prepend_encoding_warning(error, "") == summary
     assert prepend_encoding_warning(error, summary) == summary
+    assert prepend_encoding_warning(error, "details") == summary + "\n\ndetails"
     detailed = summary + "\n\n[info_script.log]\ndetails"
     assert prepend_encoding_warning(error, detailed) == detailed
+
+
+def test_only_explicit_incomplete_outputs_populate_warnings():
+    warning = "Encoding incomplete: truncated stream"
+    assert incomplete_output_warnings("Packet corrupt\nWARNING: libx264 missing\n") == []
+    assert incomplete_output_warnings(f"WARNING: {warning}\n{warning}\n") == [warning]
+    assert normalize_encoding_warnings([None, "Packet corrupt", warning, warning]) == [warning]
+    assert normalize_encoding_warnings(warning) == []
+
+
+@pytest.mark.parametrize("contents", [None, "not-json", "[]", '{"warnings": "invalid"}'])
+def test_missing_or_invalid_encoding_metadata_has_no_warnings(tmp_path, contents):
+    if contents is not None:
+        (tmp_path / "info_video.json").write_text(contents)
+    assert read_encoding_warnings(tmp_path) == []
+
+
+def test_encoding_handler_saves_warnings_from_script_metadata(incomplete_encoding, monkeypatch):
+    output_dir, encoding = incomplete_encoding
+    monkeypatch.setattr(task_routes.storage_manager, "base_path", str(output_dir.parent.parent))
+    handler = VideoEncodingHandler()
+    monkeypatch.setattr(handler, "download_source_file", lambda **_kwargs: {"success": True})
+    monkeypatch.setattr(handler, "validate_downloaded_media_against_denylist", lambda _path: None)
+    monkeypatch.setattr(
+        handler, "run_external_script_for_task", lambda *_args, **_kwargs: encoding["script_output"]
+    )
+    result = handler.execute_task(
+        "incomplete-task",
+        TaskRequest(
+            task_id="incomplete-task",
+            etab_name="test",
+            app_name="test",
+            task_type="encoding",
+            source_url="https://example.test/input.mov",
+            notify_url="",
+        ),
+    )
+    assert result["success"] is True
+    assert result["warnings"] == encoding["warnings"]
+    saved = json.loads((output_dir / "task_metadata.json").read_text())
+    assert saved["results"]["warnings"] == encoding["warnings"]
+
+
+def test_incomplete_warnings_do_not_hide_another_encoding_failure(incomplete_encoding, monkeypatch):
+    output_dir, encoding = incomplete_encoding
+    monkeypatch.setattr(
+        runtime_flow_utils, "launch_encode_audio", lambda *_args: (False, "failed\n")
+    )
+    with pytest.raises(runtime_flow_utils.EncodingValidationError, match="required outputs"):
+        runtime_flow_utils._process_encoding(SimpleNamespace())
+    metadata = json.loads((output_dir / "info_video.json").read_text())
+    assert metadata["encode_result"] is False
+    assert metadata["warnings"] == encoding["warnings"]
+
+
+@pytest.mark.parametrize("execution_id,expected", [("current", True), ("previous", False)])
+def test_recovery_only_reads_warnings_from_current_execution(
+    incomplete_encoding, monkeypatch, execution_id, expected
+):
+    output_dir, encoding = incomplete_encoding
+    monkeypatch.setattr(task_routes.storage_manager, "base_path", str(output_dir.parent.parent))
+    metadata_path = output_dir / "task_metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["execution_id"] = execution_id
+    metadata_path.write_text(json.dumps(metadata))
+    warnings = task_recovery.read_task_warnings(
+        "incomplete-task", {"execution_id": "current"}, runtime=task_routes
+    )
+    assert warnings == (encoding["warnings"] if expected else [])

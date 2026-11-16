@@ -85,9 +85,14 @@ def outputs(tmp_path, *, success=True, execution_id="current-attempt", files=Non
 @pytest.mark.asyncio
 async def test_successful_outputs_rebuild_manifest_and_notify(tmp_path, isolate_monitor):
     running_task()
-    outputs(tmp_path)
+    output_dir = outputs(tmp_path)
+    metadata_path = output_dir / "task_metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["results"]["warnings"] = ["Encoding incomplete: short output"]
+    metadata_path.write_text(json.dumps(metadata))
     await task_monitor.check_running_tasks_once()
     assert state.get_task_status("task-1")["status"] == "completed"
+    assert state.get_task_status("task-1")["warnings"] == metadata["results"]["warnings"]
     assert state.is_available() is True
     manifest = json.loads((tmp_path / "task-1" / "manifest.json").read_text())
     assert manifest == {
@@ -547,7 +552,10 @@ async def test_startup_preserves_new_execution_surviving_process(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_callback_retries_keep_original_manager_run_id(monkeypatch):
-    running_task(task_request={"run_id": "original-run"})
+    running_task(
+        task_request={"run_id": "original-run"},
+        warnings=["Encoding incomplete: original output"],
+    )
     monkeypatch.setattr(runtime.config, "MANAGER_URL", "http://manager.example")
     monkeypatch.setattr(runtime.config, "COMPLETION_NOTIFY_MAX_RETRIES", 1)
     monkeypatch.setattr(runtime.config, "COMPLETION_NOTIFY_RETRY_DELAY_SECONDS", 0)
@@ -566,7 +574,7 @@ async def test_callback_retries_keep_original_manager_run_id(monkeypatch):
         async def post(self, _url, **kwargs):
             sent.append(dict(kwargs["json"]))
             if len(sent) == 1:
-                state.set_task_metadata("task-1", task_request={"run_id": "new-run"})
+                state.set_task_metadata("task-1", task_request={"run_id": "new-run"}, warnings=[])
                 return httpx.Response(503, text="unavailable")
             return httpx.Response(204)
 
@@ -574,6 +582,10 @@ async def test_callback_retries_keep_original_manager_run_id(monkeypatch):
     # The fixture stubs delivery for most tests; exercise the actual route function here.
     assert await _NOTIFY_COMPLETION("http://manager.example/task/completion", "task-1", "completed")
     assert [payload["run_id"] for payload in sent] == ["original-run", "original-run"]
+    assert [payload["warnings"] for payload in sent] == [
+        ["Encoding incomplete: original output"],
+        ["Encoding incomplete: original output"],
+    ]
 
 
 @pytest.mark.asyncio

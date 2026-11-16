@@ -425,15 +425,22 @@ async def test_process_task_success(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_process_task_failure(monkeypatch):
-    """Validate Process task failure."""
+@pytest.mark.parametrize(
+    ("error_message", "expected_status"),
+    [
+        ("timeout happened", "timeout"),
+        ("Encoding incomplete: '360p_timeout_clip.mp4', video stream 0: truncated", "failed"),
+    ],
+)
+async def test_process_task_failure(monkeypatch, error_message, expected_status):
+    """Distinguish actual timeouts from failed outputs whose filenames contain timeout."""
     from app.api.routes import task as task_module
     from app.models.models import TaskRequest
 
     events = {"avail": [], "notified": None, "email": None}
 
     async def _dispatch(task_id, task_request):
-        return {"success": False, "error": "timeout happened", "script_output": {}}
+        return {"success": False, "error": error_message, "script_output": {}}
 
     async def _notify(url, task_id, status, error_message, script_output=None):
         events["notified"] = (url, status, error_message, script_output)
@@ -464,8 +471,10 @@ async def test_process_task_failure(monkeypatch):
     await task_module.process_task("tid-2", req)
 
     assert events["avail"] == [False, True]
-    assert events["notified"][1] == "timeout"
-    assert events["email"]["status"] == "timeout"
+    assert state.get_task_status("tid-2")["status"] == expected_status
+    assert events["notified"][1:3] == (expected_status, error_message)
+    assert events["email"]["status"] == expected_status
+    assert events["email"]["error_message"] == error_message
 
 
 @pytest.mark.asyncio

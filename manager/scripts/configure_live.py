@@ -167,7 +167,7 @@ def connection_settings(args: argparse.Namespace, current: dict) -> dict[str, st
 
 
 def render_environment(original: str, values: dict[str, str], role: str) -> str:
-    """Replace owned assignments, omit connection defaults and preserve unrelated text."""
+    """Replace owned assignments, quote only special values and preserve unrelated text."""
     defaults = {
         "LIVE_MEDIAMTX_SERVICE_MODE": "user",
         "LIVE_MEDIAMTX_API_USER": "control",
@@ -176,13 +176,16 @@ def render_environment(original: str, values: dict[str, str], role: str) -> str:
     assignments = {}
     for key, value in values.items():
         if defaults.get(key) != value:
-            escaped = value.replace("\\", "\\\\").replace("'", "\\'")
             # dotenv expands ${...} even in single quotes; refuse ambiguous secrets.
             if "${" in value:
                 raise ValueError(
                     "Dotenv interpolation markers cannot be stored as literal credentials"
                 )
-            assignments[key] = f"{key}='{escaped}'\n"
+            rendered = value
+            if not re.fullmatch(r"[A-Za-z0-9_./:@$+=,-]*", value):
+                escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+                rendered = f"'{escaped}'"
+            assignments[key] = f"{key}={rendered}\n"
     lines = []
     for binding in parse_stream(io.StringIO(original)):
         if binding.error:

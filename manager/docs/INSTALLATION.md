@@ -246,7 +246,7 @@ Credentials can be provisioned in two ways:
   # Password:
   # Confirm password:
   # Add this line to your .env file:
-  # ADMIN_USERS__admin@example.org="s3cr3t_bcrypt_value"
+  # ADMIN_USERS__admin@example.org=s3cr3t_bcrypt_value
   ```
 
 ### Initialize required directories

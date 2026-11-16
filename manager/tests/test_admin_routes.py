@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from dotenv import dotenv_values
 from fastapi import Request
 from fastapi.testclient import TestClient
 from jinja2 import Environment, FileSystemLoader
@@ -1387,7 +1388,8 @@ def test_delete_authorized_token_from_env_returns_status(monkeypatch, tmp_path):
     assert admin_routes._delete_authorized_token_from_env("missing") is False
 
 
-def test_upsert_admin_user_in_env_updates_and_appends(monkeypatch, tmp_path):
+@pytest.mark.parametrize("hashed_password", ["new-hash", "$2b$12$hash.with/slash"])
+def test_upsert_admin_user_in_env_updates_and_appends(monkeypatch, tmp_path, hashed_password):
     """Validate .env admin upsert updates existing labels and appends new labels."""
     env_path = tmp_path / ".env"
     env_path.write_text(
@@ -1398,15 +1400,16 @@ def test_upsert_admin_user_in_env_updates_and_appends(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(config_module, "get_env_file_path", lambda: env_path)
 
-    admin_routes._upsert_admin_user_in_env("existing", "new-hash")
+    admin_routes._upsert_admin_user_in_env("existing", hashed_password)
     admin_routes._upsert_admin_user_in_env("new_admin", "new-admin-hash")
 
     content = env_path.read_text(encoding="utf-8")
-    assert 'ADMIN_USERS__existing="new-hash"' in content
-    assert 'ADMIN_USERS__new_admin="new-admin-hash"' in content
-    assert content.index('ADMIN_USERS__existing="new-hash"') < content.index(
-        'ADMIN_USERS__new_admin="new-admin-hash"'
+    assert f"ADMIN_USERS__existing={hashed_password}" in content
+    assert "ADMIN_USERS__new_admin=new-admin-hash" in content
+    assert content.index(f"ADMIN_USERS__existing={hashed_password}") < content.index(
+        "ADMIN_USERS__new_admin=new-admin-hash"
     )
+    assert dotenv_values(env_path)["ADMIN_USERS__existing"] == hashed_password
 
 
 def test_delete_admin_user_from_env_returns_status(monkeypatch, tmp_path):

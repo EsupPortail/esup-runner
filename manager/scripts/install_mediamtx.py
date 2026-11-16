@@ -647,9 +647,12 @@ def configuration_plan(args: argparse.Namespace) -> tuple[str, str, pwd.struct_p
     log_file = args.log_dir / f"mediamtx_{args.instance}.log"
     if any(character in str(log_file) for character in "\x00\r\n"):
         raise ValueError("The MediaMTX log path must not contain control characters")
+    log_value = str(log_file)
+    if not re.fullmatch(r"[A-Za-z0-9_./-]+", log_value):
+        log_value = json.dumps(log_value)
     content = re.sub(
         r"^logFile:.*$",
-        lambda _: "logFile: " + json.dumps(str(log_file)),
+        lambda _: "logFile: " + log_value,
         content,
         flags=re.MULTILINE,
     )

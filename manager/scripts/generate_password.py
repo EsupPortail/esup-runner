@@ -49,4 +49,4 @@ if __name__ == "__main__":
     hashed_password = pwd_context.hash(password)
 
     print("\nAdd this line to your .env file:")
-    print(f'ADMIN_USERS__{label}="{hashed_password}"')
+    print(f"ADMIN_USERS__{label}={hashed_password}")

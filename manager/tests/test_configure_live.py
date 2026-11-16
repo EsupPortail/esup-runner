@@ -169,10 +169,14 @@ def test_unsupported_installation_rejected(installation, change):
     assert env.read_bytes() == original
 
 
-def test_dotenv_preservation_escaping_duplicates_and_multiline():
+@pytest.mark.parametrize(
+    "password",
+    ["control-secret", "a'b\\c#$", "secret # with comment", " padded secret ", '"quoted"'],
+)
+def test_dotenv_preservation_escaping_duplicates_and_multiline(password):
     original = "# Header\nOTHER='two\nlines'\nexport LIVE_MEDIAMTX_API_PASSWORD='old\nsecret'\nLIVE_MEDIAMTX_API_PASSWORD=duplicate\nLIVE_MEDIAMTX_API_USER=control\n"
     values = {
-        "LIVE_MEDIAMTX_API_PASSWORD": "a'b\\c#$",
+        "LIVE_MEDIAMTX_API_PASSWORD": password,
         "LIVE_MEDIAMTX_API_USER": "control",
     }
     updated = helper.render_environment(original, values, "manager")
@@ -249,7 +253,7 @@ def test_invalid_listener_addresses(address):
 
 def test_new_assignment_after_unterminated_last_line():
     updated = helper.render_environment("OTHER=value", {"LIVE_ENABLED": "true"}, "manager")
-    assert updated == "OTHER=value\nLIVE_ENABLED='true'\n"
+    assert updated == "OTHER=value\nLIVE_ENABLED=true\n"
 
 
 def test_component_defaults_and_other_role_rejected():

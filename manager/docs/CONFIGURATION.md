@@ -148,7 +148,7 @@ Notes:
 `/admin` uses HTTP Basic auth with bcrypt hashes:
 
 ```properties
-ADMIN_USERS__admin="$2b$12$CHANGE_ME_BCRYPT_HASH"
+ADMIN_USERS__admin=$2b$12$CHANGE_ME_BCRYPT_HASH
 ```
 
 If no admin user is configured, the manager logs a warning and admin login is unavailable.
@@ -371,7 +371,7 @@ AUTHORIZED_TOKENS__runners=CHANGE_ME_RUNNERS_TOKEN
 AUTHORIZED_TOKENS__app=CHANGE_ME_APP_TOKEN
 
 # Admin users (/admin): bcrypt hashes only
-ADMIN_USERS__admin="CHANGE_ME_BCRYPT_HASH"
+ADMIN_USERS__admin=CHANGE_ME_BCRYPT_HASH
 
 # Completion notify retry settings
 COMPLETION_NOTIFY_MAX_RETRIES=5

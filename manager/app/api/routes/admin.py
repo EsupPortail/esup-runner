@@ -210,7 +210,7 @@ def _upsert_admin_user_in_env(admin_name: str, hashed_password: str) -> None:
     env_path = config_module.get_env_file_path()
     lines = _read_env_lines(env_path)
     admin_prefix = f"{_ADMIN_ENV_PREFIX}{admin_name}="
-    admin_line = f'{admin_prefix}"{hashed_password}"'
+    admin_line = f"{admin_prefix}{hashed_password}"
 
     for index, line in enumerate(lines):
         if line.startswith(admin_prefix):

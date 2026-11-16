@@ -17,7 +17,7 @@ import unicodedata
 from functools import lru_cache
 from typing import Any, Dict, Optional, Union
 
-from app.core.encoding_diagnostics import incomplete_output_error
+from app.core.encoding_diagnostics import incomplete_output_warnings
 
 from . import (
     dressing_runtime_utils,
@@ -1207,7 +1207,7 @@ def _expected_output_stream_duration(source_duration: object, output_duration: f
 
 
 def validate_video_outputs(info_video: dict, file: str) -> tuple[bool, str]:
-    """Use ffprobe to reject missing streams and silently truncated renditions."""
+    """Reject unusable outputs and record warnings for truncated streams."""
     output_duration = float(info_video.get("effective_duration") or info_video.get("duration") or 0)
     video_duration = _expected_output_stream_duration(
         info_video.get("video_duration"),
@@ -1231,11 +1231,7 @@ def validate_video_outputs(info_video: dict, file: str) -> tuple[bool, str]:
         },
         subprocess_module=subprocess,
     )
-    # Carry the concise diagnostic through the existing bool-returning orchestration.
-    # This transient field is not part of the metadata or callback contracts.
-    info_video.pop("_output_validation_error", None)
-    if not valid:
-        info_video["_output_validation_error"] = incomplete_output_error(message)
+    info_video["warnings"] = incomplete_output_warnings(message)
     return valid, message
 
 
@@ -1539,11 +1535,11 @@ def _process_encoding(args) -> str:
         add_info_video(key, value)
 
     encode_result = launch_encode(info_video, filename)
+    add_info_video("warnings", info_video.get("warnings", []))
     add_info_video("encode_result", encode_result)
     if not encode_result:
         raise EncodingValidationError(
-            info_video.get("_output_validation_error")
-            or "Encoding failed: one or more required outputs could not be generated. "
+            "Encoding failed: one or more required outputs could not be generated. "
             "See encoding.log for details."
         )
 

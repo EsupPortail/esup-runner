@@ -11,7 +11,7 @@ from typing import Callable, Optional, cast
 
 from fastapi import HTTPException
 
-from app.core.encoding_diagnostics import prepend_encoding_warning
+from app.core.encoding_diagnostics import normalize_encoding_warnings, prepend_encoding_warning
 from app.models.models import TaskRequest
 
 RECOVERY_MONITOR_INTERVAL_SECONDS = 10
@@ -359,6 +359,26 @@ def read_recovery_task_results(task_id: str, *, runtime: ModuleType) -> Optional
     return dict(raw_results)
 
 
+def read_task_warnings(task_id: str, payload: dict, *, runtime: ModuleType) -> list[str]:
+    """Recover encoding warnings from metadata belonging to the current execution."""
+    from app.services.task_monitor import matches_execution, read_result_document
+
+    try:
+        output_dir = runtime._resolve_task_output_dir_if_exists(task_id)
+        if output_dir is None:
+            return []
+        metadata_path = runtime._resolve_within_base(output_dir / "task_metadata.json", output_dir)
+        metadata = read_result_document(metadata_path)
+    except (OSError, ValueError, HTTPException):
+        return []
+    if metadata.get("task_id") != task_id:
+        return []
+    if payload.get("execution_id") and not matches_execution(metadata, task_id, payload):
+        return []
+    results = metadata.get("results")
+    return normalize_encoding_warnings(results.get("warnings")) if isinstance(results, dict) else []
+
+
 def ensure_recovery_manifest(
     task_id: str,
     *,
@@ -596,6 +616,8 @@ async def finalize_recovered_task(
     runtime: ModuleType,
 ) -> None:
     """Persist terminal status and re-notify manager callback when possible."""
+    warnings = read_task_warnings(task_id, payload, runtime=runtime)
+    runtime.set_task_metadata(task_id, warnings=warnings or None)
     if status == "failed":
         script_output = prepend_encoding_warning(error_message, script_output)
     runtime.set_task_status(

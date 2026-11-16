@@ -13,7 +13,7 @@ from fastapi import HTTPException
 
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
-from app.services import task_results
+from app.services import task_recovery, task_results
 from app.services.result_manifest import collect_manifest_output_files
 
 logger = setup_default_logging()
@@ -243,6 +243,8 @@ async def check_task(task_id: str, payload: dict, runtime: ModuleType) -> None:
             "Cannot confirm completed outputs for task %s: %s", task_id, type(exc).__name__
         )
     script_output = runtime._collect_recovery_script_output(task_id, current)
+    warnings = task_recovery.read_task_warnings(task_id, current, runtime=runtime)
+    runtime.set_task_metadata(task_id, warnings=warnings or None)
     # Persist and release availability before awaiting a possibly unavailable Manager.
     runtime.set_task_status(task_id, status, error_message=error, script_output=script_output)
     runtime._refresh_availability_from_recovered_state()

@@ -19,7 +19,11 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.auth import get_current_manager
 from app.core.config import config
-from app.core.encoding_diagnostics import INCOMPLETE_OUTPUT_PREFIX, prepend_encoding_warning
+from app.core.encoding_diagnostics import (
+    INCOMPLETE_OUTPUT_PREFIX,
+    normalize_encoding_warnings,
+    prepend_encoding_warning,
+)
 from app.core.setup_logging import setup_default_logging
 from app.core.state import clear_task_status  # noqa: F401 - recovery runtime hook
 from app.core.state import (
@@ -518,6 +522,7 @@ async def process_task(task_id: str, task_request: TaskRequest):
             process_pid=None,
             process_pgid=None,
             process_start_ticks=None,
+            warnings=None,
         )
 
         set_available(False)
@@ -528,6 +533,9 @@ async def process_task(task_id: str, task_request: TaskRequest):
         )
 
         results = await task_dispatcher.dispatch_task(task_id=task_id, task_request=task_request)
+        set_task_metadata(
+            task_id, warnings=normalize_encoding_warnings(results.get("warnings")) or None
+        )
 
         if results.get("success") and _is_task_stop_requested(task_id):
             results = dict(results)
@@ -630,7 +638,7 @@ async def get_task_status_endpoint(
     try:
         manifest_path = _resolve_task_manifest_path(safe_task_id)
         manifest = task_monitor.read_result_document(manifest_path)
-        payload = {"task_id": safe_task_id, "status": "completed"}
+        payload: dict = {"task_id": safe_task_id, "status": "completed"}
         if manifest.get("execution_id"):
             if manifest.get("task_id") != safe_task_id:
                 raise ValueError("Task manifest identity does not match")
@@ -639,6 +647,11 @@ async def get_task_status_endpoint(
                 raise ValueError("Task output directory is missing")
             task_monitor.validate_output_files(output_dir, manifest.get("files"))
             payload["execution_id"] = manifest["execution_id"]
+        warnings = task_recovery.read_task_warnings(
+            safe_task_id, payload, runtime=_task_recovery_runtime()
+        )
+        if warnings:
+            payload["warnings"] = warnings
         return payload
     except HTTPException as exc:
         if exc.status_code != 404:
@@ -722,7 +735,7 @@ def _completion_notification_payload(
     tracked_payload = get_task_status(task_id) or {}
     persisted_request = tracked_payload.get("task_request")
     run_id = persisted_request.get("run_id") if isinstance(persisted_request, dict) else None
-    notification = {
+    notification: dict = {
         "task_id": task_id,
         "status": status,
         "error_message": error_message,
@@ -730,6 +743,9 @@ def _completion_notification_payload(
     }
     if run_id:
         notification["run_id"] = run_id
+    warnings = normalize_encoding_warnings(tracked_payload.get("warnings"))
+    if warnings:
+        notification["warnings"] = warnings
     return notification
 
 
@@ -1064,6 +1080,7 @@ async def run_task(
         task_request=task_request.model_dump(mode="json"),
         error_message=None,
         stop_requested=None,
+        warnings=None,
     )
 
     if task_request.task_type == "live":

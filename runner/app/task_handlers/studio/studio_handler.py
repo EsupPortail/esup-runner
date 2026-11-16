@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from app.core.config import config
-from app.core.encoding_diagnostics import incomplete_output_error
+from app.core.encoding_diagnostics import incomplete_output_error, read_encoding_warnings
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest
 from app.services.task_results import resolve_task_workspace
@@ -372,6 +372,7 @@ class StudioEncodingHandler(BaseTaskHandler):
             "task_type": self.task_type,
             "output_dir": str(output_dir),
             "base_video": str(base_video_path),
+            "warnings": read_encoding_warnings(output_dir),
             "script_output": {
                 "studio": studio_result,
                 "encoding": enc_result,

@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 from urllib.parse import unquote, urlparse
 
 from app.core.config import config
+from app.core.encoding_diagnostics import read_encoding_warnings
 from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest
 from app.services.task_results import resolve_task_workspace
@@ -146,6 +147,7 @@ class VideoEncodingHandler(BaseTaskHandler):
                 "input_path": str(input_path),
                 "output_dir": str(output_dir),
                 "script_output": script_result,
+                "warnings": read_encoding_warnings(output_dir),
             }
 
             if not script_result["success"]:

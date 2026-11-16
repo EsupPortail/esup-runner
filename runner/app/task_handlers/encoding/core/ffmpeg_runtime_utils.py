@@ -253,7 +253,7 @@ def _validate_stream_durations(
     expected_stream_durations: dict[str, list[float]],
     duration_tolerance: float,
 ) -> tuple[bool, str, list[str]]:
-    """Validate expected stream counts and durations for a probed output."""
+    """Reject missing streams and warn about durations shorter than expected."""
     is_valid = True
     msg = ""
     duration_summary: list[str] = []
@@ -278,13 +278,6 @@ def _validate_stream_durations(
                 expected_duration - max(0.0, duration_tolerance),
             )
             if duration < minimum_duration:
-                is_valid = False
-                msg += (
-                    f"Output validation failed for {output_path}: {stream_type} "
-                    f"stream {stream_index} stops at {duration:.3f}s; expected at least "
-                    f"{minimum_duration:.3f}s (target {expected_duration:.3f}s, "
-                    f"tolerance {duration_tolerance:.3f}s)\n"
-                )
                 msg += (
                     f"WARNING: {INCOMPLETE_OUTPUT_PREFIX} {os.path.basename(output_path)!r}, "
                     f"{stream_type} stream {stream_index}: {duration:.3f}s produced, "
@@ -328,7 +321,7 @@ def _validate_video_output(
         expected_stream_durations=expected_stream_durations,
         duration_tolerance=duration_tolerance,
     )
-    if is_valid:
+    if is_valid and "WARNING: " not in msg:
         msg += f"ffprobe output validation ok: {output_path} ({'; '.join(duration_summary)})\n"
     return is_valid, msg
 

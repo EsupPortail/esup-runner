@@ -420,11 +420,6 @@ systemctl --user enable --now esup-runner-mediamtx@runner.service
 systemctl --user restart esup-runner-runner.service
 ```
 
-If a separate `esup-runner-live@live-01.service` was previously enabled, finish
-its sessions and stop/disable it before switching the same port, HLS root and
-MediaMTX to the grouped service. Preserve its recovery files until cleanup is
-complete. On the Manager, update the code for selection of mixed task types too.
-
 Create the configured HLS directory with permissions for the service account.
 Follow the shared guide's [user service instructions](../../manager/docs/MEDIAMTX_SETUP.md#4-start-the-native-systemd-service)
 for the MediaMTX template and boot/logout persistence with lingering. When

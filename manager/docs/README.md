@@ -444,6 +444,11 @@ Payload:
 
 Valid completion statuses: `completed`, `failed`, `timeout`.
 
+Incomplete encodings can finish as `completed` with a `warnings` list containing
+`Encoding incomplete:` diagnostics. Warnings are retained in task history and
+shown in task details, independently of notification failures. Other diagnostics
+do not populate this field. See [encoding error handling](../../runner/docs/TYPE_ENCODING.md#error-handling).
+
 ### `POST /tasks/restart-selected` (admin UI helper)
 
 This endpoint is used by the `/tasks` web page bulk action **Restart selected tasks**.
@@ -539,6 +544,7 @@ If the original task request has a non-empty `notify_url`, the manager POSTs:
 The callback's `script_output` omits Unicode characters above `U+FFFF`, including
 four-byte emoji, to support Pod databases using MySQL `utf8mb3`. Accents and line
 breaks are preserved. The Manager retains the original output in its task history.
+When present, incomplete-encoding `warnings` are also forwarded to the client.
 
 ## Admin dashboard
 

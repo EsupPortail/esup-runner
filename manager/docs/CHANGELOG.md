@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Preserve incomplete-encoding `warnings` in task history and client callbacks,
+  display them in task details and flag completed tasks on the main dashboard.
 - Add an explicit MediaMTX `update --version` command that preserves existing
   configuration, validates and backs up native installations, restarts active
   services and rolls back detected activation failures. See the

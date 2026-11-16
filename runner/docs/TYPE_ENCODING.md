@@ -187,15 +187,18 @@ This example includes optional fields (`app_version`, `affiliation`, `completion
 - MP4 outputs that preserve the source frame cadence use a 1/90000-second video
   encoder time base on CPU and GPU to prevent timestamp overflow on sparse
   variable-frame-rate sources. HLS and WebM constant-frame-rate handling are unchanged.
-- HLS/MP4 outputs that stop more than five seconds before their expected stream
-  duration fail the task, even if FFmpeg exits successfully. The error identifies
-  the first incomplete file/stream, its produced and expected durations, and the
-  estimated missing duration. Expected durations account for source stream lengths
-  and the requested cut; the diagnostic alone does not establish the cause.
-- A `WARNING: Encoding incomplete:` summary appears before the script logs sent
-  to the Manager, also when a failed task is recovered from its saved metadata.
-  The chronological `encoding.log` contains diagnostics for all affected outputs.
-  This warning does not make the task successful or publish partial results.
+- HLS/MP4 streams that stop more than five seconds before their expected duration
+  produce non-blocking `warnings`. Each message identifies the file/stream, produced
+  and expected durations, and estimated missing duration. Expected durations account
+  for source stream lengths and the requested cut; the diagnostic alone does not
+  establish the cause or recover missing content.
+- If all required outputs are generated, incomplete encodings finish as `completed`
+  and their files remain downloadable. Warnings are saved in `info_video.json` and
+  task metadata, sent to the Manager and client callbacks, and displayed in task
+  details. They survive restart recovery. Only incomplete encodings populate
+  `warnings`; other log warnings do not. `encoding.log` retains chronological details.
+- Missing or empty outputs, missing required streams, probe failures and unrecovered
+  FFmpeg errors still fail the task.
 - Invalid JSON in `rendition`, `cut`, or `dressing` logs a warning and the feature is ignored.
 - Invalid rendition fields (bad key format, invalid `resolution`, invalid bitrate format, non-boolean `encode_mp4`) log a warning and fallback to default rendition configuration.
 - Missing `start`/`end` logs a warning and cut is not applied.

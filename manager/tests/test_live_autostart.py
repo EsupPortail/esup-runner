@@ -71,9 +71,15 @@ def test_invalid_observation_is_not_an_absent_publication(payload):
         ("user=publisher&pass=secret", None),
         ("user=publisher&equipment=SMP351-01&pass=secret", "SMP351-01"),
         ("equipment=SMP351%2D01", "SMP351-01"),
+        ("equipment=SMP351&equipment=SMP351", "SMP351"),
+        ("equipment=SMP351%2D01&equipment=SMP351-01", "SMP351-01"),
         ("equipment=invalid%2Fvalue", None),
+        ("equipment=invalid%2Fvalue&equipment=invalid%2Fvalue", None),
         ("equipment=" + "x" * 201, None),
         ("equipment=one&equipment=two", None),
+        ("equipment=&equipment=", None),
+        ("equipment=SMP351&equipment=", None),
+        ("equipment=&equipment=SMP351", None),
     ],
 )
 def test_equipment_is_extracted_without_accepting_ambiguous_or_unsafe_values(query, expected):
@@ -96,7 +102,12 @@ def test_equipment_rejects_too_many_query_fields():
             "Université de Montpellier",
         ),
         ("establishment=   Universit%C3%A9+de+Lorraine  ", "Université de Lorraine"),
+        ("establishment=UM&establishment=UM", "UM"),
+        ("establishment=%55M&establishment=UM", "UM"),
         ("establishment=", None),
+        ("establishment=&establishment=", None),
+        ("establishment=UM&establishment=", None),
+        ("establishment=&establishment=UM", None),
         ("establishment=" + "x" * 201, None),
         ("establishment=one&establishment=two", None),
     ],
@@ -109,6 +120,35 @@ def test_establishment_rejects_too_many_query_fields():
     query = "&".join(f"field{index}=value" for index in range(65))
 
     assert auto.extract_establishment(query) is None
+
+
+@pytest.mark.parametrize(
+    "parameter,value,extract",
+    [
+        ("equipment", "SMP351", auto.extract_equipment),
+        ("establishment", "UM", auto.extract_establishment),
+    ],
+)
+@pytest.mark.parametrize("count,accepted", [(64, True), (65, False)])
+def test_repeated_metadata_preserves_query_field_limit(parameter, value, extract, count, accepted):
+    query = "&".join([f"{parameter}={value}"] * count)
+
+    assert extract(query) == (value if accepted else None)
+
+
+@pytest.mark.parametrize(
+    "parameter,value,extract",
+    [
+        ("equipment", "SMP351", auto.extract_equipment),
+        ("establishment", "UM", auto.extract_establishment),
+    ],
+)
+def test_repeated_metadata_preserves_query_length_limit(parameter, value, extract):
+    query = f"{parameter}={value}&{parameter}={value}&padding="
+    query += "x" * (8192 - len(query))
+
+    assert extract(query) == value
+    assert extract(query + "x") is None
 
 
 @pytest.mark.asyncio
@@ -130,6 +170,51 @@ async def test_automatic_publication_query_sets_equipment_and_path_slug(media):
     assert task.etab_name == "Université de Montpellier"
     assert "secret" not in json.dumps(task.live.model_dump())
     media.get_rtmp_connection.assert_awaited_once_with(payload["source"]["id"], secure=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("secure", [False, True])
+@pytest.mark.parametrize(
+    "repeated_equipment,repeated_establishment,expected_equipment,expected_establishment",
+    [
+        ("SMP351", "UM", "SMP351", "UM"),
+        ("OTHER", "UM", None, "UM"),
+        ("SMP351", "OTHER", "SMP351", "unknown"),
+    ],
+)
+async def test_duplicated_publication_metadata_keeps_only_unambiguous_values(
+    media,
+    monkeypatch,
+    secure,
+    repeated_equipment,
+    repeated_establishment,
+    expected_equipment,
+    expected_establishment,
+):
+    monkeypatch.setattr(config.LIVE, "sources", {})
+    payload = {"name": "live/test04/test04", **publication()}
+    payload["source"]["type"] = "rtmpsConn" if secure else "rtmpConn"
+    media.list_paths.return_value = [payload]
+    media.get_path.return_value = payload
+    password = "metadata-secret-must-not-persist"
+    media.get_rtmp_connection.return_value = {
+        "query": (
+            f"user=publisher&pass={password}&establishment=UM&equipment=SMP351&"
+            f"user=publisher&pass={password}&establishment={repeated_establishment}&"
+            f"equipment={repeated_equipment}"
+        )
+    }
+
+    await auto.reconcile_sources()
+
+    (task,) = live.sessions()
+    assert task.live.source_id == "test04"
+    assert task.live.equipment == expected_equipment
+    assert task.etab_name == expected_establishment
+    persisted = json.dumps(state.persistence.load_tasks())
+    assert password not in persisted
+    assert "user=publisher" not in persisted
+    media.get_rtmp_connection.assert_awaited_once_with(payload["source"]["id"], secure=secure)
 
 
 @pytest.mark.asyncio

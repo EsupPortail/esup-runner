@@ -202,10 +202,15 @@ otherwise stopped systemd service.
   The URL-decoded `establishment` value becomes the task requester and therefore
   the establishment in `task_stats.csv`; when it is absent or invalid, the
   configured `LIVE_AUTO_ETAB_NAME` fallback is used (`unknown` by default).
-  The Manager URL-decodes and accepts one identifier of 1 to 200 characters:
-  the first character must be alphanumeric, and the remaining characters may
-  be alphanumeric, `.`, `_` or `-`. Missing, duplicated or invalid values are
-  ignored. The `user` and `pass` parameters are never stored or returned. The
+  Equipment accepts an identifier of 1 to 200 characters: the first character
+  must be alphanumeric, and the remaining characters may be alphanumeric,
+  `.`, `_` or `-`. Establishment accepts non-empty text of up to 200 characters
+  after trimming surrounding whitespace. Repeated parameters are accepted only
+  when their URL-decoded values are identical, including metadata repeated across
+  the RTMP connection URL and stream key. Missing, conflicting or invalid values
+  are ignored. Metadata is captured when the session is created; reconnect the
+  encoder to apply changed values to a new session.
+  The `user` and `pass` parameters are never stored or returned. The
   final RTMP path component (`lecture-hall-a` in this example) is used as the Live
   source identifier; it must exactly match the broadcaster's `source_id` in Pod.
   The Runner uses `GET /rest/broadcasters/?source_id=<identifier>` and updates

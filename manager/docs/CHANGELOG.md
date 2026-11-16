@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep Live establishment and equipment metadata when encoders such as the SMP
+  351 repeat identical query parameters; conflicting values are still ignored.
 - Keep all establishments visible in the statistics chart legend, with wrapping
   labels beside the pie on wider screens and below it on small screens.
 

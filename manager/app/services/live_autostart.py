@@ -21,14 +21,14 @@ _EQUIPMENT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}")
 
 
 def extract_equipment(query: str | None) -> str | None:
-    """Extract one bounded equipment identifier without retaining credentials."""
+    """Extract one bounded equipment identifier, allowing identical decoded repetitions."""
     if not isinstance(query, str) or len(query) > 8192:
         return None
     try:
         values = parse_qs(query, keep_blank_values=True, max_num_fields=64).get("equipment", [])
     except ValueError:
         return None
-    if len(values) != 1:
+    if len(set(values)) != 1:
         return None
     value = values[0]
     if _EQUIPMENT_PATTERN.fullmatch(value) is None:
@@ -37,14 +37,14 @@ def extract_equipment(query: str | None) -> str | None:
 
 
 def extract_establishment(query: str | None) -> str | None:
-    """Extract one decoded RTMP establishment name without retaining credentials."""
+    """Extract one RTMP establishment name, allowing identical decoded repetitions."""
     if not isinstance(query, str) or len(query) > 8192:
         return None
     try:
         values = parse_qs(query, keep_blank_values=True, max_num_fields=64).get("establishment", [])
     except ValueError:
         return None
-    if len(values) != 1:
+    if len(set(values)) != 1:
         return None
     value = values[0].strip()
     if not value or len(value) > 200:

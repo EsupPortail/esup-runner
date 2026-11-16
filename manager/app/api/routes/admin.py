@@ -686,6 +686,7 @@ async def admin_dashboard(request: Request):
                 "id": task_id,
                 "runner_id": task.runner_id,
                 "status": task.status,
+                "warnings": task.warnings,
                 "acknowledged_at": task.acknowledged_at,
                 "task_type": getattr(task, "task_type", None),
                 "created_at": task.created_at,

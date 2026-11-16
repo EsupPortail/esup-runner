@@ -244,6 +244,17 @@ def _apply_terminal_runner_task_status(
     if _apply_script_output(task, payload):
         changed = True
 
+    warnings = payload.get("warnings", [])
+    if isinstance(warnings, list):
+        warnings = [
+            warning
+            for warning in warnings
+            if isinstance(warning, str) and warning.startswith("Encoding incomplete:")
+        ]
+        if task.warnings != warnings:
+            task.warnings = list(warnings)
+            changed = True
+
     return changed
 
 

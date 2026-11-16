@@ -1278,6 +1278,7 @@ def _apply_task_completion_update(task: Task, notification: TaskCompletionNotifi
 
     if notification.script_output:
         task.script_output = notification.script_output
+    task.warnings = list(notification.warnings)
 
 
 async def _handle_notify_callback(task: Task, notification: TaskCompletionNotification) -> None:

@@ -6,7 +6,7 @@ Defines Pydantic models for request/response schemas and data validation.
 
 from datetime import datetime
 from ipaddress import ip_address
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
@@ -170,6 +170,9 @@ class TaskRequest(BaseModel):
         return _validate_safe_url(v, "notify_url")
 
 
+EncodingWarning = Annotated[str, Field(pattern=r"^Encoding incomplete:")]
+
+
 class Task(BaseModel):
     """
     Represents a task entity with its lifecycle and execution details.
@@ -195,6 +198,7 @@ class Task(BaseModel):
         acknowledged_at: Optional ISO timestamp when an operator acknowledged the incident
         error: Optional error message if the task failed during execution
         script_output: Optional raw output from the task execution script - useful for debugging and understanding task behavior
+        warnings: Non-blocking incomplete-encoding diagnostics
     """
 
     live: Optional[LiveInfo] = None
@@ -280,6 +284,9 @@ class Task(BaseModel):
         None,
         description="Raw output from the task execution script - useful for debugging and understanding task behavior",
     )
+    warnings: List[EncodingWarning] = Field(
+        default_factory=list, description="Non-blocking incomplete-encoding diagnostics"
+    )
 
 
 class TaskResultManifest(BaseModel):
@@ -312,6 +319,7 @@ class TaskCompletionNotification(BaseModel):
         status: Final status of the task (completed, failed or timeout)
         error_message: Detailed error information if the task failed or timed out
         script_output: Raw output from the task execution script - useful for debugging and understanding task behavior
+        warnings: Non-blocking incomplete-encoding diagnostics
     """
 
     task_id: str = Field(
@@ -332,4 +340,7 @@ class TaskCompletionNotification(BaseModel):
     script_output: Optional[str] = Field(
         None,
         description="Raw output from the task execution script - useful for debugging and understanding task behavior",
+    )
+    warnings: List[EncodingWarning] = Field(
+        default_factory=list, description="Non-blocking incomplete-encoding diagnostics"
     )

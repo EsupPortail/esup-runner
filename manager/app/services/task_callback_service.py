@@ -145,6 +145,9 @@ async def send_notify_callback(
         "error_message": getattr(notification, "error_message", None),
         "script_output": _sanitize_script_output(notification.script_output),
     }
+    warnings = getattr(notification, "warnings", [])
+    if warnings:
+        payload["warnings"] = warnings
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     client_token = getattr(task, "client_token", None)

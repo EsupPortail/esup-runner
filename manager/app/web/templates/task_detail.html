@@ -263,6 +263,16 @@
       </div>
 
       <!-- Specific details -->
+      {% if task.warnings %}
+        <div class="detail-section">
+          <h3 class="h5 mb-3 text-warning">Encoding warnings</h3>
+          <div class="alert alert-warning">
+            {% for warning in task.warnings %}
+              <p class="mb-0">{{ warning }}</p>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
       {% if task.error %}
         <div class="detail-section">
           <h3 class="h5 mb-3 text-danger">Error</h3>

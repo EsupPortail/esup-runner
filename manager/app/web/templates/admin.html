@@ -510,6 +510,17 @@
                         <span class="visually-hidden"> {{ task_icons[task.task_type].label }}</span>
                       {% endif %}
                     </h3>
+                    {% if task.status == 'completed' and task.warnings %}
+                      <span
+                        class="text-warning flex-shrink-0"
+                        role="img"
+                        aria-label="Completed with encoding warnings"
+                        title="Completed with encoding warnings. Open task details for more information."
+                        data-bs-toggle="tooltip"
+                        tabindex="0">
+                        <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+                      </span>
+                    {% endif %}
                     <span class="badge flex-shrink-0 task-list-status-badge
                         {% if task.status == 'pending' %}bg-warning text-dark
                         {% elif task.status == 'running' %}bg-info text-dark

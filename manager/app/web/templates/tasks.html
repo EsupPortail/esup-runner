@@ -838,6 +838,9 @@
           const updatedAt = escapeHtml(task.updated_at);
           const runnerId = escapeHtml(task.runner_id);
           const errorText = escapeHtml(task.error);
+          const warningsHtml = (task.warnings || []).map(warning =>
+            `<p class="mb-0">${escapeHtml(warning)}</p>`
+          ).join('');
           const parametersJson = escapeHtml(JSON.stringify(task.parameters || {}, null, 2));
           const scriptOutput = escapeHtml(task.script_output);
           const resultJson = escapeHtml(JSON.stringify(task.result, null, 2));
@@ -907,6 +910,12 @@
             <div class="mb-3">
               <h3 class="h5 text-muted mb-2">Assigned Runner</h6>
               <code>${runnerId}</code>
+            </div>
+            ` : ''}
+            ${warningsHtml ? `
+            <div class="mb-3">
+              <h3 class="h5 text-warning mb-2">Encoding warnings</h3>
+              <div class="alert alert-warning">${warningsHtml}</div>
             </div>
             ` : ''}
             ${task.error ? `

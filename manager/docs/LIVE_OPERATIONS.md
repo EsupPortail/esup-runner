@@ -240,6 +240,15 @@ public report.
 
 ### The session is `starting` or the player returns 404
 
+For **Stale / unconfirmed** or **No runner report**, read the session error first.
+Control failures identify connection errors, timeouts or the HTTP operation and
+status. A dispatch rejected for inaccessible HLS storage also reports
+`LIVE_HLS_DIRECTORY`, the OS error, effective Runner account, owner and permissions.
+Fix access for the Runner/FFmpeg account or choose a writable directory; the
+Manager retains the reservation and retries. If the Runner cannot start, only
+the connection failure is observable remotely: check its startup log for the cause.
+See [Runner HLS storage](../../runner/docs/LIVE.md#hls-storage-in-memory-on-linux).
+
 Check the Runner application log for FFmpeg start, the selected CPU/GPU backend,
 free `/dev/shm` space and HLS directory permissions. Confirm that the frontend
 routes the exact `hls_url` to the correct Runner instance and does not cache

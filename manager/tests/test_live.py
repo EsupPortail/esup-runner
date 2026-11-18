@@ -2,6 +2,7 @@
 
 import asyncio
 import csv
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest.mock import AsyncMock
@@ -253,6 +254,89 @@ async def test_unreachable_runner_withholds_hls_and_keeps_reservation(setup_live
     assert "secret" not in current.live.error
     await live.stop(first.live_id, "pod")
     assert live.load(first.live_id).live.state == "stopping"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure,diagnostic",
+    [
+        (httpx.ConnectError("secret URL"), "Runner control connection failed"),
+        (httpx.ReadTimeout("secret URL"), "Runner control request timed out"),
+        (httpx.RemoteProtocolError("secret URL"), "Runner control unavailable"),
+        (RuntimeError("secret body"), "Runner control unavailable"),
+        (ValueError("secret JSON"), "Runner control unavailable"),
+        (
+            live.RunnerControlError("Runner GET /task/status/id returned HTTP 403"),
+            "GET /task/status/id returned HTTP 403",
+        ),
+    ],
+)
+async def test_control_failures_are_distinguished_without_exposing_exceptions(
+    setup_live, monkeypatch, failure, diagnostic
+):
+    first = await live.start(request(), "pod")
+    monkeypatch.setattr(live, "runner_request", AsyncMock(side_effect=failure))
+    for current in (
+        live.response(await live.synchronize(first.live_id)),
+        await live.stop(first.live_id, "pod"),
+    ):
+        assert diagnostic in current.error and "reservation retained" in current.error
+        assert "secret" not in current.error
+        assert current.hls_url is None and not current.hls_ready
+    assert live.load(first.live_id).live.state == "stopping"
+    assert state.runners[first.runner].live_task_id == first.live_id
+
+
+@pytest.mark.asyncio
+async def test_dispatch_storage_diagnostic_is_persisted_until_runner_accepts_retry(
+    setup_live, monkeypatch
+):
+    original_client = httpx.AsyncClient
+    remote = setup_live
+    denied = True
+    diagnostic = (
+        "LIVE_HLS_DIRECTORY '/dev/shm/hls': Permission denied (EACCES). "
+        "Runner account=esup-runner:esup-runner (UID=3000, GID=3001). "
+        "Existing path '/dev/shm/hls': owner=mediamtx:mediamtx (UID=2000, GID=2001), "
+        "mode=0755. Check write/search permissions."
+    )
+
+    def handle(req):
+        task_id = req.url.path.rsplit("/", 1)[-1]
+        if req.method == "POST":
+            if denied:
+                return httpx.Response(
+                    503, json={"detail": {"code": "live_hls_directory", "message": diagnostic}}
+                )
+            task_id = json.loads(req.content)["task_id"]
+            remote[task_id] = {
+                "task_id": task_id,
+                "status": "running",
+                "live": {"state": "waiting_source", "hls_ready": False},
+            }
+            return httpx.Response(200, json={"status": "started"})
+        return httpx.Response(200, json=remote.get(task_id, {"status": "not_found"}))
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    monkeypatch.setattr(live, "runner_request", RUNNER_REQUEST)
+    started = await live.start(request(), "pod")
+    for current in (live.load(started.live_id), await live.synchronize(started.live_id)):
+        assert diagnostic in current.live.error
+        assert "POST /task/run returned HTTP 503" in current.live.error
+        assert "reservation retained" in current.live.error
+        assert current.live.last_seen is None and current.live.state == "starting"
+        assert current.status == "running" and current.live.hls_url is None
+    assert state.runners[started.runner].live_task_id == started.live_id
+    denied = False
+    state.tasks.clear()
+    recovered = await live.synchronize(started.live_id)
+    assert recovered.live.state == "waiting_source" and recovered.live.error is None
+    assert recovered.live.last_seen is not None
+    assert state.runners[started.runner].live_task_id == started.live_id
 
 
 @pytest.mark.asyncio
@@ -575,6 +659,63 @@ async def test_real_runner_http_contract_without_network(setup_live, monkeypatch
     result = httpx.Response(200, json=[])
     with pytest.raises(RuntimeError, match="Invalid"):
         await RUNNER_REQUEST(runner(), "GET", "/task/status/uuid")
+    result = httpx.Response(200, text="secret response body")
+    with pytest.raises(
+        live.RunnerControlError, match="GET /task/status/uuid returned invalid JSON"
+    ):
+        await RUNNER_REQUEST(runner(), "GET", "/task/status/uuid")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,path,result",
+    [
+        ("POST", "/task/run", httpx.Response(503, text="secret body")),
+        ("POST", "/task/run", httpx.Response(503, json=["secret body"])),
+        ("POST", "/task/run", httpx.Response(503, json={"detail": "secret body"})),
+        (
+            "POST",
+            "/task/run",
+            httpx.Response(503, json={"detail": {"code": "unknown", "message": "secret body"}}),
+        ),
+        (
+            "POST",
+            "/task/run",
+            httpx.Response(
+                503, json={"detail": {"code": "live_hls_directory", "message": ["secret body"]}}
+            ),
+        ),
+        (
+            "POST",
+            "/task/run",
+            httpx.Response(
+                500, json={"detail": {"code": "live_hls_directory", "message": "secret body"}}
+            ),
+        ),
+        (
+            "GET",
+            "/task/status/id",
+            httpx.Response(
+                503, json={"detail": {"code": "live_hls_directory", "message": "secret body"}}
+            ),
+        ),
+        ("POST", "/task/run", httpx.Response(401, text="secret body")),
+    ],
+)
+async def test_control_http_failures_never_echo_unrecognized_bodies(
+    setup_live, monkeypatch, method, path, result
+):
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: original_client(
+            transport=httpx.MockTransport(lambda req: result), **kwargs
+        ),
+    )
+    with pytest.raises(live.RunnerControlError) as failed:
+        await RUNNER_REQUEST(runner(), method, path)
+    assert str(failed.value) == f"Runner {method} {path} returned HTTP {result.status_code}"
 
 
 @pytest.mark.asyncio

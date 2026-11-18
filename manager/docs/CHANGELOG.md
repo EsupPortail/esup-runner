@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Show Runner control connection failures, timeouts, HTTP operations/statuses and
+  safe HLS storage rejection details in Live sessions while retaining reservations.
 - Explain recognized RTMP connection failures in Live diagnostics while keeping
   credentials and ingest paths hidden; direct unknown failures to the original log.
 - Allow nested Live publication paths in the default Manager MediaMTX template,

@@ -189,6 +189,40 @@ def test_session_row_ignores_invalid_configured_source_path(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_displays_dispatch_storage_diagnostic_without_a_runner_report(monkeypatch):
+    diagnostic = (
+        "Runner POST /task/run returned HTTP 503: "
+        "LIVE_HLS_DIRECTORY '/dev/shm/hls/<instance>': Permission denied (EACCES). "
+        "Runner account=esup-runner:esup-runner (UID=3000, GID=3001). "
+        "Existing path '/dev/shm/hls': owner=mediamtx:mediamtx, mode=0755; reservation retained"
+    )
+    task = session(error=diagnostic)
+    monkeypatch.setattr(admin, "get_tasks_snapshot", lambda: {task.task_id: task})
+    monkeypatch.setattr(admin, "runners", {})
+    monkeypatch.setattr(
+        admin,
+        "_fetch_manager_mediamtx_status",
+        AsyncMock(return_value={"status": "healthy", "error": ""}),
+    )
+    monkeypatch.setattr(live_admin, "observe_publishing_sources", AsyncMock(return_value=set()))
+    response = await admin.live_dashboard.__wrapped__(web_request(), search="", page=1)
+    env = Environment(loader=FileSystemLoader("app/web/templates"), autoescape=select_autoescape())
+    html = env.get_template("live.html").render(response.context)
+    assert "No runner report" in html and "Stale / unconfirmed" in html
+    for expected in (
+        "POST /task/run returned HTTP 503",
+        "/dev/shm/hls/&lt;instance&gt;",
+        "Permission denied (EACCES)",
+        "Runner account=esup-runner:esup-runner",
+        "owner=mediamtx:mediamtx, mode=0755",
+        "reservation retained",
+    ):
+        assert expected in html
+    assert "<instance>" not in html
+    assert "client-secret" not in html and "secret-ingest-key" not in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_filters_paginates_and_renders_safely(monkeypatch):
     task = session(
         automatic=True,

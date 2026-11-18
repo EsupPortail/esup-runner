@@ -27,6 +27,10 @@ logger = setup_default_logging()
 TERMINAL = {"completed", "failed"}
 
 
+class RunnerControlError(RuntimeError):
+    """A control failure whose message is safe to persist and display."""
+
+
 @asynccontextmanager
 async def live_lock(name: str) -> AsyncIterator[None]:
     """Serialize Live transitions across workers without blocking the event loop."""
@@ -197,8 +201,9 @@ async def runner_request(
     """Send an authenticated control request and return a JSON object.
 
     Redirects and environment proxies are disabled. HTTP failures and non-object
-    responses raise RuntimeError without including remote response bodies;
-    transport and JSON decoding errors propagate to the caller.
+    responses raise RunnerControlError with the failed operation. Only explicitly
+    identified HLS storage diagnostics from dispatch HTTP 503 responses are
+    included; other remote bodies stay private. Transport errors propagate.
     """
     async with httpx.AsyncClient(
         timeout=config.LIVE.runner_timeout, follow_redirects=False, trust_env=False
@@ -210,11 +215,32 @@ async def runner_request(
             headers={"Authorization": f"Bearer {runner.token}", "Accept": "application/json"},
         )
     if not result.is_success:
-        raise RuntimeError(f"Runner control returned HTTP {result.status_code}")
-    data = result.json()
+        raise _runner_http_error(result, method, path)
+    try:
+        data = result.json()
+    except ValueError:
+        raise RunnerControlError(f"Runner {method} {path} returned invalid JSON") from None
     if not isinstance(data, dict):
-        raise RuntimeError("Invalid runner response")
+        raise RunnerControlError(f"Invalid runner response to {method} {path}: expected an object")
     return data
+
+
+def _runner_http_error(result: httpx.Response, method: str, path: str) -> RunnerControlError:
+    """Describe an HTTP failure, accepting only the dispatch's safe HLS diagnostic."""
+    message = f"Runner {method} {path} returned HTTP {result.status_code}"
+    if (method, path, result.status_code) == ("POST", "/task/run", 503):
+        try:
+            body = result.json()
+        except ValueError:
+            body = None
+        detail = body.get("detail") if isinstance(body, dict) else None
+        if (
+            isinstance(detail, dict)
+            and detail.get("code") == "live_hls_directory"
+            and isinstance(detail.get("message"), str)
+        ):
+            message += f": {detail['message'][:4096]}"
+    return RunnerControlError(message)
 
 
 async def _dispatch(task: Task, runner: Runner) -> None:
@@ -265,6 +291,16 @@ async def synchronize(live_id: str) -> Task:
         previous = (task.live.state, task.live.error)
         try:
             await _synchronize_runner(task, runner)
+        except RunnerControlError as error:
+            return _unavailable(task, f"{error}; reservation retained")
+        except httpx.TimeoutException:
+            return _unavailable(task, "Runner control request timed out; reservation retained")
+        except httpx.ConnectError:
+            return _unavailable(
+                task,
+                "Runner control connection failed; check Runner service, address and startup logs; "
+                "reservation retained",
+            )
         except (httpx.HTTPError, RuntimeError, ValueError):
             return _unavailable(task, "Runner control unavailable; reservation retained")
         persist(task)

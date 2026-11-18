@@ -85,6 +85,31 @@ single standard master playlist with a stable address throughout the session,
 without combining separate MediaMTX HLS outputs. There is no passthrough mode.
 See the [Runner configuration](../../runner/docs/LIVE.md).
 
+### Optional encoder redundancy with two Managers
+
+Encoders such as the Extron SMP 351 support a primary RTMP publication and a
+backup RTMP publication (see the
+[SMP 300 Series user guide](https://media.extron.com/public/download/files/userman/smp_300_series_68-2238-01_R.pdf)).
+For high availability, consider sending these publications to two independent
+Managers on separate hosts:
+
+| Publication | Encoder fields | Destination |
+| --- | --- | --- |
+| Primary | `Server URL` + `Stream Name/Key` | Manager A's MediaMTX |
+| Backup | `Backup URL` + `Backup Stream Name/Key` | Manager B's MediaMTX |
+
+Authenticate each publication with its destination's MediaMTX publisher
+credentials. Give each Manager its own data directory, tokens, MediaMTX and
+Runner instances. Set each Runner's `MANAGER_URL` to its Manager and
+`LIVE_UPSTREAM_RTMP_URL` to that Manager's MediaMTX, with read credentials.
+Provide Live Runner capacity on both sides; simultaneous publications can
+start a session on each Manager when automatic discovery is enabled.
+
+Each Manager creates its own session and HLS URL. Plan how Pod or the player
+selects the active output, including coordination of broadcaster updates if
+both sides publish simultaneously. Test encoder behavior and playback recovery
+during a real failure.
+
 ### Optional MediaMTX high availability
 
 The Manager's MediaMTX can run as an active/passive pair on separate hosts
@@ -625,7 +650,8 @@ usernames and passwords are excluded from the administration projection:
 | `SOURCE_PATH_REJECTED` | A published RTMP path is incompatible with the Runner path format. |
 | `SOURCE_PUBLISHED` | Publication received for a known source identifier. |
 | `SOURCE_DISCOVERY_FAILED` / `SOURCE_REGISTRY_UNAVAILABLE` | MediaMTX discovery or private source persistence is unavailable; check API access and storage. |
-| `RTMP_CONNECTION_FAILED` / `PUBLISHER_CONFLICT` | Connection/protocol failure or competing publisher. |
+| `RTMP_CONNECTION_FAILED` | Connection/protocol failure, with a safe explanation of recognized causes such as timeout, TCP reset, missing path/publisher or incompatible codec. Unknown causes point to the original MediaMTX log at the same timestamp. |
+| `PUBLISHER_CONFLICT` | Another encoder is already publishing to this path. |
 | `MEDIA_LOG_UNAVAILABLE` | The configured journal/file cannot be read; other Manager logs remain available. |
 
 These diagnostics supplement MediaMTX's own logs; they do not replace or weaken

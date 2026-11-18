@@ -11,6 +11,52 @@ from app.services.live_sources import source_id, valid_path
 MAX_BYTES = 1024 * 1024
 MAX_LINES = 2000
 MEDIA_LINE = re.compile(r"^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) (DEB|INF|WAR|ERR) (.*)$")
+RTMP_FAILURE_REASONS = (
+    (
+        r"i/o timeout|deadline exceeded",
+        "Network read/write timed out; check encoder traffic and connectivity.",
+    ),
+    (
+        r"connection reset by peer",
+        "The remote peer reset the TCP connection; check the encoder or relay logs.",
+    ),
+    (r"broken pipe", "The remote peer stopped accepting data; check the encoder or relay logs."),
+    (
+        r"connection refused",
+        "The remote endpoint refused the TCP connection; check its listener and port.",
+    ),
+    (
+        r"unexpected eof",
+        "The remote peer closed the connection before the expected RTMP data was received.",
+    ),
+    (
+        r"path '[^']*' is not configured",
+        "No MediaMTX path configuration matches this stream; check the publication path and configured paths.",
+    ),
+    (
+        r"no one is publishing",
+        "No publisher is available on the requested path; start the encoder and check the relay path.",
+    ),
+    (
+        r"no supported (?:codecs?|tracks)|doesn't contain any supported codec|unsupported (?:video |audio )?codec",
+        "The stream has no compatible media codec; configure the Live encoder for H.264 video and AAC audio.",
+    ),
+    (
+        r"invalid (?:rtmp )?(?:version|handshake)|unsupported rtmp version",
+        "The RTMP handshake or protocol version is invalid; check RTMP/RTMPS and the destination port.",
+    ),
+)
+
+
+def rtmp_failure_reason(reason: str) -> str:
+    """Return controlled explanations for known causes, without copying remote error text."""
+    for pattern, message in RTMP_FAILURE_REASONS:
+        if re.search(pattern, reason):
+            return message
+    return (
+        "The cause is not recognized by sanitized diagnostics; inspect the original MediaMTX "
+        "log at this timestamp for details. Check encoder format, connectivity and path permissions."
+    )
 
 
 def entry(timestamp: str, level: str, code: str, message: str) -> dict[str, str]:
@@ -32,6 +78,7 @@ def media_message(body: str) -> tuple[str, str, str] | None:
     Authentication failures may mean missing/incorrect credentials or denied
     permissions. MediaMTX does not reliably distinguish these cases. Neither
     remote usernames, query strings, full paths nor raw error details are returned.
+    Known connection failures retain their cause through controlled descriptions.
     Publication events expose only the public broadcaster name as source_id.
     """
     lowered = body.lower()
@@ -45,7 +92,7 @@ def media_message(body: str) -> tuple[str, str, str] | None:
             ),
         )
     published = re.search(r"is publishing to path '([^']+)'|\[path ([^\]]+)\].*ready:", body)
-    if published:
+    if published and "closed:" not in lowered:
         published_path = published[1] or published[2]
         if valid_path(published_path):
             source = source_id(published_path)
@@ -75,7 +122,8 @@ def media_message(body: str) -> tuple[str, str, str] | None:
         return (
             "WARNING",
             "RTMP_CONNECTION_FAILED",
-            "RTMP connection closed with an error; check encoder format, connectivity and path permissions.",
+            "RTMP connection closed with an error. "
+            + rtmp_failure_reason(lowered.split("closed:", 1)[1]),
         )
     return None
 

@@ -69,6 +69,55 @@ def test_known_events_hide_paths_and_credentials(settings, body, code):
 
 
 @pytest.mark.parametrize(
+    "reason,detail",
+    [
+        ("read tcp 127.0.0.1:1935->127.0.0.1:35674: i/o timeout", "Network read/write timed out"),
+        ("context deadline exceeded", "Network read/write timed out"),
+        ("read tcp: connection reset by peer", "remote peer reset the TCP connection"),
+        ("write tcp: broken pipe", "remote peer stopped accepting data"),
+        ("dial tcp: connection refused", "remote endpoint refused the TCP connection"),
+        ("unexpected EOF", "before the expected RTMP data was received"),
+        ("path 'secret-key/room' is not configured", "No MediaMTX path configuration matches"),
+        ("no one is publishing to path 'secret-key/room'", "No publisher is available"),
+        ("no supported tracks found", "no compatible media codec"),
+        (
+            "the stream doesn't contain any supported codec, which are currently H264, AAC",
+            "no compatible media codec",
+        ),
+        ("unsupported video codec: private-codec", "no compatible media codec"),
+        ("invalid RTMP version: 71", "handshake or protocol version is invalid"),
+        ("invalid handshake", "handshake or protocol version is invalid"),
+        (
+            "unrecognized private-codec failure",
+            "inspect the original MediaMTX log at this timestamp",
+        ),
+    ],
+)
+def test_connection_failure_explains_known_causes_without_exposing_remote_text(
+    settings, reason, detail
+):
+    line = (
+        "2026/10/01 11:22:33 INF [RTMP] [conn 127.0.0.1:35674] closed: "
+        + reason
+        + " rtmp://private-user:private-pass@host/secret-key/room?token=secret-token <script>"
+    )
+    result = live_logs.parse_media_line(line)
+    assert result["level"] == "WARNING"
+    assert "[RTMP_CONNECTION_FAILED]" in result["message"]
+    assert detail in result["message"]
+    assert "Peer: 127.0.0.1:35674." in result["message"]
+    for secret in (
+        "private-user",
+        "private-pass",
+        "secret-key",
+        "secret-token",
+        "<script>",
+        "private-codec",
+    ):
+        assert secret not in str(result)
+
+
+@pytest.mark.parametrize(
     "line",
     [
         "",

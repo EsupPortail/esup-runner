@@ -12,6 +12,10 @@ order:
 For custom ports, a MediaMTX-only container or upgrades, use the
 [MediaMTX reference](MEDIAMTX_SETUP.md).
 
+For high availability with an encoder that supports primary and backup RTMP
+publication, such as the Extron SMP 351, consider
+[two independent Managers](LIVE.md#optional-encoder-redundancy-with-two-managers).
+
 ## Docker Compose shortcut
 
 For a self-contained evaluation or a small deployment, use the supplied

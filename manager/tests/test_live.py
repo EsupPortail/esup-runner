@@ -4,7 +4,7 @@ import asyncio
 import csv
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -412,6 +412,59 @@ def test_reservation_atomic_with_stale_heartbeat_and_registration(tmp_path):
     assert stores[0]["runner-1"].live_task_id == reserved
     assert not stores[0].release_live("runner-1", "stale-live")
     assert stores[0].release_live("runner-1", reserved)
+
+
+@pytest.mark.asyncio
+async def test_stale_online_runner_is_skipped_before_activity_scan(setup_live, monkeypatch):
+    """Startup allocation ignores stale restored entries without creating audit tasks."""
+    worker = state.runners["runner-1"]
+    worker.last_heartbeat = datetime.now() - timedelta(hours=4)
+    state.runners[worker.id] = worker
+
+    with pytest.raises(HTTPException) as error:
+        await live.start(request(), "pod")
+
+    assert error.value.status_code == 503
+    assert not live.sessions()
+    assert state.runners[worker.id].status == "online"
+    assert state.runners[worker.id].live_task_id is None
+
+    fresh = runner("fresh", 8083)
+    state.runners.register(fresh)
+    monkeypatch.setattr(live, "rank_runners", lambda workers: [worker, fresh])
+    started = await live.start(request(), "pod")
+
+    assert started.runner == fresh.id
+    assert len(live.sessions()) == 1
+    assert state.runners[worker.id].live_task_id is None
+
+
+@pytest.mark.parametrize("shared", [False, True])
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_live_reservation_rechecks_heartbeat_but_preserves_confirmed_recovery(
+    tmp_path, shared, confirmed
+):
+    """A stale candidate needs a fresh heartbeat or a confirmed running session."""
+    path = str(tmp_path / "runners.json")
+    store = RunnerStore(shared_enabled=shared, state_file=path)
+    store.register(runner())
+    candidate = store["runner-1"]
+    writer = RunnerStore(shared_enabled=True, state_file=path) if shared else store
+    stale = candidate.model_copy(update={"last_heartbeat": datetime.now() - timedelta(hours=4)})
+    writer[stale.id] = stale
+
+    reserved = store.reserve_live(candidate.id, "live-session", confirmed_running=confirmed)
+
+    if confirmed:
+        assert reserved is not None
+        assert store[candidate.id].live_task_id == "live-session"
+        assert store[candidate.id].availability == "busy"
+    else:
+        assert reserved is None
+        assert store[candidate.id].live_task_id is None
+        assert store[candidate.id].availability == "available"
+        assert store.register(runner())
+        assert store.reserve_live(candidate.id, "live-session") is not None
 
 
 def test_managers_are_isolated(tmp_path):

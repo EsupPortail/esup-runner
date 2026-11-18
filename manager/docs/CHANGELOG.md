@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ignore stale Runner heartbeats when allocating Live sessions, including before
+  the first activity scan after a Manager restart.
 - Keep Live establishment and equipment metadata when encoders such as the SMP
   351 repeat identical query parameters; conflicting values are still ignored.
 - Keep all establishments visible in the statistics chart legend, with wrapping

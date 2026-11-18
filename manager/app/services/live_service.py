@@ -5,7 +5,7 @@ import hmac
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import AsyncIterator
 from urllib.parse import urlsplit
 
@@ -128,7 +128,11 @@ async def start(request: LiveStartRequest, token: str) -> LiveResponse:
 def _allocate(
     request: LiveStartRequest, token: str | None, *, publication_id: str | None = None
 ) -> Task:
-    """Persist intent before reservation; None identifies Manager-owned RTMP sessions."""
+    """Persist intent before reserving a Runner with a heartbeat under one minute old.
+
+    None identifies Manager-owned RTMP sessions. Check heartbeat freshness even
+    when a restored Runner is still marked online before the activity scan.
+    """
     for existing in sessions():
         assert existing.live is not None
         if existing.live.error == "Runner reservation lost":
@@ -146,6 +150,7 @@ def _allocate(
             "live" not in runner.task_types
             or runner.availability != "available"
             or runner.status != "online"
+            or datetime.now() - runner.last_heartbeat >= timedelta(minutes=1)
         ):
             continue
         now = datetime.now().isoformat()

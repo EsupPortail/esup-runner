@@ -11,7 +11,7 @@ In development, it falls back to an in-memory dictionary.
 import hmac
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from threading import RLock
 from typing import Any, Callable, Dict, Iterator, MutableMapping, Optional, TypeVar, cast, overload
@@ -357,10 +357,10 @@ class RunnerStore(MutableMapping[str, Runner]):
     ) -> Optional[Runner]:
         """Reserve one whole Live Runner and return it, or None if unavailable.
 
-        The Runner must declare Live, be online and unowned. Set
-        confirmed_running only after verifying that this session is already
-        running, allowing recovery to adopt a busy but unowned Runner. Heartbeat
-        updates cannot clear the resulting reservation.
+        The Runner must declare Live, be online and unowned, with a heartbeat
+        under one minute old. Set confirmed_running only after verifying that
+        this session is already running, allowing recovery to adopt a busy or
+        stale but unowned Runner. Heartbeat updates cannot clear the reservation.
         """
 
         def operation() -> Optional[Runner]:
@@ -368,6 +368,10 @@ class RunnerStore(MutableMapping[str, Runner]):
             data = self._read_disk() if self.shared_enabled else self._memory
             runner = data.get(key)
             if runner is None or "live" not in runner.task_types or runner.status != "online":
+                return None
+            if not confirmed_running and datetime.now() - runner.last_heartbeat >= timedelta(
+                minutes=1
+            ):
                 return None
             if (
                 runner.availability != "available" and not confirmed_running

@@ -63,9 +63,12 @@ Temporary missing tracks and terminal cleanup do not erase them. Signal presence
 and counters still follow the latest report; retained track metadata does not
 confirm an active source. A new session starts with unknown tracks until observed.
 
-The page refreshes automatically. Pause or focus the details while investigating
-an incident. Reports older than the freshness window are marked stale and their
+The page refreshes every 15 seconds and lists retained sessions in pages of 50.
+Pause refresh while investigating; it also pauses when a filter has focus or
+details are expanded. Reports older than 30 seconds are marked stale and their
 playback link is hidden; the last report remains useful for diagnosis.
+Available capacity excludes offline/reserved workers and mixed workers busy
+with another task. The overview counts HLS-ready sessions separately from active sessions.
 
 **Active and recent sources** shows current RTMP publishers, sources with
 retained sessions and declared broadcasters. Historical sources disappear when
@@ -76,7 +79,9 @@ temporarily displayed with a notice; this does not confirm that they are active.
 
 Each source row separates current RTMP signal from the latest retained session
 state and date. Establishment/equipment values describe that session and are
-marked historical when it has ended. Missing values are shown as **Not provided**.
+marked historical when it has ended. Missing values are shown as **Not provided**;
+unconfirmed publication presence is **Not verified**. Unknown codecs and resolution
+are labeled explicitly rather than inferred from another session.
 Use **View sessions** to reset filters and show that source's retained sessions,
 or copy the directly displayed broadcaster name. There is no separate full
 source ID panel. If clipboard access fails, the visible name is selected for
@@ -144,9 +149,13 @@ LIVE_MEDIAMTX_LOG_UNIT=esup-runner-mediamtx@manager.service
 # LIVE_MEDIAMTX_SERVICE_MODE=system  # Default: user
 ```
 
-MediaMTX must use `logLevel: info`; otherwise refused RTMP publications may not
-be visible. Apply this configuration between broadcasts because changing the
-MediaMTX logging configuration reloads its listeners.
+Keep `logLevel: info` and `logStructured: false` in MediaMTX YAML; the templates
+already use them. Existing configurations are preserved by the installer, so
+check them if authentication refusals are missing. Apply changes between
+broadcasts: reloading the logging configuration interrupts connections.
+The journal must be readable by the Manager account. If access is unavailable,
+clear `LIVE_MEDIAMTX_LOG_UNIT` to use the readable log file instead. Restart the
+Manager after `.env` changes.
 
 ### Native services
 

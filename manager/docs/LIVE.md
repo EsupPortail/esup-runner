@@ -1,6 +1,6 @@
 # Live: Manager, API contract and Pod integration
 
-> **Starting a new native deployment?** Complete steps 1–4 of the [Manager quickstart](LIVE_QUICKSTART.md), follow the [Runner quickstart](../../runner/docs/LIVE_QUICKSTART.md), then return to Manager step 5 for the first broadcast.
+> **First installation?** Follow [Live installation](LIVE_INSTALLATION.md) for the native quickstarts or Docker Compose.
 > **Operating an installed deployment?** Use the [Live operations runbook](LIVE_OPERATIONS.md).
 > This page is the detailed API, configuration and architecture reference.
 
@@ -598,38 +598,17 @@ For multiple Managers, use independent Compose projects, ports and `.env` files.
 - Native MediaMTX Prometheus servers provide additional information. Configure
   authentication and the collection network without exposing them publicly.
 
-Transitions are logged with `live_id`, `stream_id` and `runner_id`. For a missing
-source, first check `/live/sources/...`, the `publish` and `read` permissions,
-then RTMP connectivity from the Runner to the Manager. For a persistent
-`starting` state, check the H.264/AAC codecs and FFmpeg. For a persistent
-`stopping` state, restore the MediaMTX API or HLS directory permissions; do not
-manually mark the Runner as available while cleanup remains incomplete.
-If a published source creates no task, check `LIVE_ENABLED`, `LIVE_AUTO_START`,
-MediaMTX publish/read permissions, compatible paths, available Live capacity and the Manager Control
-API credentials. If its latest automatic session was stopped or failed,
-disconnect and republish after resolving the cause.
+Transitions are logged with `live_id`, `stream_id` and `runner_id`. For missing
+sources, stalled sessions or playback failures, follow the
+[operations troubleshooting guide](LIVE_OPERATIONS.md#troubleshooting-by-symptom).
 
 ### Live diagnostics in the log viewer
 
-Select **Live diagnostics** on the Live page or Logs page. It searches for
-`[LIVE]`, and matching entries have a Live badge. Existing severity and text
-filters still apply. Manager events identify allocation, state changes, stop,
-restart, Runner-control failures and MediaMTX observation failures. Repeated
-unchanged Runner failures do not produce a new transition entry each scan.
-
-RTMP authentication happens inside MediaMTX, before the Manager sees a source.
-MediaMTX 1.21.1 logs refused RTMP connections at **info**, so `logLevel: warn`
-hides them. The supplied templates use `logLevel: info` and `logStructured: false`.
-With no journal unit selected, the Manager reads `LOG_DIR/mediamtx_manager.log`.
-To use journald instead:
-
-```dotenv
-# Native deployment: Manager and MediaMTX use the same systemd user account.
-LIVE_MEDIAMTX_LOG_UNIT=esup-runner-mediamtx@manager.service
-# For MediaMTX installed as a system service (the Manager stays unprivileged):
-# LIVE_MEDIAMTX_SERVICE_MODE=system
-# For Docker/log shipping, leave LOG_UNIT empty and expose LOG_DIR/mediamtx_manager.log.
-```
+Use [Administration logs](LIVE_OPERATIONS.md#administration-logs) to select the
+journal or file source and open **Live diagnostics**. This view filters `[LIVE]`
+events; severity and text filters still apply. Manager events cover allocation,
+state changes, stop/restart and control failures. Repeated unchanged Runner
+failures do not create a new transition entry each scan.
 
 The reader has no public input for command arguments or file paths. It reads at
 most 2,000 recent journal lines with a three-second timeout, or the last MiB of a
@@ -714,83 +693,8 @@ For browser/VLC playback and source loss tests, follow the
 
 ## Administration and statistics
 
-Open **Live** from the Manager dashboard (`/admin/live`). It uses the same
-administrator authentication and CSRF protection as the existing administration.
-The page refreshes every 15 seconds; pause it for inspection. It also holds
-refresh while a filter has focus or session details are expanded.
-
-The overview shows active sessions, confirmed HLS playback, available Live
-workers (including mixed workers) and active sessions needing attention.
-Search by broadcaster, source, event, session, runner or establishment, filter
-by lifecycle state, and browse retained history in pages of 50 sessions. Search
-matches partial names without case sensitivity (for example `AGROECO` matches
-`agroecologie`); sessions without a known broadcaster still support the other
-search fields. Expand a session
-for timestamps, elapsed time including waiting/cleanup, source and byte
-counters. The first session column shows the Broadcaster instead of source/event
-identifiers; those identifiers remain available in **Session details**, without
-repeating the Broadcaster field. Codecs
-and resolutions share one line to keep session rows compact.
-The **Start / end** column after **Runner** uses the administration's
-`YYYY-MM-DD HH:MM:SS` display format without fractions of a second. Start is
-the session creation time, including waiting for the source; end is the last
-persisted update after the Manager confirms completion or failure, including
-cleanup. It is not the precise timestamp at which the encoder stopped.
-Non-terminal sessions show **Ongoing** instead of an end time; missing timestamps
-show **Unknown**. The original stored timestamps remain unchanged.
-Input bitrate, source readiness, counters and transcoder errors come from the
-last Runner report. Codecs and resolutions retain the last non-empty lists
-observed for that session, including after source loss or terminal cleanup.
-New non-empty lists replace the previous values; empty reports never imply an
-active signal and do not copy metadata between sessions. If a session never
-reported track information, the page shows **Codecs unknown** and
-**Resolution unknown**. Previously lost metadata cannot be reconstructed without
-a new observation. These measurements are not an end-to-end player
-probe or viewer counts. A known source without a session has no Runner
-measurements on this page.
-
-**Active and recent sources** lists current known RTMP publishers (including
-those waiting for Runner capacity), sources referenced by retained sessions and
-explicitly declared `LIVE_SOURCES` broadcasters. Historical discovered sources
-disappear from this list when their last session is removed by
-`CLEANUP_TASK_FILES_DAYS` retention or an administrator. Active Live sessions
-remain protected from age-based cleanup; setting retention to `0` keeps session
-history indefinitely. Declared broadcasters remain visible under their source
-identifiers.
-If the MediaMTX observation fails, the page temporarily shows all known sources
-with an unconfirmed-publications notice. Monitoring never deletes or updates
-the private source registry or publication checkpoints; authenticated source
-discovery continues to return all known identifiers.
-
-The source table starts with the full Broadcaster name, which is also the source
-ID, with a copy button. The name is displayed directly, without a separate full
-source ID panel. It shows establishment/equipment metadata, current RTMP signal,
-latest retained session state and creation date, and a **View sessions** link
-that resets filters to all sessions for that source. Publication presence is
-independent of HLS session state: an encoder can still publish after its session
-has stopped or failed. RTMP signal is **Not verified** when the observation is
-unavailable or Live is disabled. Origin metadata comes from the latest retained
-session and is marked **Historical** after termination; missing values are
-shown as **Not provided**. Stale active Runner reports are identified separately.
-No extra per-source media request is made. Clipboard access requires browser
-permission; if unavailable, the visible broadcaster name is selected for manual
-copying and refresh is paused until the user resumes it.
-Broadcaster is resolved from the known source binding, including sources with
-no retained session. Missing or invalid bindings show **Not available**; private
-RTMP paths remain hidden.
-
-Reports older than 30 seconds (derived from the internal polling and control timeouts)
-are marked stale; the page hides their playback links. The last report remains
-visible for diagnosis. Report age uses seconds below one minute and the same
-compact duration labels as the task list for longer ages (for example **59m**,
-**2h 1m** or **1d 3h**). Offline workers, reserved workers and mixed workers
-busy with another task are excluded from available Live capacity. A normal
-stop retains the reservation until media/process/HLS cleanup is confirmed.
-The stop button asks for confirmation and persists the same stop intent as the
-Live API. An **Automatic RTMP** badge identifies sessions created by publishing;
-stopping one prevents automatic restart for that same RTMP connection until the
-operator uses **Restart session**, or the encoder republishes.
-Ingest keys and media control credentials are never included.
+For the page layout, source/session history, filters, freshness and stop/restart
+actions, use [Read the Live administration page](LIVE_OPERATIONS.md#read-the-live-administration-page).
 
 Completed and failed sessions are added once to `task_stats.csv` when the
 Manager confirms termination, including reconciliation after a lost callback.

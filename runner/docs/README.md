@@ -21,7 +21,7 @@ This README explains what the runner service does, how it is started, and the ta
 - [How tasks are processed](#how-tasks-are-processed)
 - [Minimal .env example](#minimal-env-example)
 - [Additional references](#additional-references)
-- [Live streaming](#live-streaming)
+- [Live streaming](#live-live)
 - [Diagrams](#diagrams)
 
 ## Installation
@@ -180,7 +180,7 @@ three use [task handlers](../app/task_handlers); Live uses a dedicated runtime.
 - Capacity: one task at a time per instance, including mixed Live/VOD instances. Live instances in one deployment share MediaMTX and resolve their HLS URLs and directories from templates.
 - CPU/GPU: libx264 or NVIDIA NVENC, selected through the Live configuration.
 - Contract, payloads, outputs and errors: [TYPE_LIVE.md](TYPE_LIVE.md).
-- Installation: [Manager quickstart](../../manager/docs/LIVE_QUICKSTART.md) steps 1–4, then [Runner quickstart](LIVE_QUICKSTART.md), then Manager step 5 for the first broadcast.
+- Installation: [Live quickstarts and Docker Compose](../../manager/docs/LIVE_INSTALLATION.md).
 - Operations and recovery: [manager/docs/LIVE_OPERATIONS.md](../../manager/docs/LIVE_OPERATIONS.md).
 - Runner configuration and validation: [LIVE.md](LIVE.md).
 
@@ -225,13 +225,6 @@ Legacy alias for logs is still supported: `LOG_DIRECTORY`.
 - Runner configuration details: [docs/CONFIGURATION.md](CONFIGURATION.md)
 - Version management: [docs/VERSION_MANAGEMENT.md](VERSION_MANAGEMENT.md)
 - OpenAPI docs are exposed at `/docs` when a runner instance is running.
-
-## Live streaming
-
-See [TYPE_LIVE.md](TYPE_LIVE.md) for the task contract, request examples and HLS outputs.
-See [LIVE.md](LIVE.md) for explicit `live` declarations in `runner/.env`, mixed or grouped instances, MediaMTX, adaptive transcoding and recovery.
-For native or Docker installation of MediaMTX >= 1.21.1 on CPU/GPU machines, see
-[MEDIAMTX_SETUP.md](MEDIAMTX_SETUP.md), which links to the shared Manager guide.
 
 ## Diagrams
 

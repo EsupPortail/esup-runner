@@ -1,6 +1,6 @@
 # Live Runner: media, operations and validation
 
-> For a new native deployment, complete steps 1–4 of the [Manager quickstart](../../manager/docs/LIVE_QUICKSTART.md), follow the [Runner quickstart](LIVE_QUICKSTART.md), then return to Manager step 5 for the first broadcast.
+> For a first installation, follow the [Live quickstarts](../../manager/docs/LIVE_INSTALLATION.md#native-installation).
 > This page is the Runner-side configuration, exposure, recovery and validation reference.
 
 For the task contract, Manager parameters, request examples and outputs, see
@@ -17,6 +17,7 @@ with the complete HLS URL. There are no multiple slots or passthrough mode.
 - [Instance configuration](#instance-configuration)
 - [ABR profile and timeouts](#abr-profile-and-timeouts)
 - [Service and HLS exposure](#service-and-hls-exposure)
+- [HLS reverse proxy](#hls-reverse-proxy)
 - [Stop and recovery](#stop-and-recovery)
 - [Manual validation](#manual-validation)
 
@@ -389,13 +390,10 @@ and callbacks.
 
 ## Service and HLS exposure
 
-Follow [MediaMTX setup](MEDIAMTX_SETUP.md) for a native or Docker installation
-of version >= 1.21.1, shared with the Manager. Reuse an existing installation on the
-same machine, with one configuration and service/container shared by this
-Runner deployment’s Live instances, using [`production/mediamtx-live.yml`](../production/mediamtx-live.yml). Paths are
-created on demand and deleted at the end of the session. Only the associated
-Runner needs access to the MediaMTX API; it does not need to be exposed to the
-Manager.
+All Live instances in one Runner deployment share one MediaMTX service,
+**separate from the Manager's MediaMTX**. The Runner creates and deletes relay
+paths through its local Control API, which stays private. For custom installation
+options, see the [shared MediaMTX reference](../../manager/docs/MEDIAMTX_SETUP.md).
 
 ### Use the main Runner service with a mixed or grouped `.env`
 
@@ -405,39 +403,17 @@ application service is unnecessary. MediaMTX remains a separate service named
 `esup-runner-mediamtx@runner.service`. Its instance name identifies the media
 configuration and does not determine the application's task types or port.
 
-For this deployment, add a drop-in with `systemctl --user edit esup-runner-runner.service`:
+Apply the service drop-in and startup commands from
+[Runner quickstart step 5](LIVE_QUICKSTART.md#5-configure-and-restart-the-runner-service).
+Adapt the MediaMTX instance name for a custom installation. With MediaMTX in
+Docker, omit the drop-in's `After=`/`Wants=` dependency and start the container
+first; remove those entries if already configured. Keep `KillMode=control-group`
+and `TimeoutStopSec=45` so stopping the service covers every worker and FFmpeg.
+The HLS directory must be writable by the service account.
 
-```ini
-[Unit]
-After=esup-runner-mediamtx@runner.service
-Wants=esup-runner-mediamtx@runner.service
+For process recovery and interrupted sessions, see [Stop and recovery](#stop-and-recovery).
 
-[Service]
-KillMode=control-group
-TimeoutStopSec=45
-```
-
-Adapt the MediaMTX name if needed; omit its dependency when MediaMTX runs in
-Docker. `KillMode=control-group` stops all workers and FFmpeg processes when the
-service is stopped. Once active tasks have finished, reload and restart:
-
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now esup-runner-mediamtx@runner.service
-systemctl --user restart esup-runner-runner.service
-```
-
-Create the configured HLS directory with permissions for the service account.
-Follow the shared guide's [user service instructions](../../manager/docs/MEDIAMTX_SETUP.md#4-start-the-native-systemd-service)
-for the MediaMTX template and boot/logout persistence with lingering. When
-MediaMTX runs in Docker, start its container before the Runner application.
-
-Application recovery can identify surviving FFmpeg processes after a crash of
-the API process alone. On restart, cleanup takes priority, followed by an
-explicit `failed` state. The Manager may replace an automatic session after a
-Runner shutdown or forced restart once cleanup completes and its RTMP source
-is still active. An explicit stop remains effective. Otherwise republish the
-RTMP source for a new automatic session, or have the client request one explicitly.
+### HLS reverse proxy
 
 The Runner serves files through `/hls/<live_id>/...` and the configured public
 path when it ends in `/hls`, for example `/runner-3/hls/<live_id>/...`. Expose
@@ -448,7 +424,28 @@ containing the Runner's instance index, for example
 Runner instance index, not its position among Live instances; it starts at 0
 and includes VOD instances. Pod uses the exact `hls_url` returned by the Manager.
 
-Nginx example, with the upstream and public prefix adjusted as needed:
+For the quickstart's single Live instance, add this to the existing Nginx HTTPS
+`server` block for `live.example.org`:
+
+```nginx
+location /hls/ {
+    proxy_pass http://runner.internal:8082/hls/;
+    proxy_buffering off;
+    proxy_cache off;
+}
+```
+
+Replace the upstream hostname, then run on the proxy host:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+DNS and TLS must be configured separately. For grouped instances, use distinct
+public prefixes and set
+`LIVE_PUBLIC_HLS_BASE_URL=https://live.univ.fr/runner-{instance_id}/hls`.
+For example, route the first Live worker in the three-instance example to port `8083`:
 
 ```nginx
 location /runner-1/hls/ {

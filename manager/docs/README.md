@@ -97,15 +97,11 @@ See [OPERATIONS.md](OPERATIONS.md).
 
 ## Live streaming
 
-For a new native RTMP to HLS deployment, complete steps 1–4 of the
-[Manager Live quickstart](LIVE_QUICKSTART.md), follow the
-[Runner Live quickstart](../../runner/docs/LIVE_QUICKSTART.md), then return to
-Manager step 5 for the first broadcast.
-For Docker, use [Live Compose installation](LIVE_INSTALLATION.md#docker-compose-shortcut).
-Use the [Live operations runbook](LIVE_OPERATIONS.md) for the
-administration page, logs, restarts and incident handling. The detailed
-[Manager Live reference](LIVE.md) and [MediaMTX setup](MEDIAMTX_SETUP.md) cover
-the API and custom deployments with MediaMTX 1.21.1 or newer.
+Start with [Live installation](LIVE_INSTALLATION.md) for the Manager/Runner
+quickstarts or Docker Compose. Use the [operations runbook](LIVE_OPERATIONS.md)
+for administration, logs and recovery. The [Manager Live reference](LIVE.md)
+covers the API and Pod integration; the [shared MediaMTX reference](MEDIAMTX_SETUP.md)
+covers custom media configuration and upgrades.
 
 ## Local pre-PR checks
 

@@ -1,20 +1,19 @@
 # Live installation
 
+Choose a deployment below. The quickstarts get the first stream running;
+configuration options live in the references linked at the end.
+
 ## Native installation
 
-For the standard Linux/systemd layout with one CPU Live instance, follow this
-order:
+Use the standard Linux/systemd layout with one CPU Live instance. Both roles may
+share a host; each has its own application and MediaMTX service. Follow this order:
 
 1. Complete **steps 1–4** of the [Manager quickstart](LIVE_QUICKSTART.md) on the Manager host.
 2. Complete the [Runner quickstart](../../runner/docs/LIVE_QUICKSTART.md) on the Runner host, even if both roles share a machine.
 3. Return to [Manager step 5](LIVE_QUICKSTART.md#5-publish-the-first-broadcast) to publish and test the first broadcast.
 
-For custom ports, a MediaMTX-only container or upgrades, use the
-[MediaMTX reference](MEDIAMTX_SETUP.md).
-
-For high availability with an encoder that supports primary and backup RTMP
-publication, such as the Extron SMP 351, consider
-[two independent Managers](LIVE.md#optional-encoder-redundancy-with-two-managers).
+Start with an HTTP HLS test on a private network. The Runner quickstart also
+links the HTTPS reverse proxy needed for public playback.
 
 ## Docker Compose shortcut
 
@@ -157,9 +156,11 @@ Before adding workers or publishing production traffic, follow the
 [Compose reference](LIVE.md#docker-compose) for networking, persistent volumes
 and additional Runner identities.
 
-## Next step
+## References
 
-Once the first stream works, read the
-[Live operations runbook](LIVE_OPERATIONS.md). It explains the administration
-page, logs, normal stops, restarts, capacity, and the recovery path for each
-common failure.
+| Need | Page |
+| --- | --- |
+| Administration, logs, stops and failures | [Operations runbook](LIVE_OPERATIONS.md) |
+| MediaMTX ports, accounts, RTMPS or upgrades | [Shared MediaMTX reference](MEDIAMTX_SETUP.md) |
+| Worker groups, GPU, HLS storage and HTTPS | [Runner Live reference](../../runner/docs/LIVE.md) |
+| API, Pod integration and high availability | [Manager Live reference](LIVE.md) |

@@ -22,10 +22,9 @@ def diagnostic_environment(tmp_path):
         "RUNNER_TOKEN": "test-runner-token",
         "RUNNER_TASK_TYPES": "[1x(encoding,studio),2x(live)]",
         "ENCODING_TYPE": "CPU",
-        "UV_CACHE_DIR": "/tmp/esup-runner-uv-cache",
         "NO_COLOR": "1",
     }
-    for name in ("LOG_DIR", "STORAGE_DIR", "CACHE_DIR"):
+    for name in ("LOG_DIR", "STORAGE_DIR", "CACHE_DIR", "UV_CACHE_DIR"):
         directory = tmp_path / name.lower()
         directory.mkdir()
         environment[name] = str(directory)

@@ -8,6 +8,10 @@ import stat
 from pathlib import Path
 
 
+class HLSDirectoryError(ValueError):
+    """An HLS storage diagnostic safe to return through authenticated task control."""
+
+
 def _identity(uid: int, gid: int) -> str:
     """Describe a local account, retaining numeric IDs when names are unavailable."""
     try:
@@ -56,7 +60,7 @@ def hls_directory_error(directory: Path, error: OSError) -> str:
 
 
 def validate_hls_directory(directory: str) -> None:
-    """Reject inaccessible HLS output or parents before startup, without modifying storage."""
+    """Raise HLSDirectoryError for inaccessible output or parents without modifying storage."""
     path = Path(directory)
     try:
         existing, info = _existing_parent(path)
@@ -65,4 +69,4 @@ def validate_hls_directory(directory: str) -> None:
         if not os.access(existing, os.W_OK | os.X_OK, effective_ids=True):
             raise PermissionError(errno.EACCES, os.strerror(errno.EACCES))
     except OSError as error:
-        raise ValueError(hls_directory_error(path, error)) from None
+        raise HLSDirectoryError(hls_directory_error(path, error)) from None

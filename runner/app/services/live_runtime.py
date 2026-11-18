@@ -14,7 +14,7 @@ from fastapi import HTTPException
 
 from app.core import state
 from app.core.config import config
-from app.core.live_storage import hls_directory_error
+from app.core.live_storage import HLSDirectoryError, hls_directory_error
 from app.core.setup_logging import setup_default_logging
 from app.models.models import TaskRequest
 from app.services import hls_viewers, pod_sync
@@ -37,7 +37,8 @@ def validate_request(request: TaskRequest) -> None:
 
     Require a UUID, configured media settings, safe source identifiers and the
     configured Manager completion callback. Reject client URLs and extra
-    parameters with HTTP 400; configuration validation may raise ValueError.
+    parameters with HTTP 400. Inaccessible HLS storage returns a safe diagnostic
+    with HTTP 503; other configuration validation may raise ValueError.
     """
     try:
         uuid.UUID(request.task_id)
@@ -45,7 +46,7 @@ def validate_request(request: TaskRequest) -> None:
         raise HTTPException(400, "Live task_id must be a UUID") from None
     if "live" not in config.RUNNER_TASK_TYPES:
         raise HTTPException(400, "Live is not enabled on this runner")
-    config.LIVE.validate_enabled()
+    _validate_settings()
     for field in ("source_id", "source_path"):
         value = request.parameters.get(field)
         if (
@@ -72,6 +73,14 @@ def validate_request(request: TaskRequest) -> None:
     expected_callback = f"{config.MANAGER_URL.rstrip('/')}/task/completion"
     if request.completion_callback != expected_callback:
         raise HTTPException(400, "Invalid Live callback")
+
+
+def _validate_settings() -> None:
+    """Validate Live settings and translate safe HLS storage failures into HTTP 503."""
+    try:
+        config.LIVE.validate_enabled()
+    except HLSDirectoryError as error:
+        raise HTTPException(503, {"code": "live_hls_directory", "message": str(error)}) from None
 
 
 def directory_for(task_id: str) -> Path:

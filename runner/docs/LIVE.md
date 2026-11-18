@@ -324,6 +324,10 @@ Ownership by `mediamtx` alone does not grant access to `esup-runner` for example
 Startup and `scripts/check_config.py` report the failing path, owner, mode and
 effective Runner account without creating directories. Adjust permissions for
 that account or choose a writable `LIVE_HLS_DIRECTORY`.
+If access is lost after startup, task dispatch returns the same diagnostic with
+HTTP 503; the Manager displays it in the Live session and retains the reservation
+while retrying. If validation prevents the Runner from starting, the Manager can
+only report a connection failure: read the Runner startup log for the storage cause.
 
 Check the mount and available memory before enabling Live:
 

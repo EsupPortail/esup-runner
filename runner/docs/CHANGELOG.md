@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Report HLS output access errors with the path, owner, permissions and effective
-  Runner account during startup, configuration checks and output creation.
+  Runner account during startup, configuration checks and output creation;
+  return a safe HTTP 503 diagnostic when dispatch is rejected for storage access.
 - Complete incomplete encodings with persistent `warnings` and downloadable results;
   missing outputs, missing streams and unrecovered encoding errors remain blocking.
 - Write MediaMTX logs to `LOG_DIR/mediamtx_<instance>.log` alongside stdout,

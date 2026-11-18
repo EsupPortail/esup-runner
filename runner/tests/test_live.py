@@ -138,6 +138,40 @@ async def test_dedicated_live_runner_rejects_vod_tasks(live_env, monkeypatch):
         await task.run_task(vod_request, BackgroundTasks(), "token")
 
 
+def test_dispatch_reports_hls_permissions_before_acceptance_and_allows_retry(live_env, monkeypatch):
+    """Expose a safe storage diagnostic over HTTP without consuming the Runner."""
+    from app.core import live_storage
+
+    directory = Path(config.LIVE.hls_directory)
+    directory.mkdir(mode=0o755)
+    monkeypatch.setattr(live_storage.os, "access", lambda *args, **kwargs: False)
+    monkeypatch.setattr(live, "schedule", lambda request: None)
+    application = FastAPI()
+    application.include_router(task.router)
+    application.dependency_overrides[task.get_current_manager] = lambda: "manager"
+    with TestClient(application) as client:
+        result = client.post("/task/run", json=live_env.model_dump(mode="json"))
+        assert result.status_code == 503
+        detail = result.json()["detail"]
+        assert detail["code"] == "live_hls_directory"
+        for expected in (
+            str(directory),
+            "Permission denied (EACCES)",
+            "Runner account=",
+            "owner=",
+            "mode=0755",
+            "write/search permissions",
+        ):
+            assert expected in detail["message"]
+        assert "secret" not in result.text and "random-key" not in result.text
+        assert state.get_task_status(live_env.task_id) is None
+        assert state.is_available() and not live.JOBS
+        assert list(directory.iterdir()) == []
+        monkeypatch.setattr(live_storage.os, "access", lambda *args, **kwargs: True)
+        assert client.post("/task/run", json=live_env.model_dump(mode="json")).status_code == 200
+    assert state.get_task_status(live_env.task_id)["live"]["state"] == "waiting_source"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("manager_address", ["private", "public"])
 async def test_declaration_exclusive_run_and_duplicate_dispatch(

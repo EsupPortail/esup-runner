@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.live_storage import validate_hls_directory
+
 # Keep network, storage, hardware and rendition choices configurable, not runtime tuning.
 ENVIRONMENT_FIELDS = (
     "mediamtx_api_url",
@@ -130,7 +132,8 @@ class LiveSettings(BaseModel):
         """Validate the URLs, output directory and adaptive profile required for Live.
 
         Raise ValueError for invalid URLs, embedded HTTP credentials, a non-absolute
-        output path, duplicate rendition names or an incompatible GOP duration.
+        or inaccessible output path, duplicate rendition names or an incompatible GOP duration.
+        Directory access checks do not create or modify output files.
         """
         for name, schemes in (
             ("mediamtx_api_url", {"http", "https"}),
@@ -161,6 +164,7 @@ class LiveSettings(BaseModel):
             raise ValueError("LIVE_VARIANTS names must be unique")
         if self.gop > self.fps * self.segment_seconds:
             raise ValueError("LIVE_GOP must not exceed LIVE_FPS * LIVE_SEGMENT_SECONDS")
+        validate_hls_directory(self.hls_directory)
 
     def validate_pod_settings(self) -> None:
         """Validate the optional Pod URL and its complete Basic Auth group."""

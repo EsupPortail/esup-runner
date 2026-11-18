@@ -1043,6 +1043,45 @@ async def test_start_process_creates_variant_directories(live_env, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("code", [13, 28, 30])
+async def test_hls_creation_failure_retains_safe_context_in_session_status(
+    live_env, monkeypatch, code
+):
+    import os
+
+    tracked(live_env)
+    runtime = live.LiveRuntime(live_env)
+    runtime.client.remove_forward = AsyncMock()
+    runtime.terminate_orphans = AsyncMock()
+    runtime.transcode = runtime.start_process
+    spawn = AsyncMock()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    original_mkdir = Path.mkdir
+
+    def fail_hls_mkdir(path, *args, **kwargs):
+        if path == runtime.directory:
+            raise OSError(code, "rtmp://reader:secret@manager/private-stream")
+        return original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fail_hls_mkdir)
+    await runtime.run()
+
+    payload = state.get_task_status(live_env.task_id)
+    assert payload["status"] == "failed"
+    assert payload["live"]["cleanup_complete"]
+    assert state.is_available()
+    error = payload["live"]["error"]
+    assert os.strerror(code) in error
+    assert str(runtime.directory) in error
+    assert "Runner account=" in error and "owner=" in error
+    assert "secret" not in error and "private-stream" not in error
+    spawn.assert_not_awaited()
+    task.notify_completion.assert_awaited_once_with(
+        live_env.completion_callback, live_env.task_id, "failed", error
+    )
+
+
+@pytest.mark.asyncio
 async def test_monitor_returns_when_process_has_exited(live_env):
     runtime = live.LiveRuntime(live_env)
     runtime.process = Process()

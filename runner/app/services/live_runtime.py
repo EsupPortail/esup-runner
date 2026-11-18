@@ -14,6 +14,7 @@ from fastapi import HTTPException
 
 from app.core import state
 from app.core.config import config
+from app.core.live_storage import hls_directory_error
 from app.core.setup_logging import setup_default_logging
 from app.models.models import TaskRequest
 from app.services import hls_viewers, pod_sync
@@ -457,13 +458,17 @@ class LiveRuntime:
 
         Discard raw process output because FFmpeg diagnostics may contain RTMP
         credentials. HLS remains unavailable until all renditions pass readiness.
+        Raise LiveFailure with filesystem context if HLS output cannot be prepared.
         """
         directory = self.checked_directory()
-        if directory.exists():
-            shutil.rmtree(directory)
-        directory.mkdir(parents=True)
-        for variant in self.settings.variants:
-            contained_path(directory, variant.name).mkdir()
+        try:
+            if directory.exists():
+                shutil.rmtree(directory)
+            directory.mkdir(parents=True)
+            for variant in self.settings.variants:
+                contained_path(directory, variant.name).mkdir()
+        except OSError as error:
+            raise LiveFailure(hls_directory_error(directory, error)) from None
         command = build_command(
             self.settings,
             rtmp_url(self.settings.local_rtmp_url, self.path),

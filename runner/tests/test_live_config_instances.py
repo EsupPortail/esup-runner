@@ -181,6 +181,41 @@ def test_launcher_rejects_ambiguous_hls_routes_before_spawning(grouped_live, mon
         launcher.main()
 
 
+def test_unwritable_later_live_instance_is_rejected_by_launcher_and_preflight(
+    grouped_live, monkeypatch, capsys
+):
+    import launcher
+    from app.core import live_storage
+    from scripts import check_config
+
+    blocked = grouped_live / "hls" / "instance-2"
+    blocked.mkdir(parents=True)
+    access = live_storage.os.access
+    monkeypatch.setattr(
+        live_storage.os,
+        "access",
+        lambda path, *args, **kwargs: path != blocked and access(path, *args, **kwargs),
+    )
+    cfg = Config()
+    monkeypatch.setattr(launcher, "config", cfg)
+    monkeypatch.setattr(
+        launcher,
+        "UvicornProcessManager",
+        lambda **kwargs: pytest.fail("Unwritable HLS output must be rejected before spawning"),
+    )
+    with pytest.raises(ConfigValidationError, match="Permission denied"):
+        launcher.main()
+
+    import app.core.config as config_module
+
+    monkeypatch.setattr(config_module, "_CONFIG_INSTANCE", cfg)
+    assert check_config.main() == 2
+    output = capsys.readouterr().out
+    assert str(blocked) in output
+    assert "owner=" in output and "Runner account=" in output
+    assert "private-password" not in output and "relay:secret" not in output
+
+
 @pytest.mark.parametrize(
     "variable,value",
     [

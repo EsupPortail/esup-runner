@@ -317,6 +317,13 @@ The Runner creates missing directories when a stream starts and removes only
 that session's directory during cleanup. Do not manually remove a running
 session's files or change this path while a Live session is active.
 
+The Runner/FFmpeg account needs write and search permissions on the HLS root
+or its nearest existing parent, including traversal through its ancestors.
+Ownership by `mediamtx` alone does not grant access to `esup-runner` for example.
+Startup and `scripts/check_config.py` report the failing path, owner, mode and
+effective Runner account without creating directories. Adjust permissions for
+that account or choose a writable `LIVE_HLS_DIRECTORY`.
+
 Check the mount and available memory before enabling Live:
 
 ```bash

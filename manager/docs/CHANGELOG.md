@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add a [guided stack installer](../../INSTALLATION.md) for Manager, Runner, or
+  both, with generated credentials and systemd startup on Debian/Ubuntu.
 - Preserve incomplete-encoding `warnings` in task history and client callbacks,
   display them in task details and flag completed tasks on the main dashboard.
 - Add an explicit MediaMTX `update --version` command that preserves existing
@@ -23,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Default native MediaMTX installations to the latest stable release and support `update --version latest`, keeping 1.21.1 as the minimum compatible version.
 - Show Runner control connection failures, timeouts, HTTP operations/statuses and
   safe HLS storage rejection details in Live sessions while retaining reservations.
 - Explain recognized RTMP connection failures in Live diagnostics while keeping

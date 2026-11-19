@@ -7,7 +7,7 @@ This shared reference covers custom ports, authentication, RTMPS, containers and
 
 MediaMTX receives and relays RTMP; **FFmpeg in the Runner generates adaptive HLS**.
 MediaMTX installation is identical for CPU and GPU. Live requires **MediaMTX >= 1.21.1**;
-the installer defaults to **1.21.1** and reuses newer stable installations.
+the native installer defaults to the **latest stable release** and reuses compatible installations.
 
 ## Contents
 
@@ -81,20 +81,25 @@ uv run scripts/install_mediamtx.py install
 
 The installer reuses `~/.local/bin/mediamtx` or a supported executable in `PATH`.
 Otherwise it downloads the selected Linux archive and `checksums.sha256` from the
-[official release](https://github.com/bluenviron/mediamtx/releases/tag/v1.21.1),
+[official release](https://github.com/bluenviron/mediamtx/releases),
 checks SHA-256 and the exact binary version, and installs only the executable.
 An unsupported existing executable is reported and left unchanged.
 
 | Option | Effect |
 | --- | --- |
-| `--dry-run` | No downloads or writes; an existing binary may be checked with `--version` |
-| `--version 1.21.2` | Exact release to download if absent; minimum/default: 1.21.1 |
+| `--dry-run` | No release downloads or writes; `latest` still queries GitHub and existing binaries may be checked |
+| `--version latest` | Default: resolve the latest stable release through the GitHub API if no supported binary is installed |
+| `--version 1.21.4` | Exact release to download if absent; minimum: 1.21.1 |
 | `--binary /absolute/path/mediamtx` | Existing binary or unused installation destination; no default-path link |
 
 `install` and `setup` never replace an installed version. Use the explicit
 [`update` command](#native-update-command) for an existing native deployment,
 or a separate destination for a [manual upgrade](#manual-upgrades).
 Run `uv run scripts/install_mediamtx.py --help` for all commands.
+
+`latest` excludes drafts and prereleases and must satisfy the minimum version.
+If the GitHub lookup fails, the command stops without falling back to an older release.
+Use a numbered version for repeatable installations without a release lookup.
 
 `setup` combines `install` and `configure` without starting services. For the
 standard layout, follow the quickstarts; use the separate commands for custom deployments.
@@ -697,9 +702,13 @@ use `runner/` on Runner-only hosts.**
 ```bash
 cd /opt/esup-runner/manager  # Use runner/ on a Runner-only host.
 export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
-uv run --no-sync python scripts/install_mediamtx.py update --version 1.21.3 --dry-run
-uv run --no-sync python scripts/install_mediamtx.py update --version 1.21.3
+uv run --no-sync python scripts/install_mediamtx.py update --version latest --dry-run
+uv run --no-sync python scripts/install_mediamtx.py update --version latest
 ```
+
+`--version` accepts `latest` or an exact stable version such as `1.21.4` (minimum
+`1.21.1`). `latest` resolves once before planning or changing services; the
+download and binary checks then use that exact version.
 
 The command discovers `esup-runner-mediamtx@*.service` units belonging to that
 account in both systemd scopes, including configured instances that are stopped.
@@ -720,8 +729,9 @@ when that account has a system MediaMTX service, including RTMPS on port 443.
 It requests `sudo` authentication for service control only; downloads and binary
 replacement run as the service account. A working systemd user session is required.
 
-`--dry-run` only inspects the installation; it does not download, write, validate
-with the new executable or restart services. An already installed target version
+`--dry-run` inspects the installation and resolves `latest` through GitHub;
+it does not download releases, write, validate with the new executable or restart
+services. An already installed target version
 is a no-op; downgrades are refused. Concurrent updates for the account are refused.
 
 An account-owned `~/.local/bin/mediamtx` symlink, including one created when reusing
@@ -734,6 +744,28 @@ require the manual procedure below. After an update or rollback,
 repeat the [Control API checks](#verify-the-connection), check `/v3/info`, and verify
 a test broadcast and its current HLS URL. Temporary relays and broadcasts are not
 restored by a rollback.
+
+#### Scheduled updates
+
+As the service account, prepare the log directory once:
+
+```bash
+sudo install -d -o "$(id -un)" -g "$(id -gn)" /var/log/esup-runner
+```
+
+For a standard user service, add this to the service account's crontab to check
+for updates every Sunday at 03:00 (the host's cron timezone):
+
+```cron
+0 3 * * 0 cd /opt/esup-runner/manager && XDG_RUNTIME_DIR="/run/user/$(id -u)" UV_CACHE_DIR=/tmp/esup-runner-uv-cache "$HOME/.local/bin/uv" run --no-sync python scripts/install_mediamtx.py update --version latest >> /var/log/esup-runner/mediamtx-update.log 2>&1
+```
+
+Use `runner/` on Runner-only hosts and adjust the checkout and `uv` paths.
+The account needs a working systemd user session; enable lingering as described
+in [service startup](#4-start-the-native-systemd-service). System services also
+require unattended `sudo` validation and service-control permissions. Schedule
+a maintenance window: an available update restarts active MediaMTX services and
+interrupts broadcasts. An already installed version causes no restart.
 
 ### Native executable with systemd user services
 

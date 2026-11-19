@@ -22,6 +22,17 @@ This GitHub repository contains **two distinct Python projects**:
 
 Each project has its own `pyproject.toml`, documentation, release process, etc.
 
+## Quick installation
+
+Install the Manager, Runner, or both on Debian/Ubuntu with one guided script:
+
+```bash
+sudo bash install-stack.sh
+```
+
+See [stack installation](INSTALLATION.md) to download the script, select
+components, or install without prompts.
+
 ## Documentation
 
 ### Manager

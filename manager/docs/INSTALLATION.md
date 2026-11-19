@@ -1,6 +1,8 @@
 # Installation Guide (Manager)
 
 This document describes how to install and run the **ESUP Runner Manager** on a Debian/Ubuntu-like system.
+For a guided installation of the Manager, Runner, or both, use the
+[stack installer](../../INSTALLATION.md). The steps below describe manual setup.
 For Docker-based deployment, see [DOCKER.md](DOCKER.md).
 For Live streaming, follow this guide through **Synchronize Python dependencies**,
 then continue with the [Manager Live quickstart](LIVE_QUICKSTART.md). It covers
@@ -497,3 +499,9 @@ With content:
 
 Match this path to `LOG_DIR` in `.env` and MediaMTX `logFile`. Keep
 `copytruncate` so rotation does not require restarting MediaMTX.
+
+## 6) Scheduled updates
+
+To update installed components every Sunday at 03:00, follow
+[Scheduled updates](UPGRADE.md#scheduled-updates). Logs are written to
+`/var/log/esup-runner/update-stack.log`.

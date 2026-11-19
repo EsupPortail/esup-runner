@@ -3,11 +3,13 @@
 import hashlib
 import importlib.util
 import io
+import json
 import os
 import pwd
 import subprocess
 import tarfile
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 import pytest
 import yaml
@@ -17,6 +19,32 @@ spec = importlib.util.spec_from_file_location("install_mediamtx", SCRIPT)
 assert spec is not None and spec.loader is not None
 installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
+
+
+class GitHubResponse(io.BytesIO):
+    """Model a bounded HTTPS GitHub API response."""
+
+    def geturl(self):
+        return "https://api.github.com/repos/bluenviron/mediamtx/releases/latest"
+
+
+@pytest.fixture(autouse=True)
+def latest_release(monkeypatch):
+    """Resolve latest without network access and track metadata requests."""
+    requests = []
+
+    def urlopen(request, timeout):
+        assert (
+            request.full_url == "https://api.github.com/repos/bluenviron/mediamtx/releases/latest"
+        )
+        assert timeout == 30
+        requests.append(request)
+        return GitHubResponse(
+            json.dumps({"tag_name": "v1.21.4", "draft": False, "prerelease": False}).encode()
+        )
+
+    monkeypatch.setattr(installer.urllib.request, "urlopen", urlopen)
+    return requests
 
 
 @pytest.fixture(autouse=True)
@@ -52,7 +80,7 @@ def make_archive(path, content=b"#!/bin/sh\nprintf 'v1.21.1\\n'\n", member=None)
 @pytest.fixture
 def release(monkeypatch, tmp_path):
     archive = tmp_path / "release.tar.gz"
-    make_archive(archive)
+    make_archive(archive, content=b"#!/bin/sh\necho v1.21.4\n")
     content = archive.read_bytes()
     digest = hashlib.sha256(content).hexdigest()
     downloads = []
@@ -60,7 +88,7 @@ def release(monkeypatch, tmp_path):
     def download(url, destination, limit):
         downloads.append(url)
         if url.endswith("checksums.sha256"):
-            destination.write_text(f"{digest} *mediamtx_v1.21.1_linux_amd64.tar.gz\n")
+            destination.write_text(f"{digest} *mediamtx_v1.21.4_linux_amd64.tar.gz\n")
         else:
             destination.write_bytes(content)
 
@@ -69,22 +97,28 @@ def release(monkeypatch, tmp_path):
     return downloads
 
 
-def test_install_verified_binary_and_reuse(tmp_path, isolated_home, release):
+@pytest.mark.parametrize("version_options", [[], ["--version", "latest"]])
+def test_install_verified_binary_and_reuse(
+    tmp_path, isolated_home, release, latest_release, version_options
+):
     target = tmp_path / "bin" / "mediamtx"
-    options = ["install", "--binary", str(target)]
+    options = ["install", "--binary", str(target), *version_options]
     assert installer.main(options) == 0
     assert target.stat().st_mode & 0o777 == 0o755
-    assert subprocess.check_output([target, "--version"], text=True).strip() == "v1.21.1"
+    assert subprocess.check_output([target, "--version"], text=True).strip() == "v1.21.4"
     inode = target.stat().st_ino
     assert installer.main(options) == 0
     assert target.stat().st_ino == inode
     assert len(release) == 2
-    assert all("/releases/download/v1.21.1/" in url for url in release)
+    assert all("/releases/download/v1.21.4/" in url for url in release)
+    assert len(latest_release) == 1
     assert not (isolated_home / ".local").exists()
 
 
 @pytest.mark.parametrize("version", ["1.21.1", "1.21.2", "1.21.10", "2.0.0"])
-def test_reuse_path_binary_without_download(tmp_path, isolated_home, monkeypatch, capsys, version):
+def test_reuse_path_binary_without_download(
+    tmp_path, isolated_home, monkeypatch, capsys, version, latest_release
+):
     """A PATH installation becomes usable at the default unit's executable path."""
     target = tmp_path / "existing-mediamtx"
     target.write_text(f"#!/bin/sh\necho v{version}\n")
@@ -102,6 +136,7 @@ def test_reuse_path_binary_without_download(tmp_path, isolated_home, monkeypatch
     assert installer.main(["install"]) == 0
     assert local.lstat().st_ino == inode
     assert (target.read_bytes(), target.stat().st_ino) == original
+    assert not latest_release
 
 
 @pytest.mark.parametrize("problem", ["dry_run", "version", "symlink_parent", "concurrent"])
@@ -205,6 +240,7 @@ def test_requested_version_below_minimum_is_rejected(
 @pytest.mark.parametrize(
     ("requested", "reported"),
     [
+        ("1.21.1", "1.21.1"),
         ("1.21.2", "1.21.2"),
         ("1.21.10", "1.21.10"),
         ("1.22.0", "1.22.0"),
@@ -214,7 +250,9 @@ def test_requested_version_below_minimum_is_rejected(
         ("1.21.2", "1.21.2-rc1"),
     ],
 )
-def test_selected_download_requires_exact_version(tmp_path, monkeypatch, requested, reported):
+def test_selected_download_requires_exact_version(
+    tmp_path, monkeypatch, requested, reported, latest_release
+):
     """Install the chosen release only when the verified archive reports that exact version."""
     archive = tmp_path / "release.tar.gz"
     make_archive(archive, content=f"#!/bin/sh\necho v{reported}\n".encode())
@@ -237,6 +275,7 @@ def test_selected_download_requires_exact_version(tmp_path, monkeypatch, request
         0 if requested == reported else 1
     )
     assert len(downloads) == 2
+    assert not latest_release
     assert all(f"/releases/download/v{requested}/" in url for url in downloads)
     if requested == reported:
         assert subprocess.check_output([target, "--version"], text=True).strip() == f"v{requested}"
@@ -244,7 +283,89 @@ def test_selected_download_requires_exact_version(tmp_path, monkeypatch, request
         assert not target.parent.exists()
 
 
-def test_setup_dry_run_has_no_downloads_or_writes(tmp_path, config_options, monkeypatch, capsys):
+@pytest.mark.parametrize("version", ["1.21.1", "1.21.4", "1.21.10", "2.0.0"])
+def test_latest_resolves_a_supported_stable_tag(monkeypatch, version):
+    response = GitHubResponse(
+        json.dumps({"tag_name": f"v{version}", "draft": False, "prerelease": False}).encode()
+    )
+    monkeypatch.setattr(installer.urllib.request, "urlopen", lambda *_a, **_kw: response)
+    assert installer.resolve_version("latest") == version
+
+
+@pytest.mark.parametrize(
+    ("metadata", "message"),
+    [
+        (b"not JSON", "Expecting value"),
+        ([], "Invalid MediaMTX release metadata"),
+        ({"draft": True}, "published stable"),
+        ({"prerelease": True}, "published stable"),
+        ({"tag_name": None}, "version tag"),
+        ({"tag_name": "v1.21.4-rc1"}, "version tag"),
+        ({"tag_name": "../1.21.4"}, "version tag"),
+        ({"tag_name": "v1.21.0"}, "below the minimum 1.21.1"),
+        (b"x" * (1024 * 1024 + 1), "1 MiB limit"),
+    ],
+    ids=[
+        "json",
+        "shape",
+        "draft",
+        "prerelease",
+        "missing-tag",
+        "rc-tag",
+        "unsafe-tag",
+        "old",
+        "size",
+    ],
+)
+def test_latest_rejects_invalid_metadata_before_install(
+    tmp_path, monkeypatch, capsys, metadata, message
+):
+    if isinstance(metadata, dict):
+        metadata = {"tag_name": "v1.21.4", "draft": False, "prerelease": False} | metadata
+    content = metadata if isinstance(metadata, bytes) else json.dumps(metadata).encode()
+    monkeypatch.setattr(
+        installer.urllib.request, "urlopen", lambda *_a, **_kw: GitHubResponse(content)
+    )
+    monkeypatch.setattr(installer, "download", lambda *_: pytest.fail("Unexpected download"))
+    target = tmp_path / "bin/mediamtx"
+    assert installer.main(["install", "--binary", str(target)]) == 1
+    assert message in capsys.readouterr().err
+    assert not target.parent.exists()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        HTTPError("https://api.github.com", 403, "API rate limit exceeded", None, None),
+        HTTPError("https://api.github.com", 404, "Not Found", None, None),
+        URLError("Network unavailable"),
+        TimeoutError("GitHub request timed out"),
+    ],
+)
+def test_latest_lookup_failure_leaves_installation_absent(tmp_path, monkeypatch, error):
+    def fail(*_a, **_kw):
+        raise error
+
+    monkeypatch.setattr(installer.urllib.request, "urlopen", fail)
+    monkeypatch.setattr(installer, "download", lambda *_: pytest.fail("Unexpected download"))
+    target = tmp_path / "bin/mediamtx"
+    assert installer.main(["install", "--binary", str(target)]) == 1
+    assert not target.parent.exists()
+
+
+def test_latest_metadata_refuses_an_http_redirect(tmp_path, monkeypatch, capsys):
+    response = GitHubResponse(b"{}")
+    monkeypatch.setattr(response, "geturl", lambda: "http://api.github.com/release")
+    monkeypatch.setattr(installer.urllib.request, "urlopen", lambda *_a, **_kw: response)
+    target = tmp_path / "bin/mediamtx"
+    assert installer.main(["install", "--binary", str(target)]) == 1
+    assert "outside HTTPS" in capsys.readouterr().err
+    assert not target.parent.exists()
+
+
+def test_setup_dry_run_has_no_downloads_or_writes(
+    tmp_path, config_options, monkeypatch, capsys, latest_release
+):
     target = tmp_path / "bin" / "mediamtx"
     monkeypatch.setattr(installer, "download", lambda *_: pytest.fail("Unexpected download"))
     monkeypatch.setattr(
@@ -253,7 +374,10 @@ def test_setup_dry_run_has_no_downloads_or_writes(tmp_path, config_options, monk
     assert installer.main(["setup", *config_options, "--binary", str(target), "--dry-run"]) == 0
     assert not target.parent.exists()
     assert not (tmp_path / "config").exists()
-    assert "MTX_RTMPADDRESS=127.0.0.1:2935" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "Would download and verify MediaMTX 1.21.4" in output
+    assert "MTX_RTMPADDRESS=127.0.0.1:2935" in output
+    assert len(latest_release) == 1
 
 
 def test_configure_generates_private_distinct_secrets_and_preserves_them(
@@ -523,7 +647,7 @@ def test_ipv6_listener(config_options, tmp_path):
 @pytest.mark.parametrize(
     "options",
     [
-        ["install", "--version", "latest"],
+        ["install", "--version", "1.21.4-rc1"],
         ["install", "--binary", "relative"],
         ["configure", "--instance", "../runner"],
         ["configure", "--instance", "runner", "--config-root", "/tmp/../etc"],

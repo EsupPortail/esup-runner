@@ -824,9 +824,61 @@ def test_directory_lock_excludes_a_second_update(installation):
         os.close(descriptor)
 
 
-@pytest.mark.parametrize(
-    "options", [[], ["--version", "latest"], ["--version", "1.21.0"], ["--version", "1.21.3-rc1"]]
-)
-def test_update_requires_an_explicit_supported_stable_release(options):
+@pytest.mark.parametrize("options", [[], ["--version", "1.21.0"], ["--version", "1.21.3-rc1"]])
+def test_update_requires_an_explicit_supported_version(options):
     with pytest.raises(SystemExit):
         installer.parse_args(["update", *options])
+
+
+@pytest.mark.parametrize("mode", ["update", "dry-run", "current", "newer"])
+def test_update_latest_resolves_once_and_preserves_noop_behavior(
+    installation, monkeypatch, capsys, mode
+):
+    state = installation
+    requests = []
+
+    def urlopen(request, timeout):
+        requests.append(request.full_url)
+        assert timeout == 30
+        response = io.BytesIO(
+            json.dumps({"tag_name": "v1.21.3", "draft": False, "prerelease": False}).encode()
+        )
+        response.geturl = lambda: request.full_url
+        return response
+
+    monkeypatch.setattr(installer.urllib.request, "urlopen", urlopen)
+    if mode in ("current", "newer"):
+        state.binary.write_text(
+            f"#!/bin/sh\necho v{('1.21.3' if mode == 'current' else '1.21.4')}\n"
+        )
+    before = snapshot(state.home)
+    configuration_before = snapshot(state.home / ".config")
+    options = ["update", "--version", "latest"]
+    if mode == "dry-run":
+        options.append("--dry-run")
+    assert installer.main(options) == (1 if mode == "newer" else 0)
+    assert requests == ["https://api.github.com/repos/bluenviron/mediamtx/releases/latest"]
+    if mode == "update":
+        assert len(state.downloads) == 2 and actions(state)
+        assert all("/releases/download/v1.21.3/" in url for url in state.downloads)
+        assert installer.read_version(state.binary) == "1.21.3"
+        assert snapshot(state.home / ".config") == configuration_before
+    else:
+        assert before == snapshot(state.home)
+        assert not state.downloads and not actions(state)
+        if mode == "dry-run":
+            assert "Target version    : 1.21.3" in capsys.readouterr().out
+
+
+def test_latest_lookup_failure_never_stops_services(installation, monkeypatch, capsys):
+    state = installation
+    before = snapshot(state.home)
+
+    def fail(*_a, **_kw):
+        raise OSError("GitHub lookup failed")
+
+    monkeypatch.setattr(installer.urllib.request, "urlopen", fail)
+    assert installer.main(["update", "--version", "latest"]) == 1
+    assert before == snapshot(state.home)
+    assert not state.downloads and not actions(state)
+    assert "GitHub lookup failed" in capsys.readouterr().err

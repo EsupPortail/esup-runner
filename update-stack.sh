@@ -68,6 +68,7 @@ RUN_TEST_WITH_TRANSCRIPTION_TRANSLATION=0
 
 UPDATED_MANAGER=0
 UPDATED_RUNNER=0
+GIT_REVISION_UNCHANGED=0
 TEST_STATUS="skipped"
 EMAIL_STATUS="skipped"
 CONFIG_CHANGES_STATUS="skipped"
@@ -890,6 +891,7 @@ update_git_sources() {
     if [[ "${DRY_RUN}" -eq 1 ]]; then
       CONFIG_CHANGES_STATUS="dry-run"
     else
+      GIT_REVISION_UNCHANGED=1
       CONFIG_CHANGES_STATUS="unchanged"
     fi
     log "Git revision unchanged (${after_rev})."
@@ -1238,6 +1240,12 @@ send_update_email_if_configured() {
 
   smtp_port="${smtp_port:-25}"
 
+  local no_updates=0
+  if [[ "${GIT_REVISION_UNCHANGED}" -eq 1 \
+    && "${MANAGER_RESTART_REQUIRED}" -eq 0 && "${RUNNER_RESTART_REQUIRED}" -eq 0 ]]; then
+    no_updates=1
+  fi
+
   local updated_parts=()
   if [[ "${UPDATED_MANAGER}" -eq 1 ]]; then
     updated_parts+=("manager")
@@ -1249,7 +1257,7 @@ send_update_email_if_configured() {
   local updated_label
   if [[ "${SEND_TEST_EMAIL}" -eq 1 ]]; then
     updated_label="preview only"
-  elif [[ "${#updated_parts[@]}" -eq 0 ]]; then
+  elif [[ "${no_updates}" -eq 1 || "${#updated_parts[@]}" -eq 0 ]]; then
     updated_label="none"
   else
     updated_label="$(printf '%s, ' "${updated_parts[@]}")"
@@ -1355,9 +1363,14 @@ This message was generated automatically by the ESUP-Runner update-stack.sh."
     report_eyebrow="Stack update report"
     report_title="ESUP-Runner update completed"
     report_summary="The automatic stack update finished and this report summarizes the result."
+    if [[ "${no_updates}" -eq 1 ]]; then
+      subject="[esup-runner] ${overall_status} - No updates - ${versions_label}"
+      report_title="ESUP-Runner already up to date"
+      report_summary="No updates were applied. The stack is already up to date."
+    fi
     body="Hello,
 
-The automatic ESUP-Runner update has completed.
+${report_summary}
 
 ========================================================================
 ESUP-RUNNER UPDATE REPORT

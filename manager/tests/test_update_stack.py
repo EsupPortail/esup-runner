@@ -269,6 +269,81 @@ def _email_content(message, subtype):
     return body.get_content()
 
 
+@pytest.mark.parametrize("scope", ["auto", "manager", "runner"])
+def test_update_stack_reports_no_updates_when_git_revision_is_unchanged(
+    tmp_path, configuration_repository, scope
+):
+    """Report an unchanged stack explicitly while retaining installed versions."""
+    _commit_files(
+        configuration_repository,
+        {"manager/VERSION": "1.2.3\n", "runner/VERSION": "1.2.4\n"},
+    )
+    checkout, env, email_path = _prepare_update(tmp_path, configuration_repository)
+    before = _git(checkout, "rev-parse", "HEAD")
+    options = () if scope == "auto" else (f"--{scope}-only",)
+
+    result = _run_update(checkout, env, *options)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _git(checkout, "rev-parse", "HEAD") == before
+    message = BytesParser(policy=policy.default).parsebytes(email_path.read_bytes())
+    assert "SUCCESS - No updates" in message["Subject"]
+    for subtype in ("plain", "html"):
+        body = _email_content(message, subtype)
+        assert "No updates were applied. The stack is already up to date." in body
+        for component, version in (("manager", "1.2.3"), ("runner", "1.2.4")):
+            if scope in ("auto", component):
+                assert version in message["Subject"]
+                assert version in body
+    assert "Updated components   : none" in _email_content(message, "plain")
+    assert ">none</td>" in _email_content(message, "html")
+
+
+@pytest.mark.parametrize("changed_file", ["manager/app/code.py", "runner/app/code.py", "README.md"])
+def test_update_stack_does_not_report_no_updates_after_git_changes(
+    tmp_path, configuration_repository, changed_file
+):
+    """Treat new sources as an update even when component versions stay the same."""
+    checkout, env, email_path = _prepare_update(tmp_path, configuration_repository)
+    after = _commit_files(configuration_repository, {changed_file: "Updated content\n"})
+
+    result = _run_update(checkout, env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _git(checkout, "rev-parse", "HEAD") == after
+    message = BytesParser(policy=policy.default).parsebytes(email_path.read_bytes())
+    assert "No updates" not in message["Subject"]
+    assert "SUCCESS" in message["Subject"]
+    for subtype in ("plain", "html"):
+        assert "No updates were applied" not in _email_content(message, subtype)
+
+
+@pytest.mark.parametrize("profile", ["cuda12", "latest"])
+def test_update_stack_does_not_report_no_updates_after_gpu_lock_refresh(
+    tmp_path, configuration_repository, profile
+):
+    """Keep explicit GPU dependency refreshes visible with unchanged Git sources."""
+    checkout, env, email_path = _prepare_update(tmp_path, configuration_repository)
+
+    result = _run_update(
+        checkout,
+        env,
+        "--runner-only",
+        "--runner-sync-mode",
+        "transcription-gpu",
+        "--gpu-lock-profile",
+        profile,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Runner lock refresh" in result.stdout
+    message = BytesParser(policy=policy.default).parsebytes(email_path.read_bytes())
+    assert "No updates" not in message["Subject"]
+    assert "Updated components   : runner" in _email_content(message, "plain")
+    for subtype in ("plain", "html"):
+        assert "No updates were applied" not in _email_content(message, subtype)
+
+
 @pytest.mark.parametrize(
     "task_types,encoding_type,installed_cuda12,mode,profile,target",
     [
@@ -408,6 +483,7 @@ def test_update_stack_reports_smoke_result_in_console_and_email(
     elif expected_status == "failed":
         assert "Post-update test failed" in result.stderr
         assert "COMPLETED WITH WARNINGS" in message["Subject"]
+        assert "No updates" in message["Subject"]
 
 
 @pytest.mark.parametrize("failure", ["configuration", "mktemp", "tee"])
@@ -541,6 +617,9 @@ def test_update_stack_does_not_compare_configuration_when_update_is_skipped(
     else:
         message = BytesParser(policy=policy.default).parsebytes(email_path.read_bytes())
         assert "configuration review required" not in message["Subject"]
+        assert "No updates" not in message["Subject"]
+        for subtype in ("plain", "html"):
+            assert "No updates were applied" not in _email_content(message, subtype)
 
 
 def test_update_stack_logs_configuration_when_email_is_disabled(tmp_path, configuration_repository):

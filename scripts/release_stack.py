@@ -25,8 +25,8 @@ Typical usage:
     Prepare local files:
         ``uv run scripts/release_stack.py prepare 1.1.1``
 
-    Publish after review:
-        ``uv run scripts/release_stack.py prepare 1.1.1 --commit --push --create-tags --push-tags``
+    Publish prepared files:
+        See RELEASE.md for the resume command after local review.
 
 Notes:
     Pushing ``manager-vX.Y.Z`` or ``runner-vX.Y.Z`` tags triggers the GitHub
@@ -43,7 +43,6 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Iterable, Sequence
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
@@ -296,7 +295,9 @@ def update_uv(*, dry_run: bool) -> None:
         raise ReleaseError("uv installer failed")
 
 
-def find_changelog_section(content: str, section_name: str) -> tuple[re.Match[str], int, int] | None:
+def find_changelog_section(
+    content: str, section_name: str
+) -> tuple[re.Match[str], int, int] | None:
     """Find a Keep a Changelog ``## [section]`` block in markdown content.
 
     Returns the heading match plus the byte offsets delimiting the section body.
@@ -509,8 +510,9 @@ def command_prepare(args: argparse.Namespace) -> int:
     ensure_branch(args.branch, skip_branch_check=args.skip_branch_check)
     ensure_clean_worktree(allow_dirty=args.allow_dirty, dry_run=args.dry_run)
 
-    if args.create_tags or args.push_tags:
+    if args.create_tags:
         ensure_local_tags_do_not_exist(components, args.version)
+    if args.create_tags or args.push_tags:
         ensure_remote_tags_do_not_exist(
             components,
             args.version,
@@ -542,13 +544,27 @@ def command_prepare(args: argparse.Namespace) -> int:
         )
 
     if args.print_release_notes and not args.skip_changelog:
-        print_release_notes(components, args.version)
+        if args.dry_run:
+            log("dry-run: print release notes after changelog promotion")
+        else:
+            print_release_notes(components, args.version)
+
+    publish_release(args, components)
+
+    log("release preparation finished")
+    return 0
+
+
+def publish_release(args: argparse.Namespace, components: Sequence[Component]) -> None:
+    """Perform only the Git actions explicitly selected by the caller."""
 
     if args.commit:
         commit_release(components, args.version, dry_run=args.dry_run)
 
     if args.push:
-        branch = run_stdout(("git", "branch", "--show-current")) if not args.dry_run else args.branch
+        branch = (
+            run_stdout(("git", "branch", "--show-current")) if not args.dry_run else args.branch
+        )
         push_branch(args.remote, branch, dry_run=args.dry_run)
 
     if args.create_tags:
@@ -559,9 +575,6 @@ def command_prepare(args: argparse.Namespace) -> int:
 
     if not args.push_tags:
         log("tags were not pushed; GitHub release workflow will not run until tags are pushed")
-
-    log("release preparation finished")
-    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -581,7 +594,7 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument(
         "--components",
         default="manager,runner",
-        help="comma-separated components to release: manager, runner, or both",
+        help="comma-separated components to release: manager, runner, or manager,runner",
     )
     prepare.add_argument("--branch", default="main", help="expected git branch")
     prepare.add_argument("--remote", default="origin", help="git remote used for pushes")
@@ -590,11 +603,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=date.today().isoformat(),
         help="date written to changelog release headings",
     )
-    prepare.add_argument("--dry-run", action="store_true", help="print commands without changing files")
+    prepare.add_argument(
+        "--dry-run", action="store_true", help="print commands without changing files"
+    )
     prepare.add_argument("--allow-dirty", action="store_true", help="allow a dirty worktree")
     prepare.add_argument("--skip-branch-check", action="store_true", help="do not require --branch")
-    prepare.add_argument("--skip-remote-tag-check", action="store_true", help="do not query remote tags")
-    prepare.add_argument("--update-uv", action="store_true", help="update uv with the Astral installer")
+    prepare.add_argument(
+        "--skip-remote-tag-check", action="store_true", help="do not query remote tags"
+    )
+    prepare.add_argument(
+        "--update-uv", action="store_true", help="update uv with the Astral installer"
+    )
     prepare.add_argument("--skip-version", action="store_true", help="skip manage_version.py set")
     prepare.add_argument("--skip-ci", action="store_true", help="skip make ci")
     prepare.add_argument("--skip-lock", action="store_true", help="skip lock refresh")
@@ -612,7 +631,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     prepare.add_argument("--commit", action="store_true", help="commit release file changes")
     prepare.add_argument("--push", action="store_true", help="push the current branch")
-    prepare.add_argument("--create-tags", action="store_true", help="create annotated component tags")
+    prepare.add_argument(
+        "--create-tags", action="store_true", help="create annotated component tags"
+    )
     prepare.add_argument("--push-tags", action="store_true", help="push component tags")
     prepare.set_defaults(func=command_prepare)
 
@@ -645,7 +666,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as exc:
-        print(f"error: command failed ({exc.returncode}): {format_command(exc.cmd)}", file=sys.stderr)
+        print(
+            f"error: command failed ({exc.returncode}): {format_command(exc.cmd)}", file=sys.stderr
+        )
         if exc.stderr:
             print(exc.stderr.strip(), file=sys.stderr)
         return exc.returncode

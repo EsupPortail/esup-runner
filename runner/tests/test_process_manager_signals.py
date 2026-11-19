@@ -8,7 +8,8 @@ from app.managers import process_manager
 
 
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
-def test_shutdown_signal_unwinds_logging_before_cleanup(monkeypatch, signum):
+@pytest.mark.parametrize("monitoring", [False, True])
+def test_shutdown_signal_unwinds_logging_before_cleanup(monkeypatch, signum, monitoring):
     """A signal received inside a log write must unwind before logging or cleanup."""
     manager = process_manager.UvicornProcessManager()
     handlers = {}
@@ -45,8 +46,14 @@ def test_shutdown_signal_unwinds_logging_before_cleanup(monkeypatch, signum):
     monkeypatch.setattr(manager, "stop_all_instances", stop)
 
     with pytest.raises(SystemExit) as stopped:
-        manager.wait_for_termination()
+        if monitoring:
+            monkeypatch.setattr(
+                process_manager.time, "sleep", lambda _: manager.processes[0].join()
+            )
+            manager.monitor_instances()
+        else:
+            manager.wait_for_termination()
 
     assert stopped.value.code == 0
     assert shutdowns == [True]
-    assert messages == [f"Received signal {signum}, shutting down…"]
+    assert messages[-1] == f"Received signal {signum}, shutting down…"

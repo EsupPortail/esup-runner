@@ -70,6 +70,7 @@ SYSTEMD_USER_UNIT ?= $(SYSTEMD_USER_DIR)/esup-runner-runner.service
 export UV_CACHE_DIR
 
 EXTRAS  ?=
+SHARED_SCRIPTS := $(wildcard ../scripts/*.py)
 
 # Docker build variables (can be overridden via env or make args)
 DOCKER            ?= docker
@@ -283,17 +284,17 @@ coverage: check-coverage-deps
 
 fmt: check-fmt-deps
 	@echo "==> format (black + isort)"
-	$(UV) run black .
-	$(UV) run isort .
+	$(UV) run black --config pyproject.toml . $(SHARED_SCRIPTS)
+	$(UV) run isort --settings-path pyproject.toml . $(SHARED_SCRIPTS)
 
 fmt-check: check-fmt-deps
 	@echo "==> check format (black + isort)"
-	$(UV) run black --check .
-	$(UV) run isort --check-only .
+	$(UV) run black --config pyproject.toml --check . $(SHARED_SCRIPTS)
+	$(UV) run isort --settings-path pyproject.toml --check-only . $(SHARED_SCRIPTS)
 
 lint: check-lint-deps
 	@echo "==> lint (flake8 + mypy)"
-	$(UV) run flake8 --jobs=1 .
+	$(UV) run flake8 --config .flake8 --jobs=1 . $(SHARED_SCRIPTS)
 	MYPY_CACHE_DIR=/tmp/mypy_cache_$(USER) $(UV) run mypy app
 
 ci:

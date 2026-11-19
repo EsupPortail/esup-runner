@@ -34,7 +34,7 @@ if str(ROOT) not in sys.path:
 
 from app.core._check_output import Severity, format_status
 
-VERSION = "1.21.1"  # Minimum supported release and default download.
+VERSION = "1.21.1"  # Minimum supported release.
 MAX_ARCHIVE_SIZE = 256 * 1024 * 1024
 ADDRESS_KEYS = {
     "rtmp_address": ("rtmpAddress", "MTX_RTMPADDRESS"),
@@ -60,13 +60,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ):
         child = commands.add_parser(command, help=help_text)
         child.add_argument(
-            "--dry-run", action="store_true", help="Preview without downloads or writes"
+            "--dry-run", action="store_true", help="Preview without release downloads or writes"
         )
         if command != "configure":
             child.add_argument(
                 "--version",
-                default=VERSION,
-                help=f"Release to download if absent (minimum/default: {VERSION}); reuse supported installs",
+                default="latest",
+                help=f"Stable release or latest (default: latest; minimum: {VERSION}); reuse supported installs",
             )
             child.add_argument(
                 "--binary",
@@ -99,20 +99,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 )
     start = commands.add_parser("start", help="Validate and start a prepared default user service")
     start.add_argument("--instance", required=True, help="Prepared instance name")
-    start.add_argument("--dry-run", action="store_true", help="Preview without downloads or writes")
-    start.set_defaults(binary=None, version=VERSION)
+    start.add_argument(
+        "--dry-run", action="store_true", help="Preview without release downloads or writes"
+    )
+    start.set_defaults(binary=None, version="latest")
     update = commands.add_parser(
         "update", help="Update existing native services, preserving configuration"
     )
-    update.add_argument("--version", required=True, help="Exact stable release to install")
     update.add_argument(
-        "--dry-run", action="store_true", help="Preview without downloads or writes"
+        "--version", required=True, help="Exact stable release or latest to install"
+    )
+    update.add_argument(
+        "--dry-run", action="store_true", help="Preview without release downloads or writes"
     )
     args = parser.parse_args(argv)
-    if args.command != "configure" and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version):
-        parser.error("--version must be a fixed release such as 1.21.1")
-    if args.command != "configure" and tuple(map(int, args.version.split("."))) < tuple(
-        map(int, VERSION.split("."))
+    if (
+        args.command != "configure"
+        and args.version != "latest"
+        and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version)
+    ):
+        parser.error("--version must be latest or a fixed release such as 1.21.1")
+    if (
+        args.command != "configure"
+        and args.version != "latest"
+        and tuple(map(int, args.version.split("."))) < tuple(map(int, VERSION.split(".")))
     ):
         parser.error(f"--version must be at least {VERSION}")
     if args.command not in ("install", "update") and not re.fullmatch(
@@ -322,6 +332,39 @@ def unpack_binary(archive: Path, destination: Path) -> None:
     destination.chmod(0o700)
 
 
+def resolve_version(version: str) -> str:
+    """Resolve latest through GitHub, requiring a stable release at or above the minimum.
+
+    Explicit versions need no network lookup. Metadata reads are bounded and failures
+    abort the operation before any executable is downloaded or service is stopped.
+    """
+    if version != "latest":
+        return version
+    request = urllib.request.Request(
+        "https://api.github.com/repos/bluenviron/mediamtx/releases/latest",
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "esup-runner-mediamtx"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        if not response.geturl().startswith("https://"):
+            raise ValueError("Release metadata redirected outside HTTPS")
+        metadata = response.read(1024 * 1024 + 1)
+    if len(metadata) > 1024 * 1024:
+        raise ValueError("MediaMTX release metadata exceeds the 1 MiB limit")
+    release = json.loads(metadata)
+    if not isinstance(release, dict):
+        raise ValueError("Invalid MediaMTX release metadata from GitHub")
+    if release.get("draft") is not False or release.get("prerelease") is not False:
+        raise ValueError("GitHub did not return a published stable MediaMTX release")
+    tag = release.get("tag_name")
+    if not isinstance(tag, str) or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+        raise ValueError("GitHub did not return a stable MediaMTX version tag")
+    version = tag[1:]
+    if tuple(map(int, version.split("."))) < tuple(map(int, VERSION.split("."))):
+        raise ValueError(f"Latest MediaMTX release {version} is below the minimum {VERSION}")
+    print_status(f"Resolved latest MediaMTX release: {version}")
+    return version
+
+
 def install_binary(args: argparse.Namespace) -> Path:
     """Reuse or install a verified binary, linking PATH installs for the default user unit."""
     target = binary_path(args)
@@ -345,31 +388,32 @@ def install_binary(args: argparse.Namespace) -> Path:
         return target
     architecture = linux_architecture()
     reject_symlinks(target.parent)
+    version = resolve_version(args.version)
     if args.dry_run:
         print_status(
-            f"Would download and verify MediaMTX {args.version} (linux/{architecture}): {target}"
+            f"Would download and verify MediaMTX {version} (linux/{architecture}): {target}"
         )
         return target
-    archive_name = f"mediamtx_v{args.version}_linux_{architecture}.tar.gz"
-    release = f"https://github.com/bluenviron/mediamtx/releases/download/v{args.version}"
+    archive_name = f"mediamtx_v{version}_linux_{architecture}.tar.gz"
+    release = f"https://github.com/bluenviron/mediamtx/releases/download/v{version}"
     with tempfile.TemporaryDirectory(prefix="esup-mediamtx-download-") as temporary:
         directory = Path(temporary)
         archive = directory / archive_name
         checksums = directory / "checksums.sha256"
-        print_status(f"Downloading MediaMTX {args.version} (linux/{architecture})")
+        print_status(f"Downloading MediaMTX {version} (linux/{architecture})")
         download(f"{release}/{archive_name}", archive, MAX_ARCHIVE_SIZE)
         download(f"{release}/checksums.sha256", checksums, 1024 * 1024)
         verify_checksum(archive, checksums)
         executable = directory / "mediamtx"
         unpack_binary(archive, executable)
-        check_version(executable, args.version)
+        check_version(executable, version)
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix=".mediamtx-install-", dir=target.parent) as staging:
             staged = Path(staging) / "mediamtx"
             shutil.copyfile(executable, staged)
             staged.chmod(0o755)
             os.link(staged, target)
-    print_status(f"Installed MediaMTX {args.version}: {target}")
+    print_status(f"Installed MediaMTX {version}: {target}")
     return target
 
 
@@ -806,6 +850,7 @@ def print_update_plan(
 def update_locked(args: argparse.Namespace, binary: Path) -> None:
     """Prepare and validate the requested release before stopping any existing service."""
     installed = read_version(binary)
+    args.version = resolve_version(args.version)
     if installed == args.version:
         print("\nConclusion:")
         print_status(f"MediaMTX {installed} is already installed; no service was restarted.")

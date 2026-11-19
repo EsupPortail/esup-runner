@@ -91,6 +91,7 @@ An unsupported existing executable is reported and left unchanged.
 | `--version latest` | Default: resolve the latest stable release through the GitHub API if no supported binary is installed |
 | `--version 1.21.4` | Exact release to download if absent; minimum: 1.21.1 |
 | `--binary /absolute/path/mediamtx` | Existing binary or unused installation destination; no default-path link |
+| `--skip-email` | Disable the optional [installer email report](#installer-email-reports) |
 
 `install` and `setup` never replace an installed version. Use the explicit
 [`update` command](#native-update-command) for an existing native deployment,
@@ -744,6 +745,24 @@ require the manual procedure below. After an update or rollback,
 repeat the [Control API checks](#verify-the-connection), check `/v3/info`, and verify
 a test broadcast and its current HLS URL. Temporary relays and broadcasts are not
 restored by a rollback.
+
+#### Installer email reports
+
+`install`, `setup`, user-mode `start` and `update` send an optional report to `MANAGER_EMAIL`,
+using the same branded text/HTML format as stack update emails. Reports include
+the outcome, previous and installed versions, host and date. Reusing an installed
+executable sends a `No updates` report; configuration or service setup may still
+have run. Failed commands send a failure report without private diagnostics.
+
+The installer reads `SMTP_*`, `MANAGER_EMAIL` and optional `MANAGER_PUBLIC_URL`
+or `MANAGER_URL` from the component's `.env`; exported variables take precedence.
+The Manager can fall back to `runner/.env` when its own SMTP configuration is
+incomplete. Dotenv files require `python-dotenv` from the application environment;
+values are read without interpolation or shell evaluation.
+
+Missing SMTP settings skip delivery. SMTP errors produce a warning without
+changing the installation result or undoing an update. `--skip-email` disables
+reports; `--dry-run` and `configure` never send email.
 
 #### Scheduled updates
 

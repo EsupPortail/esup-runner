@@ -21,6 +21,77 @@ installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
 
 
+@pytest.fixture(autouse=True)
+def email_reports(monkeypatch):
+    """Capture notification requests without reading real SMTP configuration."""
+    reports = []
+    monkeypatch.setattr(
+        installer, "send_install_report", lambda **report: reports.append(report) or "sent"
+    )
+    return reports
+
+
+def test_install_email_reports_installed_and_reused_versions(tmp_path, release, email_reports):
+    target = tmp_path / "mediamtx"
+    options = ["install", "--binary", str(target), "--version", "1.21.4"]
+    assert installer.main(options) == 0
+    assert len(email_reports) == 1
+    assert email_reports[0]["changed"] is True
+    assert email_reports[0]["previous_version"] is None
+    assert email_reports[0]["installed_version"] == "1.21.4"
+    assert email_reports[0]["failed"] is False
+
+    # install reuses supported binaries, even if a different release was requested.
+    assert installer.main([*options[:-1], "1.21.3"]) == 0
+    assert len(email_reports) == 2
+    assert email_reports[1]["changed"] is False
+    assert email_reports[1]["previous_version"] == "1.21.4"
+    assert email_reports[1]["installed_version"] == "1.21.4"
+
+
+@pytest.mark.parametrize("option", ["--dry-run", "--skip-email"])
+def test_install_email_can_be_disabled(tmp_path, release, email_reports, option):
+    assert installer.main(["install", "--binary", str(tmp_path / "mediamtx"), option]) == 0
+    assert not email_reports
+
+
+def test_failed_install_sends_failure_report(tmp_path, release, email_reports, monkeypatch):
+    def fail(*_):
+        raise OSError("private-download-diagnostic")
+
+    monkeypatch.setattr(installer, "download", fail)
+    assert installer.main(["install", "--binary", str(tmp_path / "mediamtx")]) == 1
+    assert len(email_reports) == 1
+    assert email_reports[0]["failed"] is True
+    assert email_reports[0]["changed"] is False
+
+
+@pytest.mark.parametrize("email_status", ["failed", "skipped"])
+def test_email_problem_preserves_successful_installation(
+    tmp_path, release, monkeypatch, capsys, email_status
+):
+    monkeypatch.setattr(installer, "send_install_report", lambda **_: email_status)
+    target = tmp_path / "mediamtx"
+    assert installer.main(["install", "--binary", str(target)]) == 0
+    assert target.is_file()
+    output = capsys.readouterr()
+    assert f"Email notification: {email_status}." in output.out
+    assert not output.err
+
+
+def test_configure_does_not_send_email(config_options, email_reports):
+    assert installer.main(["configure", *config_options]) == 0
+    assert not email_reports
+
+
+def test_system_service_start_does_not_send_an_install_report(email_reports):
+    args = installer.parse_args(
+        ["start", "--instance", "manager", "--service-mode", "system", "--user", "media"]
+    )
+    installer.notify_result(args)
+    assert not email_reports
+
+
 class GitHubResponse(io.BytesIO):
     """Model a bounded HTTPS GitHub API response."""
 
@@ -419,8 +490,11 @@ def test_configure_generates_private_distinct_secrets_and_preserves_them(
     assert "were not reapplied" in capsys.readouterr().out
 
 
-def test_setup_installs_and_configures(tmp_path, config_options, release):
+def test_setup_installs_and_configures(tmp_path, config_options, release, email_reports):
     assert installer.main(["setup", *config_options, "--binary", str(tmp_path / "mediamtx")]) == 0
+    assert len(email_reports) == 1
+    assert email_reports[0]["command"] == "setup"
+    assert email_reports[0]["changed"] is True
     assert (tmp_path / "mediamtx").is_file()
     assert (tmp_path / "config/manager/mediamtx.yml").is_file()
 
@@ -445,7 +519,7 @@ def prepared_service(isolated_home, release, monkeypatch):
 
 
 def test_start_validates_overrides_then_enables_without_restarting(
-    prepared_service, isolated_home, monkeypatch
+    prepared_service, isolated_home, monkeypatch, email_reports
 ):
     directory, calls = prepared_service
     monkeypatch.setenv("MTX_APIADDRESS", "unrelated-caller-override")
@@ -453,6 +527,9 @@ def test_start_validates_overrides_then_enables_without_restarting(
     (directory / "mediamtx.env").write_text("# listeners\n\nMTX_APIADDRESS=127.0.0.1:19997\n")
     before = {path: path.read_bytes() for path in directory.iterdir()}
     assert installer.main(["start", "--instance", "manager"]) == 0
+    assert len(email_reports) == 2  # setup, then start reusing the installed executable.
+    assert email_reports[-1]["command"] == "start"
+    assert email_reports[-1]["changed"] is False
     validate, options = calls[0]
     assert validate[-1] == f"--validate-conf={directory / 'mediamtx.yml'}"
     assert options["env"]["MTX_APIADDRESS"] == "127.0.0.1:19997"

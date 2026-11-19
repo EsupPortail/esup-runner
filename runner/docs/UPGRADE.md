@@ -332,11 +332,38 @@ cd /opt/esup-runner
 ./update-stack.sh --runner-only --dry-run --skip-uv-update --skip-git-update
 ```
 
-Cron example:
+### Scheduled updates
+
+As the service account (`esup-runner` by default), prepare the log directory,
+enable the systemd user session at boot, and open its crontab:
+
+```bash
+sudo install -d -o "$(id -un)" -g "$(id -gn)" /var/log/esup-runner
+sudo loginctl enable-linger "$(id -un)"
+crontab -e
+```
+
+The following cron entry is an example for Sunday at 03:00 (the host's cron
+timezone). Adjust the schedule, checkout and `uv` paths, and `update-stack.sh`
+options for your deployment:
 
 ```cron
-0 3 * * 1 cd /opt/esup-runner && ./update-stack.sh >> /var/log/esup-runner/update-stack.log 2>&1
+0 3 * * 0 cd /opt/esup-runner && PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" XDG_RUNTIME_DIR="/run/user/$(id -u)" UV_CACHE_DIR=/tmp/esup-runner-uv-cache ./update-stack.sh >> /var/log/esup-runner/update-stack.log 2>&1
 ```
+
+For example, for GPU transcription with a lock refresh to the latest GPU stack,
+replace `./update-stack.sh` in the cron entry with:
+
+```bash
+./update-stack.sh --runner-sync-mode transcription-gpu --gpu-lock-profile latest
+```
+
+Standard output and errors are appended to
+`/var/log/esup-runner/update-stack.log`. Use one entry per host: the
+script updates both components when both `.env` files exist. Reserve a maintenance
+window with no active tasks or broadcasts; updates can restart the services.
+Schedule [MediaMTX updates](../../manager/docs/MEDIAMTX_SETUP.md#scheduled-updates)
+separately.
 
 Notes:
 - `--runner-sync-mode auto` (default) uses this heuristic:
@@ -345,5 +372,4 @@ Notes:
   - otherwise: `make sync-transcription-cpu`
 - By default, `make init` is skipped. Use `--with-init` only when directories/permissions changed.
 - By default, restart policy is `if-changed` (restart only when `runner/` changed after git update, or after a local GPU lock regeneration). You can force a restart with `--always-restart`, or disable it with `--no-restart`.
-- User services require an active user manager (`systemd --user`). For unattended reboots/cron, enable lingering once: `sudo loginctl enable-linger esup-runner`.
 - If `make init` needs elevated privileges (for example when `.env` paths are under `/var`), run the script as `esup-runner` and configure restricted passwordless `sudo` for `make init`.

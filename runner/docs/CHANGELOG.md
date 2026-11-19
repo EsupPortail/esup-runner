@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add a [guided stack installer](../../INSTALLATION.md) for Runner, Manager, or
+  both, with optional CPU transcription and Live setup.
 - Add an explicit MediaMTX `update --version` command with existing configuration,
   backups and rollback on detected activation failures. See the shared
   [update procedure](../../manager/docs/MEDIAMTX_SETUP.md#native-update-command).
@@ -16,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Default native MediaMTX installations to the latest stable release and support `update --version latest`, keeping 1.21.1 as the minimum compatible version.
 - Report HLS output access errors with the path, owner, permissions and effective
   Runner account during startup, configuration checks and output creation;
   return a safe HTTP 503 diagnostic when dispatch is rejected for storage access.

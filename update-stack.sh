@@ -102,8 +102,8 @@ Options:
   --root-dir <path>                 Repository root (default: script directory)
   --manager-only                    Update only manager
   --runner-only                     Update only runner
-  --runner-sync-mode <mode>         auto|base|transcription-cpu|transcription-gpu
-  --gpu-lock-profile <profile>      none|cuda12|latest (only for transcription-gpu)
+  --runner-sync-mode <mode>         auto|base|transcription-cpu|transcription-gpu|transcription-gpu-cuda12
+  --gpu-lock-profile <profile>      none|cuda12|latest (only for GPU transcription)
   --skip-uv-update                  Skip uv installer update
   --skip-git-update                 Skip git fetch/pull
   --with-init                       Run make init for updated components
@@ -123,9 +123,10 @@ Detection:
 
 Runner sync mode:
   - auto: if RUNNER_TASK_TYPES does not contain "transcription" -> base
+          preserve an installed CUDA 12 transcription profile
           otherwise transcription-cpu or transcription-gpu is inferred
           (GPU inferred from ENCODING_TYPE=GPU or nvidia-smi presence)
-  - transcription-cpu/transcription-gpu enable full smoke test mode:
+  - transcription-* modes enable full smoke test mode:
     check_pipeline_tasks.py --with-transcription-translation
 USAGE
 }
@@ -911,29 +912,22 @@ update_git_sources() {
 }
 
 infer_runner_sync_mode() {
-  # Resolution order:
-  # 1) CLI (--runner-sync-mode)
-  # 2) Optional RUNNER_SYNC_MODE in runner/.env
-  # 3) Heuristic from RUNNER_TASK_TYPES + GPU hints
+  # Select the profile automatically unless explicitly overridden on the CLI.
   if [[ "${RUNNER_SYNC_MODE}" != "auto" ]]; then
     printf '%s\n' "${RUNNER_SYNC_MODE}"
     return 0
   fi
 
-  local configured_mode
-  configured_mode="$(read_env_var "${RUNNER_ENV_FILE}" "RUNNER_SYNC_MODE" || true)"
-  case "${configured_mode}" in
-    base|transcription-cpu|transcription-gpu)
-      log "Runner sync mode forced by RUNNER_SYNC_MODE=${configured_mode} in .env"
-      printf '%s\n' "${configured_mode}"
-      return 0
-      ;;
-  esac
-
   local runner_task_types
   runner_task_types="$(read_env_var "${RUNNER_ENV_FILE}" "RUNNER_TASK_TYPES" || true)"
   if ! printf '%s\n' "${runner_task_types}" | grep -qi "transcription"; then
     printf '%s\n' "base"
+    return 0
+  fi
+
+  # Inspect package metadata without importing Torch or changing the environment.
+  if compgen -G "${RUNNER_DIR}/.venv/lib/python*/site-packages/torch-*+cu126.dist-info" >/dev/null; then
+    printf '%s\n' "transcription-gpu-cuda12"
     return 0
   fi
 
@@ -1004,8 +998,8 @@ update_runner() {
       run_component_make_in_dir current "${RUNNER_DIR}" "${RUNNER_ENV_FILE}" \
         "Runner dependency sync (make sync-transcription-cpu)" sync-transcription-cpu
       ;;
-    transcription-gpu)
-      local gpu_sync_target="sync-transcription-gpu"
+    transcription-gpu|transcription-gpu-cuda12)
+      local gpu_sync_target="sync-${mode}"
       case "${GPU_LOCK_PROFILE}" in
         cuda12)
           # Explicit GPU lock refresh: this updates runner/uv.lock for CUDA12.
@@ -1016,6 +1010,7 @@ update_runner() {
           RUNNER_RESTART_REQUIRED=1
           ;;
         latest)
+          gpu_sync_target="sync-transcription-gpu"
           # Explicit GPU lock refresh: this updates runner/uv.lock to latest GPU stack.
           log "GPU lock profile: latest (make lock-upgrade-gpu-latest)"
           run_component_make_in_dir current "${RUNNER_DIR}" "${RUNNER_ENV_FILE}" \
@@ -1811,7 +1806,7 @@ parse_args() {
 validate_inputs() {
   # Validate parsed options early before running any update step.
   case "${RUNNER_SYNC_MODE}" in
-    auto|base|transcription-cpu|transcription-gpu) ;;
+    auto|base|transcription-cpu|transcription-gpu|transcription-gpu-cuda12) ;;
     *)
       die "Invalid --runner-sync-mode: ${RUNNER_SYNC_MODE}"
       ;;
@@ -1908,14 +1903,14 @@ main() {
     log "Runner sync mode: ${effective_runner_mode}"
 
     case "${effective_runner_mode}" in
-      transcription-cpu|transcription-gpu)
+      transcription-cpu|transcription-gpu|transcription-gpu-cuda12)
         RUN_TEST_WITH_TRANSCRIPTION_TRANSLATION=1
         ;;
     esac
 
     # If we are going to run make lock-upgrade-gpu-**, pre-clean tracked runner/uv.lock
     # before git pull to reduce chances of lock-related merge conflicts.
-    if [[ "${effective_runner_mode}" == "transcription-gpu" ]]; then
+    if [[ "${effective_runner_mode}" == transcription-gpu* ]]; then
       case "${GPU_LOCK_PROFILE}" in
         cuda12|latest)
           restore_runner_uv_lock_before_git_update=1
@@ -1924,7 +1919,7 @@ main() {
     fi
   fi
 
-  if [[ "${RUNNER_SYNC_MODE}" == "transcription-cpu" || "${RUNNER_SYNC_MODE}" == "transcription-gpu" ]]; then
+  if [[ "${RUNNER_SYNC_MODE}" == transcription-* ]]; then
     RUN_TEST_WITH_TRANSCRIPTION_TRANSLATION=1
   fi
 

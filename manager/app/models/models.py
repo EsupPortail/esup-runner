@@ -196,6 +196,7 @@ class Task(BaseModel):
         created_at: ISO timestamp when the task was initially created
         updated_at: ISO timestamp when the task was last modified
         acknowledged_at: Optional ISO timestamp when an operator acknowledged the incident
+        completion_processed_at: Optional timestamp used to deduplicate completion notifications
         error: Optional error message if the task failed during execution
         script_output: Optional raw output from the task execution script - useful for debugging and understanding task behavior
         warnings: Non-blocking incomplete-encoding diagnostics
@@ -275,6 +276,10 @@ class Task(BaseModel):
             "Manager-side incident acknowledgment timestamp in ISO format. "
             "Hides the task from Needs attention without changing its execution status."
         ),
+    )
+    completion_processed_at: Optional[str] = Field(
+        default=None,
+        description="Manager-side timestamp after processing this execution's completion notification",
     )
     error: Optional[str] = Field(
         None,  # Default value is None for optional fields

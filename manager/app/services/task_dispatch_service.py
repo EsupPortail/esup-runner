@@ -203,15 +203,28 @@ def resolve_runner_for_dispatch(
     *,
     preferred_task_id: str | None,
 ) -> Runner | None:
-    """Return a reserved runner, preserving restart batch semantics."""
-    if preferred_task_id is not None:
-        return runner
+    """Reserve the runner for both new tasks and restarts."""
     reserved_runner = cast(Runner | None, context._try_reserve_runner_for_dispatch(runner_id))
     if reserved_runner is None:
         context.logger.info(
             "Runner %s became busy before reservation; trying next runner", runner_id
         )
     return reserved_runner
+
+
+def persist_task_before_dispatch(
+    context: Any, task_id: str, previous_task: Task | None, runner: Runner
+) -> None:
+    """Require a successful save, restoring the task and reservation on failure."""
+    if context.save_tasks() is not False:
+        return
+    if previous_task is None:
+        context.tasks.pop(task_id, None)
+    else:
+        context.tasks[task_id] = previous_task
+    runner.availability = "available"
+    context.runners[runner.id] = runner
+    raise HTTPException(503, "Task could not be persisted; retry")
 
 
 async def queue_task_execution(
@@ -277,6 +290,7 @@ async def queue_task_execution(
                     continue
 
                 task_id = preferred_task_id or str(uuid.uuid4())
+                previous_task = context.tasks.get(task_id)
                 now_iso = datetime.now().isoformat()
                 context.tasks[task_id] = Task(
                     task_id=task_id,
@@ -298,7 +312,7 @@ async def queue_task_execution(
                     error=None,
                     script_output=None,
                 )
-                context.save_tasks()
+                persist_task_before_dispatch(context, task_id, previous_task, runner_for_dispatch)
                 context.asyncio.create_task(
                     context.execute_task_async_background(
                         task_id, runner_for_dispatch, task_request

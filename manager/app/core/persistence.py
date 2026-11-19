@@ -388,6 +388,16 @@ class DailyJSONPersistence:
                     else:
                         task_data = task.dict()
 
+                    stored = (
+                        self._read_task_file(task_file, keep_metadata=False)
+                        if task_file.exists()
+                        else None
+                    )
+                    if stored and stored[1].get("run_id") == task_data.get("run_id"):
+                        processed_at = stored[1].get("completion_processed_at")
+                        if processed_at is not None:
+                            task_data["completion_processed_at"] = processed_at
+
                     task_data["_metadata"] = {
                         "saved_at": datetime.now().isoformat(),
                         "task_id": task_id,

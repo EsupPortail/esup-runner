@@ -6,6 +6,7 @@ Utility functions and endpoints responsible for task creation, execution, status
 
 import asyncio
 import csv
+import hashlib
 import os
 import sys
 from datetime import datetime
@@ -17,7 +18,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from filelock import FileLock
+from filelock import FileLock, Timeout
 from starlette.responses import Response
 
 from app.__version__ import __version__
@@ -30,7 +31,7 @@ from app.core.priorities import would_exceed_other_domain_quota  # noqa: F401
 from app.core.setup_logging import setup_default_logging
 from app.core.state import delete_task as delete_task_from_state
 from app.core.state import get_task as get_task_from_state
-from app.core.state import get_tasks_snapshot, runners, save_tasks, tasks  # noqa: F401
+from app.core.state import get_tasks_snapshot, persistence, runners, save_tasks, tasks  # noqa: F401
 from app.core.url_paths import request_root_path
 from app.models.models import (
     Runner,
@@ -1204,6 +1205,27 @@ async def task_completion(
         HTTPException: If task or runner not found, or token invalid
     """
     task = _get_task_or_404(notification.task_id)
+    _verify_runner_token(_get_runner_or_404(task.runner_id), current_token)
+    # A separate lock object per request also rejects concurrent requests in the
+    # same event-loop thread. One file per Runner avoids accumulating task locks.
+    lock_id = hashlib.sha256(task.runner_id.encode()).hexdigest()
+    lock_path = persistence.data_directory / f".completion-{lock_id}.lock"
+    try:
+        with FileLock(str(lock_path), timeout=0):
+            return await _process_task_completion(notification, current_token)
+    except Timeout:
+        raise HTTPException(503, "Task completion is being processed; retry") from None
+    except OSError:
+        raise HTTPException(
+            503, "Task completion could not be locked; check Manager storage"
+        ) from None
+
+
+async def _process_task_completion(
+    notification: TaskCompletionNotification, current_token: str
+) -> dict:
+    """Persist and process one completion while its cross-worker lock is held."""
+    task = _get_task_or_404(notification.task_id)
     runner = _get_runner_or_404(task.runner_id)
     _verify_runner_token(runner, current_token)
 
@@ -1217,18 +1239,25 @@ async def task_completion(
         await synchronize(task.task_id)
         return {"status": "acknowledged"}
 
+    if task.completion_processed_at is not None:
+        return {"status": "acknowledged"}
+
+    previous_task = task.model_copy(deep=True)
     _apply_task_completion_update(task, notification)
     expected_run_id = task.run_id
     # Persist terminal status before callback to avoid races with clients that
     # fetch /task/result immediately after receiving notify_url.
-    save_tasks()
+    if save_tasks() is False:
+        tasks[task.task_id] = previous_task
+        raise HTTPException(503, "Task completion could not be persisted; retry")
     await _handle_notify_callback(task, notification)
 
     if not _task_run_matches(get_task_from_state(task.task_id), expected_run_id):
         return {"status": "acknowledged"}
 
-    runner.availability = "available"
-    runners[runner.id] = runner
+    current_task = _get_task_or_404(task.task_id)
+    current_task.completion_processed_at = datetime.now().isoformat()
+    current_task.updated_at = current_task.completion_processed_at
 
     logger.info(f"Task {notification.task_id} updated with status: {task.status}")
 
@@ -1237,7 +1266,12 @@ async def task_completion(
     except Exception as e:
         logger.error(f"Failed to append task stats CSV for {notification.task_id}: {e}")
 
-    save_tasks()
+    if save_tasks() is False:
+        current_task.completion_processed_at = None
+        raise HTTPException(503, "Task completion could not be persisted; retry")
+
+    runner.availability = "available"
+    runners[runner.id] = runner
 
     return {"status": "acknowledged"}
 

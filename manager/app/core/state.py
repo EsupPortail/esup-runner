@@ -64,19 +64,21 @@ def _parse_updated_at(value: Optional[str]) -> datetime:
 
 def _pick_newest_task(local_task: Task, persisted_task: Task) -> Task:
     """
-    Keep the newest task update and any acknowledgment for the same execution.
+    Keep the newest update and retain acknowledgment/completion timestamps for the same run.
     """
     local_ts = _parse_updated_at(getattr(local_task, "updated_at", None))
     persisted_ts = _parse_updated_at(getattr(persisted_task, "updated_at", None))
     newest, other = (
         (local_task, persisted_task) if local_ts >= persisted_ts else (persisted_task, local_task)
     )
-    if (
-        newest.run_id == other.run_id
-        and newest.acknowledged_at is None
-        and other.acknowledged_at is not None
-    ):
-        return newest.model_copy(update={"acknowledged_at": other.acknowledged_at})
+    if newest.run_id == other.run_id:
+        retained = {
+            name: getattr(other, name)
+            for name in ("acknowledged_at", "completion_processed_at")
+            if getattr(newest, name) is None and getattr(other, name) is not None
+        }
+        if retained:
+            return newest.model_copy(update=retained)
     return newest
 
 

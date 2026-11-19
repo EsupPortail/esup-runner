@@ -37,11 +37,18 @@ By default, the script does not commit, push, create tags, or push tags.
 
 ## Publish A Release
 
-After reviewing the local changes, the complete release command is:
+After reviewing the prepared files and successful checks, publish the same
+version without repeating preparation:
 
 ```bash
-uv run scripts/release_stack.py prepare 1.1.1 --commit --push --create-tags --push-tags
+uv run scripts/release_stack.py prepare 1.1.1 \
+  --allow-dirty --skip-version --skip-lock --skip-sync --skip-ci --skip-changelog \
+  --commit --push --create-tags --push-tags
 ```
+
+Use the same `--components` selection as preparation. Allow a dirty tree only
+when it contains the reviewed release files; inspect the staging area too.
+If files changed after validation, rerun the affected checks before publishing.
 
 The generated tags follow the workflow naming convention:
 

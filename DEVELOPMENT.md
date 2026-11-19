@@ -210,8 +210,9 @@ are reloaded automatically. The host only needs Docker and this repository.
 
 This setup is intended for local API and integration development. Install the
 native environments described above when the IDE needs a Python interpreter or
-when running formatting, typing, and tests. The repository does not currently
-provide a Compose file, so the two containers are started explicitly.
+when running formatting, typing, and tests. The two development containers are
+started explicitly. A separate [Compose stack](manager/docs/LIVE_INSTALLATION.md#docker-compose-shortcut)
+is available for Live streaming.
 
 ### Create local container configuration
 
@@ -456,9 +457,9 @@ The common quality targets are identical in both projects:
 
 | Command | Purpose |
 | --- | --- |
-| `make fmt` | Format with Black and isort; modifies files |
-| `make fmt-check` | Check Black and isort without modifying files |
-| `make lint` | Run Flake8 and mypy on `app/` |
+| `make fmt` | Format component Python files and available root scripts with Black and isort |
+| `make fmt-check` | Check the same files without modifying them |
+| `make lint` | Run Flake8 on component files and root scripts, and mypy on `app/` |
 | `make test` | Run the complete component pytest suite |
 | `make coverage` | Run tests with terminal/HTML coverage and enforce 90% |
 | `make ci` | Run `fmt`, `lint`, `test`, and `coverage` in sequence |

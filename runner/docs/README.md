@@ -98,7 +98,7 @@ Run this convenience target locally before opening a PR:
 make ci
 ```
 
-`make ci` is local and runs `make fmt`, `make lint`, `make test`, and `make coverage` in order.
+`make ci` runs `make fmt`, `make lint`, and `make coverage` in order.
 
 ## What the runner is
 - A FastAPI service that receives tasks from the Manager, downloads required media, executes task entrypoints, and pushes results back.

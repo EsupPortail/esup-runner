@@ -69,12 +69,7 @@ jobs:
           cd "${RUNNER_TEMP}"
           "${WHEEL_VENV}/bin/python" -c "import app.main; print(app.main.app.title)"
 
-      - name: Test
-        working-directory: ${{ matrix.project }}
-        run: |
-          make test
-
-      - name: Coverage
+      - name: Tests with coverage
         working-directory: ${{ matrix.project }}
         run: |
           make coverage

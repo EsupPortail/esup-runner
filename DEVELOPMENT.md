@@ -461,15 +461,14 @@ The common quality targets are identical in both projects:
 | `make fmt-check` | Check the same files without modifying them |
 | `make lint` | Run Flake8 on component files and root scripts, and mypy on `app/` |
 | `make test` | Run the complete component pytest suite |
-| `make coverage` | Run tests with terminal/HTML coverage and enforce 90% |
-| `make ci` | Run `fmt`, `lint`, `test`, and `coverage` in sequence |
+| `make coverage` | Run the complete pytest suite, report coverage in the terminal and HTML, and enforce 90% |
+| `make ci` | Run `fmt`, `lint`, and `coverage` in sequence |
 
-`make ci` reformats files and runs the test suite once through `make test` and
-again through `make coverage`. Review its resulting diff before committing.
-The coverage floor is 90%; new or changed code should be covered completely
-whenever practical.
+`make ci` reformats files and runs the test suite once through `make coverage`.
+Review its resulting diff before committing. Aim for full coverage of new or
+changed code whenever practical.
 
-CI repeats formatting checks, linting, wheel installation, tests, and coverage
+CI runs formatting checks, linting, a wheel smoke test, and tests with coverage
 for both projects on Python 3.11, 3.12, and 3.13. If a shared file, packaging,
 or GitHub workflow affects both projects, validate both component directories.
 

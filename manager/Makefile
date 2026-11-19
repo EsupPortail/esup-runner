@@ -111,7 +111,7 @@ help:
 	@echo "  make coverage  -> run tests with coverage"
 	@echo "  make fmt  -> format code (black + isort)"
 	@echo "  make lint  -> lint (flake8 + mypy)"
-	@echo "  make ci  -> run local pre-PR checks (fmt + lint + test + coverage)"
+	@echo "  make ci  -> run local pre-PR checks (fmt + lint + coverage)"
 	@echo "  make docs  -> generate docs diagrams"
 	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...']  -> build manager Docker image"
 	@echo "  make release-dry-run TAG=manager-vX.Y.Z  -> run release.yml locally with act (no push)"
@@ -295,10 +295,9 @@ lint: check-lint-deps
 	$(UV) run mypy app
 
 ci:
-	@echo "==> local pre-PR checks (fmt + lint + test + coverage)"
+	@echo "==> local pre-PR checks (fmt + lint + coverage)"
 	@$(MAKE) fmt
 	@$(MAKE) lint
-	@$(MAKE) test
 	@$(MAKE) coverage
 
 docs:

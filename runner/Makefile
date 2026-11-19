@@ -105,7 +105,7 @@ help:
 	@echo "  make run  -> run the app launcher"
 	@echo "  make init  -> init directories from .env (sudo)"
 	@echo "  make create-service  -> install systemd user service (~/.config/systemd/user)"
-	@echo "  make ci  -> run local pre-PR checks (fmt + lint + test + coverage)"
+	@echo "  make ci  -> run local pre-PR checks (fmt + lint + coverage)"
 	@echo "  make docker-build [DOCKER_IMAGE=... DOCKER_TAG=... ESUP_RUNNER_UID=... ESUP_RUNNER_GID=... DOCKER_RUNNER_EXTRA=transcription-cpu|transcription-gpu DOCKER_BUILD_NETWORK=host DOCKER_BUILD_OPTS='...'] -> build runner Docker image"
 	@echo "  make release-dry-run TAG=runner-vX.Y.Z  -> run release.yml locally with act (no push)"
 	@echo "  make docker-fix-perms  -> fix Docker volume permissions for esup-runner"
@@ -298,10 +298,9 @@ lint: check-lint-deps
 	MYPY_CACHE_DIR=/tmp/mypy_cache_$(USER) $(UV) run mypy app
 
 ci:
-	@echo "==> local pre-PR checks (fmt + lint + test + coverage)"
+	@echo "==> local pre-PR checks (fmt + lint + coverage)"
 	@$(MAKE) fmt
 	@$(MAKE) lint
-	@$(MAKE) test
 	@$(MAKE) coverage
 
 release-dry-run:

@@ -35,6 +35,8 @@ ENV SERVICE_USER=${SERVICE_USER} \
     HOME=/home/${SERVICE_USER}
 
 # Runtime defaults (can be overridden via --env-file and/or -e flags).
+ENV CACHE_DIR=${HOME}/.cache/esup-runner
+
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -45,7 +47,6 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     MANAGER_PORT=8081 \
     LOG_DIR=/var/log/esup-runner \
     RUNNERS_STORAGE_DIR=/tmp/esup-runner \
-    CACHE_DIR=${HOME}/.cache/esup-runner \
     UV_CACHE_DIR=${CACHE_DIR}/uv
 
 # Create dedicated non-root user and writable runtime directories.

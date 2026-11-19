@@ -28,11 +28,12 @@ __all__ = ["clean_state", "client", "task_module"]
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("task_type", ["encoding", "transcription", "studio"])
+@pytest.mark.parametrize("restarting", [False, True])
 @pytest.mark.parametrize(
     "failure", [None, "timeout", "busy", "unregistered", "unsupported", "race"]
 )
 async def test_dispatch_prefers_idle_host_and_retains_fallbacks(
-    monkeypatch, task_module, clean_state, task_type, failure
+    monkeypatch, task_module, clean_state, task_type, failure, restarting
 ):
     """All file-based types share host ranking and retry unsuitable candidates."""
     fallback = _runner("fallback", url="http://a.example:8001")
@@ -87,6 +88,7 @@ async def test_dispatch_prefers_idle_host_and_retains_fallbacks(
             notify_url="",
         ),
         "client",
+        preferred_task_id="restarted-task" if restarting else None,
     )
     selected = fallback if failure else preferred
     assert tasks[result["task_id"]].runner_id == selected.id
@@ -95,6 +97,50 @@ async def test_dispatch_prefers_idle_host_and_retains_fallbacks(
     assert visited == ["http://b.example:8001/runner/ping"] + (
         ["http://a.example:8001/runner/ping"] if failure else []
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("restarting", [False, True])
+async def test_dispatch_requires_persistence(monkeypatch, task_module, clean_state, restarting):
+    """Do not schedule work or retain reservations after a failed save."""
+    runners["r1"] = _runner("r1")
+    previous = _task("original", "r1", status="failed")
+    if restarting:
+        tasks[previous.task_id] = previous
+    monkeypatch.setattr(task_module, "save_tasks", lambda: False)
+    monkeypatch.setattr(task_module, "get_tasks_snapshot", lambda: dict(tasks))
+    monkeypatch.setattr(task_module.config, "PRIORITIES_ENABLED", False)
+    http_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        task_module.httpx,
+        "AsyncClient",
+        lambda **kwargs: http_client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, json={"available": True, "registered": True, "task_types": ["encoding"]}
+                )
+            ),
+            **kwargs,
+        ),
+    )
+    scheduled = []
+    monkeypatch.setattr(task_module.asyncio, "create_task", lambda job: scheduled.append(job))
+    with pytest.raises(HTTPException) as error:
+        await task_module._queue_task_execution(
+            TaskRequest(
+                etab_name="UM",
+                app_name="pod",
+                task_type="encoding",
+                source_url="https://example.com/video",
+                notify_url="",
+            ),
+            "client",
+            preferred_task_id=previous.task_id if restarting else None,
+        )
+    assert error.value.status_code == 503
+    assert scheduled == []
+    assert runners["r1"].availability == "available"
+    assert tasks == ({previous.task_id: previous} if restarting else {})
 
 
 def test_view_tasks_filters_and_renders(client, clean_state):

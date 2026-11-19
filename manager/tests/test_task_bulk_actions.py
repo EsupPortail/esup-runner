@@ -119,6 +119,7 @@ def test_delete_selected_tasks_collects_unexpected_failures(
 def test_restart_selected_tasks_restarts_and_reports(monkeypatch, client, task_module, clean_state):
     """Validate Restart selected tasks restarts and reports."""
     runners["r1"] = _runner("r1", url="http://r1.example")
+    runners["r2"] = _runner("r2", url="http://r2.example")
     tasks["t-failed"] = _task("t-failed", "r1", status="failed")
     tasks["t-completed"] = _task("t-completed", "r1", status="completed")
     tasks["t-running"] = _task("t-running", "r1", status="running")

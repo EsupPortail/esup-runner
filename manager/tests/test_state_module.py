@@ -39,6 +39,24 @@ def test_save_tasks_branches(monkeypatch):
     assert state.save_tasks() is False
 
 
+@pytest.mark.parametrize("same_run", [True, False])
+def test_completion_marker_survives_stale_worker_save(tmp_path, same_run):
+    """Retain processed completion markers only for the matching execution."""
+    from app.core.persistence import DailyJSONPersistence
+
+    persisted = _task("completion", "2026-01-01T12:00:00")
+    persisted.run_id = "old-run"
+    persisted.completion_processed_at = "2026-01-01T12:00:00"
+    local = _task("completion", "2026-01-01T12:01:00")
+    local.run_id = "old-run" if same_run else "new-run"
+    expected = persisted.completion_processed_at if same_run else None
+    assert state._pick_newest_task(local, persisted).completion_processed_at == expected
+    backend = DailyJSONPersistence(str(tmp_path))
+    assert backend.upsert_tasks({persisted.task_id: persisted})
+    assert backend.upsert_tasks({local.task_id: local})
+    assert backend.load_task(local.task_id)["completion_processed_at"] == expected
+
+
 def test_force_save_tasks_calls_save(monkeypatch):
     """Validate Force save tasks calls save."""
     called = {"count": 0}

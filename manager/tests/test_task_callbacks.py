@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 from task_routes_helpers import (
     clean_state,
     client,
@@ -18,6 +20,7 @@ from task_routes_helpers import make_runner as _runner
 from task_routes_helpers import make_task as _task
 from task_routes_helpers import task_module
 
+from app.core import state
 from app.core.auth import verify_token
 from app.core.state import runners, tasks
 from app.main import app
@@ -25,6 +28,121 @@ from app.models.live import LiveInfo
 from app.models.models import Task, TaskCompletionNotification
 
 __all__ = ["clean_state", "client", "task_module"]
+
+
+@pytest.mark.asyncio
+async def test_completion_replay_after_reload_is_idempotent(monkeypatch, task_module, clean_state):
+    """Persist the completion marker so replay does not repeat callbacks or statistics."""
+    runners["r1"] = _runner("r1", token="runner-token")
+    tasks["t1"] = _task("t1", "r1", status="completed")
+    tasks["t1"].run_id = "attempt"
+    callback = AsyncMock()
+    rows = []
+    monkeypatch.setattr(task_module, "_handle_notify_callback", callback)
+    monkeypatch.setattr(
+        task_module, "_append_task_stats_csv", lambda task: rows.append(task.task_id)
+    )
+    notification = TaskCompletionNotification(task_id="t1", run_id="attempt", status="completed")
+    await task_module.task_completion(notification, "runner-token")
+    tasks["t1"] = Task.model_validate(state.persistence.load_task("t1"))
+    await task_module.task_completion(notification, "runner-token")
+    callback.assert_awaited_once()
+    assert rows == ["t1"]
+    assert tasks["t1"].completion_processed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_completion_is_retried(monkeypatch, task_module, clean_state):
+    """Serialize one Runner's completions while another Runner can complete."""
+    runners["r1"] = _runner("r1", token="runner-token")
+    runners["r2"] = _runner("r2", token="runner-token")
+    tasks["t1"] = _task("t1", "r1", status="running")
+    tasks["t2"] = _task("t2", "r2", status="running")
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def callback(task, _notification):
+        if task.task_id == "t1":
+            entered.set()
+            await release.wait()
+
+    monkeypatch.setattr(task_module, "_handle_notify_callback", callback)
+    notification = TaskCompletionNotification(task_id="t1", status="completed")
+    first = asyncio.create_task(task_module.task_completion(notification, "runner-token"))
+    await entered.wait()
+    try:
+        with pytest.raises(HTTPException) as error:
+            await task_module.task_completion(notification, "runner-token")
+        assert error.value.status_code == 503
+        assert await task_module.task_completion(
+            TaskCompletionNotification(task_id="t2", status="completed"), "runner-token"
+        ) == {"status": "acknowledged"}
+    finally:
+        release.set()
+        await first
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed_save", [1, 2])
+async def test_completion_save_failure_is_not_acknowledged(
+    monkeypatch, task_module, clean_state, failed_save
+):
+    """Keep failed saves retryable and never notify before terminal state is saved."""
+    runner = _runner("r1", token="runner-token")
+    runner.availability = "busy"
+    runners["r1"] = runner
+    tasks["t1"] = _task("t1", "r1", status="running")
+    saves = iter([index != failed_save for index in (1, 2)])
+    monkeypatch.setattr(task_module, "save_tasks", lambda: next(saves))
+    callback = AsyncMock()
+    monkeypatch.setattr(task_module, "_handle_notify_callback", callback)
+    with pytest.raises(HTTPException) as error:
+        await task_module.task_completion(
+            TaskCompletionNotification(task_id="t1", status="completed"), "runner-token"
+        )
+    assert error.value.status_code == 503
+    assert callback.await_count == failed_save - 1
+    assert tasks["t1"].completion_processed_at is None
+    assert tasks["t1"].status == ("running" if failed_save == 1 else "completed")
+    assert runners["r1"].availability == "busy"
+
+
+@pytest.mark.asyncio
+async def test_completion_lock_storage_error_is_retryable(monkeypatch, task_module, clean_state):
+    """Report lock storage failures without exposing filesystem diagnostics."""
+    runners["r1"] = _runner("r1", token="runner-token")
+    tasks["t1"] = _task("t1", "r1", status="running")
+
+    def fail_lock(*args, **kwargs):
+        raise OSError("private filesystem details")
+
+    monkeypatch.setattr(task_module, "FileLock", fail_lock)
+    with pytest.raises(HTTPException) as error:
+        await task_module.task_completion(
+            TaskCompletionNotification(task_id="t1", status="completed"), "runner-token"
+        )
+    assert error.value.status_code == 503
+    assert "private filesystem" not in error.value.detail
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_exists", [False, True])
+async def test_completion_checks_ownership_before_locking(
+    monkeypatch, task_module, clean_state, task_exists
+):
+    """Unknown tasks and another Runner's token must not create lock files."""
+    runners["r1"] = _runner("r1", token="runner-token")
+    if task_exists:
+        tasks["t1"] = _task("t1", "r1", status="running")
+
+    def unexpected_lock(*args, **kwargs):
+        raise AssertionError("Unauthorized completion attempted to create a lock")
+
+    monkeypatch.setattr(task_module, "FileLock", unexpected_lock)
+    with pytest.raises(HTTPException) as error:
+        await task_module.task_completion(
+            TaskCompletionNotification(task_id="t1", status="completed"), "other-token"
+        )
+    assert error.value.status_code == (403 if task_exists else 404)
 
 
 @pytest.mark.asyncio
@@ -82,6 +200,7 @@ def test_append_task_stats_csv_handles_invalid_date(task_module, tmp_path, monke
     """Validate Append task stats csv handles invalid date."""
     monkeypatch.setattr(task_module, "_is_pytest_run", lambda: False)
     monkeypatch.setattr(task_module, "PathlibPath", lambda path="": tmp_path / path)
+    monkeypatch.setattr(task_module.config, "MANAGER_DATA_DIR", str(tmp_path / "data"))
 
     task = Task(
         task_id="t-invalid",

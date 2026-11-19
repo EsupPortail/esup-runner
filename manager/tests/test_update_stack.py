@@ -269,6 +269,64 @@ def _email_content(message, subtype):
     return body.get_content()
 
 
+@pytest.mark.parametrize(
+    "task_types,encoding_type,installed_cuda12,mode,profile,target",
+    [
+        ("encoding", "CPU", False, "auto", "none", "make sync"),
+        ("transcription", "CPU", False, "transcription-cpu", "none", "make sync-transcription-cpu"),
+        ("transcription", "GPU", False, "auto", "none", "make sync-transcription-gpu"),
+        ("transcription", "CPU", True, "auto", "none", "make sync-transcription-gpu-cuda12"),
+        (
+            "transcription",
+            "GPU",
+            False,
+            "transcription-gpu-cuda12",
+            "none",
+            "make sync-transcription-gpu-cuda12",
+        ),
+        ("transcription", "GPU", True, "auto", "latest", "make sync-transcription-gpu"),
+        ("transcription", "GPU", True, "transcription-cpu", "none", "make sync-transcription-cpu"),
+    ],
+)
+def test_update_selects_dependency_profile_without_environment_override(
+    tmp_path,
+    configuration_repository,
+    task_types,
+    encoding_type,
+    installed_cuda12,
+    mode,
+    profile,
+    target,
+):
+    """Select profiles automatically, preserving CUDA 12 and explicit CLI overrides."""
+    checkout, environment, _ = _prepare_update(tmp_path, configuration_repository)
+    with (checkout / "runner/.env").open("a") as stream:
+        stream.write(
+            f"RUNNER_TASK_TYPES={task_types}\nENCODING_TYPE={encoding_type}\n"
+            "RUNNER_SYNC_MODE=base\n"  # An obsolete dotenv entry must not override detection.
+        )
+    if installed_cuda12:
+        (checkout / "runner/.venv/lib/python3.12/site-packages/torch-2.13.0+cu126.dist-info").mkdir(
+            parents=True
+        )
+    result = _run_update(
+        checkout,
+        environment,
+        "--runner-only",
+        "--skip-git-update",
+        "--skip-email",
+        "--runner-sync-mode",
+        mode,
+        "--gpu-lock-profile",
+        profile,
+        "--dry-run",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert target in result.stdout
+    if target == "make sync-transcription-gpu":
+        assert "make sync-transcription-gpu-cuda12" not in result.stdout
+
+
 @pytest.fixture
 def smoke_update(tmp_path, configuration_repository):
     """Enable the smoke test with mocked task execution, delay, and SMTP."""

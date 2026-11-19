@@ -2,7 +2,8 @@
 """Install or reuse MediaMTX >= 1.21.1 and prepare this Runner Live instance.
 
 Run from runner/ as the service account, without sudo; defaults use its home directory.
-Uses only the Python standard library. Run with --help for installation,
+Installation uses only the Python standard library; optional email reports also
+use python-dotenv from the application environment. Run with --help for installation,
 configuration-only (including Docker), combined setup, service startup and explicit updates.
 Only update replaces an existing executable; configurations and units are preserved.
 """
@@ -33,6 +34,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.core._check_output import Severity, format_status
+from app.services.mediamtx_install_email import send_install_report
 
 VERSION = "1.21.1"  # Minimum supported release.
 MAX_ARCHIVE_SIZE = 256 * 1024 * 1024
@@ -63,6 +65,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "--dry-run", action="store_true", help="Preview without release downloads or writes"
         )
         if command != "configure":
+            child.add_argument(
+                "--skip-email", action="store_true", help="Disable the result email notification"
+            )
             child.add_argument(
                 "--version",
                 default="latest",
@@ -111,6 +116,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     update.add_argument(
         "--dry-run", action="store_true", help="Preview without release downloads or writes"
+    )
+    start.add_argument(
+        "--skip-email", action="store_true", help="Disable the result email notification"
+    )
+    update.add_argument(
+        "--skip-email", action="store_true", help="Disable the result email notification"
     )
     args = parser.parse_args(argv)
     if (
@@ -366,7 +377,10 @@ def resolve_version(version: str) -> str:
 
 
 def install_binary(args: argparse.Namespace) -> Path:
-    """Reuse or install a verified binary, linking PATH installs for the default user unit."""
+    """Reuse or install a verified binary, linking PATH installs for the default user unit.
+
+    Record the installed version and any executable change on args for the final report.
+    """
     target = binary_path(args)
     if target.exists() or target.is_symlink():
         installed = read_version(target)
@@ -376,6 +390,8 @@ def install_binary(args: argparse.Namespace) -> Path:
                 "It has been left unchanged; upgrade it manually or select another --binary path."
             )
         print_status(f"Reusing MediaMTX {installed}: {target}")
+        args.previous_version = installed
+        args.installed_version = installed
         local = Path.home() / ".local/bin/mediamtx"
         if args.binary is None and target != local:
             reject_symlinks(local.parent)
@@ -414,6 +430,8 @@ def install_binary(args: argparse.Namespace) -> Path:
             staged.chmod(0o755)
             os.link(staged, target)
     print_status(f"Installed MediaMTX {version}: {target}")
+    args.installed_version = version
+    args.binary_changed = True
     return target
 
 
@@ -848,8 +866,10 @@ def print_update_plan(
 
 
 def update_locked(args: argparse.Namespace, binary: Path) -> None:
-    """Prepare and validate the requested release before stopping any existing service."""
+    """Validate the release before stopping services and record the committed outcome."""
     installed = read_version(binary)
+    args.previous_version = installed
+    args.installed_version = installed
     args.version = resolve_version(args.version)
     if installed == args.version:
         print("\nConclusion:")
@@ -883,6 +903,8 @@ def update_locked(args: argparse.Namespace, binary: Path) -> None:
         backup = update_backup(binary, services)
         update_replace(binary, candidate, backup, services)
     print("\nConclusion:")
+    args.installed_version = args.version
+    args.binary_changed = True
     print_status(f"MediaMTX updated to {args.version}.")
     print_status("Verify a test broadcast and its current HLS URL.")
 
@@ -911,6 +933,28 @@ def update_binary(args: argparse.Namespace) -> None:
         os.close(lock)
 
 
+def notify_result(args: argparse.Namespace, *, failed: bool = False) -> None:
+    """Report a completed CLI operation unless email is disabled or previewed."""
+    if args.command == "configure" or args.dry_run or args.skip_email:
+        return
+    if args.command == "start" and getattr(args, "service_mode", "user") == "system":
+        return
+    status = send_install_report(
+        root=ROOT,
+        command=args.command,
+        previous_version=getattr(args, "previous_version", None),
+        installed_version=getattr(args, "installed_version", None),
+        changed=getattr(args, "binary_changed", False),
+        failed=failed,
+    )
+    message = f"Email notification: {status}."
+    if status == "failed":
+        message += " Check SMTP settings and connectivity; installation results are unchanged."
+    elif status == "skipped":
+        message += " SMTP_SERVER or MANAGER_EMAIL is not configured."
+    print_status(message, level="warning" if status == "failed" else "info")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Execute the CLI action, returning a concise error instead of a traceback on failure."""
     args = parse_args(argv)
@@ -920,9 +964,11 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("This installer supports Linux only")
         if args.command == "start":
             start_service(args)
+            notify_result(args)
             return 0
         if args.command == "update":
             update_binary(args)
+            notify_result(args)
             return 0
         if args.command != "install":
             configuration_plan(args)
@@ -934,12 +980,14 @@ def main(argv: list[str] | None = None) -> int:
         print_status(
             "No service was started or restarted. Follow MEDIAMTX_SETUP.md for service management."
         )
+        notify_result(args)
         return 0
     except (OSError, ValueError, tarfile.TarError, subprocess.SubprocessError) as exc:
         message = str(exc)
         if isinstance(exc, subprocess.CalledProcessError):
             message = f"Command failed (exit code {exc.returncode}): {shlex.join(exc.cmd)}"
         print_status(message, level="error")
+        notify_result(args, failed=True)
         return 1
 
 

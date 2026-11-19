@@ -25,6 +25,47 @@ ROLE = SCRIPT.parents[1].name
 OPTIONS = ["update", "--version", "1.21.3"]
 
 
+@pytest.fixture(autouse=True)
+def email_reports(monkeypatch):
+    """Capture notification requests without reading real SMTP configuration."""
+    reports = []
+    monkeypatch.setattr(
+        installer, "send_install_report", lambda **report: reports.append(report) or "sent"
+    )
+    return reports
+
+
+def test_update_email_reports_changes_and_repeated_noop(installation, email_reports):
+    assert installer.main(OPTIONS) == 0
+    assert len(email_reports) == 1
+    assert email_reports[0]["changed"] is True
+    assert email_reports[0]["previous_version"] == "1.21.1"
+    assert email_reports[0]["installed_version"] == "1.21.3"
+    assert email_reports[0]["failed"] is False
+
+    assert installer.main(OPTIONS) == 0
+    assert len(email_reports) == 2
+    assert email_reports[1]["changed"] is False
+    assert email_reports[1]["previous_version"] == "1.21.3"
+    assert email_reports[1]["installed_version"] == "1.21.3"
+
+
+@pytest.mark.parametrize("option", ["--dry-run", "--skip-email"])
+def test_update_email_can_be_disabled(installation, email_reports, option):
+    assert installer.main([*OPTIONS, option]) == 0
+    assert not email_reports
+
+
+def test_failed_update_sends_failure_report(installation, email_reports, monkeypatch):
+    def fail(*_):
+        raise OSError("private-download-diagnostic")
+
+    monkeypatch.setattr(installer, "download", fail)
+    assert installer.main(OPTIONS) == 1
+    assert len(email_reports) == 1
+    assert email_reports[0]["failed"] is True
+
+
 def release_archive(version):
     """Build one valid archive for the requested fake executable version."""
     content = f"#!/bin/sh\necho v{version}\n".encode()

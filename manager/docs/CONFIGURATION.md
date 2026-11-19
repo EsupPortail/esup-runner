@@ -303,6 +303,11 @@ COMPLETION_NOTIFY_BACKOFF_FACTOR=1.5
 
 These values control retries for outbound completion callbacks to task `notify_url`.
 
+Processed Runner completion notifications are deduplicated per execution, including
+after a Manager restart. Storage failures return HTTP 503 so the Runner can retry.
+Client callbacks should remain idempotent: a Manager crash during delivery can
+leave its outcome unknown.
+
 ## Optional SMTP notifications
 
 ```properties

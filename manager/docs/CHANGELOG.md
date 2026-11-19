@@ -48,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Require persisted VOD tasks before dispatch, reserve Runner capacity during
+  restarts, and deduplicate processed completion callbacks across workers and restarts.
+- Correct the Docker uv cache path and clarify service restart and release procedures.
 - Ignore stale Runner heartbeats when allocating Live sessions, including before
   the first activity scan after a Manager restart.
 - Keep Live establishment and equipment metadata when encoders such as the SMP

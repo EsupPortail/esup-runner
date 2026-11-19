@@ -205,6 +205,13 @@ Run this as the service user (without `sudo`) so the unit is installed under `~/
 
 This performs: service copy → `systemctl --user daemon-reload` → `systemctl --user enable --now`.
 
+Restart the service to load the updated code, dependencies and configuration,
+including when the unit file did not change:
+
+```bash
+systemctl --user restart esup-runner-manager
+```
+
 ---
 
 ## 8) Post-upgrade validation

@@ -135,7 +135,8 @@ The Manager has three distinct network views:
   advertised `MANAGER_HOST`.
 - The browser-facing administration address is `MANAGER_PUBLIC_URL`. It can use
   a different host, HTTPS, port `443` or a path prefix supplied by a reverse
-  proxy, and is never used for Runner communication.
+  proxy. Runners may also use it if the proxy exposes the authenticated API;
+  prefer the private API for Runner communication.
 
 For example, with remote Runners on a private network and an administration UI
 published through an HTTPS reverse proxy:

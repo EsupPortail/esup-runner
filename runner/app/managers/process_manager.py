@@ -9,8 +9,9 @@ import signal
 import socket
 import sys
 import time
+from contextlib import contextmanager
 from multiprocessing import Process
-from typing import Dict, List
+from typing import Dict, Iterator, List
 
 from app.core.config import config, reload_config_from_env
 from app.core.setup_logging import setup_default_logging
@@ -295,7 +296,7 @@ class UvicornProcessManager:
         """
         logger.info(f"Starting instance monitoring (check interval: {check_interval}s)")
 
-        try:
+        with self._shutdown_on_signal():
             while True:
                 time.sleep(check_interval)
 
@@ -304,13 +305,17 @@ class UvicornProcessManager:
                         logger.warning(f"Instance {i} on port {self.ports[i]} died, restarting…")
                         self.restart_instance(i)
 
-        except KeyboardInterrupt:
-            logger.info("Instance monitoring stopped")
-
     def wait_for_termination(self) -> None:
-        """Wait for workers, unwinding signal handlers before logging or cleanup.
+        """Wait for workers and stop them gracefully on interruption."""
+        with self._shutdown_on_signal():
+            for process in self.processes:
+                process.join()
 
-        The first termination signal interrupts the wait; subsequent signals are
+    @contextmanager
+    def _shutdown_on_signal(self) -> Iterator[None]:
+        """Defer signal cleanup until the interrupted operation has unwound.
+
+        The first termination signal interrupts the operation; subsequent signals are
         ignored while cleanup runs to prevent recursive shutdown and log writes.
         """
         received_signal = None
@@ -326,9 +331,7 @@ class UvicornProcessManager:
             signal.signal(signal.SIGINT, signal_handler)
             signal.signal(signal.SIGTERM, signal_handler)
 
-            # Wait for all processes
-            for process in self.processes:
-                process.join()
+            yield
 
         except KeyboardInterrupt:
             if received_signal is None:

@@ -14,7 +14,13 @@ from app.core.config import config
 from app.models.live import LiveStartRequest
 from app.models.models import Task
 from app.services import live_service as live
-from app.services.live_sources import known_sources, register_paths, valid_path
+from app.services.live_sources import (
+    generated_id,
+    known_sources,
+    rebind_path,
+    register_paths,
+    valid_path,
+)
 from app.services.mediamtx import MediaMTXClient, MediaMTXError
 
 _EQUIPMENT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}")
@@ -241,14 +247,70 @@ async def reconcile_source(source_id: str, client: MediaMTXClient) -> None:
         await live.synchronize(task.task_id)
 
 
+async def register_publications(name: str, paths: set[str], client: MediaMTXClient) -> bool:
+    """Register one broadcaster, rebinding only an inactive, unconfigured source.
+
+    Keep an existing binding when several paths publish the same name. Serialize
+    rebinding with automatic reconciliation and API allocation, and require fresh
+    MediaMTX observations before changing the private registry.
+    """
+    async with live.live_lock(f"publication-{name}"):
+        previous = known_sources().get(name)
+        if len(paths) > 1:
+            live.logger.warning(
+                "[LIVE] [SOURCE_NAME_CONFLICT] source_id=%s; multiple RTMP paths use this broadcaster name; stop duplicate publishers or use distinct names",
+                name,
+            )
+            if previous is None or previous not in paths:
+                return False
+            await register_paths([previous])
+            return True
+        (path,) = paths
+        if previous is None or previous == path:
+            await register_paths([path])
+            return True
+        if name in config.LIVE.sources:
+            live.logger.warning(
+                "[LIVE] [SOURCE_NAME_CONFLICT] source_id=%s; RTMP path differs from LIVE_SOURCES; use the declared path or a distinct broadcaster name",
+                name,
+            )
+            return False
+        async with live.live_lock("allocation"):
+            old = await client.get_path(previous)
+            if old is not None and old.get("available") is not False:
+                live.logger.warning(
+                    "[LIVE] [SOURCE_NAME_CONFLICT] source_id=%s; the previous RTMP path is still published or its state is unconfirmed; stop it or use a distinct broadcaster name",
+                    name,
+                )
+                return False
+            if any(
+                task.live and task.live.source_id == name and task.live.state not in live.TERMINAL
+                for task in live.sessions()
+            ):
+                live.logger.info(
+                    "[LIVE] [SOURCE_REBIND_PENDING] source_id=%s; waiting for the previous Live session to finish cleanup",
+                    name,
+                )
+                return False
+            if publication_event(name, await client.get_path(path)) is None:
+                return False
+            if not await rebind_path(path, previous):
+                return False
+            live.logger.info(
+                "[LIVE] [SOURCE_REBOUND] source_id=%s; inactive broadcaster associated with its new RTMP path",
+                name,
+            )
+            return True
+
+
 async def discover_sources(client: MediaMTXClient) -> set[str]:
     """Register safe active RTMP publications and return their stable identifiers.
 
-    Ignore non-RTMP inputs and isolate malformed observations. Re-read individual
-    paths during reconciliation so a changing paginated snapshot cannot stop a
-    valid session or allocate a disconnected publication.
+    Ignore non-RTMP inputs and isolate malformed observations and name conflicts.
+    Re-read paths before rebinding and during reconciliation so an incomplete
+    paginated snapshot cannot redirect or stop an active session.
     """
-    paths = []
+    publications: dict[str, set[str]] = {}
     for item in await client.list_paths():
         try:
             event = publication_event("discovery", item)
@@ -265,10 +327,19 @@ async def discover_sources(client: MediaMTXClient) -> set[str]:
                 "[LIVE] [SOURCE_PATH_REJECTED] A published RTMP path is incompatible with the Runner path format"
             )
             continue
-        paths.append(path)
-    await register_paths(paths)
-    selected = set(paths)
-    return {name for name, path in known_sources().items() if path in selected}
+        publications.setdefault(generated_id(path), set()).add(path)
+    known_sources()  # Fail closed on an unreadable or invalid persistent registry.
+    discovered = set()
+    for name, candidates in publications.items():
+        try:
+            if await register_publications(name, candidates, client):
+                discovered.add(name)
+        except MediaMTXError:
+            live.logger.warning(
+                "[LIVE] [SOURCE_OBSERVATION_FAILED] source_id=%s; check MediaMTX API access while verifying the previous and replacement paths",
+                name,
+            )
+    return discovered
 
 
 async def reconcile_sources() -> None:

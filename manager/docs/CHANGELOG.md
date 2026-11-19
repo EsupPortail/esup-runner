@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reuse inactive Live broadcaster names on new RTMP paths after session cleanup,
+  and report name conflicts without blocking discovery of other broadcasters.
 - Explicitly report unchanged Git sources in `update-stack.sh` emails instead
   of marking checked components as updated.
 - Require persisted VOD tasks before dispatch, reserve Runner capacity during

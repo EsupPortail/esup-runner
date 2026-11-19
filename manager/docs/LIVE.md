@@ -180,7 +180,13 @@ LIVE_SOURCES={"amphi-a":"live/amphi-a","amphi-b":"live/amphi-b"}
 
 Each declaration key must match the broadcaster name at the end of its path.
 Once discovered, the binding persists even if this setting is removed.
-Assigning its broadcaster identifier to another full path is rejected.
+An automatically discovered broadcaster can move to another full path after
+the previous path stops publishing and its Live session finishes cleanup.
+The Manager verifies both paths through MediaMTX before updating the binding.
+Declarations in `LIVE_SOURCES` keep their fixed paths. If several active paths
+share a broadcaster name, the Manager keeps the existing binding, reports
+`SOURCE_NAME_CONFLICT` and continues discovering other broadcasters. Without
+an existing binding, it waits until only one path publishes that name.
 The registry is atomically written with owner-only permissions and is shared by
 Manager workers. Back it up with publication checkpoints; do not delete it to
 rename a running source. It contains private RTMP paths.
@@ -628,6 +634,8 @@ usernames and passwords are excluded from the administration projection:
 | `MEDIA_AUTH_FAILED` | Authentication refused on another media control/protocol endpoint. |
 | `SOURCE_PATH_REJECTED` | A published RTMP path is incompatible with the Runner path format. |
 | `SOURCE_PUBLISHED` | Publication received for a known source identifier. |
+| `SOURCE_NAME_CONFLICT` | Multiple paths use one broadcaster name, or a publication differs from its `LIVE_SOURCES` declaration. Stop duplicate publications, use distinct broadcaster names or publish to the declared path. |
+| `SOURCE_REBIND_PENDING` / `SOURCE_REBOUND` | A broadcaster changed its full path; waiting for the previous session's cleanup, or the inactive binding has been updated. |
 | `SOURCE_DISCOVERY_FAILED` / `SOURCE_REGISTRY_UNAVAILABLE` | MediaMTX discovery or private source persistence is unavailable; check API access and storage. |
 | `RTMP_CONNECTION_FAILED` | Connection/protocol failure, with a safe explanation of recognized causes such as timeout, TCP reset, missing path/publisher or incompatible codec. Unknown causes point to the original MediaMTX log at the same timestamp. |
 | `PUBLISHER_CONFLICT` | Another encoder is already publishing to this path. |

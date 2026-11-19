@@ -230,6 +230,27 @@ that at least one registered Runner advertises `live` and is not busy with
 another task. If the source was stopped or failed earlier, disconnect and
 republish after correcting the cause.
 
+### The Manager reports `SOURCE_NAME_CONFLICT`
+
+The broadcaster name is the last component of the RTMP path. For example,
+`live/amphi-a` and `live/test/amphi-a` both identify the broadcaster `amphi-a`.
+Publishing again to exactly the same full path is allowed.
+
+This warning can mean:
+
+- **Several paths publish the same broadcaster name.** Stop the unwanted
+  publisher or give it a different final name, such as `amphi-b`. The Manager
+  keeps the existing path; if none is registered, it waits until only one remains.
+- **`LIVE_SOURCES` fixes the broadcaster's path.** For example,
+  `LIVE_SOURCES={"amphi-a":"live/amphi-a"}` binds `amphi-a` to `live/amphi-a`.
+  Publish to that exact path or choose another broadcaster name.
+
+Without a fixed `LIVE_SOURCES` declaration, the Manager automatically adopts a
+new path after confirming that the old path has stopped publishing and its
+previous Live session has finished cleanup. If you started that session through
+the API, stop it explicitly first. Other broadcasters continue to be discovered
+during the conflict.
+
 ### The session is `waiting_source`
 
 The Runner has a relay but cannot see a ready compatible source. Verify that

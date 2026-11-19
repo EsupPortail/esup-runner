@@ -102,14 +102,41 @@ async def register_paths(paths: list[str]) -> None:
             sources[name] = path
         if updated == saved:
             return
-        target = registry_path()
-        descriptor, filename = tempfile.mkstemp(prefix=".live-sources-", dir=target.parent)
-        temporary = Path(filename)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump(updated, stream)
-                stream.flush()
-                os.fsync(stream.fileno())
-            temporary.replace(target)
-        finally:
-            temporary.unlink(missing_ok=True)
+        _write_sources(updated)
+
+
+async def rebind_path(path: str, previous: str) -> bool:
+    """Replace a discovered binding only if it still matches the expected old path.
+
+    The caller must hold the broadcaster's publication and allocation locks,
+    verify that the old path is no longer published, and wait for session cleanup.
+    Explicit LIVE_SOURCES declarations cannot be rebound. Return False if a
+    concurrent update changed the binding; failed writes leave the registry intact.
+    """
+    from app.services.live_service import live_lock
+
+    name = generated_id(path)
+    if generated_id(previous) != name:
+        raise ValueError("Live source rebinding requires the same broadcaster name")
+    async with live_lock("source-registry"):
+        if name in config.LIVE.sources or known_sources().get(name) != previous:
+            return False
+        updated = saved_sources()
+        updated[name] = path
+        _write_sources(updated)
+        return True
+
+
+def _write_sources(sources: dict[str, str]) -> None:
+    """Atomically write private bindings while the caller holds the registry lock."""
+    target = registry_path()
+    descriptor, filename = tempfile.mkstemp(prefix=".live-sources-", dir=target.parent)
+    temporary = Path(filename)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(sources, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)

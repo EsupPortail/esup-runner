@@ -68,6 +68,7 @@ SYSTEMD_USER_UNIT ?= $(SYSTEMD_USER_DIR)/esup-runner-manager.service
 export UV_CACHE_DIR
 
 EXTRAS  ?=
+SHARED_SCRIPTS := $(wildcard ../scripts/*.py)
 
 # ---------------------------------------------------------------------------
 # Readability helpers
@@ -280,17 +281,17 @@ coverage: check-coverage-deps
 
 fmt: check-fmt-deps
 	@echo "==> format (black + isort)"
-	$(UV) run black .
-	$(UV) run isort .
+	$(UV) run black --config pyproject.toml . $(SHARED_SCRIPTS)
+	$(UV) run isort --settings-path pyproject.toml . $(SHARED_SCRIPTS)
 
 fmt-check: check-fmt-deps
 	@echo "==> check format (black + isort)"
-	$(UV) run black --check .
-	$(UV) run isort --check-only .
+	$(UV) run black --config pyproject.toml --check . $(SHARED_SCRIPTS)
+	$(UV) run isort --settings-path pyproject.toml --check-only . $(SHARED_SCRIPTS)
 
 lint: check-lint-deps
 	@echo "==> lint (flake8 + mypy)"
-	$(UV) run flake8 .
+	$(UV) run flake8 --config .flake8 . $(SHARED_SCRIPTS)
 	$(UV) run mypy app
 
 ci:

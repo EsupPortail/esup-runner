@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Send branded MediaMTX installer email reports, including unchanged versions
+  and failures, using existing SMTP settings; support `--skip-email`.
 - Add a [guided stack installer](../../INSTALLATION.md) for Manager, Runner, or
   both, with generated credentials and systemd startup on Debian/Ubuntu.
 - Preserve incomplete-encoding `warnings` in task history and client callbacks,
@@ -53,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Explicitly report unchanged Git sources in `update-stack.sh` emails instead
+  of marking checked components as updated.
 - Require persisted VOD tasks before dispatch, reserve Runner capacity during
   restarts, and deduplicate processed completion callbacks across workers and restarts.
 - Correct the Docker uv cache path and clarify service restart and release procedures.

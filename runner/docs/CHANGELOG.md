@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Send branded MediaMTX installer email reports, including unchanged versions
+  and failures, using existing SMTP settings; support `--skip-email`.
 - Add a [guided stack installer](../../INSTALLATION.md) for Runner, Manager, or
   both, with optional CPU transcription and Live setup.
 - Add an explicit MediaMTX `update --version` command with existing configuration,
@@ -38,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Explicitly report unchanged Git sources in `update-stack.sh` emails instead
+  of marking checked components as updated.
 - Stop monitored Runner instances gracefully on termination signals.
 - Preserve CUDA 12 transcription profiles during stack updates and document
   dependency profiles for rollback and service restarts.

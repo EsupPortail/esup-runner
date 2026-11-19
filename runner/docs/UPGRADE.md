@@ -230,6 +230,13 @@ Run this as the service user (without `sudo`) so the unit is installed under `~/
 
 This performs: service copy → `systemctl --user daemon-reload` → `systemctl --user enable --now`.
 
+Restart the service to load the updated code, dependencies and configuration,
+including when the unit file did not change:
+
+```bash
+systemctl --user restart esup-runner-runner
+```
+
 ---
 
 ## 9) Post-upgrade validation
@@ -270,11 +277,15 @@ git fetch --tags
 git checkout runner-vX.Y.Z
 ```
 
-3) Resync dependencies and restart:
+3) Resync dependencies with the same profile used before the rollback, then restart:
 
 ```bash
 cd /opt/esup-runner/runner
 make sync
+# For transcription, replace make sync with the matching profile:
+# make sync-transcription-cpu
+# make sync-transcription-gpu
+# make sync-transcription-gpu-cuda12
 systemctl --user start esup-runner-runner
 ```
 
@@ -322,6 +333,9 @@ cd /opt/esup-runner
 # Force GPU transcription dependencies
 ./update-stack.sh --runner-only --runner-sync-mode transcription-gpu
 
+# Keep the CUDA 12 profile without refreshing the lockfile
+./update-stack.sh --runner-only --runner-sync-mode transcription-gpu-cuda12
+
 # GPU update with lock refresh for CUDA 12 hosts
 ./update-stack.sh --runner-only --runner-sync-mode transcription-gpu --gpu-lock-profile cuda12
 
@@ -368,8 +382,12 @@ separately.
 Notes:
 - `--runner-sync-mode auto` (default) uses this heuristic:
   - if `RUNNER_TASK_TYPES` does not contain `transcription`: `make sync`
+  - if CUDA 12 Torch (`+cu126`) is installed: `make sync-transcription-gpu-cuda12`
   - if transcription is enabled and GPU is detected/configured: `make sync-transcription-gpu`
   - otherwise: `make sync-transcription-cpu`
+- Dependency profiles are selected by the update script, outside Runner configuration.
+  Use `--runner-sync-mode` only for a one-time override. `--gpu-lock-profile latest`
+  explicitly switches GPU transcription to the default GPU profile.
 - By default, `make init` is skipped. Use `--with-init` only when directories/permissions changed.
 - By default, restart policy is `if-changed` (restart only when `runner/` changed after git update, or after a local GPU lock regeneration). You can force a restart with `--always-restart`, or disable it with `--no-restart`.
 - If `make init` needs elevated privileges (for example when `.env` paths are under `/var`), run the script as `esup-runner` and configure restricted passwordless `sudo` for `make init`.

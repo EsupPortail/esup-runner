@@ -40,6 +40,11 @@ Implementation:
   - `transcription-gpu`: supported on Linux x86_64 GPU/CUDA hosts.
   - macOS Intel (`x86_64`) is not supported for transcription with the current `torch` stack because upstream wheels are no longer published for that platform.
 
+Recommended `WHISPER_MODEL` in `runner/.env`:
+
+- CPU test server: `WHISPER_MODEL=small`.
+- Production server (CPU or GPU): `WHISPER_MODEL=turbo`.
+
 Outputs typically include:
 - `<stem>.vtt` (WebVTT)
 - logs and task metadata in the task output directory

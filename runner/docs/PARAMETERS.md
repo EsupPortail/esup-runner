@@ -90,7 +90,8 @@ The check does not diagnose stalled Python workers or surviving processes.
 - `STUDIO_DEFAULT_AUDIO_BITRATE` (default `128k`): Audio bitrate for studio outputs.
 
 ## Transcription / Whisper
-- `WHISPER_MODEL` (default `small`): Logical whisper model (`small|medium|large|turbo`). Turbo recommended.
+- `WHISPER_MODEL` (default `small`): Logical whisper model (`small|medium|large|turbo`).
+  Use `small` for CPU test servers and `turbo` for production servers on CPU or GPU.
 - `CACHE_DIR` (default `/home/{SERVICE_USER}/.cache/esup-runner`): Shared cache root.
 - `WHISPER_MODELS_DIR` (default `CACHE_DIR/whisper-models`): Optional override for Whisper model cache directory.
 - `HUGGINGFACE_MODELS_DIR` (default `CACHE_DIR/huggingface`): Optional override for Hugging Face translation model cache.

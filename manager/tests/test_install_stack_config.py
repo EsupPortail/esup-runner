@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import io
 import json
+import os
 import shutil
 import stat
 from contextlib import nullcontext
@@ -493,12 +494,114 @@ def test_live_detection_distinguishes_planned_from_complete_connections(
     assert capsys.readouterr().out.strip() == "true"
 
 
-def test_live_password_command_only_emits_supplied_relay_secret(installer, monkeypatch, capsys):
+@pytest.fixture
+def relay_pipe():
+    """Provide a dedicated transfer pipe, separate from captured diagnostics."""
+    reader, writer = os.pipe()
+    try:
+        yield reader, writer
+    finally:
+        os.close(reader)
+        os.close(writer)
+
+
+def test_live_password_command_only_emits_supplied_relay_secret(
+    installer, relay_pipe, monkeypatch, capsys
+):
+    reader, writer = relay_pipe
+    monkeypatch.setattr(
+        installer.sys,
+        "stdin",
+        io.StringIO(
+            "INSTALL_LIVE_RELAY_PASSWORD='private-relay-$ecret-é'\n"
+            "INSTALL_ADMIN_PASSWORD=private-admin-secret\n"
+        ),
+    )
+    assert installer.main(["live-password", "--secrets-stdin", "--output-fd", str(writer)]) == 0
+    assert os.read(reader, 4096) == "private-relay-$ecret-é\n".encode("utf-8")
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""
+
+
+def test_live_password_command_requires_explicit_output(installer, monkeypatch, capsys):
     monkeypatch.setattr(
         installer.sys, "stdin", io.StringIO("INSTALL_LIVE_RELAY_PASSWORD=private-relay-secret\n")
     )
-    assert installer.main(["live-password", "--secrets-stdin"]) == 0
-    assert capsys.readouterr().out == "private-relay-secret\n"
+    with pytest.raises(SystemExit) as error:
+        installer.main(["live-password", "--secrets-stdin"])
+    assert error.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "--output-fd" in captured.err
+    assert "private-relay-secret" not in captured.err
+
+
+@pytest.mark.parametrize("output_fd", [-1, 0, 1, 2])
+def test_live_password_command_rejects_standard_descriptors(
+    installer, monkeypatch, capsys, output_fd
+):
+    monkeypatch.setattr(
+        installer.sys, "stdin", io.StringIO("INSTALL_LIVE_RELAY_PASSWORD=private-relay-secret\n")
+    )
+    assert installer.main(["live-password", "--secrets-stdin", "--output-fd", str(output_fd)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "dedicated pipe" in captured.err
+    assert "private-relay-secret" not in captured.err
+
+
+def test_live_password_command_rejects_regular_files(installer, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        installer.sys, "stdin", io.StringIO("INSTALL_LIVE_RELAY_PASSWORD=private-relay-secret\n")
+    )
+    destination = tmp_path / "diagnostics.log"
+    with destination.open("w") as stream:
+        assert (
+            installer.main(
+                ["live-password", "--secrets-stdin", "--output-fd", str(stream.fileno())]
+            )
+            == 1
+        )
+    assert destination.read_bytes() == b""
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "dedicated pipe" in captured.err
+    assert "private-relay-secret" not in captured.err
+
+
+@pytest.mark.parametrize("password", ["", "CHANGE_ME_RELAY_PASSWORD", "private\nrelay-secret"])
+def test_live_password_command_rejects_invalid_secrets_without_writing(
+    installer, relay_pipe, monkeypatch, capsys, password
+):
+    reader, writer = relay_pipe
+    monkeypatch.setattr(
+        installer, "input_secrets", lambda: {"INSTALL_LIVE_RELAY_PASSWORD": password}
+    )
+    assert installer.main(["live-password", "--secrets-stdin", "--output-fd", str(writer)]) == 1
+    os.set_blocking(reader, False)
+    with pytest.raises(BlockingIOError):
+        os.read(reader, 4096)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "missing, unsafe, or still an example" in captured.err
+    assert "CHANGE_ME" not in captured.err
+    assert "relay-secret" not in captured.err
+
+
+def test_live_password_command_handles_pipe_errors_privately(installer, monkeypatch, capsys):
+    reader, writer = os.pipe()
+    os.close(reader)
+    monkeypatch.setattr(
+        installer.sys, "stdin", io.StringIO("INSTALL_LIVE_RELAY_PASSWORD=private-relay-secret\n")
+    )
+    try:
+        assert installer.main(["live-password", "--secrets-stdin", "--output-fd", str(writer)]) == 1
+    finally:
+        os.close(writer)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ERROR:" in captured.err
+    assert "private-relay-secret" not in captured.err
 
 
 def test_port_probe_checks_every_configured_listening_port(installer, stack, monkeypatch):

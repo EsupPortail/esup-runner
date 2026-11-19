@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Keep the stack installer's Live relay password on a dedicated pipe, separate
+  from standard output and diagnostics.
+
 ### Added
 
 - Add a [guided stack installer](../../INSTALLATION.md) for Manager, Runner, or

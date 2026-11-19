@@ -15,6 +15,7 @@ import os
 import re
 import secrets
 import socket
+import stat
 import sys
 import tempfile
 import time
@@ -632,6 +633,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
             subparser.add_argument("--timeout", type=float, default=60)
     live = commands.add_parser("live-password")
     live.add_argument("--secrets-stdin", action="store_true", required=True)
+    live.add_argument(
+        "--output-fd", type=int, required=True, help="Dedicated pipe descriptor (at least 3)"
+    )
     return parser.parse_args(argv)
 
 
@@ -641,6 +645,21 @@ def input_secrets() -> dict[str, str]:
         key: value or ""
         for key, value in dotenv_values(stream=sys.stdin, interpolate=False).items()
     }
+
+
+def send_live_password(output_fd: int) -> None:
+    """Send only the validated relay password to a dedicated pipe, never standard output.
+
+    Reject standard streams and non-pipe descriptors; leave the caller's descriptor open.
+    """
+    if output_fd < 3 or not stat.S_ISFIFO(os.fstat(output_fd).st_mode):
+        raise ValueError("The Live relay password requires a dedicated pipe descriptor.")
+    password = validate_secret(
+        input_secrets().get("INSTALL_LIVE_RELAY_PASSWORD", ""),
+        "Manager Live relay password",
+    )
+    with os.fdopen(output_fd, "w", encoding="utf-8", closefd=False) as pipe:
+        pipe.write(password + "\n")
 
 
 def print_summary(root: Path, component: str) -> None:
@@ -666,12 +685,7 @@ def run_command(args: argparse.Namespace) -> None:
             raise ValueError("The health-check timeout must be positive.")
         check_runtime(args)
     elif args.command == "live-password":
-        print(
-            validate_secret(
-                input_secrets().get("INSTALL_LIVE_RELAY_PASSWORD", ""),
-                "Manager Live relay password",
-            )
-        )
+        send_live_password(args.output_fd)
     else:
         read_command(args)
 

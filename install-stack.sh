@@ -396,7 +396,8 @@ UNIT
       local remote_host
       remote_host="$(helper manager-host --root "$ROOT_DIR")"
       if [[ -n "$SECRETS_FILE" ]]; then
-        helper live-password --secrets-stdin < "$SECRETS_FILE" \
+        # Reserve descriptor 3 for the relay pipe and keep diagnostics on stderr.
+        helper live-password --secrets-stdin --output-fd 3 < "$SECRETS_FILE" 3>&1 1>&2 \
           | component_python runner scripts/configure_live.py --instance runner \
             --manager-rtmp-host "$remote_host" --relay-password-stdin
       else

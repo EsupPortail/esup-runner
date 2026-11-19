@@ -93,7 +93,9 @@ helper() {
     live-enabled) printf false ;;
     live-configured) printf '%s' "${FIXTURE_LIVE_CONFIGURED:-false}" ;;
     check-ports) [[ "${FIXTURE_FAIL_PORTS:-0}" != 1 ]] ;;
-    live-password) printf 'fixture-private-relay\n' ;;
+    live-password)
+      printf 'Relay transfer diagnostic\n'
+      printf 'fixture-private-relay\n' >&3 ;;
     check) [[ "${FIXTURE_FAIL_CHECK:-0}" != 1 ]] ;;
     summary) return 0 ;;
     *) return 99 ;;
@@ -368,7 +370,10 @@ def test_remote_live_forwards_relay_only_on_stdin(tmp_path, checkout):
     )
     assert result.returncode == 0, result.stderr
     trace = "\n".join(trace_lines(tmp_path))
+    assert "helper live-password --secrets-stdin --output-fd 3" in trace
     assert "--manager-rtmp-host manager.internal --relay-password-stdin" in trace
+    assert "Relay transfer diagnostic" in result.stderr
+    assert "Relay transfer diagnostic" not in result.stdout
     assert "fixture-private-relay" not in trace + result.stdout + result.stderr
 
 

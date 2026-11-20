@@ -161,7 +161,7 @@ def test_live_instances_are_counted_in_dedicated_and_mixed_groups():
 @pytest.mark.parametrize(
     "task_sets,live,gpu_mode,expected",
     [
-        ([{"live"}, {"live"}], crr.LiveBudget(viewers=4000), False, (6, 4.0, 0.0)),
+        ([{"live"}, {"live"}], crr.LiveBudget(viewers=4000), False, (6, 2.0, 0.0)),
         (
             [{"encoding", "studio", "transcription", "live"}],
             crr.LiveBudget(viewers=2000),
@@ -172,7 +172,7 @@ def test_live_instances_are_counted_in_dedicated_and_mixed_groups():
             [{"encoding"}, {"live"}],
             crr.LiveBudget(transcoder="nvenc", cpu_fallback=False),
             False,
-            (9, 4.0, 1.0),
+            (9, 3.0, 1.0),
         ),
         (
             [{"encoding", "live"}],
@@ -184,16 +184,16 @@ def test_live_instances_are_counted_in_dedicated_and_mixed_groups():
             [{"live"}],
             crr.LiveBudget(transcoder="nvenc", cpu_fallback=True),
             True,
-            (2, 2.0, 1.0),
+            (2, 1.0, 1.0),
         ),
-        ([{"live"}], crr.LiveBudget(variant_count=6), False, (4, 4.0, 0.0)),
+        ([{"live"}], crr.LiveBudget(variant_count=6), False, (4, 2.0, 0.0)),
         (
             [{"live"}],
             crr.LiveBudget(transcoder="nvenc", cpu_fallback=False, variant_count=4),
             False,
-            (2, 8 / 3, 4 / 3),
+            (2, 4 / 3, 4 / 3),
         ),
-        ([{"live"}], crr.LiveBudget(variant_count=2), False, (2, 2.0, 0.0)),
+        ([{"live"}], crr.LiveBudget(variant_count=2), False, (2, 1.0, 0.0)),
         ([{"encoding"}], crr.LiveBudget(viewers=4000), False, (8, 2.0, 0.0)),
     ],
 )
@@ -210,7 +210,7 @@ def test_viewer_delivery_rounds_up_per_host(viewers, expected_vcpu):
     assert crr.LiveBudget(viewers=viewers).viewer_vcpu() == expected_vcpu
 
 
-@pytest.mark.parametrize("vcpu,ram", [(1, 4.0), (4, 1.0)])
+@pytest.mark.parametrize("vcpu,ram", [(1, 4.0), (4, 0.5)])
 def test_cpu_live_rejects_insufficient_cpu_or_ram(vcpu, ram):
     result = _evaluate_live([{"live"}], crr.ResourceInfo(vcpu, ram, []))
     assert result[0] is False
@@ -247,7 +247,7 @@ def test_nvenc_live_reserves_cpu_fallback_independently_of_vod(gpu_mode, fallbac
     assert result[-1] is expected
 
 
-@pytest.mark.parametrize("vcpu,ram", [(2, 8.0), (8, 3.0)])
+@pytest.mark.parametrize("vcpu,ram", [(2, 8.0), (8, 2.5)])
 def test_gpu_vod_does_not_bypass_live_host_resource_checks(vcpu, ram):
     resources = crr.ResourceInfo(vcpu, ram, [crr.GPUInfo("NVIDIA L4", 24.0)])
     result = _evaluate_live(
@@ -390,7 +390,7 @@ def test_live_can_share_the_only_vod_instance_when_a_dedicated_instance_cannot_f
 def test_mixed_live_fallback_tries_each_retained_group_until_the_ram_budget_fits():
     resources = crr.ResourceInfo(16, 12.0, [])
     configured = [{"encoding", "studio"}, {"transcription"}, {"live"}]
-    live = crr.LiveBudget(variant_count=6)
+    live = crr.LiveBudget(variant_count=9)
     recommended = crr._recommend_with_live(resources, configured, False, live)
     assert recommended.runner_task_types == "[1x(encoding,studio),1x(transcription,live)]"
     assert recommended.total_instances == 2

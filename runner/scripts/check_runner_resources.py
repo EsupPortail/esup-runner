@@ -55,9 +55,9 @@ GPU_COMBINED_VRAM_GB = max(GPU_ENCODING_VRAM_GB, GPU_TRANSCRIPTION_VRAM_GB_MAX)
 # CPU values and viewer ratio come from historical Nginx RTMP sizing.
 # NVENC values are initial estimates, not NVIDIA guarantees or measurements.
 CPU_LIVE_VCPU_MAX = 2
-CPU_LIVE_RAM_GB_MAX = 2
+CPU_LIVE_RAM_GB_MAX = 1
 GPU_LIVE_VCPU_MAX = 1
-GPU_LIVE_RAM_GB_MAX = 2
+GPU_LIVE_RAM_GB_MAX = 1
 GPU_LIVE_VRAM_GB_MAX = 1
 LIVE_REFERENCE_VARIANTS = 3
 LIVE_VIEWERS_PER_VCPU = 2000
@@ -74,7 +74,7 @@ LIVE_VIEWERS_PER_VCPU = 2000
 GPU_MAX_RECOMMENDATIONS = {
     "tesla t4": (4, 1),
     "nvidia l4": (7, 2),
-    "nvidia l40s": (14, 4),
+    "nvidia l40s": (12, 4),
 }
 
 

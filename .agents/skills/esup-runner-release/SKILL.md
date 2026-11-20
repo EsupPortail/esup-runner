@@ -37,7 +37,7 @@ requested version; adapt component options to the agreed scope. Set the cache
 in every shell:
 
 ```bash
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 uv run scripts/release_stack.py prepare 1.9.0 --dry-run
 ```
 

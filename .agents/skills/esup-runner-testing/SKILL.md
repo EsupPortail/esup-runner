@@ -11,7 +11,7 @@ Run from `runner/` or `manager/`, never with both `app` packages on one Python
 path. Use `uv` for every Python tool and set this in each shell:
 
 ```bash
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 ```
 
 Read [DEVELOPMENT.md](../../../DEVELOPMENT.md) for the shared workflow, then

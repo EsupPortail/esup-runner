@@ -56,7 +56,7 @@ work in component-only checkouts. Native services need a working `systemctl --us
 session. Set this in each shell:
 
 ```bash
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 ```
 
 Default native ports (all initially on loopback):
@@ -361,12 +361,12 @@ Finish active broadcasts before migrating. Run these commands from `manager/`
 as the service account (`esup-runner` here; adapt the account name):
 
 ```bash
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 uv run scripts/configure_live.py --service-mode system
 # Existing user-service installations only:
 systemctl --user disable --now esup-runner-mediamtx@manager.service
 # Preview; omit --dry-run below to install and start:
-sudo env UV_CACHE_DIR=/tmp/esup-runner-uv-cache "$(command -v uv)" run --no-sync python \
+sudo env UV_CACHE_DIR=/tmp/esup-runner-uv-cache-root "$(command -v uv)" run --no-sync python \
   scripts/install_mediamtx.py start --instance manager --service-mode system \
   --user esup-runner --dry-run
 ```
@@ -642,7 +642,7 @@ Runner's MediaMTX instance, then provide the Manager's reachable RTMP address:
 
 ```bash
 cd /opt/esup-runner/runner
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 uv run scripts/configure_live.py --manager-rtmp-host manager.example.org
 ```
 
@@ -727,7 +727,7 @@ use `runner/` on Runner-only hosts.**
 
 ```bash
 cd /opt/esup-runner/manager  # Use runner/ on a Runner-only host.
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 uv run --no-sync python scripts/install_mediamtx.py update --version latest --dry-run
 uv run --no-sync python scripts/install_mediamtx.py update --version latest
 ```
@@ -801,7 +801,7 @@ For a standard user service, add this to the service account's crontab to check
 for updates every Sunday at 03:00 (the host's cron timezone):
 
 ```cron
-0 3 * * 0 cd /opt/esup-runner/manager && XDG_RUNTIME_DIR="/run/user/$(id -u)" UV_CACHE_DIR=/tmp/esup-runner-uv-cache "$HOME/.local/bin/uv" run --no-sync python scripts/install_mediamtx.py update --version latest >> /var/log/esup-runner/mediamtx-update.log 2>&1
+0 3 * * 0 cd /opt/esup-runner/manager && XDG_RUNTIME_DIR="/run/user/$(id -u)" UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un) "$HOME/.local/bin/uv" run --no-sync python scripts/install_mediamtx.py update --version latest >> /var/log/esup-runner/mediamtx-update.log 2>&1
 ```
 
 Use `runner/` on Runner-only hosts and adjust the checkout and `uv` paths.

@@ -216,9 +216,9 @@ The starting budgets for the default three-rendition H.264/AAC profile are:
 
 | Live transcoder | vCPU per session | Host RAM per session | VRAM per session |
 | --- | ---: | ---: | ---: |
-| CPU (`libx264`) | 2 | 2 GB | 0 |
-| GPU (`nvenc`), CPU fallback disabled | 1 | 2 GB | 1 GB |
-| GPU (`nvenc`), CPU fallback enabled (default) | 2 | 2 GB | 1 GB |
+| CPU (`libx264`) | 2 | 1 GB | 0 |
+| GPU (`nvenc`), CPU fallback disabled | 1 | 1 GB | 1 GB |
+| GPU (`nvenc`), CPU fallback enabled (default) | 2 | 1 GB | 1 GB |
 
 These are planning assumptions, not measured maximum usage. The CPU and viewer
 figures come from historical Nginx RTMP sizing; the GPU figures are initial
@@ -231,7 +231,7 @@ encodes AAC and muxes HLS on the CPU.
 Pass the **total concurrent viewers served by this host across all sessions**:
 
 ```bash
-UV_CACHE_DIR=/tmp/esup-runner-uv-cache uv run scripts/check_runner_resources.py --live-viewers 4000
+UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un) uv run scripts/check_runner_resources.py --live-viewers 4000
 ```
 
 The script adds `ceil(viewers / 2000)` vCPU once for delivery, for either
@@ -239,7 +239,7 @@ transcoder. Without this option, the viewer count defaults to zero and the
 output explicitly states that viewer delivery is excluded. This CLI option is
 only a sizing input; it does not limit viewers or change the Runner configuration.
 For example, two dedicated CPU Lives and 4,000 viewers require an estimated
-6 vCPU and 4 GB RAM before additional system/service overhead.
+6 vCPU and 2 GB RAM before additional system/service overhead.
 
 The Live report also shows the network impact of every concurrent viewer.
 For each configured rendition, it adds the video and audio bitrates, then

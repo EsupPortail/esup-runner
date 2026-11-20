@@ -362,7 +362,7 @@ timezone). Adjust the schedule, checkout and `uv` paths, and `update-stack.sh`
 options for your deployment:
 
 ```cron
-0 3 * * 0 cd /opt/esup-runner && PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" XDG_RUNTIME_DIR="/run/user/$(id -u)" UV_CACHE_DIR=/tmp/esup-runner-uv-cache ./update-stack.sh >> /var/log/esup-runner/update-stack.log 2>&1
+0 3 * * 0 cd /opt/esup-runner && PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" XDG_RUNTIME_DIR="/run/user/$(id -u)" UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un) ./update-stack.sh >> /var/log/esup-runner/update-stack.log 2>&1
 ```
 
 For example, for GPU transcription with a lock refresh to the latest GPU stack,

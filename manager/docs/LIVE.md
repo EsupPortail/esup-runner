@@ -660,7 +660,7 @@ tokens and credential-bearing URLs are passed through the process environment.
 
 ```bash
 cd runner
-UV_CACHE_DIR=/tmp/esup-runner-uv-cache uv run --no-sync \
+UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un) uv run --no-sync \
   python ../scripts/live_smoke.py --mediamtx "$HOME/.local/bin/mediamtx" --runners 4 --crash-recovery
 ```
 
@@ -669,7 +669,7 @@ Live workers sharing MediaMTX, with RTMP-triggered allocation, use:
 
 ```bash
 cd runner
-UV_CACHE_DIR=/tmp/esup-runner-uv-cache uv run --no-sync \
+UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un) uv run --no-sync \
   python ../scripts/live_smoke.py --mediamtx "$HOME/.local/bin/mediamtx" \
   --runners 2 --grouped --mixed --automatic --crash-recovery
 ```

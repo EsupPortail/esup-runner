@@ -18,7 +18,7 @@ tasks and broadcasts before changing task groups or restarting services.
 
 ```bash
 cd /opt/esup-runner/runner
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 uv run scripts/install_mediamtx.py setup --instance runner
 uv run scripts/install_mediamtx.py start --instance runner
 ```

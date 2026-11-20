@@ -53,10 +53,10 @@ To run real Runner media jobs and operational checks, also install FFmpeg and
 requirements; see [Runner FFmpeg setup](runner/docs/FFMPEG_SETUP.md) and the
 [GPU guides](runner/docs/gpu/README.md).
 
-Use the project cache location in every shell used for development:
+Use a per-account project cache in every shell used for development:
 
 ```bash
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 ```
 
 No manual virtual-environment activation is required when commands use
@@ -71,7 +71,7 @@ automation remain visible:
 ```bash
 git clone https://github.com/EsupPortail/esup-runner.git
 cd esup-runner
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 ```
 
 Install the Manager development environment:
@@ -129,7 +129,7 @@ MANAGER_HOST=127.0.0.1
 MANAGER_BIND_HOST=127.0.0.1
 LOG_DIR=/tmp/esup-runner-dev/manager/logs
 CACHE_DIR=/tmp/esup-runner-dev/manager/cache
-UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+UV_CACHE_DIR=/tmp/esup-runner-uv-cache-<user>
 AUTHORIZED_TOKENS__runners=replace-with-a-local-random-token
 ```
 
@@ -152,8 +152,10 @@ ENCODING_TYPE=CPU
 LOG_DIR=/tmp/esup-runner-dev/runner/logs
 STORAGE_DIR=/tmp/esup-runner-dev/storage
 CACHE_DIR=/tmp/esup-runner-dev/runner/cache
-UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+UV_CACHE_DIR=/tmp/esup-runner-uv-cache-<user>
 ```
+
+In both files, replace `<user>` with your account name (`id -un`).
 
 With these writable paths, `make init` can create the configured directories
 without `sudo`. The privileged initialization and systemd commands in the
@@ -173,7 +175,7 @@ Start the Manager with Uvicorn reload in the first terminal:
 
 ```bash
 cd manager
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 uv run esup-runner-manager-dev
 ```
 
@@ -181,7 +183,7 @@ Start one Runner instance with reload in a second terminal:
 
 ```bash
 cd runner
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 uv run esup-runner-runner-dev
 ```
 
@@ -542,7 +544,8 @@ release workflow described in [RELEASE.md](RELEASE.md).
 - Missing pytest, Black, isort, Flake8, or mypy: run `make sync-dev` in the
   affected component.
 - `uv` cache permission errors: verify
-  `UV_CACHE_DIR=/tmp/esup-runner-uv-cache` in the current shell.
+  `UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)` in the current shell. A
+  cache directory created by another account is not writable.
 - Imports resolve the wrong `app` package: check the working directory, remove
   the other component from `PYTHONPATH`, and select the matching `.venv`.
 - Runner does not register: start the Manager, then check `MANAGER_URL`, the

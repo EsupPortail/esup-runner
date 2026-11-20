@@ -90,7 +90,7 @@ If the default uv cache directory is not writable in a restricted environment,
 set a writable cache path before the command:
 
 ```bash
-UV_CACHE_DIR=/tmp/esup-runner-uv-cache uv run scripts/release_stack.py prepare 1.1.1 --dry-run
+UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un) uv run scripts/release_stack.py prepare 1.1.1 --dry-run
 ```
 
 ## GitHub Releases

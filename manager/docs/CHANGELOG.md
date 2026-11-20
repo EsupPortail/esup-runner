@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document [disk space maintenance](OPERATIONS.md#disk-space-maintenance),
   including uv/Docker cleanup, log retention and the distinction between
   Manager history and Runner output retention.
+- Use a per-account uv cache (`/tmp/esup-runner-uv-cache-<user>`) in documented
+  MediaMTX, Live and upgrade commands, so accounts sharing a host no longer
+  block each other's cache.
 
 ### Fixed
 

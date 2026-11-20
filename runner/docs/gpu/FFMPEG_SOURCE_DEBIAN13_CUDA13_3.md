@@ -136,7 +136,7 @@ ffmpeg -hide_banner -filters | grep -E "scale_cuda|overlay_cuda|hwupload_cuda"
 ffmpeg -hide_banner -buildconf | grep -E -- "--enable-cuda-llvm|--enable-libvpx|--nvcc=clang"
 
 cd /opt/esup-runner/runner
-UV_CACHE_DIR=/tmp/esup-runner-uv-cache uv run scripts/check_ffmpeg.py --mode gpu
+UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un) uv run scripts/check_ffmpeg.py --mode gpu
 ```
 
 The version lines must start with `ffmpeg version n8.1.3` and `ffprobe version n8.1.3`. The runner

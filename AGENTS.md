@@ -19,8 +19,8 @@
   without replacing earlier ones. Keep the baseline location for final review.
   If edits already started without a baseline, record that limitation; a later
   snapshot or `HEAD` cannot establish which changes predated the task.
-- Use `uv` for Python and Python tooling, always with
-  `UV_CACHE_DIR=/tmp/esup-runner-uv-cache`.
+- Use `uv` for Python and Python tooling, always with the per-account cache
+  `UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)`.
 - Write user-facing explanations, findings, and final responses in French unless
   explicitly requested otherwise. Lead with the result, then list changed files,
   checks run, and limitations. Suggest next steps only when useful.

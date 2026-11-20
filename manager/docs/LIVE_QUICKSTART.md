@@ -17,7 +17,7 @@ tasks and broadcasts before restarting services.
 
 ```bash
 cd /opt/esup-runner/manager
-export UV_CACHE_DIR=/tmp/esup-runner-uv-cache
+export UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un)
 uv run scripts/install_mediamtx.py setup --instance manager \
   --rtmp-address 0.0.0.0:1935
 uv run scripts/install_mediamtx.py start --instance manager

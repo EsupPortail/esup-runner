@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Optional real CPU Live test, isolated on loopback with disposable data.
 
-Run from runner/: UV_CACHE_DIR=/tmp/esup-runner-uv-cache uv run --no-sync
+Run from runner/: UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un) uv run --no-sync
 python ../scripts/live_smoke.py --mediamtx /path/to/mediamtx --runners 2
 Add --grouped for one .env and launcher sharing MediaMTX across Live workers.
 Add --automatic to trigger sessions without LIVE_SOURCES or a start API call.
@@ -10,6 +10,7 @@ Requires the two development environments, MediaMTX >= 1.21.1, FFmpeg and ffprob
 
 import argparse
 import base64
+import getpass
 import hashlib
 import json
 import os
@@ -27,6 +28,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+UV_CACHE_DIR = f"/tmp/esup-runner-uv-cache-{getpass.getuser()}"
 
 
 def free_port() -> int:
@@ -408,7 +410,7 @@ def start_runner_process(
             launch_env.update(
                 CONFIG_ENV_PATH=str(env_file),
                 PYTHONUNBUFFERED="1",
-                UV_CACHE_DIR="/tmp/esup-runner-uv-cache",
+                UV_CACHE_DIR=UV_CACHE_DIR,
             )
             previous = spawn(
                 name,
@@ -517,7 +519,7 @@ def main() -> None:
             **os.environ,
             "CONFIG_ENV_PATH": str(directory / "empty.env"),
             "DEBUG": "false",
-            "UV_CACHE_DIR": "/tmp/esup-runner-uv-cache",
+            "UV_CACHE_DIR": UV_CACHE_DIR,
             "LOG_DIR": str(directory / name / "logs"),
             "CACHE_DIR": str(directory / name / "cache"),
             "STORAGE_DIR": str(directory / name / "storage"),

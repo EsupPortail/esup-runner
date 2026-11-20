@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Default native MediaMTX installations to the latest stable release and support `update --version latest`, keeping 1.21.1 as the minimum compatible version.
+- Adjust `check_runner_resources.py` estimates: lower the host RAM budget per
+  [Live session](OPERATIONS.md#live-resource-estimates) from 2 GB to 1 GB and the
+  NVIDIA L40S maximum from 14 to 12 concurrent encodings.
+- Use a per-account uv cache (`/tmp/esup-runner-uv-cache-<user>`) in the
+  `Makefile` fallback and documented commands, so accounts sharing a host no
+  longer block each other's cache.
 - Report HLS output access errors with the path, owner, permissions and effective
   Runner account during startup, configuration checks and output creation;
   return a safe HTTP 503 diagnostic when dispatch is rejected for storage access.

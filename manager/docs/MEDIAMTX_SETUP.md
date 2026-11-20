@@ -234,7 +234,7 @@ The shared regex allows both accounts to publish on any matching path. To
 separate permissions, use `~^live/droit-[A-Za-z0-9_-]+$` for `publisherDroit`
 and `~^live/medecine-[A-Za-z0-9_-]+$` for `publisherMedecine`.
 Keep `source: publisher` in `paths`: it is a MediaMTX source type, not an account
-name. MediaMTX [reloads the file automatically](https://mediamtx.org/docs/features/configuration).
+name. After editing the YAML, [verify Control API access](#logs-restarts-and-boot-persistence).
 
 ### Passwordless publishing from trusted encoder IPs
 
@@ -266,8 +266,8 @@ to `amphi-a`, and leave username/password empty, without `user` or `pass` query
 parameters. To restrict an encoder to one stream, use `path: "live/amphi-a"`
 with a separate entry for each IP/path pair.
 
-No Manager or Runner `.env` changes are needed. MediaMTX
-[reloads the YAML automatically](https://mediamtx.org/docs/features/configuration).
+No Manager or Runner `.env` changes are needed. After editing the YAML,
+[verify Control API access](#logs-restarts-and-boot-persistence).
 
 ### Optional RTMPS publishing
 
@@ -469,12 +469,37 @@ bind-mounted log directories managed by the host's `logrotate`.
 ### Logs, restarts and boot persistence
 
 Use the [operations runbook](LIVE_OPERATIONS.md#native-services) for status and
-journal commands. After intentional configuration changes, restart the affected
-unit between broadcasts:
+journal commands. MediaMTX [detects YAML changes automatically](https://mediamtx.org/docs/features/configuration).
+The `reloading configuration (file changed)` message marks the start of a reload;
+check the following logs and verify that the Control API still responds.
+
+Run this check from the Manager's environment, using its `LIVE_MEDIAMTX_API_URL`
+and `LIVE_MEDIAMTX_API_USER` if they differ from these defaults:
+
+```bash
+curl --noproxy '*' --silent --show-error --connect-timeout 5 --max-time 10 \
+  --user control --output /dev/null --write-out 'HTTP %{http_code}\n' \
+  'http://127.0.0.1:9997/v3/paths/list?page=0&itemsPerPage=1'
+```
+
+Enter `LIVE_MEDIAMTX_API_PASSWORD` at the prompt. Expect HTTP `200`, then refresh
+the Live administration page. HTTP `401`/`403` means access was denied: check
+that `control` remains a separate entry with the correct password, IP permissions
+and `action: api`. Keep the encoder IP restriction on the anonymous publisher
+entry. HTTP `000`, a refused connection or a timeout indicates that no HTTP
+response was received; check the listener and service logs.
+
+If API access remains unavailable after the reload, preserve the error logs and
+restart the affected MediaMTX instance between broadcasts. For a native user service:
 
 ```bash
 systemctl --user restart esup-runner-mediamtx@manager.service
 ```
+
+For a [system service](#system-service-for-port-443), use
+`sudo systemctl restart esup-runner-mediamtx@manager.service` instead.
+Repeat the API check and reconnect the encoder. A restart disconnects active
+publishers and readers. It is a recovery step, not a requirement for every YAML edit.
 
 The user unit restarts after failures, with `NoNewPrivileges=true` and `UMask=0077`.
 `start` and `enable --now` do not reload an active service's environment.

@@ -28,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `ADMIN_TITLE` to customize the administration dashboard heading and browser
   tab title, defaulting to `Runners Monitoring`.
 - Document [passwordless RTMP publishing](MEDIAMTX_SETUP.md#passwordless-publishing-from-trusted-encoder-ips)
-  for trusted encoder IPs, with per-stream permission examples.
+  for trusted encoder IPs, with per-stream permission examples and API verification
+  and recovery after YAML changes.
 
 ### Changed
 

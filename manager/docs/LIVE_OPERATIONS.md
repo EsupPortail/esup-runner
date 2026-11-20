@@ -34,7 +34,9 @@ the stream is not buffered while it waits.
 
 1. Confirm the four relevant services are healthy: Manager MediaMTX, Runner
    MediaMTX, Manager application and Runner application.
-2. Start the encoder with its Manager RTMP URL and `publisher` credentials.
+2. Start the encoder with its Manager RTMP URL and `publisher` credentials, or
+   use [passwordless publishing from a trusted IP](MEDIAMTX_SETUP.md#passwordless-publishing-from-trusted-encoder-ips)
+   if configured.
 3. Open **Live** in the Manager administration.
 4. Find the source and wait for `running`, `hls_ready` and a playback link.
 5. Give the player the exact displayed URL. Do not derive a URL from the Runner
@@ -208,6 +210,15 @@ An automatic replacement always has a new `live_id` and HLS URL. Update Pod or
 the player from the new status; do not keep polling the old playlist.
 
 ## Troubleshooting by symptom
+
+### The Manager MediaMTX status stays red after editing its YAML
+
+This status checks the Control API on each page refresh, separately from RTMP
+publication. Check the MediaMTX logs after `reloading configuration`, then
+[verify API access and recover the service](MEDIAMTX_SETUP.md#logs-restarts-and-boot-persistence).
+Keep the `control` account and its API permission when adding anonymous publisher
+entries. A brief interruption during reload can occur; persistent unavailability
+needs investigation even if the encoder can publish.
 
 ### The encoder cannot publish
 

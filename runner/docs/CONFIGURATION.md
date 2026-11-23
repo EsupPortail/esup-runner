@@ -222,7 +222,7 @@ before following it. Use signed URLs if a source requires URL-based authorizatio
 
 When `magicyuv` is present, the runner performs a small binary-signature check immediately after a media file is downloaded and before any FFmpeg, ffprobe, or Whisper processing touches that file. Matching media is rejected with an explicit message asking the user to convert it to H.264/H.265/VP9/AV1 first.
 
-Set `MEDIA_CODEC_DENYLIST=` only if you deliberately want to disable this protection.
+Set `MEDIA_CODEC_DENYLIST=` only if you deliberately want to disable this protection. FFmpeg 8.1.2 fixes CVE-2026-8461 / PixelSmash; with an older or unverified FFmpeg, [`update-stack.sh`](UPGRADE.md#11-automated-stack-update-script) adds `magicyuv` back to the denylist.
 
 ## Related docs
 - Full environment variable reference: [docs/PARAMETERS.md](PARAMETERS.md)

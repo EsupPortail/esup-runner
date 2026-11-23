@@ -19,7 +19,10 @@
 #    - then regenerate it during runner update.
 # 4) Update installed components:
 #    - manager: make init, make sync, then restart service if available.
-#    - runner:  make init, make sync variant based on runner mode, then restart service if available.
+#    - runner:  check the FFmpeg fix for CVE-2026-8461 (MagicYUV): below 8.1.2
+#      or unverified, ensure MEDIA_CODEC_DENYLIST in runner/.env denies magicyuv;
+#      otherwise report that magicyuv can be removed from the denylist.
+#      Then make init, make sync variant based on runner mode, then restart service if available.
 # 5) Optionally run a post-update smoke test with
 #    manager/scripts/check_pipeline_tasks.py.
 #    In transcription-cpu/transcription-gpu modes, the test adds
@@ -77,6 +80,9 @@ EXIT_CODE=0
 MANAGER_RESTART_REQUIRED=0
 RUNNER_RESTART_REQUIRED=0
 UV_UPDATED_USERS=""
+# First FFmpeg release fixing CVE-2026-8461 / PixelSmash (MagicYUV decoder).
+FFMPEG_MAGICYUV_FIXED_VERSION="8.1.2"
+FFMPEG_MAGICYUV_STATUS="skipped"
 
 MANAGER_DIR=""
 RUNNER_DIR=""
@@ -129,6 +135,12 @@ Runner sync mode:
           (GPU inferred from ENCODING_TYPE=GPU or nvidia-smi presence)
   - transcription-* modes enable full smoke test mode:
     check_pipeline_tasks.py --with-transcription-translation
+
+Runner FFmpeg check (CVE-2026-8461, MagicYUV decoder):
+  - ffmpeg is resolved with the runner service PATH order
+  - FFmpeg < 8.1.2, or version unknown: magicyuv is added to
+    MEDIA_CODEC_DENYLIST in runner/.env when missing (runner restart required)
+  - FFmpeg >= 8.1.2: reports that magicyuv can be removed from the denylist
 USAGE
 }
 
@@ -251,6 +263,7 @@ print_update_summary() {
   print_summary_line "Manager updated" "${manager_status}"
   print_summary_line "Runner updated" "${runner_status}"
   print_summary_line "Post-update test" "${TEST_STATUS}"
+  print_summary_line "FFmpeg MagicYUV" "${FFMPEG_MAGICYUV_STATUS}"
   print_summary_line "Configuration review" "${CONFIG_CHANGES_STATUS}"
   print_summary_line "Email notification" "${EMAIL_STATUS}"
   if [[ "${EXIT_CODE}" -eq 0 ]]; then
@@ -949,6 +962,156 @@ infer_runner_sync_mode() {
   printf '%s\n' "transcription-cpu"
 }
 
+resolve_runner_ffmpeg() {
+  # Resolve ffmpeg in the runner unit PATH order, independently of the cron PATH.
+  local service_user service_home=""
+  local search_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+  service_user="$(resolve_service_user "esup-runner-runner" || true)"
+  if [[ -n "${service_user}" ]]; then
+    service_home="$(getent passwd "${service_user}" | awk -F: 'NR==1 {print $6}')"
+  fi
+  if [[ -n "${service_home}" ]]; then
+    search_path="${service_home}/.local/bin:${search_path}"
+  fi
+  PATH="${search_path}" type -P ffmpeg
+}
+
+read_ffmpeg_version() {
+  # Print X.Y[.Z] from "ffmpeg version [n]X.Y[.Z]..."; Git snapshots stay unknown.
+  local ffmpeg_bin="$1"
+  local output
+  local version_pattern='^ffmpeg version n?([0-9]+\.[0-9]+(\.[0-9]+)?)([^0-9.]|$)'
+
+  output="$(timeout 30 "${ffmpeg_bin}" -version 2>/dev/null)" || return 1
+  [[ "${output%%$'\n'*}" =~ ${version_pattern} ]] || return 1
+  printf '%s\n' "${BASH_REMATCH[1]}"
+}
+
+version_at_least() {
+  # Return success when dotted version $1 is greater than or equal to $2.
+  [[ "$(printf '%s\n' "$1" "$2" | sort -V | head -n 1)" == "$2" ]]
+}
+
+runner_env_with_magicyuv_denied() {
+  # Print runner/.env with magicyuv first in each MEDIA_CODEC_DENYLIST assignment
+  # lacking it, or nothing when no change is needed. A missing key keeps the
+  # runner default (magicyuv). Listing magicyuv first keeps it effective even
+  # when a trailing inline comment follows the original value.
+  awk '
+    function denies_magicyuv(value,    items, count, i, item) {
+      count = split(value, items, ",")
+      for (i = 1; i <= count; i++) {
+        item = tolower(items[i])
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", item)
+        if (item == "magicyuv") {
+          return 1
+        }
+      }
+      return 0
+    }
+    { lines[NR] = $0 }
+    $0 !~ /^[[:space:]]*#/ && index($0, "=") > 0 {
+      key = substr($0, 1, index($0, "=") - 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+      if (key == "MEDIA_CODEC_DENYLIST") {
+        value = substr($0, index($0, "=") + 1)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+        if (value ~ /^".*"$/ || value ~ /^\x27.*\x27$/) {
+          value = substr(value, 2, length(value) - 2)
+        }
+        if (!denies_magicyuv(value)) {
+          lines[NR] = "MEDIA_CODEC_DENYLIST=magicyuv" (value == "" ? "" : "," value)
+          changed = 1
+        }
+      }
+    }
+    END {
+      if (changed) {
+        for (i = 1; i <= NR; i++) {
+          print lines[i]
+        }
+      }
+    }
+  ' "${RUNNER_ENV_FILE}"
+}
+
+replace_file_preserving_metadata() {
+  # Atomically replace a file, keeping its mode and, when run as root, its owner.
+  local target content="$2" temp_file
+
+  target="$(readlink -f -- "$1")" || return 1
+  temp_file="$(mktemp "${target}.XXXXXX")" || return 1
+  if cp -p -- "${target}" "${temp_file}" \
+    && printf '%s\n' "${content}" > "${temp_file}" \
+    && mv -f -- "${temp_file}" "${target}"; then
+    return 0
+  fi
+  rm -f -- "${temp_file}"
+  return 1
+}
+
+check_runner_ffmpeg_magicyuv_fix() {
+  # Keep MagicYUV denied until the runner FFmpeg includes the CVE-2026-8461 fix.
+  local fixed="${FFMPEG_MAGICYUV_FIXED_VERSION}"
+  local ffmpeg_bin version="" label updated_env
+  local ffmpeg_fixed=0
+
+  ffmpeg_bin="$(resolve_runner_ffmpeg || true)"
+  if [[ -z "${ffmpeg_bin}" ]]; then
+    label="FFmpeg not found"
+    warn "FFmpeg not found in the runner service PATH: assuming CVE-2026-8461 is not fixed."
+  elif ! version="$(read_ffmpeg_version "${ffmpeg_bin}")"; then
+    label="FFmpeg version unknown"
+    warn "Unable to read a release version from ${ffmpeg_bin}: assuming CVE-2026-8461 is not fixed."
+  elif version_at_least "${version}" "${fixed}"; then
+    label="FFmpeg ${version} fixed"
+    ffmpeg_fixed=1
+  else
+    label="FFmpeg ${version} vulnerable"
+  fi
+  [[ -n "${ffmpeg_bin}" ]] && log "Runner FFmpeg: ${ffmpeg_bin} (${label})"
+
+  if ! updated_env="$(runner_env_with_magicyuv_denied)"; then
+    FFMPEG_MAGICYUV_STATUS="failed"
+    warn "Unable to read MEDIA_CODEC_DENYLIST from runner/.env."
+    mark_non_fatal_failure
+    return 0
+  fi
+
+  if [[ "${ffmpeg_fixed}" -eq 1 ]]; then
+    FFMPEG_MAGICYUV_STATUS="${label}"
+    if [[ -z "${updated_env}" ]]; then
+      FFMPEG_MAGICYUV_STATUS="${label}; magicyuv can be removed from MEDIA_CODEC_DENYLIST"
+      log "FFmpeg ${version} >= ${fixed} fixes CVE-2026-8461 / PixelSmash."
+      log "You can remove magicyuv from MEDIA_CODEC_DENYLIST in runner/.env (an empty value disables the denylist), then restart the runner."
+    fi
+    return 0
+  fi
+
+  if [[ -z "${updated_env}" ]]; then
+    FFMPEG_MAGICYUV_STATUS="${label}; magicyuv denied"
+    log "FFmpeg < ${fixed} or unverified: MEDIA_CODEC_DENYLIST already denies magicyuv."
+    return 0
+  fi
+
+  log_action "Add magicyuv to MEDIA_CODEC_DENYLIST in runner/.env (FFmpeg < ${fixed} or unverified)"
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf 'DRY-RUN: update MEDIA_CODEC_DENYLIST in %q\n' "${RUNNER_ENV_FILE}"
+    FFMPEG_MAGICYUV_STATUS="dry-run"
+    return 0
+  fi
+  if ! replace_file_preserving_metadata "${RUNNER_ENV_FILE}" "${updated_env}"; then
+    FFMPEG_MAGICYUV_STATUS="failed"
+    warn "Unable to update runner/.env: set MEDIA_CODEC_DENYLIST=magicyuv manually."
+    mark_non_fatal_failure
+    return 0
+  fi
+  FFMPEG_MAGICYUV_STATUS="${label}; magicyuv added to MEDIA_CODEC_DENYLIST"
+  RUNNER_RESTART_REQUIRED=1
+  warn "${label} (CVE-2026-8461 / PixelSmash): magicyuv added to MEDIA_CODEC_DENYLIST in runner/.env; it takes effect when the runner restarts."
+}
+
 update_manager() {
   # Manager update flow: optional init, sync deps, conditional service restart.
   if [[ "${RUN_INIT}" -eq 1 ]]; then
@@ -1299,6 +1462,12 @@ Configuration changes to review:
 ${CONFIG_CHANGES_REPORT}
 "
   fi
+  local ffmpeg_status="" ffmpeg_line=""
+  if [[ "${FFMPEG_MAGICYUV_STATUS}" != "skipped" ]]; then
+    ffmpeg_status="${FFMPEG_MAGICYUV_STATUS}"
+    ffmpeg_line="
+- FFmpeg MagicYUV      : ${ffmpeg_status}"
+  fi
   local manager_admin_url report_title report_summary report_eyebrow
   git_revision="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
   hostname_value="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "unknown-host")"
@@ -1383,7 +1552,7 @@ Execution details:
 - Git revision         : ${git_revision}
 - Date                 : ${date_value}
 - Host                 : ${hostname_value}
-- Post-update test     : ${test_status_label}
+- Post-update test     : ${test_status_label}${ffmpeg_line}
 - Manager admin        : ${manager_admin_url:-unavailable}
 
 This message was generated automatically by the ESUP-Runner update-stack.sh."
@@ -1428,6 +1597,7 @@ This message was generated automatically by the ESUP-Runner update-stack.sh."
     EMAIL_DATE="${date_value}" \
     EMAIL_HOST="${hostname_value}" \
     EMAIL_TEST_STATUS="${test_status_label}" \
+    EMAIL_FFMPEG_STATUS="${ffmpeg_status}" \
     EMAIL_LOGO_PATH="${logo_path}" \
     EMAIL_MANAGER_ADMIN_URL="${manager_admin_url}" \
     EMAIL_REPORT_EYEBROW="${report_eyebrow}" \
@@ -1531,6 +1701,7 @@ def render_html_email(
     summary: str,
     logo_cid: str | None,
     config_changes: str = "",
+    ffmpeg_status: str = "",
 ) -> str:
     """Render the HTML body for update report and preview emails."""
     if overall_status == "SUCCESS":
@@ -1554,9 +1725,11 @@ def render_html_email(
             ("Date", date_value),
             ("Host", host),
             ("Post-update test", test_status),
-            ("Manager admin", manager_admin_url),
         ]
     )
+    if ffmpeg_status:
+        rows.append(("FFmpeg MagicYUV", ffmpeg_status))
+    rows.append(("Manager admin", manager_admin_url))
 
     action_html = ""
     if is_http_url(manager_admin_url):
@@ -1666,6 +1839,7 @@ git_revision = os.environ.get("EMAIL_GIT_REVISION", "").strip()
 date_value = os.environ.get("EMAIL_DATE", "").strip()
 host = os.environ.get("EMAIL_HOST", "").strip()
 test_status = os.environ.get("EMAIL_TEST_STATUS", "").strip()
+ffmpeg_status = os.environ.get("EMAIL_FFMPEG_STATUS", "").strip()
 logo_path = os.environ.get("EMAIL_LOGO_PATH", "").strip()
 manager_admin_url = os.environ.get("EMAIL_MANAGER_ADMIN_URL", "").strip()
 report_eyebrow = os.environ.get("EMAIL_REPORT_EYEBROW", "").strip()
@@ -1707,6 +1881,7 @@ html_body = render_html_email(
     ),
     logo_cid=logo_cid,
     config_changes=config_changes,
+    ffmpeg_status=ffmpeg_status,
 )
 
 msg = EmailMessage()
@@ -1976,6 +2151,9 @@ main() {
   fi
 
   if [[ "${do_runner}" -eq 1 ]]; then
+    # Before the runner update, so a denylist change is applied by its restart.
+    print_step_banner "Check runner FFmpeg for CVE-2026-8461 (MagicYUV)"
+    check_runner_ffmpeg_magicyuv_fix
     print_step_banner "Update runner component (${effective_runner_mode})"
     update_runner "${effective_runner_mode}"
   fi

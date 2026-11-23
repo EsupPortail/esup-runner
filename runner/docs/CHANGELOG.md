@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Apply the [download host policy](CONFIGURATION.md#outbound-downloads) to task
   sources, Studio metadata and tracks, and encoding dressing assets, checking
   each redirect. Use signed URLs when downloads require URL-based authorization.
+- Keep `magicyuv` in `MEDIA_CODEC_DENYLIST` to mitigate CVE-2026-8461 during stack
+  updates when the Runner's FFmpeg is older than 8.1.2 or its version cannot be
+  verified. The update report indicates when `magicyuv` can be removed. See the
+  [upgrade guide](UPGRADE.md#11-automated-stack-update-script).
 
 ### Fixed
 

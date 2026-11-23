@@ -316,6 +316,11 @@ The comparison covers only changes brought by this pull and is skipped with
 `--skip-git-update` or `--dry-run`. A comparison failure returns a non-zero exit
 code but lets the remaining update steps continue.
 
+The script also checks the Runner FFmpeg for CVE-2026-8461 (MagicYUV): below
+8.1.2 or with an unreadable version, it adds `magicyuv` to `MEDIA_CODEC_DENYLIST`
+in `runner/.env`; from 8.1.2, it reports that `magicyuv` can be removed from the
+[media denylist](CONFIGURATION.md#media-denylist).
+
 Examples:
 
 ```bash
@@ -389,5 +394,5 @@ Notes:
   Use `--runner-sync-mode` only for a one-time override. `--gpu-lock-profile latest`
   explicitly switches GPU transcription to the default GPU profile.
 - By default, `make init` is skipped. Use `--with-init` only when directories/permissions changed.
-- By default, restart policy is `if-changed` (restart only when `runner/` changed after git update, or after a local GPU lock regeneration). You can force a restart with `--always-restart`, or disable it with `--no-restart`.
+- By default, restart policy is `if-changed` (restart only when `runner/` changed after git update, after a local GPU lock regeneration, or after a `MEDIA_CODEC_DENYLIST` change). You can force a restart with `--always-restart`, or disable it with `--no-restart`.
 - If `make init` needs elevated privileges (for example when `.env` paths are under `/var`), run the script as `esup-runner` and configure restricted passwordless `sudo` for `make init`.

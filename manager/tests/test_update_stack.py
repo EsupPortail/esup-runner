@@ -204,6 +204,20 @@ def _prepare_update(tmp_path, repository):
         f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8"
     )
     (fake_bin / "python3").chmod(0o755)
+    # The runner FFmpeg is resolved from the service PATH, which starts with ~/.local/bin.
+    service_home = tmp_path / "home"
+    (service_home / ".local/bin").mkdir(parents=True)
+    (fake_bin / "getent").write_text(
+        f"#!/bin/sh\nprintf 'esup-runner:x:1001:1001::%s:/bin/sh\\n' {shlex.quote(str(service_home))}\n",
+        encoding="utf-8",
+    )
+    (fake_bin / "getent").chmod(0o755)
+    fake_ffmpeg = service_home / ".local/bin/ffmpeg"
+    fake_ffmpeg.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$TEST_FFMPEG_VERSION"\nexit "${TEST_FFMPEG_EXIT_CODE:-0}"\n',
+        encoding="utf-8",
+    )
+    fake_ffmpeg.chmod(0o755)
     smtp_module = tmp_path / "smtp_mock"
     smtp_module.mkdir()
     (smtp_module / "smtplib.py").write_text(
@@ -223,6 +237,7 @@ def _prepare_update(tmp_path, repository):
         PATH=f"{fake_bin}:{env['PATH']}",
         PYTHONPATH=str(smtp_module),
         TEST_EMAIL_PATH=str(email_path),
+        TEST_FFMPEG_VERSION="ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
         NO_COLOR="1",
         GIT_TERMINAL_PROMPT="0",
     )
@@ -295,8 +310,136 @@ def test_update_stack_reports_no_updates_when_git_revision_is_unchanged(
             if scope in ("auto", component):
                 assert version in message["Subject"]
                 assert version in body
+        assert ("FFmpeg MagicYUV" in body) == (scope != "manager")
     assert "Updated components   : none" in _email_content(message, "plain")
     assert ">none</td>" in _email_content(message, "html")
+
+
+def _summary_value(output, label):
+    """Read one row of the console update summary."""
+    return (
+        next(line for line in output.splitlines() if f"{label}:" in line).split(":", 1)[1].strip()
+    )
+
+
+@pytest.mark.parametrize(
+    "version_output,exit_code,denylist,expected_denylist,expected_status",
+    [
+        (
+            "ffmpeg version 8.1.1 Copyright (c) 2000-2026",
+            0,
+            "MEDIA_CODEC_DENYLIST=\n",
+            "MEDIA_CODEC_DENYLIST=magicyuv\n",
+            "FFmpeg 8.1.1 vulnerable; magicyuv added to MEDIA_CODEC_DENYLIST",
+        ),
+        (
+            "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026",
+            0,
+            "MEDIA_CODEC_DENYLIST='other'\n",
+            "MEDIA_CODEC_DENYLIST=magicyuv,other\n",
+            "FFmpeg 7.1.5 vulnerable; magicyuv added to MEDIA_CODEC_DENYLIST",
+        ),
+        (
+            "ffmpeg version n8.1 Copyright (c) 2000-2026",
+            0,
+            "MEDIA_CODEC_DENYLIST=other # note\n",
+            "MEDIA_CODEC_DENYLIST=magicyuv,other # note\n",
+            "FFmpeg 8.1 vulnerable; magicyuv added to MEDIA_CODEC_DENYLIST",
+        ),
+        (
+            "ffmpeg version 8.1.2 Copyright (c) 2000-2026",
+            1,
+            "# MEDIA_CODEC_DENYLIST=magicyuv\nMEDIA_CODEC_DENYLIST=\n",
+            "# MEDIA_CODEC_DENYLIST=magicyuv\nMEDIA_CODEC_DENYLIST=magicyuv\n",
+            "FFmpeg version unknown; magicyuv added to MEDIA_CODEC_DENYLIST",
+        ),
+        (
+            "ffmpeg version N-121000-g0123abcd Copyright (c) 2000-2026",
+            0,
+            " MEDIA_CODEC_DENYLIST = other, MagicYUV \n",
+            " MEDIA_CODEC_DENYLIST = other, MagicYUV \n",
+            "FFmpeg version unknown; magicyuv denied",
+        ),
+        (
+            "ffmpeg version 8.1.2 Copyright (c) 2000-2026",
+            0,
+            "",
+            "",
+            "FFmpeg 8.1.2 fixed; magicyuv can be removed from MEDIA_CODEC_DENYLIST",
+        ),
+        (
+            "ffmpeg version n9.0.2-3-g0123abcd Copyright (c) 2000-2026",
+            0,
+            "MEDIA_CODEC_DENYLIST=\n",
+            "MEDIA_CODEC_DENYLIST=\n",
+            "FFmpeg 9.0.2 fixed",
+        ),
+    ],
+)
+def test_update_stack_checks_runner_ffmpeg_magicyuv_fix(
+    tmp_path,
+    configuration_repository,
+    version_output,
+    exit_code,
+    denylist,
+    expected_denylist,
+    expected_status,
+):
+    """Deny MagicYUV until FFmpeg 8.1.2, then only suggest removing it from the denylist."""
+    checkout, env, email_path = _prepare_update(tmp_path, configuration_repository)
+    env.update(TEST_FFMPEG_VERSION=version_output, TEST_FFMPEG_EXIT_CODE=str(exit_code))
+    runner_env = checkout / "runner/.env"
+    base_env = runner_env.read_text(encoding="utf-8")
+    runner_env.write_text(base_env + denylist, encoding="utf-8")
+    runner_env.chmod(0o640)
+
+    result = _run_update(checkout, env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert runner_env.read_text(encoding="utf-8") == base_env + expected_denylist
+    assert runner_env.stat().st_mode & 0o777 == 0o640
+    assert _summary_value(result.stdout, "FFmpeg MagicYUV") == expected_status
+    assert ("You can remove magicyuv" in result.stdout) == expected_status.endswith(
+        "can be removed from MEDIA_CODEC_DENYLIST"
+    )
+    message = BytesParser(policy=policy.default).parsebytes(email_path.read_bytes())
+    for subtype in ("plain", "html"):
+        assert expected_status in _email_content(message, subtype)
+    # A denylist change requires a runner restart, so it is not reported as "No updates".
+    assert ("No updates" in message["Subject"]) == (denylist == expected_denylist)
+
+
+@pytest.mark.parametrize("failure", ["dry-run", "mktemp"])
+def test_update_stack_keeps_runner_env_when_denylist_is_not_written(
+    tmp_path, configuration_repository, failure
+):
+    """Preview the denylist change in dry-run mode and report write failures."""
+    checkout, env, email_path = _prepare_update(tmp_path, configuration_repository)
+    env.update(TEST_FFMPEG_VERSION="ffmpeg version 8.1.1 Copyright (c) 2000-2026")
+    runner_env = checkout / "runner/.env"
+    with runner_env.open("a", encoding="utf-8") as stream:
+        stream.write("MEDIA_CODEC_DENYLIST=\n")
+    original_env = runner_env.read_bytes()
+    options = ("--dry-run",) if failure == "dry-run" else ()
+    if failure == "mktemp":
+        mktemp = tmp_path / "bin/mktemp"
+        mktemp.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        mktemp.chmod(0o755)
+
+    result = _run_update(checkout, env, *options)
+
+    assert runner_env.read_bytes() == original_env
+    assert not list(runner_env.parent.glob(".env.??????"))
+    if failure == "dry-run":
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "DRY-RUN: update MEDIA_CODEC_DENYLIST" in result.stdout
+        assert _summary_value(result.stdout, "FFmpeg MagicYUV") == "dry-run"
+    else:
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "set MEDIA_CODEC_DENYLIST=magicyuv manually" in result.stderr
+        assert _summary_value(result.stdout, "FFmpeg MagicYUV") == "failed"
+        message = BytesParser(policy=policy.default).parsebytes(email_path.read_bytes())
+        assert "COMPLETED WITH WARNINGS" in message["Subject"]
 
 
 @pytest.mark.parametrize("changed_file", ["manager/app/code.py", "runner/app/code.py", "README.md"])

@@ -14,4 +14,6 @@ Runner deployments can configure `MEDIA_CODEC_DENYLIST` in `runner/.env`.
 It defaults to `magicyuv` so downloaded media matching known MagicYUV binary
 signatures is rejected before FFmpeg, ffprobe, or Whisper process the file.
 This mitigates exposure to CVE-2026-8461 / PixelSmash while the underlying
-FFmpeg runtime is being updated or rebuilt.
+FFmpeg runtime is being updated or rebuilt. FFmpeg 8.1.2 fixes it:
+`update-stack.sh` keeps `magicyuv` denied while the Runner FFmpeg is older or
+unverified, and reports when it can be removed.

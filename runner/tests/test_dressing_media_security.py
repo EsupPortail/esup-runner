@@ -33,13 +33,15 @@ def test_denied_asset_never_reaches_media_processing(
         calls.append(1)
         return io.BytesIO(DENIED_MEDIA)
 
-    monkeypatch.setattr(dressing.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(dressing.urllib.request.OpenerDirector, "open", urlopen)
     if cached:
         monkeypatch.setattr(config, "MEDIA_CODEC_DENYLIST", [])
         download(url, str(tmp_path), prefix)
         monkeypatch.setattr(config, "MEDIA_CODEC_DENYLIST", ["magicyuv"])
         monkeypatch.setattr(
-            dressing.urllib.request, "urlopen", lambda *_a, **_k: pytest.fail("Must use cache")
+            dressing.urllib.request.OpenerDirector,
+            "open",
+            lambda *_a, **_k: pytest.fail("Must use cache"),
         )
 
     def forbidden_processing(*_args, **_kwargs):
@@ -77,10 +79,14 @@ def test_allowed_assets_are_available_from_download_and_cache(
     download, monkeypatch, tmp_path, denylist, payload
 ):
     monkeypatch.setattr(config, "MEDIA_CODEC_DENYLIST", denylist)
-    monkeypatch.setattr(dressing.urllib.request, "urlopen", lambda *_a, **_k: io.BytesIO(payload))
+    monkeypatch.setattr(
+        dressing.urllib.request.OpenerDirector, "open", lambda *_a, **_k: io.BytesIO(payload)
+    )
     url = "https://example.org/watermark.png"
     path = download(url, str(tmp_path), "watermark")
     monkeypatch.setattr(
-        dressing.urllib.request, "urlopen", lambda *_a, **_k: pytest.fail("Must use cache")
+        dressing.urllib.request.OpenerDirector,
+        "open",
+        lambda *_a, **_k: pytest.fail("Must use cache"),
     )
     assert download(url, str(tmp_path), "watermark") == path

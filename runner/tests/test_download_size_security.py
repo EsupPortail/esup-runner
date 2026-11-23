@@ -82,7 +82,7 @@ def test_specialized_download_limits_and_unlimited_mode(monkeypatch, tmp_path, k
     monkeypatch.setenv("DOWNLOAD_ALLOW_PRIVATE_NETWORKS", "true")
     monkeypatch.delenv("DOWNLOAD_ALLOWED_HOSTS", raising=False)
     response = ChunkedResponse(b"abcd")
-    monkeypatch.setattr(studio.urllib.request, "urlopen", lambda *_a, **_k: response)
+    monkeypatch.setattr(studio.urllib.request.OpenerDirector, "open", lambda *_a, **_k: response)
     if limit == 3 and kind == "dressing":
         with pytest.raises(DownloadSizeExceeded):
             _download(kind, tmp_path)
@@ -104,13 +104,13 @@ def test_cached_media_respects_lowered_limit(monkeypatch, tmp_path, kind):
     monkeypatch.delenv("DOWNLOAD_ALLOWED_HOSTS", raising=False)
     monkeypatch.setattr(config, "MAX_VIDEO_SIZE_GB", 0)
     monkeypatch.setattr(
-        studio.urllib.request, "urlopen", lambda *_a, **_k: ChunkedResponse(b"abcd")
+        studio.urllib.request.OpenerDirector, "open", lambda *_a, **_k: ChunkedResponse(b"abcd")
     )
     cached = _download(kind, tmp_path)
     monkeypatch.setattr(config, "MAX_VIDEO_SIZE_GB", 3 / 1024**3)
     monkeypatch.setattr(
-        studio.urllib.request,
-        "urlopen",
+        studio.urllib.request.OpenerDirector,
+        "open",
         lambda *_a, **_k: pytest.fail("Cache must not be downloaded again"),
     )
     if kind == "studio":

@@ -76,7 +76,14 @@ def test_studio_fetch_parse_and_time_helpers(monkeypatch):
     studio = _load_studio_script_module()
 
     class _Response:
+        status_code = 200
         text = "payload"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
 
         @staticmethod
         def raise_for_status():
@@ -198,7 +205,7 @@ def test_studio_download_and_materialize_helpers(monkeypatch, tmp_path):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: _FakeResponse())
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", lambda *_a, **_k: _FakeResponse())
     downloaded = studio._download_http_source(
         "https://example.org/new.mp4",
         str(tmp_path),
@@ -209,8 +216,8 @@ def test_studio_download_and_materialize_helpers(monkeypatch, tmp_path):
     assert Path(downloaded).exists()
 
     monkeypatch.setattr(
-        urllib.request,
-        "urlopen",
+        urllib.request.OpenerDirector,
+        "open",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("network error")),
     )
     fallback = studio._download_http_source(
@@ -219,7 +226,7 @@ def test_studio_download_and_materialize_helpers(monkeypatch, tmp_path):
         "presentation",
         studio.urllib.parse.urlparse("https://example.org/fail.mp4"),
     )
-    assert fallback == "https://example.org/fail.mp4"
+    assert fallback is None
 
     assert studio._materialize_source(None, str(tmp_path), "presentation") is None
     assert (

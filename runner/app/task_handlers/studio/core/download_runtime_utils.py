@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import urllib.parse
-import urllib.request
 from typing import Callable
 
 from app.core.config import config
 from app.core.download_limits import DownloadSizeExceeded, save_download, validate_download_size
+from app.core.download_urls import host_is_allowed as host_is_allowed
+from app.core.download_urls import host_resolves_to_public_ip as host_resolves_to_public_ip
+from app.core.download_urls import open_download
 from app.core.media_denylist import MediaDeniedError, validate_media_against_denylist
 
 
@@ -24,46 +26,6 @@ def download_allow_private_networks_from_env() -> bool:
     """Return whether private-network downloads are allowed."""
     allow_private_raw = os.getenv("DOWNLOAD_ALLOW_PRIVATE_NETWORKS", "true")
     return allow_private_raw.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
-
-
-def host_is_allowed(host: str, allowed_hosts: list[str]) -> bool:
-    """Return whether a host matches the configured allowlist."""
-    for allowed in allowed_hosts:
-        if host == allowed or host.endswith("." + allowed):
-            return True
-    return False
-
-
-def host_resolves_to_public_ip(host: str) -> tuple[bool, str]:
-    """Check whether a host resolves only to public IP addresses."""
-    import ipaddress
-    import socket
-
-    try:
-        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
-        ips = sorted({info[4][0] for info in infos if info and info[4]})
-    except Exception:
-        ips = []
-
-    if not ips:
-        return False, "Download host cannot be resolved"
-
-    for ip in ips:
-        try:
-            addr = ipaddress.ip_address(ip)
-        except ValueError:
-            return False, f"Download host resolved to invalid address: {ip}"
-        if (
-            addr.is_private
-            or addr.is_loopback
-            or addr.is_link_local
-            or addr.is_multicast
-            or addr.is_reserved
-            or addr.is_unspecified
-        ):
-            return False, f"Download host resolves to private address: {ip}"
-
-    return True, ""
 
 
 def source_matches_media_denylist(path: str) -> bool:
@@ -84,7 +46,7 @@ def download_http_source(
     label: str,
     parsed: urllib.parse.ParseResult,
 ) -> str | None:
-    """Download an HTTP(S) source into the work directory."""
+    """Download an HTTP(S) source into the work directory or return None on failure."""
     os.makedirs(work_dir, exist_ok=True)
     base = os.path.basename(parsed.path) or f"{label}.mp4"
     base = base.split("?")[0] or f"{label}.mp4"
@@ -96,7 +58,7 @@ def download_http_source(
             if source_matches_media_denylist(local_path):
                 return None
             return local_path
-        with urllib.request.urlopen(url, timeout=60) as resp:
+        with open_download(url, timeout=60) as resp:
             save_download(iter(lambda: resp.read(1024 * 1024), b""), local_path)
         validate_media_against_denylist(local_path, config.MEDIA_CODEC_DENYLIST)
         print(f"Downloaded remote source to {local_path}")
@@ -106,7 +68,7 @@ def download_http_source(
         return None
     except Exception as exc:
         print(f"Failed to download remote source {url}: {exc}")
-        return url
+        return None
 
 
 def materialize_source(

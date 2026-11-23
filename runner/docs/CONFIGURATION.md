@@ -205,6 +205,17 @@ For `WHISPER_CHUNK_THRESHOLD_SECONDS`, the runner uses a hardware-aware default 
 
 Set `WHISPER_CHUNK_THRESHOLD_SECONDS` only if you explicitly need to override that behavior.
 
+## Outbound downloads
+
+`DOWNLOAD_ALLOWED_HOSTS` is an optional comma-separated list of hostnames.
+Each entry also allows its subdomains. An empty list allows any hostname.
+`DOWNLOAD_ALLOW_PRIVATE_NETWORKS` defaults to `true` for internal deployments.
+Set it to `false` to reject destinations with any non-public DNS address.
+
+The policy applies to task sources, Studio mediapackage XML, SMIL and media
+tracks, and encoding dressing assets. The Runner checks each HTTP(S) redirect
+before following it. Use signed URLs if a source requires URL-based authorization.
+
 ## Media denylist
 
 `MEDIA_CODEC_DENYLIST` is a comma-separated runner-level codec denylist. The default is `magicyuv`.

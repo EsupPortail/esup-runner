@@ -137,13 +137,13 @@ def test_download_url_to_dir_validations_and_success(monkeypatch, tmp_path):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    def _urlopen(_req, timeout=0):
+    def _urlopen(_opener, _req, timeout=0):
         assert timeout == 30
         urlopen_calls.append("called")
         return _Resp(b"binary-data")
 
     monkeypatch.setattr(dressing, "validate_host_resolves_to_public_ip", _validate)
-    monkeypatch.setattr(dressing.urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(dressing.urllib.request.OpenerDirector, "open", _urlopen)
 
     local_path = dressing.download_url_to_dir(
         "https://example.org/assets/logo final.png",

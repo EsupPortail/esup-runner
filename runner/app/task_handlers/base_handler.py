@@ -16,6 +16,7 @@ import requests  # type: ignore[import-untyped]
 
 from app.core.config import config
 from app.core.download_limits import DownloadSizeExceeded, limited_download_chunks
+from app.core.download_urls import DownloadURLRejected, get_download_response
 from app.core.media_denylist import validate_media_against_denylist
 from app.core.setup_logging import setup_default_logging
 from app.models.models import TaskRequest
@@ -602,7 +603,7 @@ class BaseTaskHandler(ABC):
         chunk_size: int,
     ) -> Dict[str, Any]:
         """Execute one HTTP download attempt into part_path."""
-        with session.get(source_url, timeout=(10, 180), stream=True) as response:
+        with get_download_response(session.get, source_url, timeout=(10, 180)) as response:
             if response.status_code != 200:
                 if response.status_code == 404:
                     return {
@@ -695,7 +696,7 @@ class BaseTaskHandler(ABC):
 
                     os.replace(part_path, destination)
                     return {"success": True, "file_path": str(destination)}
-                except DownloadSizeExceeded as e:
+                except (DownloadSizeExceeded, DownloadURLRejected) as e:
                     return {
                         "success": False,
                         "error": self._download_failure_message(source_url, str(e)),

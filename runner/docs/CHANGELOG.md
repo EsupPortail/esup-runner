@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Apply the [download host policy](CONFIGURATION.md#outbound-downloads) to task
+  sources, Studio metadata and tracks, and encoding dressing assets, checking
+  each redirect. Use signed URLs when downloads require URL-based authorization.
 
 ## [1.12.0] - 2026-11-20
 

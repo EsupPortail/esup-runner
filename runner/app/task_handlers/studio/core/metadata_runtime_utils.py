@@ -6,16 +6,18 @@ import argparse
 from typing import Callable
 from urllib.parse import urlparse
 
+from app.core.download_urls import get_download_response
+
 from . import metadata_utils
 
 
 def fetch_text(url: str) -> str:
-    """Fetch and return text content from a URL."""
+    """Fetch text from an allowed HTTP(S) URL, validating each redirect."""
     import requests  # type: ignore[import-untyped]
 
-    response = requests.get(url, timeout=(10, 180))
-    response.raise_for_status()
-    return str(response.text)
+    with get_download_response(requests.get, url, timeout=(10, 180)) as response:
+        response.raise_for_status()
+        return str(response.text)
 
 
 def load_mediapackage_and_layout(

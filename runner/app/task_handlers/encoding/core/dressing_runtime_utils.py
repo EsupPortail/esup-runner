@@ -16,6 +16,7 @@ from typing import Any, Optional
 
 from app.core.config import config
 from app.core.download_limits import save_download, validate_download_size
+from app.core.download_urls import open_download
 from app.core.media_denylist import validate_media_against_denylist
 
 
@@ -118,7 +119,7 @@ def download_url_to_dir(
         return local_path
 
     req = urllib.request.Request(url, headers={"User-Agent": "esup-runner-ffmpeg/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with open_download(req, timeout=30) as resp:
         save_download(iter(lambda: resp.read(1024 * 1024), b""), local_path)
     validate_media_against_denylist(local_path, config.MEDIA_CODEC_DENYLIST)
     return local_path

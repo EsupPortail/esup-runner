@@ -112,7 +112,9 @@ def test_studio_download_http_source_rejects_downloaded_denied_media(monkeypatch
         raise MediaDeniedError("Media rejected: denied")
 
     monkeypatch.setattr(
-        download_runtime_utils.urllib.request, "urlopen", lambda *_args, **_kwargs: _Response()
+        download_runtime_utils.urllib.request.OpenerDirector,
+        "open",
+        lambda *_args, **_kwargs: _Response(),
     )
     monkeypatch.setattr(download_runtime_utils, "validate_media_against_denylist", _raise_denied)
     parsed = download_runtime_utils.urllib.parse.urlparse("https://example.org/downloaded.mp4")

@@ -81,9 +81,13 @@ Trim a segment of the input before encoding.
 ```
 
 **Fields**
-- `start` (required): `HH:MM:SS`
-- `end` (required): `HH:MM:SS`
+- `start` (required): segment start time.
+- `end` (required): segment end time.
 - `initial_duration` (optional): if provided and `end` exceeds it, the script clamps the end time.
+
+Each timestamp must be a string with one or two hour digits, two minute digits,
+and two second digits separated by colons. Fractional seconds are optional, as
+in `00:00:07.250`. Invalid cut configurations cause the encoding step to fail.
 
 **Behavior notes**
 - When valid, the script sets a global `SUBTIME` to `-ss <start> -to <end>`.

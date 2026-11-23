@@ -27,7 +27,12 @@ def run_main_flow(args: Any, *, context: MainFlowContext) -> int:
     """Run the end-to-end encoding workflow for parsed CLI args."""
     msg = "--> Main\n"
     msg += "- Starting encoding cycle: %s\n" % time.ctime()
-    msg += context.apply_cli_config_fn(args)
+
+    try:
+        msg += context.apply_cli_config_fn(args)
+    except context.encoding_validation_error_type as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
 
     try:
         msg += context.process_encoding_fn(args)

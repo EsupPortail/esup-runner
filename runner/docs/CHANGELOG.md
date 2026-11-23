@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sources, Studio metadata and tracks, and encoding dressing assets, checking
   each redirect. Use signed URLs when downloads require URL-based authorization.
 
+### Fixed
+
+- Reject malformed [`cut` configurations](TYPE_ENCODING.md#cut) before
+  encoding starts in Encoding and Studio tasks, and preserve fractional seconds
+  when calculating the cut duration.
+
 ## [1.12.0] - 2026-11-20
 
 ### Security

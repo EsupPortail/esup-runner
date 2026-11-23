@@ -351,10 +351,10 @@ def apply_cut_for_dressing(
     *,
     cut_config: dict[str, Any],
     subtime: str,
-    effective_duration: int,
+    effective_duration: float,
     videos_dir: str,
     create_cut_intermediate_fn,
-) -> tuple[str, str, str, int]:
+) -> tuple[str, str, str, float]:
     """Apply configured cut before credits in dressing mode."""
     msg = ""
     next_subtime = subtime

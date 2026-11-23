@@ -193,13 +193,14 @@ MP4_OUTPUT_OPTIONS = "-max_muxing_queue_size 9999 -movflags faststart -write_tmc
 SUBTIME = " "
 
 # Global variable for effective duration (after cut)
-EFFECTIVE_DURATION = 0
+EFFECTIVE_DURATION: float = 0
 
 # Global variable for dressing configuration
 _DRESSING_CONFIG: dict = {}
 
 # Global variable for cut configuration
 _CUT_CONFIG: dict = {}
+_CUT_TIMESTAMP_RE = re.compile(r"[0-9]{1,2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?")
 
 # Global variable for optional video identification metadata
 _VIDEO_IDENTIFICATION: dict = {}
@@ -223,7 +224,7 @@ _SOURCE_VIDEO_FPS = 0.0
 
 
 class EncodingValidationError(RuntimeError):
-    """Raised when the input media should not be encoded."""
+    """Raised when the input media or encoding options are invalid."""
 
 
 def _is_webm_source(*, file: str, codec: str) -> bool:
@@ -1046,11 +1047,11 @@ def format_vtt_timestamp(seconds: int) -> str:
     return overview_utils.format_vtt_timestamp(seconds)
 
 
-def generate_overview(file: str, duration: int) -> tuple[bool, str]:
-    """Run full overview generation (thumbnails + sprite + VTT)."""
+def generate_overview(file: str, duration: float) -> tuple[bool, str]:
+    """Run full overview generation using whole seconds for sampling and VTT cues."""
     return overview_utils.generate_overview(
         file,
-        duration,
+        int(duration),
         videos_output_dir=_VIDEOS_OUTPUT_DIR,
         overview_config=_OVERVIEW_CONFIG,
         generate_overview_thumbnails_fn=generate_overview_thumbnails,
@@ -1200,9 +1201,9 @@ def _expected_output_stream_duration(source_duration: object, output_duration: f
     if source_duration_seconds <= 0:
         return output_duration
 
-    cut_start = 0
+    cut_start = 0.0
     if SUBTIME.strip() and _CUT_CONFIG.get("start") and _CUT_CONFIG.get("end"):
-        cut_start = timestamp_to_seconds(str(_CUT_CONFIG["start"]))
+        cut_start = _seconds_from_timestamp(str(_CUT_CONFIG["start"]))
     return min(output_duration, max(0.0, source_duration_seconds - cut_start))
 
 
@@ -1292,42 +1293,52 @@ def _parse_rendition_config(args, msg: str) -> str:
 
 
 def _parse_cut_config(args, msg: str) -> str:
-    """Parse and apply cut configuration from CLI arguments."""
+    """Apply the optional cut, raising EncodingValidationError for invalid input."""
     global _CUT_CONFIG, SUBTIME, EFFECTIVE_DURATION
     _CUT_CONFIG = {}
     EFFECTIVE_DURATION = 0
     SUBTIME = " "
-    if args.cut:
-        try:
-            cut_config = json.loads(args.cut)
-            _CUT_CONFIG = cut_config
-            start = cut_config.get("start", "")
-            end = cut_config.get("end", "")
-            initial_duration = cut_config.get("initial_duration", "")
+    if args.cut is None:
+        return msg
 
-            if start and end:
-                SUBTIME = f" -ss {start} -to {end} "
-                msg += f"Cut configuration applied: start={start}, end={end}\n"
-                msg += f"SUBTIME set to: {SUBTIME}\n"
+    try:
+        cut_config = json.loads(args.cut)
+    except ValueError as exc:
+        raise EncodingValidationError("Invalid cut parameter. Expected a JSON object.") from exc
+    if not isinstance(cut_config, dict):
+        raise EncodingValidationError("Invalid cut parameter. Expected a JSON object.")
 
-                start_seconds = timestamp_to_seconds(start)
-                end_seconds = timestamp_to_seconds(end)
-                calculated_duration = end_seconds - start_seconds
+    for field in ("start", "end", "initial_duration"):
+        if field == "initial_duration" and field not in cut_config:
+            continue
+        timestamp = cut_config.get(field)
+        if not isinstance(timestamp, str) or not _CUT_TIMESTAMP_RE.fullmatch(timestamp):
+            raise EncodingValidationError(
+                f"Invalid cut.{field} timestamp. "
+                "Use H:MM:SS or HH:MM:SS with optional fractional seconds."
+            )
 
-                if initial_duration:
-                    initial_duration_seconds = timestamp_to_seconds(initial_duration)
-                    if end_seconds > initial_duration_seconds:
-                        msg += f"Warning: end time ({end}) exceeds initial duration ({initial_duration}). Adjusting to initial duration.\n"
-                        calculated_duration = initial_duration_seconds - start_seconds
-                        SUBTIME = f" -ss {start} -to {initial_duration} "
+    start = cut_config["start"]
+    end = cut_config["end"]
+    initial_duration = cut_config.get("initial_duration")
+    start_seconds = _seconds_from_timestamp(start)
+    end_seconds = _seconds_from_timestamp(end)
+    if initial_duration is not None:
+        initial_duration_seconds = _seconds_from_timestamp(initial_duration)
+        if end_seconds > initial_duration_seconds:
+            msg += f"Warning: end time ({end}) exceeds initial duration ({initial_duration}). Adjusting to initial duration.\n"
+            end = initial_duration
+            end_seconds = initial_duration_seconds
 
-                EFFECTIVE_DURATION = max(0, calculated_duration)
-                msg += f"Effective duration after cut: {EFFECTIVE_DURATION} seconds\n"
-            else:
-                msg += "Warning: Cut configuration incomplete (missing start or end)\n"
-        except (json.JSONDecodeError, ValueError) as e:
-            msg += f"Warning: Failed to parse cut parameter: {e}\n"
-            msg += "Cut configuration ignored\n"
+    _CUT_CONFIG = cut_config
+    SUBTIME = f" -ss {start} -to {end} "
+    calculated_duration = max(0.0, end_seconds - start_seconds)
+    EFFECTIVE_DURATION = (
+        int(calculated_duration) if calculated_duration.is_integer() else calculated_duration
+    )
+    msg += f"Cut configuration applied: start={start}, end={end}\n"
+    msg += f"SUBTIME set to: {SUBTIME}\n"
+    msg += f"Effective duration after cut: {EFFECTIVE_DURATION:g} seconds\n"
     return msg
 
 
@@ -1448,13 +1459,13 @@ def _prepare_input_file(args) -> tuple[str, str]:
     return filename, msg
 
 
-def _compute_working_duration(info_video: dict) -> tuple[int, str]:
+def _compute_working_duration(info_video: dict) -> tuple[float, str]:
     """Compute the effective duration used for the encoding workflow."""
     global SUBTIME
     msg = ""
     if _CUT_CONFIG.get("start") and _CUT_CONFIG.get("end"):
         working_duration = EFFECTIVE_DURATION
-        msg += f"Using effective duration from cut: {working_duration} seconds\n"
+        msg += f"Using effective duration from cut: {working_duration:g} seconds\n"
     else:
         working_duration = info_video["duration"]
         if not _DEBUG and working_duration > 0 and SUBTIME == " ":
@@ -1485,7 +1496,7 @@ def _validate_source_media_info(info_video: dict) -> None:
         )
 
 
-def _validate_working_duration(working_duration: int) -> None:
+def _validate_working_duration(working_duration: float) -> None:
     """Reject zero-duration inputs before starting FFmpeg encoding jobs."""
     if working_duration > 0:
         return

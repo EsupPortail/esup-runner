@@ -1,6 +1,7 @@
 """Validates encoding runtime flow conversion branches and ffmpeg encoder selection logic."""
 
 import importlib
+import json
 import os
 import types
 from pathlib import Path
@@ -509,7 +510,6 @@ def test_runtime_flow_parse_and_apply_cli_config_branches(monkeypatch, tmp_path)
     args_invalid = _make_args(
         tmp_path,
         rendition="{not-json",
-        cut='{"start": "00:00:10"}',
         dressing="{bad",
         video_id="   ",
         video_slug="",
@@ -517,12 +517,7 @@ def test_runtime_flow_parse_and_apply_cli_config_branches(monkeypatch, tmp_path)
     )
     msg = runtime_flow._apply_cli_config(args_invalid)
     assert "Failed to parse rendition" in msg
-    assert "Cut configuration incomplete" in msg
     assert "Failed to parse dressing" in msg
-
-    args_cut_error = _make_args(tmp_path, cut="{bad")
-    cut_msg = runtime_flow._parse_cut_config(args_cut_error, "")
-    assert "Cut configuration ignored" in cut_msg
 
     args_dressing_error = _make_args(tmp_path, dressing="{bad")
     dressing_msg = runtime_flow._parse_dressing_config(args_dressing_error, "")
@@ -562,6 +557,70 @@ def test_runtime_flow_parse_and_apply_cli_config_branches(monkeypatch, tmp_path)
     monkeypatch.setattr("builtins.open", _open_with_append_failure)
     runtime_flow._apply_cli_config(args_valid)
     assert (out_dir / "encoding.log").exists()
+
+
+@pytest.mark.parametrize("field", ["start", "end", "initial_duration"])
+@pytest.mark.parametrize(
+    "value",
+    ["-i", "00:00:10 ", "00:00:10;", "-00:00:10", "00:00:10\n", "００:００:１０", "", 10, None],
+)
+def test_parse_cut_config_rejects_invalid_timestamps(tmp_path, field, value):
+    """Reject invalid timestamps in every cut field before updating FFmpeg options."""
+    runtime_flow = _load_core_module("runtime_flow_utils")
+    cut = {"start": "00:00:10", "end": "00:01:00", field: value}
+
+    with pytest.raises(
+        runtime_flow.EncodingValidationError, match=rf"Invalid cut\.{field} timestamp"
+    ):
+        runtime_flow._parse_cut_config(_make_args(tmp_path, cut=json.dumps(cut)), "")
+
+    assert runtime_flow.SUBTIME == " "
+    assert runtime_flow._CUT_CONFIG == {}
+    assert runtime_flow.EFFECTIVE_DURATION == 0
+
+
+@pytest.mark.parametrize(
+    ("cut", "error"),
+    [
+        ("", "Invalid cut parameter"),
+        ("{bad", "Invalid cut parameter"),
+        ("[]", "Invalid cut parameter"),
+        ('{"start": "00:00:10"}', r"Invalid cut\.end timestamp"),
+        ('{"end": "00:01:00"}', r"Invalid cut\.start timestamp"),
+    ],
+)
+def test_parse_cut_config_rejects_invalid_objects(tmp_path, cut, error):
+    """Require a JSON object with both start and end when cut is supplied."""
+    runtime_flow = _load_core_module("runtime_flow_utils")
+
+    with pytest.raises(runtime_flow.EncodingValidationError, match=error):
+        runtime_flow._parse_cut_config(_make_args(tmp_path, cut=cut), "")
+
+
+@pytest.mark.parametrize(
+    ("cut", "expected_end", "expected_duration"),
+    [
+        ({"start": "00:00:10", "end": "00:01:00"}, "00:01:00", 50),
+        (
+            {"start": "00:00:10", "end": "00:01:00", "initial_duration": "00:02:00"},
+            "00:01:00",
+            50,
+        ),
+        (
+            {"start": "0:00:10.250", "end": "00:00:12.500", "initial_duration": "00:00:10.750"},
+            "00:00:10.750",
+            0.5,
+        ),
+    ],
+)
+def test_parse_cut_config_accepts_valid_timestamps(tmp_path, cut, expected_end, expected_duration):
+    """Build FFmpeg arguments and calculate the duration for valid cuts."""
+    runtime_flow = _load_core_module("runtime_flow_utils")
+    runtime_flow._parse_cut_config(_make_args(tmp_path, cut=json.dumps(cut)), "")
+
+    assert runtime_flow.SUBTIME == f" -ss {cut['start']} -to {expected_end} "
+    assert runtime_flow.EFFECTIVE_DURATION == expected_duration
+    assert type(runtime_flow.EFFECTIVE_DURATION) is type(expected_duration)
 
 
 def test_runtime_flow_prepare_validate_and_process_branches(monkeypatch, tmp_path):

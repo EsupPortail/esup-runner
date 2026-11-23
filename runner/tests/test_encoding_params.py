@@ -3,12 +3,14 @@
 import importlib
 import importlib.util
 import shlex
+import sys
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
 from app.task_handlers.encoding.encoding_handler import VideoEncodingHandler
+from app.task_handlers.studio.studio_handler import StudioEncodingHandler
 
 
 def _load_encoding_script_module():
@@ -1185,3 +1187,35 @@ def test_main_writes_invalid_input_error_to_stderr_and_exits_non_zero(capsys):
     enc.runtime_flow_utils.add_info_video.assert_called_once_with(
         "error", "Invalid file or path: /tmp/input.mp4"
     )
+
+
+@pytest.mark.parametrize(
+    ("handler_class", "build_args_name"),
+    [
+        pytest.param(VideoEncodingHandler, "_build_script_arguments", id="encoding"),
+        pytest.param(StudioEncodingHandler, "_build_encoding_args", id="studio"),
+    ],
+)
+def test_main_rejects_invalid_cut_before_processing(
+    monkeypatch, capsys, tmp_path, handler_class, build_args_name
+):
+    """Both handlers pass cut to the shared encoding entrypoint for validation."""
+    runtime = _load_encoding_script_module()
+    enc = _load_encoding_main_runtime_module()
+    build_args = getattr(handler_class(), build_args_name)
+    args = build_args(
+        parameters={"cut": '{"start": "-i", "end": "00:01:00"}'},
+        base_dir=str(tmp_path),
+        input_file="input.mp4",
+        work_dir="output",
+    )
+    process_encoding = Mock()
+    monkeypatch.setattr(sys, "argv", ["encoding.py", *args])
+    monkeypatch.setattr(runtime, "_process_encoding", process_encoding)
+
+    with pytest.raises(SystemExit) as exc:
+        enc.main()
+
+    assert exc.value.code == 1
+    assert capsys.readouterr().err.startswith("Invalid cut.start timestamp.")
+    process_encoding.assert_not_called()

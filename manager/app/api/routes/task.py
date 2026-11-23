@@ -1212,7 +1212,7 @@ async def task_completion(
     lock_path = persistence.data_directory / f".completion-{lock_id}.lock"
     try:
         with FileLock(str(lock_path), timeout=0):
-            return await _process_task_completion(notification, current_token)
+            result, completed_task = await _process_task_completion(notification, current_token)
     except Timeout:
         raise HTTPException(503, "Task completion is being processed; retry") from None
     except OSError:
@@ -1220,44 +1220,39 @@ async def task_completion(
             503, "Task completion could not be locked; check Manager storage"
         ) from None
 
+    if completed_task is not None:
+        await _handle_notify_callback(completed_task, notification)
+    return result
+
 
 async def _process_task_completion(
     notification: TaskCompletionNotification, current_token: str
-) -> dict:
-    """Persist and process one completion while its cross-worker lock is held."""
+) -> tuple[dict, Task | None]:
+    """Persist completion under the lock and return the task eligible for delivery."""
     task = _get_task_or_404(notification.task_id)
     runner = _get_runner_or_404(task.runner_id)
     _verify_runner_token(runner, current_token)
 
     if notification.run_id is not None and notification.run_id != task.run_id:
         logger.warning("Ignoring stale completion for task %s", notification.task_id)
-        return {"status": "ignored", "reason": "stale_run"}
+        return {"status": "ignored", "reason": "stale_run"}, None
 
     if task.live is not None:
         from app.services.live_service import synchronize
 
         await synchronize(task.task_id)
-        return {"status": "acknowledged"}
+        return {"status": "acknowledged"}, None
 
     if task.completion_processed_at is not None:
-        return {"status": "acknowledged"}
+        return {"status": "acknowledged"}, None
 
     previous_task = task.model_copy(deep=True)
     _apply_task_completion_update(task, notification)
-    expected_run_id = task.run_id
-    # Persist terminal status before callback to avoid races with clients that
-    # fetch /task/result immediately after receiving notify_url.
-    if save_tasks() is False:
+    if not _save_task_completion(task):
         tasks[task.task_id] = previous_task
         raise HTTPException(503, "Task completion could not be persisted; retry")
-    await _handle_notify_callback(task, notification)
-
-    if not _task_run_matches(get_task_from_state(task.task_id), expected_run_id):
-        return {"status": "acknowledged"}
-
-    current_task = _get_task_or_404(task.task_id)
-    current_task.completion_processed_at = datetime.now().isoformat()
-    current_task.updated_at = current_task.completion_processed_at
+    if not _task_run_matches(get_task_from_state(task.task_id), previous_task.run_id):
+        return {"status": "acknowledged"}, None
 
     logger.info(f"Task {notification.task_id} updated with status: {task.status}")
 
@@ -1266,14 +1261,29 @@ async def _process_task_completion(
     except Exception as e:
         logger.error(f"Failed to append task stats CSV for {notification.task_id}: {e}")
 
-    if save_tasks() is False:
-        current_task.completion_processed_at = None
-        raise HTTPException(503, "Task completion could not be persisted; retry")
+    try:
+        runner.availability = "available"
+        runners[runner.id] = runner
+    except (OSError, Timeout):
+        # The completion is durable. A heartbeat can refresh Runner availability.
+        logger.error("Could not update availability for Runner %s", runner.id)
 
-    runner.availability = "available"
-    runners[runner.id] = runner
+    return {"status": "acknowledged"}, task
 
-    return {"status": "acknowledged"}
+
+def _save_task_completion(task: Task) -> bool:
+    """Persist the terminal result and its replay marker in the same task file."""
+    task.completion_processed_at = task.updated_at
+    if save_tasks() is not False:
+        return True
+
+    # A batch save may fail after writing this task's file.
+    stored_task = persistence.load_task(task.task_id)
+    return (
+        stored_task is not None
+        and stored_task.get("run_id") == task.run_id
+        and stored_task.get("completion_processed_at") == task.completion_processed_at
+    )
 
 
 def _get_task_or_404(task_id: str) -> Task:

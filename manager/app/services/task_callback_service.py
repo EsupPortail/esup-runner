@@ -14,6 +14,9 @@ from fastapi import HTTPException
 
 from app.models.models import Task, TaskCompletionNotification
 
+_NOTIFY_CALLBACK_TIMEOUT_SECONDS = 20.0
+_NOTIFY_CALLBACK_MAX_ERROR_BYTES = 4096
+
 
 def host_matches_allowlist(host: str, allowed_hosts: List[str]) -> bool:
     """Return whether a host is an exact or subdomain allowlist match."""
@@ -118,6 +121,20 @@ def _sanitize_script_output(script_output: str | None) -> str | None:
     return re.sub(r"[\U00010000-\U0010ffff]", "", script_output)
 
 
+async def _read_notify_error_body(response: httpx.Response, excerpt: bytearray) -> None:
+    """Collect a bounded error excerpt, retaining partial bytes on a read timeout."""
+    if 200 <= response.status_code < 300:
+        return
+    if response.headers.get("Content-Encoding", "identity").strip().lower() != "identity":
+        return
+
+    async for chunk in response.aiter_raw():
+        remaining = _NOTIFY_CALLBACK_MAX_ERROR_BYTES - len(excerpt)
+        excerpt.extend(chunk[:remaining])
+        if len(excerpt) >= _NOTIFY_CALLBACK_MAX_ERROR_BYTES:
+            break
+
+
 async def send_notify_callback(
     context: Any,
     task: Task,
@@ -127,12 +144,6 @@ async def send_notify_callback(
     if not task.notify_url:
         return False, "notify_url is empty"
 
-    await context._validate_notify_url(task.notify_url)
-    context.logger.info(
-        "Sending notify URL callback to %s for task %s",
-        task.notify_url,
-        notification.task_id,
-    )
     timeout = httpx.Timeout(
         connect=5.0,
         read=context._NOTIFY_CALLBACK_READ_TIMEOUT_SECONDS,
@@ -149,19 +160,41 @@ async def send_notify_callback(
     if warnings:
         payload["warnings"] = warnings
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Accept-Encoding": "identity",
+    }
     client_token = getattr(task, "client_token", None)
     if client_token:
         headers["Authorization"] = f"Bearer {client_token}"
 
+    request_started = False
+    status_code = None
+    error_body = bytearray()
     try:
-        async with context.httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(task.notify_url, content=body, headers=headers)
-    except httpx.ReadTimeout:
+        async with asyncio.timeout(_NOTIFY_CALLBACK_TIMEOUT_SECONDS):
+            await context._validate_notify_url(task.notify_url)
+            context.logger.info(
+                "Sending notify URL callback to %s for task %s",
+                task.notify_url,
+                notification.task_id,
+            )
+            async with context.httpx.AsyncClient(timeout=timeout) as client:
+                request_started = True
+                async with client.stream(
+                    "POST", task.notify_url, content=body, headers=headers
+                ) as response:
+                    status_code = response.status_code
+                    await _read_notify_error_body(response, error_body)
+    except (httpx.ReadTimeout, TimeoutError):
+        if not request_started:
+            raise
+
+    if status_code is None:
         # The request was sent but the receiver did not answer in time. Retrying
         # this ambiguous outcome can execute a non-idempotent callback twice
-        # (notably Pod 4.3 result imports), so keep the terminal task status and
-        # deliberately stop the retry chain.
+        # (notably Pod 4.3 result imports).
         context.logger.warning(
             "Notify URL callback response timed out for task %s; "
             "not retrying to avoid duplicate processing",
@@ -169,7 +202,7 @@ async def send_notify_callback(
         )
         return True, None
 
-    if 200 <= response.status_code < 300:
+    if 200 <= status_code < 300:
         context.logger.info(
             "Notify URL callback %s successful for task %s",
             task.notify_url,
@@ -177,10 +210,8 @@ async def send_notify_callback(
         )
         return True, None
 
-    error_message = (
-        f"Notify URL callback {task.notify_url} failed: "
-        f"{response.status_code} - {response.text}"
-    )
+    excerpt = error_body.decode("utf-8", errors="ignore")
+    error_message = f"Notify URL callback {task.notify_url} failed: {status_code} - {excerpt}"
     context.logger.warning(error_message)
     return False, error_message
 
@@ -218,9 +249,7 @@ def restore_status_after_notify(
 
 def task_run_matches(task: Task | None, expected_run_id: str | None) -> bool:
     """Return whether a task belongs to the expected execution run."""
-    if task is None:
-        return False
-    return expected_run_id is None or getattr(task, "run_id", None) == expected_run_id
+    return task is not None and task.run_id == expected_run_id
 
 
 def get_retry_notify_task(

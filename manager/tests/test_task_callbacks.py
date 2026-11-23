@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from fastapi import HTTPException
+from filelock import FileLock
 from task_routes_helpers import (
     clean_state,
     client,
@@ -52,15 +56,20 @@ async def test_completion_replay_after_reload_is_idempotent(monkeypatch, task_mo
 
 
 @pytest.mark.asyncio
-async def test_concurrent_completion_is_retried(monkeypatch, task_module, clean_state):
-    """Serialize one Runner's completions while another Runner can complete."""
-    runners["r1"] = _runner("r1", token="runner-token")
-    runners["r2"] = _runner("r2", token="runner-token")
+async def test_pending_callback_does_not_block_runner_completions(
+    monkeypatch, task_module, clean_state
+):
+    """Release the Runner and acknowledge same-Runner completions during delivery."""
+    runner = _runner("r1", token="runner-token")
+    runner.availability = "busy"
+    runners["r1"] = runner
     tasks["t1"] = _task("t1", "r1", status="running")
-    tasks["t2"] = _task("t2", "r2", status="running")
+    tasks["t2"] = _task("t2", "r1", status="running")
     entered, release = asyncio.Event(), asyncio.Event()
+    deliveries = []
 
     async def callback(task, _notification):
+        deliveries.append(task.task_id)
         if task.task_id == "t1":
             entered.set()
             await release.wait()
@@ -70,28 +79,28 @@ async def test_concurrent_completion_is_retried(monkeypatch, task_module, clean_
     first = asyncio.create_task(task_module.task_completion(notification, "runner-token"))
     await entered.wait()
     try:
-        with pytest.raises(HTTPException) as error:
-            await task_module.task_completion(notification, "runner-token")
-        assert error.value.status_code == 503
+        assert runners["r1"].availability == "available"
+        assert state.persistence.load_task("t1")["completion_processed_at"] is not None
+        assert await task_module.task_completion(notification, "runner-token") == {
+            "status": "acknowledged"
+        }
         assert await task_module.task_completion(
             TaskCompletionNotification(task_id="t2", status="completed"), "runner-token"
         ) == {"status": "acknowledged"}
     finally:
         release.set()
         await first
+    assert deliveries == ["t1", "t2"]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failed_save", [1, 2])
-async def test_completion_save_failure_is_not_acknowledged(
-    monkeypatch, task_module, clean_state, failed_save
-):
-    """Keep failed saves retryable and never notify before terminal state is saved."""
+async def test_completion_save_failure_is_not_acknowledged(monkeypatch, task_module, clean_state):
+    """Keep failed saves retryable and notify only after a successful write."""
     runner = _runner("r1", token="runner-token")
     runner.availability = "busy"
     runners["r1"] = runner
     tasks["t1"] = _task("t1", "r1", status="running")
-    saves = iter([index != failed_save for index in (1, 2)])
+    saves = iter([False, True])
     monkeypatch.setattr(task_module, "save_tasks", lambda: next(saves))
     callback = AsyncMock()
     monkeypatch.setattr(task_module, "_handle_notify_callback", callback)
@@ -100,10 +109,76 @@ async def test_completion_save_failure_is_not_acknowledged(
             TaskCompletionNotification(task_id="t1", status="completed"), "runner-token"
         )
     assert error.value.status_code == 503
-    assert callback.await_count == failed_save - 1
+    callback.assert_not_awaited()
     assert tasks["t1"].completion_processed_at is None
-    assert tasks["t1"].status == ("running" if failed_save == 1 else "completed")
+    assert tasks["t1"].status == "running"
     assert runners["r1"].availability == "busy"
+    assert await task_module.task_completion(
+        TaskCompletionNotification(task_id="t1", status="completed"), "runner-token"
+    ) == {"status": "acknowledged"}
+    callback.assert_awaited_once()
+    assert tasks["t1"].completion_processed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_completion_lock_contention_is_retryable(task_module, clean_state):
+    """Keep returning HTTP 503 while a Runner's completion lock is held."""
+    runners["r1"] = _runner("r1", token="runner-token")
+    tasks["t1"] = _task("t1", "r1", status="running")
+    lock_id = hashlib.sha256(b"r1").hexdigest()
+    lock_path = state.persistence.data_directory / f".completion-{lock_id}.lock"
+    with FileLock(str(lock_path), timeout=0), pytest.raises(HTTPException) as error:
+        await task_module.task_completion(
+            TaskCompletionNotification(task_id="t1", status="completed"), "runner-token"
+        )
+    assert error.value.status_code == 503
+    assert tasks["t1"].status == "running"
+
+
+@pytest.mark.asyncio
+async def test_completion_delivers_if_task_was_saved_before_batch_failure(
+    monkeypatch, task_module, clean_state
+):
+    """Deliver once if the batch write fails after committing this task's marker."""
+    runners["r1"] = _runner("r1", token="runner-token")
+    task_id = "partial-save"
+    tasks[task_id] = _task(task_id, "r1", status="running")
+
+    def partial_save():
+        assert state.persistence.upsert_tasks({task_id: tasks[task_id]})
+        return False
+
+    callback = AsyncMock()
+    monkeypatch.setattr(task_module, "save_tasks", partial_save)
+    monkeypatch.setattr(task_module, "_handle_notify_callback", callback)
+    notification = TaskCompletionNotification(task_id=task_id, status="completed")
+    assert await task_module.task_completion(notification, "runner-token") == {
+        "status": "acknowledged"
+    }
+    await task_module.task_completion(notification, "runner-token")
+    callback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_completion_delivers_after_runner_store_write_failure(
+    monkeypatch, task_module, clean_state
+):
+    """A failed availability update does not discard a committed completion callback."""
+    runner = _runner("r1", token="runner-token")
+    tasks["t1"] = _task("t1", "r1", status="running")
+
+    class RunnerSnapshot(dict):
+        def __setitem__(self, _key, _value):
+            raise OSError("Runner store unavailable")
+
+    monkeypatch.setattr(task_module, "runners", RunnerSnapshot(r1=runner))
+    callback = AsyncMock()
+    monkeypatch.setattr(task_module, "_handle_notify_callback", callback)
+    assert await task_module.task_completion(
+        TaskCompletionNotification(task_id="t1", status="completed"), "runner-token"
+    ) == {"status": "acknowledged"}
+    callback.assert_awaited_once()
+    assert state.persistence.load_task("t1")["completion_processed_at"] is not None
 
 
 @pytest.mark.asyncio
@@ -183,6 +258,7 @@ async def test_relaunch_during_client_callback_does_not_release_new_reservation(
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
 
     async def relaunch(_completed_task, _notification):
+        assert runners.try_reserve("r1") is not None
         tasks["t1"] = _task("t1", "r1", status="running")
         tasks["t1"].run_id = "new-attempt"
 
@@ -193,6 +269,31 @@ async def test_relaunch_during_client_callback_does_not_release_new_reservation(
     )
     assert result == {"status": "acknowledged"}
     assert tasks["t1"].status == "running"
+    assert runners["r1"].availability == "busy"
+
+
+@pytest.mark.asyncio
+async def test_completion_skips_callback_when_persistence_refreshes_the_run(
+    monkeypatch, task_module, clean_state
+):
+    """Keep a newer reservation when saving refreshes the local task from shared state."""
+    runner = _runner("r1", token="runner-token")
+    runner.availability = "busy"
+    runners["r1"] = runner
+    tasks["t1"] = _task("t1", "r1", status="running")
+
+    def save_and_refresh():
+        tasks["t1"] = _task("t1", "r1", status="running")
+        tasks["t1"].run_id = "new-attempt"
+        return True
+
+    callback = AsyncMock()
+    monkeypatch.setattr(task_module, "save_tasks", save_and_refresh)
+    monkeypatch.setattr(task_module, "_handle_notify_callback", callback)
+    assert await task_module.task_completion(
+        TaskCompletionNotification(task_id="t1", status="completed"), "runner-token"
+    ) == {"status": "acknowledged"}
+    callback.assert_not_awaited()
     assert runners["r1"].availability == "busy"
 
 
@@ -410,11 +511,13 @@ async def test_send_notify_callback_success(
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, url: str, **kwargs):
+        @asynccontextmanager
+        async def stream(self, method: str, url: str, **kwargs):
+            assert method == "POST"
             captured["url"] = url
             captured["headers"] = kwargs.get("headers")
             captured["content"] = kwargs.get("content")
-            return FakeResponse()
+            yield FakeResponse()
 
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
@@ -443,8 +546,11 @@ async def test_send_notify_callback_success(
 
 
 @pytest.mark.asyncio
-async def test_send_notify_callback_non_2xx_returns_error(monkeypatch, task_module, clean_state):
-    """Validate Send notify callback non 2xx returns error."""
+@pytest.mark.parametrize("encoding", ["identity", "gzip"])
+async def test_send_notify_callback_non_2xx_returns_error(
+    monkeypatch, task_module, clean_state, encoding
+):
+    """Read at most 4 KiB of an identity-encoded error response."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed", notify_url="https://example.com/notify")
 
@@ -457,7 +563,13 @@ async def test_send_notify_callback_non_2xx_returns_error(monkeypatch, task_modu
 
     class FakeResponse:
         status_code = 500
-        text = "nope"
+        headers = {"Content-Encoding": encoding}
+
+        async def aiter_raw(self):
+            assert encoding == "identity"
+            yield b"nope"
+            yield b"a" * 10000
+            pytest.fail("The response must be closed at the body size limit")
 
     class FakeAsyncClient:
         def __init__(self, *_, **__):
@@ -469,8 +581,9 @@ async def test_send_notify_callback_non_2xx_returns_error(monkeypatch, task_modu
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, *_a, **_k):
-            return FakeResponse()
+        @asynccontextmanager
+        async def stream(self, *_a, **_k):
+            yield FakeResponse()
 
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
@@ -479,7 +592,8 @@ async def test_send_notify_callback_non_2xx_returns_error(monkeypatch, task_modu
 
     ok, err = await task_module._send_notify_callback(tasks["t1"], notification)
     assert ok is False
-    assert err and "500" in err
+    excerpt = "nope" + "a" * 4092 if encoding == "identity" else ""
+    assert err == f"Notify URL callback https://example.com/notify failed: 500 - {excerpt}"
 
 
 @pytest.mark.asyncio
@@ -507,8 +621,8 @@ async def test_send_notify_callback_read_timeout_stops_retries(
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, url: str, **_kwargs):
-            request = task_module.httpx.Request("POST", url)
+        def stream(self, method: str, url: str, **_kwargs):
+            request = task_module.httpx.Request(method, url)
             raise task_module.httpx.ReadTimeout("read timed out", request=request)
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
@@ -518,6 +632,55 @@ async def test_send_notify_callback_read_timeout_stops_retries(
 
     assert ok is True
     assert err is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["dns", "headers", "body"])
+async def test_send_notify_callback_global_deadline(monkeypatch, task_module, clean_state, phase):
+    """Enforce a single deadline and distinguish known HTTP errors from read timeouts."""
+    task = _task("t1", "r1", status="completed")
+    notification = TaskCompletionNotification(task_id="t1", status="completed")
+    closed = []
+
+    class SlowBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            while True:
+                yield b"x"
+                await asyncio.sleep(0.002)
+
+        async def aclose(self):
+            closed.append(True)
+
+    async def handle(request):
+        assert request.headers["accept-encoding"] == "identity"
+        if phase == "headers":
+            await asyncio.Event().wait()
+        return httpx.Response(500, stream=SlowBody())
+
+    async def resolve(host):
+        if phase == "dns":
+            await asyncio.Event().wait()
+        return await _fake_resolve_public_ips(host)
+
+    http_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        task_module.httpx,
+        "AsyncClient",
+        lambda **kwargs: http_client(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    monkeypatch.setattr(task_module, "_resolve_host_ips", resolve)
+    monkeypatch.setattr(task_module.task_callback_service, "_NOTIFY_CALLBACK_TIMEOUT_SECONDS", 0.03)
+
+    if phase == "dns":
+        with pytest.raises(TimeoutError):
+            await task_module._send_notify_callback(task, notification)
+    elif phase == "headers":
+        assert await task_module._send_notify_callback(task, notification) == (True, None)
+    else:
+        ok, err = await task_module._send_notify_callback(task, notification)
+        assert ok is False
+        assert err and "500 - x" in err
+        assert closed == [True]
 
 
 @pytest.mark.asyncio
@@ -1114,15 +1277,16 @@ def test_task_completion_notify_exception_sets_warning_and_schedules_retry(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("previous_run_id", ["run-old", None])
 async def test_handle_notify_callback_ignores_stale_run_after_success(
-    monkeypatch, task_module, clean_state
+    monkeypatch, task_module, clean_state, previous_run_id
 ):
     """Validate Handle notify callback ignores stale run after success."""
     runners["r1"] = _runner("r1", token="tok")
     tasks["t1"] = _task("t1", "r1", status="running", notify_url="https://example.com/notify")
     tasks["t1"].run_id = "run-new"
     stale_task = Task(**tasks["t1"].model_dump())
-    stale_task.run_id = "run-old"
+    stale_task.run_id = previous_run_id
 
     async def fake_send(*_a, **_k):
         return True, None

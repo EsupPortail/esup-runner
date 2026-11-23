@@ -1,6 +1,7 @@
 """Keep incomplete-encoding warnings across completion, storage and result retrieval."""
 
 import json
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -37,11 +38,12 @@ async def test_completed_encoding_preserves_warnings_in_history_api_and_callback
         async def __aexit__(self, *_args):
             return False
 
-        async def post(self, _url, **kwargs):
+        @asynccontextmanager
+        async def stream(self, _method, _url, **kwargs):
             # Completion must be durable before the client can fetch the result.
             assert persistence.load_task("t1")["warnings"] == [WARNING]
             sent.append(json.loads(kwargs["content"]))
-            return SimpleNamespace(status_code=204, text="")
+            yield SimpleNamespace(status_code=204)
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", lambda **_kwargs: Client())
     notification = TaskCompletionNotification(task_id="t1", status="completed", warnings=[WARNING])

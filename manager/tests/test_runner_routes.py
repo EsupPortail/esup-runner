@@ -188,7 +188,7 @@ def test_registration_cannot_transfer_heartbeat_or_completion_ownership(
         assert victim_task.status == "completed"
         assert victim_task.script_output == "ok"
         assert registry["victim"].availability == "available"
-        assert effects == ["save", "callback", "stats", "save"]
+        assert effects == ["save", "stats", "callback"]
 
 
 def test_runner_heartbeat_ok_after_register(runner_client, clean_runners_state):

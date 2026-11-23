@@ -1,5 +1,7 @@
 """Validates notify URL host allowlist checking and DNS resolution with IP validation."""
 
+from contextlib import asynccontextmanager
+
 import pytest
 from fastapi import HTTPException
 
@@ -161,11 +163,12 @@ async def test_send_notify_callback_sends_auth_header_from_task_token(monkeypatc
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, url, content=None, headers=None):
+        @asynccontextmanager
+        async def stream(self, _method, url, content=None, headers=None):
             captured["url"] = url
             captured["headers"] = headers
             captured["content"] = content
-            return FakeResponse()
+            yield FakeResponse()
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
 
@@ -195,7 +198,10 @@ async def test_send_notify_callback_non_200_returns_error(monkeypatch):
 
     class FakeResponse:
         status_code = 500
-        text = "no"
+        headers: dict[str, str] = {}
+
+        async def aiter_raw(self):
+            yield b"no"
 
     class FakeAsyncClient:
         def __init__(self, *_, **__):
@@ -207,8 +213,9 @@ async def test_send_notify_callback_non_200_returns_error(monkeypatch):
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, *_a, **_k):
-            return FakeResponse()
+        @asynccontextmanager
+        async def stream(self, *_a, **_k):
+            yield FakeResponse()
 
     monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
 

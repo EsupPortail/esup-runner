@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Persist and deduplicate task completions before sending `notify_url` callbacks,
+  so the Manager can accept other completions from the same Runner during
+  delivery. Limit each attempt to 20 seconds and retain up to 4 KiB of
+  uncompressed error bodies.
 
 ## [1.12.0] - 2026-11-20
 

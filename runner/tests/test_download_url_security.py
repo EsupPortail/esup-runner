@@ -11,7 +11,7 @@ import pytest
 import requests
 
 from app.core.config import config
-from app.core.download_urls import DownloadURLRejected
+from app.core.download_urls import DownloadURLRejected, get_download_response, validate_download_url
 from app.task_handlers import base_handler
 from app.task_handlers.encoding.core import dressing_runtime_utils
 from app.task_handlers.studio.core import download_runtime_utils, metadata_runtime_utils
@@ -54,6 +54,21 @@ def requested_urls(monkeypatch):
     monkeypatch.setattr(requests, "get", lambda url, **kwargs: get(None, url, **kwargs))
     monkeypatch.setattr(base_handler.time, "sleep", lambda _: pytest.fail("Policy failure retried"))
     return calls
+
+
+@pytest.mark.parametrize(
+    ("url", "error"),
+    [("https://[invalid", "Invalid download URL"), ("https:///media", "Invalid download URL host")],
+)
+def test_rejects_malformed_download_urls(url, error):
+    with pytest.raises(DownloadURLRejected, match=error):
+        validate_download_url(url)
+
+
+def test_rejects_a_request_with_no_prepared_url(monkeypatch):
+    monkeypatch.setattr(requests.Request, "prepare", lambda _: SimpleNamespace(url=None))
+    with pytest.raises(DownloadURLRejected, match="Invalid download URL"):
+        get_download_response(pytest.fail, "https://example.com/media", timeout=(1, 1))
 
 
 @pytest.mark.parametrize(

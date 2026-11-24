@@ -279,7 +279,8 @@ NOTIFY_URL_ALLOW_PRIVATE_NETWORKS=false
 Behavior:
 - `NOTIFY_URL_ALLOWED_HOSTS` is an optional comma-separated allowlist.
 - `localhost` is always blocked for `notify_url`.
-- If `NOTIFY_URL_ALLOW_PRIVATE_NETWORKS=false` (default), callback targets resolving to private/loopback/link-local/multicast/reserved/unspecified IPs are rejected.
+- The Manager connects directly to a validated IP for each attempt. HTTPS uses the original hostname for certificate verification. Callback delivery bypasses HTTP proxy environment settings.
+- If `NOTIFY_URL_ALLOW_PRIVATE_NETWORKS=false` (default), callback targets resolving to non-global or special-use IPs are rejected, including the shared `100.64.0.0/10` range and multicast.
 
 ### Runner registration URLs
 
@@ -324,9 +325,8 @@ Storage failures return HTTP 503 so the Runner can retry.
 
 The Manager releases the Runner's completion lock before delivering the callback.
 Each delivery attempt has a 20-second deadline, including URL validation and
-response handling. For HTTP errors, the Manager retains up to 4 KiB from an
-uncompressed response body. Client callbacks should remain idempotent because a
-Manager crash during delivery can leave its outcome unknown.
+response handling. HTTP errors record the status code. Keep callback handlers
+idempotent because a Manager crash during delivery can leave its outcome unknown.
 
 ## Optional SMTP notifications
 

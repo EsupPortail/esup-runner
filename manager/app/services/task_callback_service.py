@@ -5,6 +5,8 @@ import ipaddress
 import json
 import re
 import socket
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from typing import Any, List, cast
 from urllib.parse import ParseResult, urlparse
@@ -15,7 +17,6 @@ from fastapi import HTTPException
 from app.models.models import Task, TaskCompletionNotification
 
 _NOTIFY_CALLBACK_TIMEOUT_SECONDS = 20.0
-_NOTIFY_CALLBACK_MAX_ERROR_BYTES = 4096
 
 
 def host_matches_allowlist(host: str, allowed_hosts: List[str]) -> bool:
@@ -37,7 +38,7 @@ def is_disallowed_ip(ip: str) -> bool:
     except ValueError:
         return True
     return bool(
-        address.is_private
+        not address.is_global
         or address.is_loopback
         or address.is_link_local
         or address.is_multicast
@@ -104,14 +105,51 @@ def validate_notify_url_public_ips(context: Any, ips: List[str]) -> None:
             )
 
 
-async def validate_notify_url(context: Any, url: str) -> str:
-    """Run full notify URL validation and return the original URL."""
+async def _validated_notify_ips(context: Any, url: str) -> List[str]:
+    """Validate the callback destination and return its resolved addresses."""
     _, host = context._parse_notify_url(url)
     context._validate_notify_url_host(host)
-    ips = await context._resolve_notify_url_ips(host)
+    ips = cast(List[str], await context._resolve_notify_url_ips(host))
     if not context.config.NOTIFY_URL_ALLOW_PRIVATE_NETWORKS:
         context._validate_notify_url_public_ips(ips)
+    return ips
+
+
+async def validate_notify_url(context: Any, url: str) -> str:
+    """Run full notify URL validation and return the original URL."""
+    await _validated_notify_ips(context, url)
     return url
+
+
+@asynccontextmanager
+async def _stream_validated_callback(
+    client: httpx.AsyncClient,
+    url: httpx.URL,
+    ips: list[str],
+    body: bytes,
+    headers: dict[str, str],
+) -> AsyncIterator[httpx.Response]:
+    """Try validated addresses until one connects, then yield the response headers."""
+    headers["Host"] = url.netloc.decode("ascii")
+    extensions = {"sni_hostname": url.raw_host.decode("ascii")}
+    async with AsyncExitStack() as stack:
+        for index, ip in enumerate(ips):
+            try:
+                response = await stack.enter_async_context(
+                    client.stream(
+                        "POST",
+                        url.copy_with(host=ip),
+                        content=body,
+                        headers=headers,
+                        extensions=extensions,
+                    )
+                )
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                if index == len(ips) - 1:
+                    raise
+                continue
+            yield response
+            return
 
 
 def _sanitize_script_output(script_output: str | None) -> str | None:
@@ -121,26 +159,12 @@ def _sanitize_script_output(script_output: str | None) -> str | None:
     return re.sub(r"[\U00010000-\U0010ffff]", "", script_output)
 
 
-async def _read_notify_error_body(response: httpx.Response, excerpt: bytearray) -> None:
-    """Collect a bounded error excerpt, retaining partial bytes on a read timeout."""
-    if 200 <= response.status_code < 300:
-        return
-    if response.headers.get("Content-Encoding", "identity").strip().lower() != "identity":
-        return
-
-    async for chunk in response.aiter_raw():
-        remaining = _NOTIFY_CALLBACK_MAX_ERROR_BYTES - len(excerpt)
-        excerpt.extend(chunk[:remaining])
-        if len(excerpt) >= _NOTIFY_CALLBACK_MAX_ERROR_BYTES:
-            break
-
-
 async def send_notify_callback(
     context: Any,
     task: Task,
     notification: TaskCompletionNotification,
 ) -> tuple[bool, str | None]:
-    """Send a notify URL callback with utf8mb3-compatible script output."""
+    """Send a callback using a validated IP and the original HTTP/TLS hostname."""
     if not task.notify_url:
         return False, "notify_url is empty"
 
@@ -163,7 +187,6 @@ async def send_notify_callback(
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "Accept-Encoding": "identity",
     }
     client_token = getattr(task, "client_token", None)
     if client_token:
@@ -171,22 +194,19 @@ async def send_notify_callback(
 
     request_started = False
     status_code = None
-    error_body = bytearray()
     try:
         async with asyncio.timeout(_NOTIFY_CALLBACK_TIMEOUT_SECONDS):
-            await context._validate_notify_url(task.notify_url)
-            context.logger.info(
-                "Sending notify URL callback to %s for task %s",
-                task.notify_url,
-                notification.task_id,
-            )
-            async with context.httpx.AsyncClient(timeout=timeout) as client:
+            ips = await _validated_notify_ips(context, task.notify_url)
+            url = httpx.URL(task.notify_url)
+            context.logger.info("Sending notify URL callback for task %s", notification.task_id)
+            async with context.httpx.AsyncClient(
+                timeout=timeout,
+                trust_env=False,
+                verify=httpx.create_ssl_context(),
+            ) as client:
                 request_started = True
-                async with client.stream(
-                    "POST", task.notify_url, content=body, headers=headers
-                ) as response:
+                async with _stream_validated_callback(client, url, ips, body, headers) as response:
                     status_code = response.status_code
-                    await _read_notify_error_body(response, error_body)
     except (httpx.ReadTimeout, TimeoutError):
         if not request_started:
             raise
@@ -204,15 +224,13 @@ async def send_notify_callback(
 
     if 200 <= status_code < 300:
         context.logger.info(
-            "Notify URL callback %s successful for task %s",
-            task.notify_url,
+            "Notify URL callback successful for task %s",
             notification.task_id,
         )
         return True, None
 
-    excerpt = error_body.decode("utf-8", errors="ignore")
-    error_message = f"Notify URL callback {task.notify_url} failed: {status_code} - {excerpt}"
-    context.logger.warning(error_message)
+    error_message = f"Notify URL callback failed: HTTP {status_code}"
+    context.logger.warning("%s for task %s", error_message, notification.task_id)
     return False, error_message
 
 
@@ -293,9 +311,7 @@ async def run_single_notify_retry_attempt(
         )
         return True
     except Exception as exc:
-        context.logger.error(
-            "Error during notify URL retry to %s: %s", current_task.notify_url, exc
-        )
+        context.logger.error("Notify URL retry failed for task %s: %s", task_id, type(exc).__name__)
         return False
 
 
@@ -395,9 +411,11 @@ async def handle_notify_callback(
             return
         context._set_notify_warning(
             notification.task_id,
-            f"Notify URL callback {task.notify_url} failed: server error - {exc}",
+            f"Notify URL callback failed: {type(exc).__name__}",
         )
-        context.logger.error("Error during notify URL callback to %s: %s", task.notify_url, exc)
+        context.logger.error(
+            "Notify URL callback failed for task %s: %s", notification.task_id, type(exc).__name__
+        )
 
     context.asyncio.create_task(
         context._retry_notify_callback(

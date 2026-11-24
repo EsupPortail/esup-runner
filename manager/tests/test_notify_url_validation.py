@@ -21,6 +21,8 @@ def test_is_disallowed_ip_invalid_is_true():
     """Validate Is disallowed ip invalid is true."""
     assert task_module._is_disallowed_ip("not-an-ip") is True
     assert task_module._is_disallowed_ip("127.0.0.1") is True
+    assert task_module._is_disallowed_ip("100.64.0.1") is True
+    assert task_module._is_disallowed_ip("224.0.0.1") is True
     assert task_module._is_disallowed_ip("8.8.8.8") is False
 
 
@@ -142,10 +144,10 @@ async def test_send_notify_callback_handles_empty_notify_url(monkeypatch):
 async def test_send_notify_callback_sends_auth_header_from_task_token(monkeypatch):
     """Validate Send notify callback sends auth header from task token."""
 
-    async def noop(_url: str):
-        return _url
+    async def resolve(_host: str):
+        return ["8.8.8.8"]
 
-    monkeypatch.setattr(task_module, "_validate_notify_url", noop)
+    monkeypatch.setattr(task_module, "_resolve_host_ips", resolve)
 
     captured = {}
 
@@ -164,7 +166,7 @@ async def test_send_notify_callback_sends_auth_header_from_task_token(monkeypatc
             return False
 
         @asynccontextmanager
-        async def stream(self, _method, url, content=None, headers=None):
+        async def stream(self, _method, url, content=None, headers=None, **_kwargs):
             captured["url"] = url
             captured["headers"] = headers
             captured["content"] = content
@@ -191,10 +193,10 @@ async def test_send_notify_callback_sends_auth_header_from_task_token(monkeypatc
 async def test_send_notify_callback_non_200_returns_error(monkeypatch):
     """Validate Send notify callback non 200 returns error."""
 
-    async def noop(_url: str):
-        return _url
+    async def resolve(_host: str):
+        return ["8.8.8.8"]
 
-    monkeypatch.setattr(task_module, "_validate_notify_url", noop)
+    monkeypatch.setattr(task_module, "_resolve_host_ips", resolve)
 
     class FakeResponse:
         status_code = 500

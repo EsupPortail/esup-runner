@@ -506,6 +506,8 @@ async def test_send_notify_callback_success(
     class FakeAsyncClient:
         def __init__(self, *_, **kwargs):
             captured["timeout"] = kwargs.get("timeout")
+            captured["trust_env"] = kwargs.get("trust_env")
+            captured["verify"] = kwargs.get("verify")
 
         async def __aenter__(self):
             return self
@@ -519,6 +521,7 @@ async def test_send_notify_callback_success(
             captured["url"] = url
             captured["headers"] = kwargs.get("headers")
             captured["content"] = kwargs.get("content")
+            captured["extensions"] = kwargs.get("extensions")
             yield FakeResponse()
 
     monkeypatch.setattr(task_module, "save_tasks", lambda: None)
@@ -529,7 +532,12 @@ async def test_send_notify_callback_success(
     ok, err = await task_module._send_notify_callback(tasks["t1"], notification)
     assert ok is True
     assert err is None
-    assert captured["url"] == "https://example.com/notify"
+    assert captured["url"].host in await _fake_resolve_public_ips("example.com")
+    assert captured["url"].path == "/notify"
+    assert captured["headers"]["Host"] == "example.com"
+    assert captured["extensions"] == {"sni_hostname": "example.com"}
+    assert captured["trust_env"] is False
+    assert captured["verify"].check_hostname
     assert "Authorization" not in (captured["headers"] or {})
     assert captured["headers"].get("Content-Type") == "application/json"
     assert isinstance(captured["content"], (bytes, bytearray))
@@ -552,7 +560,7 @@ async def test_send_notify_callback_success(
 async def test_send_notify_callback_non_2xx_returns_error(
     monkeypatch, task_module, clean_state, encoding
 ):
-    """Read at most 4 KiB of an identity-encoded error response."""
+    """Report the HTTP status without consuming an error response body."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed", notify_url="https://example.com/notify")
 
@@ -568,10 +576,7 @@ async def test_send_notify_callback_non_2xx_returns_error(
         headers = {"Content-Encoding": encoding}
 
         async def aiter_raw(self):
-            assert encoding == "identity"
-            yield b"nope"
-            yield b"a" * 10000
-            pytest.fail("The response must be closed at the body size limit")
+            yield pytest.fail("The response body must not be read")
 
     class FakeAsyncClient:
         def __init__(self, *_, **__):
@@ -594,8 +599,43 @@ async def test_send_notify_callback_non_2xx_returns_error(
 
     ok, err = await task_module._send_notify_callback(tasks["t1"], notification)
     assert ok is False
-    excerpt = "nope" + "a" * 4092 if encoding == "identity" else ""
-    assert err == f"Notify URL callback https://example.com/notify failed: 500 - {excerpt}"
+    assert err == "Notify URL callback failed: HTTP 500"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connect_ok", [True, False])
+async def test_callback_tries_only_the_validated_addresses(monkeypatch, task_module, connect_ok):
+    addresses = ["2001:4860::1", "8.8.8.8"]
+    visited = []
+
+    async def resolve(host):
+        assert host == "example.com"
+        return addresses
+
+    def connect(request):
+        visited.append(request.url.host)
+        assert request.headers["host"] == "example.com:8443"
+        assert request.extensions["sni_hostname"] == "example.com"
+        if request.url.host == addresses[0] or not connect_ok:
+            raise httpx.ConnectError("unreachable", request=request)
+        return httpx.Response(204)
+
+    http_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        task_module.httpx,
+        "AsyncClient",
+        lambda **kwargs: http_client(transport=httpx.MockTransport(connect), **kwargs),
+    )
+    monkeypatch.setattr(task_module, "_resolve_host_ips", resolve)
+    task = _task("t1", "r1", status="completed", notify_url="https://example.com:8443/callback")
+    notification = TaskCompletionNotification(task_id="t1", status="completed")
+
+    if connect_ok:
+        assert await task_module._send_notify_callback(task, notification) == (True, None)
+    else:
+        with pytest.raises(httpx.ConnectError):
+            await task_module._send_notify_callback(task, notification)
+    assert visited == addresses
 
 
 @pytest.mark.asyncio
@@ -654,7 +694,6 @@ async def test_send_notify_callback_global_deadline(monkeypatch, task_module, cl
             closed.append(True)
 
     async def handle(request):
-        assert request.headers["accept-encoding"] == "identity"
         if phase == "headers":
             await asyncio.Event().wait()
         return httpx.Response(500, stream=SlowBody())
@@ -681,7 +720,7 @@ async def test_send_notify_callback_global_deadline(monkeypatch, task_module, cl
     else:
         ok, err = await task_module._send_notify_callback(task, notification)
         assert ok is False
-        assert err and "500 - x" in err
+        assert err == "Notify URL callback failed: HTTP 500"
         assert closed == [True]
 
 
@@ -1273,7 +1312,7 @@ def test_task_completion_notify_exception_sets_warning_and_schedules_retry(
 
     assert resp.status_code == 200
     assert tasks["t1"].status == "warning"
-    assert tasks["t1"].error and "server error" in tasks["t1"].error
+    assert tasks["t1"].error == "Notify URL callback failed: RuntimeError"
     assert "coro" in scheduled
     scheduled["coro"].close()
 

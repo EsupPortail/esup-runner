@@ -29,7 +29,7 @@ async def test_completed_encoding_preserves_warnings_in_history_api_and_callback
     tasks["t1"] = make_task("t1", "r1", status="running")
     persistence = DailyJSONPersistence(data_directory=tmp_path, lock_timeout=1)
     monkeypatch.setattr(task_module, "save_tasks", lambda: persistence.save_tasks(dict(tasks)))
-    monkeypatch.setattr(task_module, "_validate_notify_url", AsyncMock())
+    monkeypatch.setattr(task_module, "_resolve_host_ips", AsyncMock(return_value=["8.8.8.8"]))
     sent = []
 
     class Client:

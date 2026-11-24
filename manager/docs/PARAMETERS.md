@@ -50,7 +50,7 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 - If no `ADMIN_USERS__*` is configured, the manager logs a warning and admin login is unavailable.
 
 ## OpenAPI visibility
-- `API_DOCS_VISIBILITY` (default `public`): `public` or `private`.
+- `API_DOCS_VISIBILITY` (default `private`): `public` or `private`.
 - `OPENAPI_ALLOW_QUERY_TOKEN` (bool, default `false`): Allows `?token=...` on docs/OpenAPI routes (legacy/fallback; admin docs uses a secure cookie instead).
 - `OPENAPI_COOKIE_MAX_AGE_SECONDS` (int, default `900`): Advanced cookie tuning; TTL of the signed OpenAPI auth cookie used by admin/docs flow.
 - `OPENAPI_COOKIE_ROTATE_EACH_REQUEST` (bool, default `true`): Advanced cookie tuning; rotates OpenAPI auth cookie on each protected docs request.
@@ -108,7 +108,7 @@ old `/home/esup-runner/...` overrides when changing `SERVICE_USER`.
   `RUNNERS_STORAGE_DIR`/`RUNNERS_STORAGE_PATH` pointing to the same
   generated-files workspace as each Runner's `STORAGE_DIR`.
 - `PRIORITIES_ENABLED=true` requires a non-empty hostname-only `PRIORITY_DOMAIN`.
-- Documented `CHANGE_ME_*` token/admin values are rejected. The optional `change-me-with-a-long-random-secret` OpenAPI cookie value emits a warning only; replace it in production or leave it empty to use the derived fallback. Empty token/admin collections remain allowed with an explicit warning because they intentionally disable the corresponding access.
+- Documented token, admin hash, and OpenAPI cookie secret placeholders are rejected. An empty OpenAPI cookie secret uses the derived fallback. Empty token/admin collections remain allowed with a warning.
 - Boolean values accept common forms: `true/false`, `1/0`, `yes/no`, `on/off`.
 - Run `uv run scripts/check_config.py` after changing `.env` to see all validation errors together. Its summary reports credential counts, never credential values; exit code `0` means valid and `2` means invalid.
 

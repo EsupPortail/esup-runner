@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import SplitResult, unquote, urlsplit
 
-from app.core._check_output import format_status
 from app.core.live_config import LiveSettings
 from app.core.passwords import BcryptPasswordContext
 from app.core.token_roles import TokenRole, token_label_role
@@ -26,6 +25,7 @@ DOCUMENTED_PLACEHOLDER_VALUES = frozenset(
         "CHANGE_ME_APP_TOKEN",
         "CHANGE_ME_BCRYPT_HASH",
         "CHANGE_ME_RUNNERS_TOKEN",
+        "change-me-runner-token",
         "change-me-with-a-long-random-secret",
     }
 )
@@ -576,7 +576,7 @@ class Config:
 
         # Visibility of the API documentation (options: public, private -> requires token authentication)
         self.API_DOCS_VISIBILITY: str = (
-            (os.getenv("API_DOCS_VISIBILITY", "public") or "").strip().lower()
+            (os.getenv("API_DOCS_VISIBILITY", "private") or "").strip().lower()
         )
         print(f"API documentation visibility set to: {self.API_DOCS_VISIBILITY}")
 
@@ -781,14 +781,13 @@ class Config:
         if not self.ADMIN_USERS:
             print("WARNING: No admin users configured - admin interface will be inaccessible")
 
-        self._warn_openapi_cookie_secret_placeholder()
-
         validators = (
             self._validate_network_identity,
             self._validate_enums,
             self._validate_numeric_limits,
             self._validate_authorized_tokens,
             self._validate_admin_users,
+            self._validate_openapi_cookie_secret,
             self._validate_paths,
             self._validate_cors,
             self._validate_priorities,
@@ -899,15 +898,11 @@ class Config:
                 errors.append(f"ADMIN_USERS__{name} must contain a valid bcrypt hash")
         _raise_validation_errors(errors)
 
-    def _warn_openapi_cookie_secret_placeholder(self) -> None:
-        """Warn when the optional OpenAPI cookie secret keeps its example value."""
+    def _validate_openapi_cookie_secret(self) -> None:
+        """Reject an explicit OpenAPI cookie secret that still uses an example value."""
         if _is_documented_placeholder(self.OPENAPI_COOKIE_SECRET):
-            print(
-                format_status(
-                    "OPENAPI_COOKIE_SECRET uses a documented placeholder; "
-                    "replace it or leave it empty to use the derived fallback",
-                    level="warning",
-                )
+            raise ValueError(
+                "OPENAPI_COOKIE_SECRET must be replaced with a secure value or left empty"
             )
 
     def _validate_paths(self) -> None:

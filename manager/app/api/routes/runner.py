@@ -5,6 +5,7 @@ Handles endpoints for runners.
 """
 
 import ipaddress
+import re
 import socket
 from datetime import datetime
 from urllib.parse import ParseResult, urlparse, urlunparse
@@ -24,6 +25,7 @@ logger = setup_default_logging()
 
 # Create API router
 router = APIRouter(prefix="/runner", tags=["Runner"])
+_RUNNER_ID_PATTERN = re.compile(r"[A-Za-z0-9._:\[\]-]{1,255}")
 
 
 class RunnerHeartbeatPayload(BaseModel):
@@ -205,6 +207,8 @@ async def register_runner(
     Raises:
         HTTPException: If token is not authorized
     """
+    if _RUNNER_ID_PATTERN.fullmatch(runner.id) is None:
+        raise HTTPException(422, "Invalid runner identifier")
     runner.url = _validate_and_normalize_runner_url(runner.url)
     runner.last_heartbeat = datetime.now()
     runner.token = current_token
@@ -219,7 +223,7 @@ async def register_runner(
             status_code=status.HTTP_403_FORBIDDEN, detail="Token not authorized for this runner"
         )
 
-    logger.info(f"Runner v{runner.version} registered: {runner.id} - {runner.url}")
+    logger.info("Runner v%r registered: %r - %r", runner.version, runner.id, runner.url)
     return {"status": "registered"}
 
 

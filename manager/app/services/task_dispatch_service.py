@@ -3,6 +3,7 @@
 import json
 import uuid
 from datetime import datetime
+from logging import Logger
 from typing import Any, Callable, Dict, cast
 
 import httpx
@@ -238,6 +239,30 @@ def persist_task_before_dispatch(
     raise HTTPException(503, "Task could not be persisted; retry")
 
 
+def _runner_ping_supports_task(
+    response: httpx.Response, task_type: str, runner_id: str, logger: Logger
+) -> bool:
+    """Check a Runner's ping response before reserving a task slot."""
+    if not 200 <= response.status_code < 300:
+        logger.warning("Runner %r ping returned HTTP %s", runner_id, response.status_code)
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        logger.warning("Runner %r ping returned invalid JSON", runner_id)
+        return False
+    if not isinstance(payload, dict):
+        logger.warning("Runner %r ping returned an unexpected payload", runner_id)
+        return False
+    task_types = payload.get("task_types")
+    return (
+        payload.get("available") is True
+        and payload.get("registered") is True
+        and isinstance(task_types, list)
+        and task_type in task_types
+    )
+
+
 async def queue_task_execution(
     context: Any,
     task_request: TaskRequest,
@@ -279,16 +304,13 @@ async def queue_task_execution(
 
     for runner in rank_runners(context.runners.values()):
         runner_id = runner.id
-        context.logger.info("Checking runner: %s", runner_id)
+        context.logger.info("Checking runner: %r", runner_id)
         try:
             async with context.httpx.AsyncClient(timeout=5.0) as client:
-                context.logger.info("Pinging runner at: %s/runner/ping", runner.url)
+                context.logger.info("Pinging runner at: %r", runner.url)
                 response = await client.get(f"{runner.url}/runner/ping")
-                runner_payload = response.json()
-                if not (
-                    runner_payload.get("available")
-                    and runner_payload.get("registered")
-                    and task_request.task_type in runner_payload.get("task_types", [])
+                if not _runner_ping_supports_task(
+                    response, task_request.task_type, runner_id, context.logger
                 ):
                     continue
 
@@ -331,7 +353,7 @@ async def queue_task_execution(
                 )
                 return {"task_id": task_id, "status": "running"}
         except (httpx.RequestError, httpx.TimeoutException) as exc:
-            context.logger.warning("Runner %s unavailable: %s", runner_id, exc)
+            context.logger.warning("Runner %r unavailable: %s", runner_id, exc)
 
     dedup_response = cast(
         dict | None,

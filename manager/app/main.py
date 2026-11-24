@@ -26,6 +26,7 @@ from app.__version__ import __version__
 from app.api.openapi import OpenAPIConfig, setup_openapi_config, setup_protected_openapi_routes
 from app.core import config as config_module
 from app.core.config import config
+from app.core.request_limits import RequestBodyLimitMiddleware
 from app.core.setup_logging import setup_default_logging
 from app.core.url_paths import RootPathProxyCompatibilityMiddleware, prefixed_path
 from app.services.background_service import background_manager
@@ -115,6 +116,7 @@ app.root_path = config.MANAGER_ROOT_PATH
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(RequestBodyLimitMiddleware)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 # Setup custom OpenAPI configuration

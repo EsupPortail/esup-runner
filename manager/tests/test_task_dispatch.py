@@ -30,7 +30,19 @@ __all__ = ["clean_state", "client", "task_module"]
 @pytest.mark.parametrize("task_type", ["encoding", "transcription", "studio"])
 @pytest.mark.parametrize("restarting", [False, True])
 @pytest.mark.parametrize(
-    "failure", [None, "timeout", "busy", "unregistered", "unsupported", "race"]
+    "failure",
+    [
+        None,
+        "timeout",
+        "busy",
+        "unregistered",
+        "unsupported",
+        "race",
+        "invalid-json",
+        "json-array",
+        "bad-status",
+        "bad-task-types",
+    ],
 )
 async def test_dispatch_prefers_idle_host_and_retains_fallbacks(
     monkeypatch, task_module, clean_state, task_type, failure, restarting
@@ -54,13 +66,22 @@ async def test_dispatch_prefers_idle_host_and_retains_fallbacks(
         unavailable = request.url.host == "b.example" and failure is not None
         if unavailable and failure == "timeout":
             raise httpx.ConnectTimeout("unreachable", request=request)
+        if unavailable and failure == "invalid-json":
+            return httpx.Response(200, text="temporarily unavailable")
+        if unavailable and failure == "json-array":
+            return httpx.Response(200, json=[])
         return httpx.Response(
-            200,
+            503 if unavailable and failure == "bad-status" else 200,
             json={
                 "available": not (unavailable and failure == "busy"),
                 "registered": not (unavailable and failure == "unregistered"),
                 "task_types": (
-                    ["other"] if unavailable and failure == "unsupported" else [task_type]
+                    {
+                        "unsupported": ["other"],
+                        "bad-task-types": task_type,
+                    }.get(failure, [task_type])
+                    if unavailable
+                    else [task_type]
                 ),
             },
         )
@@ -684,6 +705,18 @@ def test_try_reuse_inflight_duplicate_with_fresh_snapshot_disabled(task_module, 
     assert result is None
 
 
+def test_execute_size_checks_apply_to_new_submissions(client, task_module):
+    task = _task("old-task", "r1", status="failed", notify_url="")
+    task.app_name = "a" * 201
+    request = task_module._task_to_task_request(task)
+
+    response = client.post("/task/execute", json=request.model_dump())
+
+    assert response.status_code == 422
+    assert "app_name exceeds the maximum length of 200" in response.text
+    assert request.app_name == task.app_name
+
+
 def test_execute_task_async_reservation_race_skips_runner(
     monkeypatch, client, task_module, clean_state
 ):
@@ -691,6 +724,8 @@ def test_execute_task_async_reservation_race_skips_runner(
     runners["r1"] = _runner("r1", url="http://r1.example")
 
     class FakeResponse:
+        status_code = 200
+
         def json(self):
             return {"available": True, "registered": True, "task_types": ["encoding"]}
 
@@ -737,6 +772,8 @@ def test_execute_task_async_reuses_duplicate_after_reservation_race(
     runners["r1"] = _runner("r1", url="http://r1.example")
 
     class FakeResponse:
+        status_code = 200
+
         def json(self):
             return {"available": True, "registered": True, "task_types": ["encoding"]}
 
@@ -794,6 +831,8 @@ def test_execute_task_async_success_creates_task_and_schedules(
     runners["r1"] = _runner("r1", url="http://r1.example")
 
     class FakeResponse:
+        status_code = 200
+
         def json(self):
             return {"available": True, "registered": True, "task_types": ["encoding"]}
 

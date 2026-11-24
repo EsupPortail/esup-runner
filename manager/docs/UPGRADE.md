@@ -128,6 +128,13 @@ if the registration has expired. Update the Manager's token configuration and
 the Runner's `RUNNER_TOKEN` before restarting both services. Keep these files
 private and include both registry files in backups.
 
+### Review security defaults
+
+Replace example Runner tokens and any example `OPENAPI_COOKIE_SECRET` before
+restarting services. An empty cookie secret uses the derived fallback. Set
+`API_DOCS_VISIBILITY=public` explicitly if the documentation must stay public.
+Set existing environment files to mode `0600` for their service account.
+
 ### Configure the Manager public URL when needed
 
 Existing installations can keep using `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`: if `MANAGER_PUBLIC_URL` is absent, the Manager computes it from these three values. Configure the complete public administration URL explicitly when using a reverse proxy:

@@ -28,6 +28,16 @@ RUNNER_REQUEST = live.runner_request
 
 
 @pytest.mark.asyncio
+async def test_live_rejects_an_invalid_id_before_attempting_to_lock(monkeypatch):
+    monkeypatch.setattr(live, "live_lock", lambda _: pytest.fail("Invalid Live ID reached a lock"))
+    with pytest.raises(HTTPException) as synchronize_error:
+        await live.synchronize("invalid-id")
+    with pytest.raises(HTTPException) as stop_error:
+        await live.stop("invalid-id", "client")
+    assert synchronize_error.value.status_code == stop_error.value.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_live_statistics_once_after_stop_and_reconciliation(
     setup_live, monkeypatch, tmp_path
 ):

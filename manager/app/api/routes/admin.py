@@ -10,6 +10,7 @@ import re
 import secrets
 from datetime import datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 from urllib.parse import urlencode
 
@@ -161,12 +162,20 @@ def _read_env_lines(env_path: Path) -> list[str]:
 
 
 def _write_env_lines(env_path: Path, lines: list[str]) -> None:
-    """Write .env lines with a trailing newline for POSIX-friendly formatting."""
+    """Atomically replace .env with a private file in the same directory."""
+    env_path = env_path.resolve()
     env_path.parent.mkdir(parents=True, exist_ok=True)
     content = "\n".join(lines)
     if content:
         content += "\n"
-    env_path.write_text(content, encoding="utf-8")
+    with NamedTemporaryFile(mode="w", encoding="utf-8", dir=env_path.parent, delete=False) as temp:
+        temp_path = Path(temp.name)
+        try:
+            temp.write(content)
+            temp.close()
+            temp_path.replace(env_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
 
 def _upsert_authorized_token_in_env(token_name: str, token_value: str) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import re
 from datetime import date, datetime, timedelta
@@ -1314,6 +1315,20 @@ def test_read_env_lines_returns_empty_when_env_file_is_missing(tmp_path):
     assert admin_routes._read_env_lines(tmp_path / ".env") == []
 
 
+@pytest.mark.parametrize("exists", [False, True])
+def test_write_env_restricts_permissions(tmp_path, exists):
+    env_path = tmp_path / ".env"
+    if exists:
+        env_path.write_text("OLD=value\n", encoding="utf-8")
+        env_path.chmod(0o644)
+
+    admin_routes._write_env_lines(env_path, ["NEW=value"])
+
+    assert env_path.read_text(encoding="utf-8") == "NEW=value\n"
+    assert env_path.stat().st_mode & 0o777 == 0o600
+    assert list(tmp_path.iterdir()) == [env_path]
+
+
 def test_delete_env_helpers_return_false_when_env_file_is_missing(monkeypatch, tmp_path):
     """Validate delete helpers no-op cleanly when the .env file does not exist."""
     env_path = tmp_path / "missing.env"
@@ -1949,7 +1964,7 @@ def test_statistics_helpers_cover_branches(tmp_path, monkeypatch):
             [{"task_id": "1", "date": "2026-02-01", "ignored": "x"}],
             ["task_id", "date"],
         )
-        == "task_id,date\n1,2026-02-01\n"
+        == "task_id,date\r\n1,2026-02-01\r\n"
     )
 
 
@@ -2009,18 +2024,19 @@ def test_statistics_dashboard_filters_by_date_range(admin_client, monkeypatch, t
     assert stats_data["by_etab"] == [{"label": "UA", "count": 1}]
 
 
-def test_statistics_csv_download_returns_attachment(admin_client, monkeypatch, tmp_path):
+@pytest.mark.parametrize("empty", [False, True])
+def test_statistics_csv_download_returns_attachment(admin_client, monkeypatch, tmp_path, empty):
     """Validate Statistics csv download returns attachment."""
     csv_dir = tmp_path / "data"
     csv_dir.mkdir()
-    csv_content = "task_id,date,task_type,etab_name\n1,2026-02-01,encode,UM\n"
+    csv_content = "" if empty else "task_id,date,task_type,etab_name\n1,2026-02-01,encode,UM\n"
     (csv_dir / "task_stats.csv").write_text(csv_content)
 
     monkeypatch.setattr(statistics_routes, "Path", lambda *_a, **_k: csv_dir)
 
     resp = admin_client.get("/statistics/task-stats.csv")
     assert resp.status_code == 200
-    assert resp.text == csv_content
+    assert resp.text.splitlines() == csv_content.splitlines()
 
     content_disposition = resp.headers.get("content-disposition", "")
     assert "attachment" in content_disposition
@@ -2043,7 +2059,7 @@ def test_statistics_csv_download_can_filter_by_date_range(admin_client, monkeypa
 
     resp = admin_client.get("/statistics/task-stats.csv?start_date=2026-02-05&end_date=2026-02-28")
     assert resp.status_code == 200
-    assert resp.text == "task_id,date,task_type,etab_name\n2,2026-02-10,other,UA\n"
+    assert resp.text.splitlines() == ["task_id,date,task_type,etab_name", "2,2026-02-10,other,UA"]
 
     content_disposition = resp.headers.get("content-disposition", "")
     assert "attachment" in content_disposition
@@ -2051,6 +2067,21 @@ def test_statistics_csv_download_can_filter_by_date_range(admin_client, monkeypa
         r"task_stats_\d{8}_from_20260205_to_20260228\.csv",
         content_disposition,
     )
+
+
+@pytest.mark.parametrize("query", ["", "?start_date=2026-02-01"])
+def test_statistics_csv_download_neutralizes_formulas(admin_client, monkeypatch, tmp_path, query):
+    with (tmp_path / "task_stats.csv").open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["task_id", "date", "etab_name", "app_name"])
+        writer.writerow(["1", "2026-02-01", "  =1+1", '+department, "name"'])
+    monkeypatch.setattr(statistics_routes, "Path", lambda *_a, **_k: tmp_path)
+
+    response = admin_client.get(f"/statistics/task-stats.csv{query}")
+    assert response.status_code == 200
+    row = next(csv.DictReader(response.text.splitlines()))
+    assert row["etab_name"] == "'  =1+1"
+    assert row["app_name"] == '\'+department, "name"'
 
 
 def test_statistics_csv_download_returns_404_when_missing(admin_client, monkeypatch, tmp_path):

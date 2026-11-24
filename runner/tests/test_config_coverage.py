@@ -477,6 +477,13 @@ def test_invalid_service_user_falls_back_to_default(monkeypatch, service_user, e
     assert expected_error in cfg._configuration_errors
 
 
+@pytest.mark.parametrize("token", ["CHANGE_ME_RUNNER_TOKEN", "change-me-runner-token"])
+def test_runner_token_rejects_documented_examples(monkeypatch, token):
+    monkeypatch.setenv("RUNNER_TOKEN", token)
+    with pytest.raises(config_module.ConfigValidationError, match="RUNNER_TOKEN"):
+        config_module.Config().validate_configuration()
+
+
 def test_config_validation_aggregates_schema_errors(monkeypatch):
     """Validate Independent schema violations are returned in one actionable error."""
     monkeypatch.setenv("RUNNER_TOKEN", "secure-token")

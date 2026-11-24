@@ -6,6 +6,7 @@ Reads data/task_stats.csv and renders statistics page.
 
 import csv
 from collections import Counter
+from collections.abc import Iterable, Iterator, Sequence
 from datetime import date, datetime
 from io import StringIO
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Dict, List
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from app.__version__ import __version__
@@ -144,19 +145,48 @@ def _build_filtered_csv_url(
     return f"{base_url}?{urlencode(params)}"
 
 
-def _csv_rows_to_text(rows: List[Dict[str, str]], fieldnames: List[str]) -> str:
-    """Render task-stat rows to CSV text."""
+def _csv_export_lines(rows: Iterable[Dict[str, str]], fieldnames: Sequence[str]) -> Iterator[str]:
+    """Serialize statistics with text-safe cells for spreadsheet readers."""
     output = StringIO()
     effective_fieldnames = fieldnames or _TASK_STATS_DEFAULT_FIELDNAMES
     writer = csv.DictWriter(
         output,
         fieldnames=effective_fieldnames,
         extrasaction="ignore",
-        lineterminator="\n",
     )
     writer.writeheader()
-    writer.writerows(rows)
-    return output.getvalue()
+    yield output.getvalue()
+    for row in rows:
+        output.seek(0)
+        output.truncate()
+        writer.writerow(
+            {
+                key: (
+                    "'" + value
+                    if value
+                    and value.lstrip("\t\r\n \ufeff").startswith(
+                        ("=", "+", "-", "@", "＝", "＋", "－", "＠")
+                    )
+                    else value
+                )
+                for key, value in row.items()
+                if key in effective_fieldnames
+            }
+        )
+        yield output.getvalue()
+
+
+def _csv_rows_to_text(rows: List[Dict[str, str]], fieldnames: List[str]) -> str:
+    """Render a batch of spreadsheet-safe task-stat rows to CSV text."""
+    return "".join(_csv_export_lines(rows, fieldnames))
+
+
+def _stream_task_stats_csv(csv_path: Path) -> Iterator[str]:
+    """Stream the spreadsheet-safe export of all persisted task statistics."""
+    with csv_path.open(encoding="utf-8", newline="") as stream:
+        reader = csv.DictReader(stream)
+        if reader.fieldnames is not None:
+            yield from _csv_export_lines(reader, reader.fieldnames)
 
 
 def _download_filename(
@@ -267,7 +297,7 @@ async def download_task_stats_csv(
     start_date: str | None = Query(default=None),
     end_date: str | None = Query(default=None),
 ):
-    """Download the raw task statistics CSV file."""
+    """Download task statistics with spreadsheet-safe values."""
     csv_path = _task_stats_csv_path()
     if not csv_path.exists() or not csv_path.is_file():
         raise HTTPException(status_code=404, detail="Task stats CSV not found")
@@ -287,8 +317,9 @@ async def download_task_stats_csv(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    return FileResponse(
-        path=str(csv_path),
+    filename = _download_filename(download_date, None, None)
+    return StreamingResponse(
+        _stream_task_stats_csv(csv_path),
         media_type="text/csv",
-        filename=_download_filename(download_date, None, None),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

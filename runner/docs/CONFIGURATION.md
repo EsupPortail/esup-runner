@@ -85,13 +85,20 @@ Use the proxy's source IP after any NAT, rather than the public DNS name or
 the Runner's destination address. For redundant proxies, use a comma-separated
 list such as `10.0.0.10,10.0.0.11`. IP addresses and CIDR networks are supported;
 prefer individual proxy IPs. The server default is `127.0.0.1,::1`, which covers
-loopback connections only. Avoid `*`, which trusts forwarding headers from any
-peer, and restrict direct access to the application ports.
+loopback connections only. Restrict direct access to the application ports.
 
-HAProxy must set the forwarding headers and preserve the public `Host` header;
+If any instance enables Live, the entire Runner fails to start when
+`FORWARDED_ALLOW_IPS` contains `*` or an unrestricted network such as
+`0.0.0.0/0` or `::/0`.
+
+HAProxy must overwrite incoming forwarding headers with the client address and
+request scheme, and preserve the public `Host` header;
 see the [Live HAProxy example](LIVE.md#haproxy-with-static-routes).
 Restart the affected services completely after changing this setting; an
 application configuration reload does not reconfigure the HTTP servers.
+
+The Runner API limits request bodies to 2 MiB and returns HTTP 413 for larger
+bodies.
 See the [Uvicorn HTTP settings](https://uvicorn.dev/settings/#http).
 
 ## Example configuration

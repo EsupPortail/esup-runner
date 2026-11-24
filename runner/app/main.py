@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.openapi import OpenAPIConfig, setup_openapi_config
 from app.core.config import config
+from app.core.request_limits import RequestBodyLimitMiddleware
 from app.core.setup_logging import setup_default_logging
 from app.core.state import (
     reload_task_statuses_from_disk,
@@ -117,6 +118,7 @@ _include_api_routers(app)
 setup_openapi_config(app)
 
 # CORS middleware configuration
+app.add_middleware(RequestBodyLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ALLOW_ORIGINS,

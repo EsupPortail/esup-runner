@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updates when the Runner's FFmpeg is older than 8.1.2 or its version cannot be
   verified. The update report indicates when `magicyuv` can be removed. See the
   [upgrade guide](UPGRADE.md#11-automated-stack-update-script).
+- Bound API request bodies, reject example Runner tokens,
+  and restrict proxy trust for HLS viewer counts.
 
 ### Fixed
 

@@ -29,32 +29,39 @@ templates = Jinja2Templates(directory=WEB_TEMPLATES_DIR)
 class LogParser:
     """Parser for the specific log format"""
 
-    LOG_PATTERN = re.compile(
-        r"^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - "
-        r"(?P<module>.+?) - "
-        r"(?P<level>[A-Za-z]+) - "
-        r"(?P<context>\[.*?\]) - "
-        r"(?P<message>.*)$"
-    )
+    MAX_ENTRY_LENGTH = 64 * 1024
+    TIMESTAMP_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
+    LEVEL_PATTERN = re.compile(r"[A-Za-z]+")
 
     @staticmethod
     def _strip_line_end(line: str) -> str:
         """Strip line terminator while preserving leading/trailing visible spaces."""
-        return line.rstrip("\r\n")
+        return line[: LogParser.MAX_ENTRY_LENGTH].rstrip("\r\n")
 
     @classmethod
     def parse_structured_log_line(cls, line: str) -> Optional[Dict[str, str]]:
         """Parse a line only if it matches the expected structured format."""
-        match = cls.LOG_PATTERN.match(line)
-        if not match:
+        """Split a bounded log record into fields without backtracking."""
+        line = line[: cls.MAX_ENTRY_LENGTH]
+        ts, _, tail = line.partition(" - ")
+        module, _, tail = tail.partition(" - ")
+        level, _, tail = tail.partition(" - ")
+        context, separator, message = tail.partition("] - ")
+        if not (
+            cls.TIMESTAMP_PATTERN.fullmatch(ts)
+            and module
+            and cls.LEVEL_PATTERN.fullmatch(level)
+            and context.startswith("[")
+            and separator
+        ):
             return None
 
         return {
-            "timestamp": match.group("timestamp"),
-            "module": match.group("module"),
-            "level": match.group("level").upper(),
-            "context": match.group("context"),
-            "message": match.group("message"),
+            "timestamp": ts,
+            "module": module,
+            "level": level.upper(),
+            "context": context + "]",
+            "message": message,
             "raw": line,
         }
 
@@ -93,7 +100,7 @@ class LogManager:
     @staticmethod
     def _append_line(existing: str, line: str) -> str:
         """Append a continuation line while preserving multi-line payloads."""
-        return f"{existing}\n{line}" if existing else line
+        return (f"{existing}\n{line}" if existing else line)[: LogParser.MAX_ENTRY_LENGTH]
 
     def _parse_log_entries(self, lines: List[str]) -> List[Dict[str, str]]:
         """

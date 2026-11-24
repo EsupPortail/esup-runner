@@ -177,7 +177,7 @@ an expired or invalid token.
 
 ## OpenAPI docs visibility
 
-OpenAPI/docs can be public or token-protected:
+OpenAPI/docs require authentication by default:
 
 ```properties
 API_DOCS_VISIBILITY=private
@@ -209,7 +209,7 @@ How `OPENAPI_COOKIE_SECRET` works:
 - The OpenAPI auth cookie is **signed** (HMAC) with `OPENAPI_COOKIE_SECRET` so tampering is detected.
 - The cookie is not encrypted; this setting ensures integrity/authenticity, not confidentiality.
 - If `OPENAPI_COOKIE_SECRET` is empty, the manager derives a fallback secret from current configured tokens/admin hashes.
-- The documented `change-me-with-a-long-random-secret` value triggers a warning but does not block startup; replace it in production or leave it empty to use the fallback.
+- Startup rejects the example signing secret. Replace it or leave it empty to use the fallback.
 - For stable behavior across restarts and multi-instance deployments, set an explicit long random secret and keep it identical on all manager instances.
 
 Example secret generation:
@@ -293,6 +293,8 @@ Behavior:
 - `RUNNER_URL_ALLOWED_HOSTS` is an optional comma-separated allowlist.
 - `RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true` by default (common for internal runner networks).
 - Set it to `false` to require runner URLs resolving to public IPs.
+- Runner IDs must be 1–255 characters. Use ASCII letters, digits, dots,
+  underscores, hyphens, colons, and square brackets.
 
 ## CORS settings
 
@@ -327,6 +329,11 @@ The Manager releases the Runner's completion lock before delivering the callback
 Each delivery attempt has a 20-second deadline, including URL validation and
 response handling. HTTP errors record the status code. Keep callback handlers
 idempotent because a Manager crash during delivery can leave its outcome unknown.
+
+Both APIs limit request bodies to 2 MiB. Oversized bodies receive HTTP 413.
+New task submissions allow up to 200 characters for institution, application
+and affiliation, 128 for the application version, 8192 for URLs, and 128
+top-level parameters.
 
 ## Optional SMTP notifications
 

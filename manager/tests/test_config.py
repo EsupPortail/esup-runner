@@ -649,8 +649,8 @@ def test_config_validation_aggregates_schema_errors(monkeypatch):
     assert "PRIORITY_DOMAIN must contain a hostname only" in message
 
 
-def test_config_validation_rejects_placeholders_empty_credentials_and_paths(monkeypatch, capsys):
-    """Validate credential placeholders fail while the cookie placeholder warns."""
+def test_config_validation_rejects_placeholders_empty_credentials_and_paths(monkeypatch):
+    """Validate credential placeholders fail with the other configuration errors."""
     from app.core.config import Config, ConfigValidationError
 
     monkeypatch.setenv("MANAGER_HOST", "")
@@ -687,8 +687,7 @@ def test_config_validation_rejects_placeholders_empty_credentials_and_paths(monk
     assert "ADMIN_USERS entries must have a non-empty username" in message
     assert "ADMIN_USERS__admin must be replaced" in message
     assert "ADMIN_USERS__broken must contain a valid bcrypt hash" in message
-    assert "OPENAPI_COOKIE_SECRET" not in message
-    assert "OPENAPI_COOKIE_SECRET uses a documented placeholder" in capsys.readouterr().out
+    assert "OPENAPI_COOKIE_SECRET must be replaced" in message
 
 
 def test_cache_defaults_follow_service_user(monkeypatch):
@@ -726,21 +725,26 @@ def test_invalid_service_user_falls_back_to_default(monkeypatch, service_user, e
     assert expected_error in config._configuration_errors
 
 
-def test_openapi_cookie_secret_placeholder_is_warning_only(monkeypatch, capsys):
-    """Validate the optional example cookie secret does not block startup."""
-    from app.core import _check_output
-    from app.core.config import Config
+def test_api_docs_default_to_private_and_runner_placeholder_is_rejected(monkeypatch):
+    from app.core.config import Config, ConfigValidationError
+
+    monkeypatch.setenv("AUTHORIZED_TOKENS__runners", "change-me-runner-token")
+    config = Config()
+    assert config.API_DOCS_VISIBILITY == "private"
+    with pytest.raises(ConfigValidationError, match="AUTHORIZED_TOKENS__runners"):
+        config.validate_configuration()
+
+
+def test_openapi_cookie_secret_placeholder_is_rejected(monkeypatch):
+    """Reject the example cookie secret without including its value in the error."""
+    from app.core.config import Config, ConfigValidationError
 
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setenv("OPENAPI_COOKIE_SECRET", "change-me-with-a-long-random-secret")
 
-    config = Config()
-    config.validate_configuration()
-
-    output = capsys.readouterr().out
-    assert f"{_check_output._COLORS['warning']}⚠ WARNING: OPENAPI_COOKIE_SECRET" in output
-    assert _check_output._RESET in output
-    assert "change-me-with-a-long-random-secret" not in output
+    with pytest.raises(ConfigValidationError, match="OPENAPI_COOKIE_SECRET") as raised:
+        Config().validate_configuration()
+    assert "change-me-with-a-long-random-secret" not in str(raised.value)
 
 
 def test_semantic_validators_cover_mutated_numeric_paths_and_ipv6(monkeypatch):

@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so the Manager can accept other completions from the same Runner during
   delivery. Limit each attempt to 20 seconds, connect only to validated IPs,
   and record the HTTP status without the response body.
+- Default API documentation to private, reject example credentials, and write
+  the administration configuration with owner-only permissions.
+- Limit API request bodies and task metadata, validate Runner and Live IDs,
+  bound log parsing, and neutralize formulas in statistics exports.
+
+### Fixed
+
+- Skip Runners with invalid ping responses when dispatching a task.
 
 ## [1.12.0] - 2026-11-20
 

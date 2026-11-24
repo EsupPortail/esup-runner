@@ -61,6 +61,14 @@ def persist(task: Task) -> None:
     state.tasks[task.task_id] = task
 
 
+def _canonical_live_id(live_id: str) -> str:
+    """Return the canonical identifier or reject it before filesystem access."""
+    try:
+        return str(uuid.UUID(live_id))
+    except ValueError:
+        raise HTTPException(404, "Live not found") from None
+
+
 def load(live_id: str, token: str | None = None) -> Task:
     """Load a persisted Live task and optionally verify its client token.
 
@@ -69,11 +77,7 @@ def load(live_id: str, token: str | None = None) -> Task:
     authenticated API clients; callers must verify tokens before calling here.
     Omitting the token is for internal or independently authenticated admin calls.
     """
-    try:
-        uuid.UUID(live_id)
-    except ValueError:
-        raise HTTPException(404, "Live not found") from None
-    payload = state.persistence.load_task(live_id)
+    payload = state.persistence.load_task(_canonical_live_id(live_id))
     if payload is None:
         raise HTTPException(404, "Live not found")
     task = Task.model_validate(payload)
@@ -283,6 +287,7 @@ async def synchronize(live_id: str) -> Task:
     Unavailable control hides HLS readiness and retains the reservation.
     Release only the matching reservation after a terminal state is persisted.
     """
+    live_id = _canonical_live_id(live_id)
     async with live_lock(live_id):
         task = load(live_id)
         assert task.live is not None
@@ -461,6 +466,7 @@ async def stop(live_id: str, token: str | None) -> LiveResponse:
     the Runner. The reservation remains until terminal cleanup is confirmed.
     None bypasses client ownership for an independently authenticated admin.
     """
+    live_id = _canonical_live_id(live_id)
     async with live_lock(live_id):
         task = load(live_id, token)
         assert task.live is not None

@@ -44,6 +44,12 @@ def restore_log_paths(logs_module):
     logs_module.log_manager.log_paths = original_paths
 
 
+@pytest.fixture(autouse=True)
+def isolate_host_media_logs(monkeypatch, logs_module):
+    """Keep route fixtures independent of the host's MediaMTX journal."""
+    monkeypatch.setattr(logs_module, "read_media_logs", lambda: [])
+
+
 def test_logparser_parse_matches_pattern(logs_module):
     """Validate Logparser parse matches pattern."""
     line = (
@@ -65,6 +71,14 @@ def test_logparser_parse_fallback(logs_module):
     assert parsed["module"] == "UNKNOWN"
     assert parsed["level"] == "UNKNOWN"
     assert parsed["message"] == "not matching"
+
+
+def test_logparser_bounds_long_entries(logs_module):
+    parser = logs_module.LogParser
+    line = "2025-10-22 15:43:34 - runner - INFO - [task] - " + "x" * 80_000
+    parsed = parser.parse_log_line(line)
+    assert len(parsed["raw"]) == parser.MAX_ENTRY_LENGTH
+    assert parsed["level"] == "INFO"
 
 
 def test_logmanager_read_logs_filters_and_sorts(tmp_path: Path, logs_module):

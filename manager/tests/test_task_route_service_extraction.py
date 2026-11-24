@@ -112,6 +112,8 @@ async def test_dispatch_skips_runner_with_incompatible_ping_payload(monkeypatch)
     """An unavailable ping payload must not reserve or enqueue work."""
 
     class FakeResponse:
+        status_code = 200
+
         def json(self):
             return {"available": False, "registered": True, "task_types": ["encoding"]}
 

@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import warnings
+from ipaddress import ip_network
 from pathlib import Path
 from typing import List, Optional, Set
 from urllib.parse import urlparse
@@ -31,6 +32,17 @@ SUPPORTED_STUDIO_PRESETS = frozenset(
         "veryslow",
     }
 )
+
+
+def _trusts_all_proxies(entry: str) -> bool:
+    """Identify wildcard and unrestricted IP ranges in the Uvicorn trust list."""
+    entry = entry.strip()
+    if entry == "*":
+        return True
+    try:
+        return ip_network(entry, strict=False).prefixlen == 0
+    except ValueError:
+        return False
 
 
 class ConfigValidationError(ValueError):
@@ -656,6 +668,9 @@ class Config:
         live_instances = [
             i for i, types in enumerate(self.RUNNER_TASK_TYPES_BY_INSTANCE) if "live" in types
         ]
+        trusted_proxies = os.getenv("FORWARDED_ALLOW_IPS", "").split(",")
+        if live_instances and any(_trusts_all_proxies(proxy) for proxy in trusted_proxies):
+            raise ValueError("FORWARDED_ALLOW_IPS must identify trusted proxies for Live")
         if len(live_instances) > 1:
             public_urls: set[str] = set()
             for instance_id in live_instances:
@@ -711,9 +726,11 @@ class Config:
 
     def _validate_tokens(self) -> None:
         """Reject empty and documented placeholder authentication tokens."""
-        if not self.RUNNER_TOKEN or self.RUNNER_TOKEN in {
+        if not self.RUNNER_TOKEN.strip() or self.RUNNER_TOKEN.strip().lower() in {
             "default-runner-token",
-            "CHANGE_ME_RUNNERS_TOKEN",
+            "change_me_runner_token",
+            "change_me_runners_token",
+            "change-me-runner-token",
         }:
             raise ValueError("RUNNER_TOKEN must be set to a secure value")
 

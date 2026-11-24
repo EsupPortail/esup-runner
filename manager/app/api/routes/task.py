@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, sta
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from filelock import FileLock, Timeout
+from pydantic import AfterValidator
 from starlette.responses import Response
 
 from app.__version__ import __version__
@@ -893,6 +894,22 @@ async def acknowledge_task(task_id: str) -> Task:
     return acknowledged_task
 
 
+def _validate_task_submission_size(request: TaskRequest) -> TaskRequest:
+    """Bound fields on new submissions while allowing persisted tasks to resume."""
+    for field, value, maximum in (
+        ("etab_name", request.etab_name, 200),
+        ("app_name", request.app_name, 200),
+        ("app_version", request.app_version, 128),
+        ("affiliation", request.affiliation, 200),
+        ("source_url", request.source_url, 8192),
+        ("notify_url", request.notify_url, 8192),
+        ("parameters", request.parameters, 128),
+    ):
+        if value is not None and len(value) > maximum:
+            raise ValueError(f"{field} exceeds the maximum length of {maximum}")
+    return request
+
+
 @router.post(
     "/execute",
     response_model=dict,
@@ -901,7 +918,7 @@ async def acknowledge_task(task_id: str) -> Task:
     tags=["Task"],
 )
 async def execute_task_async(
-    task_request: TaskRequest,
+    task_request: Annotated[TaskRequest, AfterValidator(_validate_task_submission_size)],
     current_token: str = Depends(verify_app_token),
 ) -> dict:
     """

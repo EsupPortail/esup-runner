@@ -50,6 +50,14 @@ def test_grouped_hls_resolution_keeps_all_encoding_and_media_settings_shared(
     assert cfg.LIVE.nvdec
 
 
+@pytest.mark.parametrize("proxy", ["*", "10.0.0.10,0.0.0.0/0", "::/0", "0.0.0.0/0.0.0.0"])
+def test_live_rejects_trusting_every_proxy(grouped_live, monkeypatch, proxy):
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", proxy)
+
+    with pytest.raises(ConfigValidationError, match="FORWARDED_ALLOW_IPS"):
+        Config().validate_configuration()
+
+
 @pytest.mark.parametrize("encoding_type", ["CPU", "GPU"])
 def test_live_defaults_to_cpu_for_any_vod_encoding_type(grouped_live, monkeypatch, encoding_type):
     monkeypatch.delenv("LIVE_TRANSCODER", raising=False)

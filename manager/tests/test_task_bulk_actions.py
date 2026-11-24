@@ -127,6 +127,8 @@ def test_restart_selected_tasks_restarts_and_reports(monkeypatch, client, task_m
     tasks["t-failed"].acknowledged_at = "2026-01-01T12:00:00"
 
     class FakePingResponse:
+        status_code = 200
+
         def json(self):
             return {"available": True, "registered": True, "task_types": ["encoding"]}
 

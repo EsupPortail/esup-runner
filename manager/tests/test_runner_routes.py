@@ -75,6 +75,15 @@ def test_register_runner_sets_token_version_and_heartbeat(runner_client, clean_r
     assert runners["r1"].version == "1.0.0"
 
 
+@pytest.mark.parametrize("runner_id", ["", "runner\ninvalid", "r" * 256])
+def test_register_runner_rejects_invalid_id(runner_client, clean_runners_state, runner_id):
+    response = runner_client.post(
+        "/runner/register", json={"id": runner_id, "url": "http://r1.example"}
+    )
+    assert response.status_code == 422
+    assert runner_id not in runners
+
+
 def test_registration_reports_a_storage_failure(runner_client, clean_runners_state, monkeypatch):
     def fail(_runner):
         raise OSError("write failed")

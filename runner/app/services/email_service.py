@@ -5,6 +5,7 @@ Email notification service for Runner tasks and health warnings.
 
 import asyncio
 import smtplib
+import ssl
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Optional
@@ -242,7 +243,7 @@ async def _send_notification_email(message: EmailMessage, context: str) -> bool:
         """Send the composed email through the configured SMTP server."""
         with smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT, timeout=10) as smtp:
             if config.SMTP_USE_TLS:
-                smtp.starttls()
+                smtp.starttls(context=ssl.create_default_context())
             if config.SMTP_USERNAME and config.SMTP_PASSWORD:
                 smtp.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
             smtp.send_message(message)

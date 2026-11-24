@@ -348,6 +348,8 @@ MANAGER_EMAIL=admin@example.org
 ```
 
 Email notifications are active only when required SMTP fields are configured.
+STARTTLS verifies the SMTP server's certificate and hostname using trusted
+certificate authorities.
 
 ## Full `.env` example (copy/paste)
 

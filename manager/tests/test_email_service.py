@@ -154,7 +154,8 @@ async def test_send_notify_retry_exhausted_email_success(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def starttls(self):
+        def starttls(self, *, context):
+            assert context.check_hostname
             captured["tls"] = True
 
         def login(self, username, password):

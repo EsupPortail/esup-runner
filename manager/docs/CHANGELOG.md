@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the administration configuration with owner-only permissions.
 - Limit API request bodies and task metadata, validate Runner and Live IDs,
   bound log parsing, and neutralize formulas in statistics exports.
+- Verify SMTP server certificates.
 
 ### Fixed
 

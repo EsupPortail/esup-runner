@@ -44,7 +44,8 @@ def smtp(tmp_path, monkeypatch):
         def __exit__(self, *_):
             pass
 
-        def starttls(self):
+        def starttls(self, *, context):
+            assert context.check_hostname
             self.fail("tls")
             state.calls.append(("tls",))
 

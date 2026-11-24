@@ -604,7 +604,8 @@ async def test_send_task_failure_email_skip_success_and_failure(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def starttls(self):
+        def starttls(self, *, context):
+            assert context.check_hostname
             sent["tls"] = True
 
         def login(self, username, password):

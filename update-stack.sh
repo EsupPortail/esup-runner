@@ -1611,6 +1611,7 @@ from __future__ import annotations
 
 import os
 import smtplib
+import ssl
 import sys
 from email.message import EmailMessage
 from html import escape
@@ -1896,7 +1897,7 @@ attach_logo(msg, logo_path)
 
 with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as smtp:
     if smtp_use_tls:
-        smtp.starttls()
+        smtp.starttls(context=ssl.create_default_context())
     if smtp_username and smtp_password:
         smtp.login(smtp_username, smtp_password)
     smtp.send_message(msg)

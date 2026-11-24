@@ -3,6 +3,7 @@
 import os
 import smtplib
 import socket
+import ssl
 from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
@@ -168,7 +169,7 @@ def send_install_report(
             raise ValueError("Invalid SMTP port")
         with smtplib.SMTP(settings["SMTP_SERVER"].strip(), port, timeout=10) as smtp:
             if settings["SMTP_USE_TLS"].strip().lower() in {"1", "true", "t", "yes", "y", "on"}:
-                smtp.starttls()
+                smtp.starttls(context=ssl.create_default_context())
             if settings["SMTP_USERNAME"] and settings["SMTP_PASSWORD"]:
                 smtp.login(settings["SMTP_USERNAME"], settings["SMTP_PASSWORD"])
             smtp.send_message(message)

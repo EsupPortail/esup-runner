@@ -121,6 +121,7 @@ Compatibility note:
 
 ## Notifications
 - `SMTP_SERVER`, `SMTP_PORT` (default `25`), `SMTP_SENDER`, `MANAGER_EMAIL`: Optional email settings for task failures and GPU health warnings. Set `MANAGER_EMAIL` to an administrator address or mailing list.
+- `SMTP_USE_TLS` (default `false`): Enable STARTTLS with certificate and hostname verification.
 
 ## Logging
 - `LOG_DIR` (default `/var/log/esup-runner/`): Log base path; trailing slash is added if missing.

@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, cast
 import httpx
 from fastapi import HTTPException, status
 
+from app.core.token_roles import token_matches
 from app.models.models import Runner, Task, TaskRequest
 from app.services.runner_selection import rank_runners
 
@@ -167,6 +168,7 @@ def try_reuse_inflight_duplicate_with_fresh_snapshot(
     *,
     dedup_enabled: bool,
     log_message: str,
+    client_token: str | None = None,
 ) -> dict | None:
     """Repeat deduplication against a fresh multi-instance snapshot."""
     if not dedup_enabled:
@@ -175,10 +177,19 @@ def try_reuse_inflight_duplicate_with_fresh_snapshot(
         dict | None,
         context._build_inflight_dedup_response(
             task_request,
-            context.get_tasks_snapshot(),
+            _client_tasks(context.get_tasks_snapshot(), client_token),
             log_message=log_message,
         ),
     )
+
+
+def _client_tasks(tasks_snapshot: Dict[str, Task], client_token: str | None) -> Dict[str, Task]:
+    """Limit duplicate candidates to tasks submitted by the same application."""
+    return {
+        key: task
+        for key, task in tasks_snapshot.items()
+        if client_token is not None and token_matches(client_token, task.client_token)
+    }
 
 
 def try_reserve_runner_for_dispatch(context: Any, runner_id: str) -> Runner | None:
@@ -243,7 +254,7 @@ async def queue_task_execution(
         dict | None,
         context._try_reuse_inflight_duplicate(
             task_request,
-            tasks_snapshot,
+            _client_tasks(tasks_snapshot, client_token),
             dedup_enabled=dedup_enabled,
             log_message="Deduplicating task execute request: reusing in-flight task",
         ),
@@ -328,6 +339,7 @@ async def queue_task_execution(
             task_request,
             dedup_enabled=dedup_enabled,
             log_message="Reusing in-flight task after runner exhaustion:",
+            client_token=client_token,
         ),
     )
     if dedup_response is not None:

@@ -11,7 +11,7 @@ Configuration source
 --------------------
 This script auto-loads:
 1) private manager API URL from `app.core.config` (`MANAGER_URL`)
-2) token from the first configured `AUTHORIZED_TOKENS__*` value in `.env`
+2) token from `AUTHORIZED_TOKENS__app` or the first configured `AUTHORIZED_TOKENS__app*` entry
 
 Optional overrides are still available through:
 - `RUNNER_API_TOKEN`
@@ -45,7 +45,7 @@ Or with optional environment overrides:
 Notes
 -----
 - The Manager API expects a token configured in the manager environment
-  (`AUTHORIZED_TOKENS__…` variables).
+  (`AUTHORIZED_TOKENS__app*` variables).
 - Auth header can be either:
     * `X-API-Token: <token>` (used in this script)
     * or `Authorization: Bearer <token>`
@@ -167,10 +167,12 @@ def _load_config() -> Any:
 
 
 def _first_configured_token(config: Any) -> Optional[str]:
-    """Return the first configured authorized token, if any."""
+    """Return a configured application token, preferring the default label."""
     tokens = getattr(config, "AUTHORIZED_TOKENS", {}) or {}
-    for token in tokens.values():
-        token_text = str(token or "").strip()
+    if token := str(tokens.get("app") or "").strip():
+        return token
+    for label, token in tokens.items():
+        token_text = str(token or "").strip() if label.startswith("app") else ""
         if token_text:
             return token_text
     return None
@@ -193,7 +195,7 @@ def _load_runtime_settings() -> tuple[str, str]:
         )
     if not token:
         raise SystemExit(
-            "No API token found. Configure at least one AUTHORIZED_TOKENS__* entry in manager/.env "
+            "No application token found. Configure an AUTHORIZED_TOKENS__app* entry in manager/.env "
             "or set RUNNER_API_TOKEN."
         )
     return manager_url, token

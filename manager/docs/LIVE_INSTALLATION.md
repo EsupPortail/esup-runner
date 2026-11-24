@@ -44,7 +44,7 @@ for each role, with matching values only where the same credential is used:
 | Credential | Matching locations |
 | --- | --- |
 | Runner API token | `manager.env` `AUTHORIZED_TOKENS__runners` and `runner.env` `RUNNER_TOKEN` |
-| Client API token | `manager.env` `AUTHORIZED_TOKENS__pod` and the client application's token |
+| Client API token | `manager.env` `AUTHORIZED_TOKENS__app_pod` and the client application's token |
 | Manager `publisher` password | `manager-mediamtx.yml` and the encoder's publishing credentials |
 | Manager `relay` password | `manager-mediamtx.yml` and `runner.env` `LIVE_UPSTREAM_RTMP_URL` |
 | Manager `control` password | `manager-mediamtx.yml` and `manager.env` `LIVE_MEDIAMTX_API_PASSWORD` |

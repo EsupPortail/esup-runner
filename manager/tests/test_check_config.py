@@ -24,7 +24,7 @@ def _valid_config():
         MANAGER_EMAIL="ops@example.org",
         UVICORN_WORKERS=2,
         API_DOCS_VISIBILITY="private",
-        AUTHORIZED_TOKENS={"runners": "never-print-this-token"},
+        AUTHORIZED_TOKENS={"runners": "never-print-this-token", "app": "never-print-app-token"},
         ADMIN_USERS={"admin": "never-print-this-hash"},
         RUNNERS_STORAGE_ENABLED=True,
     )
@@ -65,10 +65,11 @@ def test_main_reports_valid_non_sensitive_summary(monkeypatch, capsys):
     assert "ENVIRONMENT             : production" in output
     assert "UVICORN_WORKERS         : 2" in output
     assert "API_DOCS_VISIBILITY     : private" in output
-    assert "AUTHORIZED_TOKENS__*    : 1 configured" in output
+    assert "AUTHORIZED_TOKENS__*    : 2 configured" in output
     assert "ADMIN_USERS__*          : 1 configured" in output
     assert "RUNNERS_STORAGE_ENABLED : enabled" in output
     assert "never-print-this-token" not in output
+    assert "never-print-app-token" not in output
     assert "never-print-this-hash" not in output
 
 
@@ -136,6 +137,47 @@ def test_load_and_validate_config_avoids_duplicate_startup_validation(monkeypatc
 
     assert loaded is config
     assert errors == ()
+
+
+@pytest.mark.parametrize(
+    ("labels", "missing_roles"),
+    [
+        ((), ("runners", "app")),
+        (("app",), ("runners",)),
+        (("runners",), ("app",)),
+        (("runners_cpu", "app_pod"), ()),
+    ],
+)
+def test_check_config_requires_both_token_roles(monkeypatch, capsys, labels, missing_roles):
+    config = _valid_config()
+    config.AUTHORIZED_TOKENS = {label: f"secret-for-{label}" for label in labels}
+    config._configuration_validated = True
+    config_module = SimpleNamespace(get_config=lambda: config)
+    monkeypatch.setattr(check_config.importlib, "import_module", lambda _name: config_module)
+
+    assert check_config.main() == (2 if missing_roles else 0)
+
+    output = capsys.readouterr().out
+    for role in ("runners", "app"):
+        assert (f"At least one AUTHORIZED_TOKENS__{role}* entry is required." in output) == (
+            role in missing_roles
+        )
+    assert "secret-for-" not in output
+
+
+def test_check_config_reports_invalid_token_name(monkeypatch, capsys):
+    from app.core.config import Config
+
+    config = _valid_config()
+    config.AUTHORIZED_TOKENS["toto"] = "never-print-invalid-token"
+    config.validate_configuration = lambda: Config._validate_authorized_tokens(config)
+    config_module = SimpleNamespace(get_config=lambda: config)
+    monkeypatch.setattr(check_config.importlib, "import_module", lambda _name: config_module)
+
+    assert check_config.main() == 2
+    output = capsys.readouterr().out
+    assert "ERROR: AUTHORIZED_TOKENS__toto must start with runners or app" in output
+    assert "never-print-invalid-token" not in output
 
 
 def test_load_and_validate_config_preserves_structured_errors(monkeypatch):

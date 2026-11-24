@@ -193,12 +193,21 @@ def isolate_application_root_path(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def ensure_test_tokens(monkeypatch):
-    """Ensure at least one authorized token exists for tests."""
+    """Supply deterministic credentials for the application and Runner roles."""
 
     original_tokens: Dict[str, str] = dict(config.AUTHORIZED_TOKENS)
 
-    if not config.AUTHORIZED_TOKENS:
-        monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"test": "test-token"})
+    monkeypatch.setattr(
+        config,
+        "AUTHORIZED_TOKENS",
+        {
+            "app": "test-token",
+            "app_pod": "pod-token",
+            "runners": "tok",
+            "runners_other": "tok-bad",
+            "runners_test": "tok-ok",
+        },
+    )
 
     yield
 
@@ -225,6 +234,8 @@ def isolate_runtime_state(monkeypatch):
 
     monkeypatch.setattr(state_module, "IS_PRODUCTION", False)
     monkeypatch.setattr(config, "ENVIRONMENT", "development")
+    # Most service tests insert synthetic Runners directly and test logic after admission.
+    monkeypatch.setattr(state_module.runners, "_is_token_allowed", None)
 
     yield
 

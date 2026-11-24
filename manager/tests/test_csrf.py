@@ -25,7 +25,7 @@ _ADMIN_FORM = {
 _MUTATIONS = [
     ("/admin/credentials/admins", "data", _ADMIN_FORM),
     ("/admin/credentials/admins/admin/delete", "data", {}),
-    ("/admin/credentials/tokens", "data", {"token_name": "new_token"}),
+    ("/admin/credentials/tokens", "data", {"token_name": "app_new_token"}),
     ("/admin/credentials/tokens/client/delete", "data", {}),
     ("/admin/reload-config", "data", {}),
     ("/admin/toggle-theme", "data", {}),
@@ -424,6 +424,6 @@ def test_every_admin_mutation_declares_csrf_protection():
                 .replace("{live_id}", "live-session")
                 .replace("{task_id}", "t1")
             )
-        if auth.verify_token in dependencies:
+        if dependencies & {auth.verify_token, auth.verify_app_token, auth.verify_runner_token}:
             assert csrf.verify_csrf not in dependencies, route.path
     assert mutations == {path for path, _, _ in _MUTATIONS}

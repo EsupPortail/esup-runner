@@ -103,7 +103,7 @@ diff -u .env.example .env || true
 
 Sensitive settings to double-check after an upgrade:
 - `MANAGER_URL`
-- `RUNNER_TOKEN` (must match an `AUTHORIZED_TOKENS__*` on the Manager side)
+- `RUNNER_TOKEN` (must match an `AUTHORIZED_TOKENS__runners*` value on the Manager)
 - `RUNNER_TASK_TYPES` and the optional grouped syntax
 - `STORAGE_DIR` and permissions / available disk space
 - `ENCODING_TYPE` (CPU/GPU) and FFmpeg dependencies

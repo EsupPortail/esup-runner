@@ -19,11 +19,14 @@ from app.services import background_service
 
 @pytest.fixture
 def runner_client(monkeypatch):
+    from app.api.routes import runner as runner_module
+
     async def _noop(*_, **__):
         return None
 
     monkeypatch.setattr(background_service.background_manager, "start_all_services", _noop)
     monkeypatch.setattr(background_service.background_manager, "stop_all_services", _noop)
+    monkeypatch.setattr(runner_module, "runners", runners)
 
     app.dependency_overrides[verify_token] = lambda: "tok-ok"
     app.dependency_overrides[verify_runner_version] = lambda: "1.0.0"
@@ -72,6 +75,17 @@ def test_register_runner_sets_token_version_and_heartbeat(runner_client, clean_r
     assert runners["r1"].version == "1.0.0"
 
 
+def test_registration_reports_a_storage_failure(runner_client, clean_runners_state, monkeypatch):
+    def fail(_runner):
+        raise OSError("write failed")
+
+    monkeypatch.setattr(runners, "register", fail)
+    response = runner_client.post("/runner/register", json={"id": "r1", "url": "http://r1.example"})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Runner registration storage unavailable"
+    assert "r1" not in runners
+
+
 def test_register_runner_rejects_non_base_url(runner_client, clean_runners_state):
     """Validate Register runner rejects non base url."""
     payload = {
@@ -114,7 +128,9 @@ def test_registration_cannot_transfer_heartbeat_or_completion_ownership(
         created_at="2026-01-01",
         updated_at="2026-01-01",
     )
-    monkeypatch.setattr(auth.config, "AUTHORIZED_TOKENS", {"owner": "owner", "other": "other"})
+    monkeypatch.setattr(
+        auth.config, "AUTHORIZED_TOKENS", {"runners": "owner", "runners_other": "other"}
+    )
     monkeypatch.setattr(auth, "_refresh_config_if_needed", lambda: None)
     monkeypatch.setattr(runner_module.config, "RUNNER_URL_ALLOWED_HOSTS", [])
     monkeypatch.setattr(runner_module.config, "RUNNER_URL_ALLOW_PRIVATE_NETWORKS", True)

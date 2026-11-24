@@ -11,7 +11,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path as PathlibPath
-from typing import Any, Dict, List, cast
+from typing import Annotated, Any, Dict, List, cast
 from urllib.parse import ParseResult
 
 import httpx
@@ -22,7 +22,13 @@ from filelock import FileLock, Timeout
 from starlette.responses import Response
 
 from app.__version__ import __version__
-from app.core.auth import verify_admin, verify_token
+from app.core.auth import (
+    api_token_role,
+    verify_admin,
+    verify_app_token,
+    verify_runner_token,
+    verify_token,
+)
 from app.core.config import config
 from app.core.csrf import csrf_template_context, verify_csrf
 from app.core.etab_badges import build_etab_badge
@@ -32,6 +38,7 @@ from app.core.setup_logging import setup_default_logging
 from app.core.state import delete_task as delete_task_from_state
 from app.core.state import get_task as get_task_from_state
 from app.core.state import get_tasks_snapshot, persistence, runners, save_tasks, tasks  # noqa: F401
+from app.core.token_roles import token_matches
 from app.core.url_paths import request_root_path
 from app.models.models import (
     Runner,
@@ -607,6 +614,7 @@ def _try_reuse_inflight_duplicate_with_fresh_snapshot(
     *,
     dedup_enabled: bool,
     log_message: str,
+    client_token: str | None = None,
 ) -> dict | None:
     """Re-check deduplication against a fresh task snapshot."""
     return task_dispatch_service.try_reuse_inflight_duplicate_with_fresh_snapshot(
@@ -614,6 +622,7 @@ def _try_reuse_inflight_duplicate_with_fresh_snapshot(
         task_request,
         dedup_enabled=dedup_enabled,
         log_message=log_message,
+        client_token=client_token,
     )
 
 
@@ -893,7 +902,7 @@ async def acknowledge_task(task_id: str) -> Task:
 )
 async def execute_task_async(
     task_request: TaskRequest,
-    current_token: str = Depends(verify_token),
+    current_token: str = Depends(verify_app_token),
 ) -> dict:
     """
     Execute a task asynchronously and return immediate task ID.
@@ -916,7 +925,6 @@ async def execute_task_async(
     summary="Stop a running task",
     description="Request a running task stop through its assigned runner",
     tags=["Task"],
-    dependencies=[Depends(verify_token)],
     responses={
         202: {"description": "Task stop request accepted"},
         404: {"description": "Task or runner not found"},
@@ -927,10 +935,13 @@ async def execute_task_async(
 )
 async def stop_task(
     task_id: str = Path(..., description="Task identifier to stop"),
+    current_token: Annotated[str | None, Depends(verify_app_token)] = None,
 ) -> JSONResponse:
     """Request stop for a running task without changing manager-side status."""
     task = get_task_from_state(task_id)
-    if task is None:
+    if task is None or (
+        current_token is not None and not token_matches(current_token, task.client_token)
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
     if task.status not in _STOPPABLE_TASK_STATUSES:
@@ -957,52 +968,64 @@ async def stop_task(
     response_model=Task,
     response_model_exclude={"client_token"},
     summary="Get task status",
-    description="Retrieve status of a specific task",
+    description="Retrieve an owned task or the recovery metadata available to its Runner",
     tags=["Task"],
-    dependencies=[Depends(verify_token)],
     responses={
         200: {"description": "Task status information"},
         404: {"description": "Task not found"},
     },
 )
-async def get_task_status(task_id: str = Path(..., description="Task identifier to check")) -> Task:
-    """
-    Retrieve the status of a specific task.
-
-    Args:
-        task_id: Unique identifier of the task
-
-    Returns:
-        Task: Task status information
-
-    Raises:
-        HTTPException: If task not found
-    """
-    task = get_task_from_state(task_id)
-    if task is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-
-    return _redact_task_for_api(task)
+async def get_task_status(
+    task_id: str = Path(..., description="Task identifier to check"),
+    current_token: str = Depends(verify_token),
+) -> Task | Response:
+    """Return application task details or the restricted Runner status view."""
+    role = api_token_role(current_token)
+    if role is None:
+        raise HTTPException(403, "Application or Runner token required")
+    task = _get_task_or_404(task_id)
+    if role == "runners":
+        runner = runners.get(task.runner_id)
+        if runner is not None and token_matches(current_token, runner.token):
+            return JSONResponse(
+                {
+                    "task_id": task.task_id,
+                    "run_id": task.run_id,
+                    "acknowledged_at": task.acknowledged_at,
+                    "etab_name": task.etab_name,
+                }
+            )
+        if task.live is not None and task.live.automatic:
+            # Pod synchronization can follow an automatic replacement on another Runner.
+            return JSONResponse({"etab_name": task.etab_name})
+        if runner is None:
+            raise HTTPException(503, "Assigned Runner registration unavailable")
+    elif token_matches(current_token, task.client_token):
+        return _redact_task_for_api(task)
+    raise HTTPException(404, "Task not found")
 
 
 @router.get(
     "/list",
     response_model=Dict[str, Task],
     response_model_exclude={"__all__": {"client_token"}},
-    summary="List all tasks",
-    description="Return status of all current tasks",
+    summary="List application tasks",
+    description="Return current tasks owned by the authenticated application token",
     tags=["Task"],
-    dependencies=[Depends(verify_token)],
 )
-async def list_tasks() -> Dict[str, Task]:
+async def list_tasks(current_token: str = Depends(verify_app_token)) -> Dict[str, Task]:
     """
-    List all tasks with their current status.
+    List tasks owned by the authenticated application token.
 
     Returns:
         Dict[str, Task]: Dictionary of task IDs to task objects
     """
     all_tasks: Dict[str, Task] = get_tasks_snapshot()
-    return {task_id: _redact_task_for_api(task) for task_id, task in all_tasks.items()}
+    return {
+        task_id: _redact_task_for_api(task)
+        for task_id, task in all_tasks.items()
+        if token_matches(current_token, task.client_token)
+    }
 
 
 @router.get(
@@ -1016,9 +1039,11 @@ async def list_tasks() -> Dict[str, Task]:
     summary="Get task result",
     description="Return task result manifest from shared storage when enabled, otherwise proxy from runner to client",
     tags=["Task"],
-    dependencies=[Depends(verify_token)],
 )
-async def get_task_result(task_id: str = Path(..., description="Task identifier")) -> Response:
+async def get_task_result(
+    task_id: str = Path(..., description="Task identifier"),
+    current_token: Annotated[str | None, Depends(verify_app_token)] = None,
+) -> Response:
     """
     Return task result manifest.
 
@@ -1031,7 +1056,7 @@ async def get_task_result(task_id: str = Path(..., description="Task identifier"
     Raises:
         HTTPException: If task not found, failed, or not completed
     """
-    task = _get_valid_task(task_id)
+    task = _get_valid_task(task_id, client_token=current_token)
 
     if getattr(config, "RUNNERS_STORAGE_ENABLED", False):
         return await asyncio.to_thread(_get_local_manifest, task)
@@ -1053,11 +1078,11 @@ async def get_task_result(task_id: str = Path(..., description="Task identifier"
     summary="Get task result file",
     description="Stream a single task result file from shared storage when enabled, otherwise proxy-stream from runner to client",
     tags=["Task"],
-    dependencies=[Depends(verify_token)],
 )
 async def get_task_result_file(
     task_id: str = Path(..., description="Task identifier"),
     file_path: str = Path(..., description="Relative path to the result file"),
+    current_token: Annotated[str | None, Depends(verify_app_token)] = None,
 ) -> Response:
     """
     Stream a single task result file.
@@ -1072,7 +1097,7 @@ async def get_task_result_file(
     Raises:
         HTTPException: If task or file not found, failed, or not completed
     """
-    task = _get_valid_task(task_id)
+    task = _get_valid_task(task_id, client_token=current_token)
     _validate_result_path(file_path)
 
     if getattr(config, "RUNNERS_STORAGE_ENABLED", False):
@@ -1127,9 +1152,11 @@ def _stream_local_file(task: Task, file_path: str) -> FileResponse:
     return task_result_service.stream_local_file(sys.modules[__name__], task, file_path)
 
 
-def _get_valid_task(task_id: str) -> Task:
+def _get_valid_task(task_id: str, *, client_token: str | None = None) -> Task:
     """Get and validate a result-bearing task."""
-    return task_result_service.get_valid_task(sys.modules[__name__], task_id)
+    return task_result_service.get_valid_task(
+        sys.modules[__name__], task_id, client_token=client_token
+    )
 
 
 def _get_task_runner(task: Task) -> Runner:
@@ -1186,10 +1213,9 @@ def _build_streaming_response(
     summary="Task completion notification",
     description="Endpoint for runners to notify task completion",
     tags=["Task"],
-    dependencies=[Depends(verify_token)],
 )
 async def task_completion(
-    notification: TaskCompletionNotification, current_token: str = Depends(verify_token)
+    notification: TaskCompletionNotification, current_token: str = Depends(verify_runner_token)
 ) -> dict:
     """
     Handle task completion notification from runners.
@@ -1303,7 +1329,7 @@ def _get_runner_or_404(runner_id: str) -> Runner:
 
 def _verify_runner_token(runner: Runner, current_token: str) -> None:
     """Ensure completion callback token belongs to the assigned runner."""
-    if runner.token != current_token:
+    if not token_matches(current_token, runner.token):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Token not authorized for this task",

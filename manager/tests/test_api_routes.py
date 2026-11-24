@@ -24,7 +24,7 @@ def api_client(monkeypatch):
     monkeypatch.setattr(background_service.background_manager, "start_all_services", _noop)
     monkeypatch.setattr(background_service.background_manager, "stop_all_services", _noop)
 
-    app.dependency_overrides[verify_token] = lambda: True
+    app.dependency_overrides[verify_token] = lambda: "test-token"
 
     with TestClient(app) as client:
         yield client
@@ -78,6 +78,7 @@ def _make_task(task_id: str, runner_id: str, *, status: str) -> Task:
         affiliation=None,
         parameters={},
         notify_url="https://example.com/notify",
+        client_token="test-token",
         completion_callback=None,
         created_at=now,
         updated_at=now,

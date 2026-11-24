@@ -413,6 +413,7 @@ def test_task_completion_appends_stats_errors_are_logged(
 
     # Runner/token setup
     runner_token = "runner-token"
+    monkeypatch.setitem(task_module.config.AUTHORIZED_TOKENS, "runners_stats", runner_token)
     test_task_id = "test-task-1"
     runners["r1"] = _runner("r1", token=runner_token)
 
@@ -486,6 +487,7 @@ async def test_send_notify_callback_success(
     """Send utf8mb3-compatible output while retaining the original task diagnostics."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed", notify_url="https://example.com/notify")
+    tasks["t1"].client_token = None
     tasks["t1"].script_output = script_output
 
     notification = TaskCompletionNotification(

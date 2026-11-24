@@ -16,9 +16,10 @@ from app.__version__ import (
     __version__,
     __version_info__,
 )
-from app.core.auth import verify_token
+from app.core.auth import verify_app_token, verify_token
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_tasks_snapshot, runners
+from app.core.token_roles import token_matches
 
 # Configure logging
 logger = setup_default_logging()
@@ -66,9 +67,8 @@ async def get_version() -> dict:
     summary="Get tasks status (API)",
     description="API endpoint to get task status for AJAX requests",
     tags=["API"],
-    dependencies=[Depends(verify_token)],
 )
-async def get_tasks_api() -> dict:
+async def get_tasks_api(current_token: str = Depends(verify_app_token)) -> dict:
     """
     API endpoint to get task status for AJAX requests.
 
@@ -77,7 +77,8 @@ async def get_tasks_api() -> dict:
     """
     tasks_data = []
     for task_id, task in get_tasks_snapshot().items():
-        tasks_data.append({"id": task_id, "runner_id": task.runner_id, "status": task.status})
+        if token_matches(current_token, task.client_token):
+            tasks_data.append({"id": task_id, "runner_id": task.runner_id, "status": task.status})
 
     return {"tasks": tasks_data}
 

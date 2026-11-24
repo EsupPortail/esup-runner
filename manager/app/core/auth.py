@@ -26,6 +26,7 @@ from app.__version__ import __version__ as MANAGER_VERSION
 from app.core import config as config_module
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
+from app.core.token_roles import TokenRole, token_label_role, token_matches
 
 # Configure logging
 logger = setup_default_logging()
@@ -103,7 +104,7 @@ def _openapi_cookie_secret() -> bytes:
 
 def _resolve_token_name(token: str) -> Optional[str]:
     for token_name, token_value in config.AUTHORIZED_TOKENS.items():
-        if hmac.compare_digest(token, token_value):
+        if token_matches(token, token_value):
             return token_name
     return None
 
@@ -252,7 +253,7 @@ async def verify_openapi_token(
     # Check if token is in authorized tokens (constant-time comparison)
     authorized = False
     for token_value in config.AUTHORIZED_TOKENS.values():
-        if hmac.compare_digest(token, token_value):
+        if token_matches(token, token_value):
             authorized = True
             break
 
@@ -327,7 +328,7 @@ async def verify_token(
     # Check if token is in authorized tokens (constant-time comparison)
     authorized = False
     for token_value in config.AUTHORIZED_TOKENS.values():
-        if hmac.compare_digest(token, token_value):
+        if token_matches(token, token_value):
             authorized = True
             break
 
@@ -340,6 +341,33 @@ async def verify_token(
         )
 
     return token
+
+
+def api_token_role(token: str) -> TokenRole | None:
+    """Resolve a presented secret to a single configured role."""
+    roles = {
+        token_label_role(name)
+        for name, value in config.AUTHORIZED_TOKENS.items()
+        if token_matches(token, value)
+    }
+    return roles.pop() if len(roles) == 1 else None
+
+
+def require_token_role(token: str, role: TokenRole) -> str:
+    """Reject authenticated requests outside the credential's role."""
+    if api_token_role(token) != role:
+        raise HTTPException(status_code=403, detail=f"{role} token required")
+    return token
+
+
+async def verify_app_token(token: str = Depends(verify_token)) -> str:
+    """Authorize an application API request."""
+    return require_token_role(token, "app")
+
+
+async def verify_runner_token(token: str = Depends(verify_token)) -> str:
+    """Authorize a Runner API request."""
+    return require_token_role(token, "runners")
 
 
 async def verify_runner_version(

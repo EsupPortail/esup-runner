@@ -566,6 +566,7 @@ def test_execute_task_async_returns_existing_inflight_duplicate(
         affiliation=None,
         parameters={"video_id": "vid-001"},
         notify_url="https://example.com/notify",
+        client_token="test-token",
         completion_callback=None,
         created_at=now,
         updated_at=now,
@@ -847,6 +848,20 @@ def test_execute_task_async_success_creates_task_and_schedules(
 # -----------------------------
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("token", "expected_status"),
+    [("unknown-test-token", 403), ("tok", 503)],
+)
+async def test_task_status_rejects_invalid_role_or_missing_runner(
+    task_module, clean_state, token, expected_status
+):
+    tasks["t1"] = _task("t1", "unregistered", status="failed")
+    with pytest.raises(HTTPException) as error:
+        await task_module.get_task_status("t1", current_token=token)
+    assert error.value.status_code == expected_status
+
+
 def test_get_task_status_404(client, clean_state):
     """Validate Get task status 404."""
     resp = client.get("/task/status/nope")
@@ -857,7 +872,6 @@ def test_get_task_status_ok(client, clean_state):
     """Validate Get task status ok."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
-    tasks["t1"].client_token = "client-secret"
 
     resp = client.get("/task/status/t1")
     assert resp.status_code == 200
@@ -869,7 +883,6 @@ def test_list_tasks_returns_dict(client, clean_state):
     """Validate List tasks returns dict."""
     runners["r1"] = _runner("r1")
     tasks["t1"] = _task("t1", "r1", status="completed")
-    tasks["t1"].client_token = "client-secret"
 
     resp = client.get("/task/list")
     assert resp.status_code == 200

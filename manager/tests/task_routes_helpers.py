@@ -98,6 +98,7 @@ def make_task(
         affiliation=None,
         parameters={},
         notify_url=notify_url or "https://example.com/notify",
+        client_token="test-token",
         completion_callback=None,
         created_at=now,
         updated_at=now,

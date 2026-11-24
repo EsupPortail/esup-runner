@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from app.core.auth import api_token_role
 from app.core.config import config
 from app.core.persistence import SafeDailyJSONPersistence
 from app.core.runner_store import RunnerStore
@@ -42,6 +43,7 @@ logger.info(f"Task persistence directory resolved to: {_persistence_directory}")
 runners = RunnerStore(
     shared_enabled=config.ENVIRONMENT.lower() == "production",
     state_file=str(persistence.data_directory / "runners_state.json"),
+    is_token_allowed=lambda token: api_token_role(token) == "runners",
 )
 
 # Load only today's tasks at startup

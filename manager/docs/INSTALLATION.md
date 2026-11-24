@@ -110,7 +110,7 @@ At minimum, review:
 
 - `MANAGER_PROTOCOL`, `MANAGER_HOST`, `MANAGER_PORT`
 - `MANAGER_PUBLIC_URL`, `MANAGER_BIND_HOST`
-- `AUTHORIZED_TOKENS__*` (clients and runners)
+- `AUTHORIZED_TOKENS__app*` (applications) and `AUTHORIZED_TOKENS__runners*` (Runners)
 - `ADMIN_USERS__*` (for the `/admin` dashboard)
 - `LOG_DIR`
 - `RUNNERS_STORAGE_ENABLED` and `RUNNERS_STORAGE_DIR` (if you use shared storage mode)
@@ -230,12 +230,12 @@ Credentials can be provisioned in two ways:
 - From the admin UI (`/admin/credentials`) using the built-in generation forms (token and admin password hash), then optional copy/delete actions.
 - From CLI scripts, as shown below.
 
-- Generate one API token entry (`AUTHORIZED_TOKENS__…`):
+- Generate one Runner or application API token entry:
 
   ```bash
   uv run scripts/generate_token.py
   # Example:
-  # Token label (letters, numbers, underscores): runners
+  # Token label (app, runners, or a name starting with either): runners
   # Add this line to your .env file:
   # AUTHORIZED_TOKENS__runners=s3cr3t_token_value
   ```
@@ -328,7 +328,7 @@ uv run scripts/check_pipeline_tasks.py --with-transcription-translation
 
 Notes:
 
-- The script auto-loads the private `MANAGER_URL` and the first configured `AUTHORIZED_TOKENS__*` value from `manager/.env`.
+- The script auto-loads the private `MANAGER_URL` and an application token from `manager/.env`, preferring `AUTHORIZED_TOKENS__app`.
 - Optional overrides are still available with `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL`.
 - The smoke test disables the optional client callback by default; set `RUNNER_NOTIFY_URL` only if you also want to validate a reachable `notify_url` endpoint.
 - If the script runs from another server, avoid `127.0.0.1`; use the reachable manager host/IP.

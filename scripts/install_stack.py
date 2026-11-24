@@ -120,15 +120,21 @@ def validate_secret(value: str, label: str, *, token: bool = False) -> str:
 
 
 def authorized_token(env: dict[str, str]) -> str:
-    """Select an existing Manager token, preferring the dedicated runner token."""
+    """Select a Runner token, preferring the default runner label."""
     values = [env.get("AUTHORIZED_TOKENS__runners", "")]
-    values.extend(value for key, value in env.items() if key.startswith("AUTHORIZED_TOKENS__"))
+    values.extend(
+        value
+        for key, value in env.items()
+        if re.fullmatch(r"AUTHORIZED_TOKENS__runners[A-Za-z0-9_]*", key)
+    )
     for value in values:
         try:
             return validate_secret(value, "Manager runner token", token=True)
         except ValueError:
             continue
-    raise ValueError("The existing Manager configuration has no usable API token.")
+    raise ValueError(
+        "The existing Manager configuration has no usable AUTHORIZED_TOKENS__runners* token."
+    )
 
 
 def render_env(example: str, overrides: dict[str, str]) -> str:

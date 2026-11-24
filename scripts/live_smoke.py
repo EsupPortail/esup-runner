@@ -334,7 +334,9 @@ def check_crash_recovery(
         process.wait(timeout=5)
         spawn("runner-restarted", process.args, runner_env, ROOT / "runner")
     wait_for(lambda: api(url, token)["state"] == "failed")
-    wait_for(lambda: api(f"http://127.0.0.1:{port}/runner/ping", token)["available"])
+    wait_for(
+        lambda: api(f"http://127.0.0.1:{port}/runner/ping", runner_env["RUNNER_TOKEN"])["available"]
+    )
     if sibling:
         other_url = f"{manager_url}/live/{sibling['live_id']}"
         running = api(other_url, token)
@@ -476,6 +478,7 @@ def main() -> None:
     source_processes = {}
     logs = []
     token = secrets.token_urlsafe(32)
+    runner_token = secrets.token_urlsafe(32)
     media_secret = secrets.token_hex(24)
     manager_port, manager_rtmp, manager_api = free_port(), free_port(), free_port()
     manager_url = f"http://127.0.0.1:{manager_port}"
@@ -537,7 +540,8 @@ def main() -> None:
             "MANAGER_PORT": str(manager_port),
             "MANAGER_PUBLIC_URL": manager_url,
             "MANAGER_DATA_DIR": str(directory / "manager" / "data"),
-            "AUTHORIZED_TOKENS__live_smoke": token,
+            "AUTHORIZED_TOKENS__app_live_smoke": token,
+            "AUTHORIZED_TOKENS__runners_live_smoke": runner_token,
             "LIVE_ENABLED": "true",
             "LIVE_AUTO_START": str(args.automatic).lower(),
             "LIVE_SOURCES": json.dumps(sources),
@@ -592,7 +596,7 @@ def main() -> None:
                     if args.grouped
                     else f"[1x({task_types})]"
                 ),
-                "RUNNER_TOKEN": token,
+                "RUNNER_TOKEN": runner_token,
                 "MANAGER_URL": manager_url,
                 "ENCODING_TYPE": "CPU",
                 "LIVE_MEDIAMTX_API_URL": f"http://127.0.0.1:{api_port}",
@@ -613,9 +617,11 @@ def main() -> None:
             )
             grouped_process = runner_process if args.grouped else None
             wait_for(
-                lambda p=port: api(f"http://127.0.0.1:{p}/runner/ping", token).get("registered")
+                lambda p=port: api(f"http://127.0.0.1:{p}/runner/ping", runner_token).get(
+                    "registered"
+                )
             )
-            identity = api(f"http://127.0.0.1:{port}/runner/ping", token)["runner_id"]
+            identity = api(f"http://127.0.0.1:{port}/runner/ping", runner_token)["runner_id"]
             runner_processes[identity] = (runner_process, runner_env, port)
             source_processes[index] = spawn(
                 f"source-{index}",

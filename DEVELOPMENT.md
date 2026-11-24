@@ -131,6 +131,7 @@ LOG_DIR=/tmp/esup-runner-dev/manager/logs
 CACHE_DIR=/tmp/esup-runner-dev/manager/cache
 UV_CACHE_DIR=/tmp/esup-runner-uv-cache-<user>
 AUTHORIZED_TOKENS__runners=replace-with-a-local-random-token
+AUTHORIZED_TOKENS__app=replace-with-a-different-local-random-token
 ```
 
 Generate Manager tokens and an admin password hash with:
@@ -232,7 +233,8 @@ LOG_DIR=/var/log/esup-runner
 RUNNERS_STORAGE_ENABLED=true
 RUNNERS_STORAGE_DIR=/tmp/esup-runner
 API_DOCS_VISIBILITY=public
-AUTHORIZED_TOKENS__dev=esup-runner-local-dev-token
+AUTHORIZED_TOKENS__runners=esup-runner-local-dev-token
+AUTHORIZED_TOKENS__app=esup-runner-local-dev-app-token
 ```
 
 Create `runner/.env.docker.local` with the matching token and Docker hostnames:
@@ -252,9 +254,9 @@ CACHE_DIR=/home/esup-runner/.cache/esup-runner
 ENCODING_TYPE=CPU
 ```
 
-Both files are ignored by Git. The fixed token is only suitable for this local
-setup: the port mappings below listen on `127.0.0.1`. Generate a private token
-and update both files before exposing the services to another machine.
+Both files are ignored by Git. The fixed tokens are suitable only for this
+local setup with port mappings on `127.0.0.1`. Generate private tokens before
+exposing the services to another machine.
 
 `MANAGER_HOST` and `RUNNER_HOST` are addresses advertised to the other
 container; Docker DNS resolves them on the shared network. The separate

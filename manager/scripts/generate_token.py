@@ -5,10 +5,9 @@ Usage:
 """
 
 import argparse
-import re
 import secrets
 
-LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
+from app.core.token_roles import token_label_role
 
 
 def generate_token(length: int = 32) -> str:
@@ -17,14 +16,11 @@ def generate_token(length: int = 32) -> str:
 
 
 def ask_token_label() -> str:
-    """Prompt for a token label compatible with .env variable names."""
+    """Prompt for an application or Runner token label."""
     while True:
-        label = input("Token label (letters, numbers, underscores): ").strip()
-        if not label:
-            print("Label cannot be empty.")
-            continue
-        if not LABEL_PATTERN.fullmatch(label):
-            print("Invalid label. Use only letters, numbers, and underscores.")
+        label = input("Token label (app, runners, or a name starting with either): ").strip()
+        if token_label_role(label) is None:
+            print("Start with app or runners and use only letters, digits, and underscores.")
             continue
         return label
 

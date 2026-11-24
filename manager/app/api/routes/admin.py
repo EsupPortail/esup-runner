@@ -37,6 +37,7 @@ from app.core.paths import WEB_TEMPLATES_DIR
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_task as get_task_from_state
 from app.core.state import get_tasks_snapshot, runners
+from app.core.token_roles import token_label_role
 from app.core.url_paths import cookie_path, prefixed_path, request_root_path
 from app.services import live_admin, live_service
 from app.services.mediamtx import MediaMTXClient, MediaMTXError
@@ -289,7 +290,7 @@ def _build_credentials_feedback(request: Request) -> dict[str, str]:
         },
         "token_invalid": {
             "level": "danger",
-            "message": "Invalid token label. Use only letters, numbers, and underscores.",
+            "message": "Start token labels with app or runners and use only letters, digits, and underscores.",
         },
         "token_write_failed": {
             "level": "danger",
@@ -1194,7 +1195,7 @@ async def create_authorized_token(
 ):
     """Generate and persist one API token in .env from the admin credentials page."""
     normalized_name = str(token_name or "").strip()
-    if not _is_valid_token_label(normalized_name):
+    if token_label_role(normalized_name) is None:
         return _credentials_redirect(request, "token_invalid")
 
     if normalized_name in config.AUTHORIZED_TOKENS:

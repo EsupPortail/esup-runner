@@ -15,6 +15,7 @@ from urllib.parse import SplitResult, unquote, urlsplit
 from app.core._check_output import format_status
 from app.core.live_config import LiveSettings
 from app.core.passwords import BcryptPasswordContext
+from app.core.token_roles import TokenRole, token_label_role
 
 SUPPORTED_API_DOCS_VISIBILITIES = frozenset({"private", "public"})
 SUPPORTED_ENVIRONMENTS = frozenset({"development", "production"})
@@ -749,7 +750,7 @@ class Config:
         authorized_tokens = {}
         for key, value in os.environ.items():
             if key.startswith("AUTHORIZED_TOKENS__"):
-                token_name = key.split("__")[-1]
+                token_name = key.removeprefix("AUTHORIZED_TOKENS__")
                 authorized_tokens[token_name] = value
         return authorized_tokens
 
@@ -865,15 +866,23 @@ class Config:
         _raise_validation_errors(errors)
 
     def _validate_authorized_tokens(self) -> None:
-        """Reject empty API token entries and documented placeholder values."""
+        """Require role prefixes and prevent a secret from granting both roles."""
         errors: List[str] = []
+        roles_by_value: dict[str, TokenRole] = {}
         for name, value in self.AUTHORIZED_TOKENS.items():
+            role = token_label_role(name)
             if not name.strip():
                 errors.append("AUTHORIZED_TOKENS entries must have a non-empty name")
+            elif role is None:
+                errors.append(
+                    f"AUTHORIZED_TOKENS__{name} must start with runners or app and use only letters, digits or underscores"
+                )
             if not value.strip():
                 errors.append(f"AUTHORIZED_TOKENS__{name} must not be empty")
             elif _is_documented_placeholder(value):
                 errors.append(f"AUTHORIZED_TOKENS__{name} must be replaced with a secure value")
+            elif role is not None and roles_by_value.setdefault(value, role) != role:
+                errors.append("Runner and application API tokens must use distinct values")
         _raise_validation_errors(errors)
 
     def _validate_admin_users(self) -> None:

@@ -61,7 +61,9 @@ async def test_restart_same_publication_concurrently_and_after_manager_restart(m
 
 
 @pytest.mark.asyncio
-async def test_api_restart_preserves_owner_and_requires_authentication(media):
+async def test_api_restart_preserves_owner_and_requires_authentication(media, monkeypatch):
+    monkeypatch.setitem(config.AUTHORIZED_TOKENS, "app_owner", "owner")
+    monkeypatch.setitem(config.AUTHORIZED_TOKENS, "app_other", "other")
     old = await live.start(test_live.request(), "owner")
     await live.stop(old.live_id, "owner")
     app = FastAPI()

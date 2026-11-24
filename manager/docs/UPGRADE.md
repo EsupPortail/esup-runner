@@ -112,6 +112,22 @@ diff -u .env.example .env || true
 - Add any new missing variables to `.env`.
 - Do not accidentally remove your existing tokens.
 
+### Check API token labels
+
+Keep `AUTHORIZED_TOKENS__runners` and `AUTHORIZED_TOKENS__app` if their values
+are distinct and each is already used for its intended role. Before restarting
+the Manager, rename labels that lack the required `runners` or `app` prefix.
+Keep the same secret to preserve existing task and Runner ownership. If one
+secret serves both roles, keep it for the application when preserving its task
+history and assign a new Runner secret.
+
+When changing a registered Runner's secret, stop the Runner and all Manager
+workers first. Update the existing Runner's token in `runners_state.json` under
+`MANAGER_DATA_DIR`, or remove only that ID from `runners_state.owners.json`
+if the registration has expired. Update the Manager's token configuration and
+the Runner's `RUNNER_TOKEN` before restarting both services. Keep these files
+private and include both registry files in backups.
+
 ### Configure the Manager public URL when needed
 
 Existing installations can keep using `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`: if `MANAGER_PUBLIC_URL` is absent, the Manager computes it from these three values. Configure the complete public administration URL explicitly when using a reverse proxy:

@@ -69,6 +69,23 @@ async def test_check_runners_activity_handles_missing_runner_on_delete(monkeypat
     assert "old" in runners
 
 
+@pytest.mark.asyncio
+async def test_activity_monitor_retains_registration_on_storage_failure(clean_runners, monkeypatch):
+    runners["old"] = _runner("old", last_heartbeat=datetime.now() - timedelta(minutes=2))
+    stop_event = asyncio.Event()
+
+    def fail(*_args):
+        stop_event.set()
+        raise OSError("expired registration could not be written")
+
+    monkeypatch.setattr(runner_service.runners, "expire_inactive", fail)
+
+    await asyncio.wait_for(
+        runner_service.check_runners_activity(poll_interval=0, stop_event=stop_event), timeout=0.1
+    )
+    assert "old" in runners
+
+
 def test_get_online_runners_filters_by_heartbeat(clean_runners):
     """Validate Get online runners filters by heartbeat."""
     now = datetime.now()

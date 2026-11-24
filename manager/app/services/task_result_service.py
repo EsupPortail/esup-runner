@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import ValidationError
 from starlette.types import Receive, Scope, Send
 
+from app.core.token_roles import token_matches
 from app.models.models import Runner, Task, TaskResultManifest
 
 
@@ -170,10 +171,12 @@ def stream_local_file(context: Any, task: Task, file_path: str) -> FileResponse:
     )
 
 
-def get_valid_task(context: Any, task_id: str) -> Task:
+def get_valid_task(context: Any, task_id: str, *, client_token: str | None = None) -> Task:
     """Get a task and validate that its results are available."""
     task = context.get_task_from_state(task_id)
-    if task is None:
+    if task is None or (
+        client_token is not None and not token_matches(client_token, task.client_token)
+    ):
         raise HTTPException(404, "Task not found")
     if task.status == "failed":
         raise HTTPException(400, f"Task failed: {task.error}")

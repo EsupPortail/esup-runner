@@ -506,6 +506,7 @@ async def test_disabled_watcher_makes_no_media_calls(media, monkeypatch, enabled
 async def test_source_discovery_and_automatic_control_require_authenticated_client(
     media, monkeypatch
 ):
+    monkeypatch.setitem(config.AUTHORIZED_TOKENS, "app_live", "authorized-client")
     await auto.reconcile_source("room", media)
     (task,) = live.sessions()
     monkeypatch.setattr(live, "MediaMTXClient", lambda *args: media)

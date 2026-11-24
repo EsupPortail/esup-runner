@@ -364,7 +364,7 @@ downloaded again if requested. See the [Hugging Face cache layout](https://huggi
 If runner API is healthy but `registered=false`:
 
 1. Check `MANAGER_URL` in `.env`.
-2. Check `RUNNER_TOKEN` matches a manager `AUTHORIZED_TOKENS__*`.
+2. Check `RUNNER_TOKEN` matches a Manager `AUTHORIZED_TOKENS__runners*` value.
 3. Check runner/manager version compatibility (`MAJOR.MINOR` must match).
 4. Inspect logs:
    - runner: `journalctl --user -u esup-runner-runner -n 200 --no-pager`

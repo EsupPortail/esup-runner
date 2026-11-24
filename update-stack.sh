@@ -475,8 +475,8 @@ read_env_var() {
   ' "${env_file}"
 }
 
-read_first_authorized_token() {
-  # Pick the first AUTHORIZED_TOKENS__* entry from manager/.env.
+read_first_application_token() {
+  # Pick the first application token from manager/.env.
   local env_file="$1"
 
   [[ -f "${env_file}" ]] || return 1
@@ -487,7 +487,7 @@ read_first_authorized_token() {
     {
       k = $1
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", k)
-      if (k ~ /^AUTHORIZED_TOKENS__/) {
+      if (k ~ /^AUTHORIZED_TOKENS__app[A-Za-z0-9_]*$/) {
         val = substr($0, index($0, "=") + 1)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
         if (val ~ /^".*"$/) {
@@ -497,8 +497,10 @@ read_first_authorized_token() {
           sub(/^\x27/, "", val)
           sub(/\x27$/, "", val)
         }
-        print val
-        exit
+        if (val != "") {
+          print val
+          exit
+        }
       }
     }
   ' "${env_file}"
@@ -1294,9 +1296,9 @@ run_post_update_test() {
   local token manager_url
   local test_args=()
 
-  token="$(read_env_var "${RUNNER_ENV_FILE}" "RUNNER_TOKEN" || true)"
+  token="$(read_env_var "${MANAGER_ENV_FILE}" "AUTHORIZED_TOKENS__app" || true)"
   if [[ -z "${token}" ]]; then
-    token="$(read_first_authorized_token "${MANAGER_ENV_FILE}" || true)"
+    token="$(read_first_application_token "${MANAGER_ENV_FILE}" || true)"
   fi
 
   manager_url="$(read_env_var "${RUNNER_ENV_FILE}" "MANAGER_URL" || true)"
@@ -1306,7 +1308,7 @@ run_post_update_test() {
 
   if [[ -z "${token}" || -z "${manager_url}" ]]; then
     TEST_STATUS="skipped"
-    warn "Missing token or manager URL: check_pipeline_tasks test skipped."
+    warn "Missing application token or manager URL: check_pipeline_tasks test skipped."
     return 0
   fi
 

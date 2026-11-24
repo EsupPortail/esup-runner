@@ -8,6 +8,7 @@ JSON file protected by filelock in that mode.
 In development, it falls back to an in-memory dictionary.
 """
 
+import hashlib
 import hmac
 import json
 import logging
@@ -36,11 +37,15 @@ class RunnerStore(MutableMapping[str, Runner]):
         shared_enabled: bool,
         state_file: str = "data/runners_state.json",
         lock_timeout: int = 10,
+        is_token_allowed: Callable[[str], bool] | None = None,
     ):
         self.shared_enabled = shared_enabled
         self._memory: Dict[str, Runner] = {}
+        self._memory_owners: dict[str, str] = {}
         self._memory_lock = RLock()
         self._state_file = self._resolve_state_file(state_file)
+        self._owners_file = self._state_file.with_suffix(".owners.json")
+        self._is_token_allowed = is_token_allowed
         self._lock: Optional[FileLock] = None
 
         if self.shared_enabled:
@@ -147,19 +152,55 @@ class RunnerStore(MutableMapping[str, Runner]):
 
     def _write_disk(self, data: Dict[str, Runner]) -> None:
         serialized = {runner_id: self._runner_to_dict(r) for runner_id, r in data.items()}
-        self._state_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self._state_file.with_name(f"{self._state_file.name}.{uuid4().hex}.tmp")
-        with tmp_path.open("w", encoding="utf-8") as f:
-            json.dump(serialized, f, indent=2, ensure_ascii=False)
-        tmp_path.replace(self._state_file)
+        self._write_json(self._state_file, serialized)
+
+    @staticmethod
+    def _write_json(path: Path, data: dict[str, Any]) -> None:
+        """Replace one registry file atomically while holding the store lock."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
+        try:
+            with tmp_path.open("w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            tmp_path.replace(path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    def _read_owners(self) -> dict[str, str]:
+        """Read expired registrations under the same lock as active entries."""
+        if not self.shared_enabled:
+            return self._memory_owners
+        try:
+            with self._owners_file.open(encoding="utf-8") as f:
+                owners = json.load(f)
+        except FileNotFoundError:
+            return {}
+        except (ValueError, OSError) as exc:
+            raise OSError("Could not read expired Runner registrations") from exc
+        if not isinstance(owners, dict) or any(
+            not isinstance(value, str) for value in owners.values()
+        ):
+            raise OSError("Invalid expired Runner registrations")
+        return cast(dict[str, str], owners)
+
+    def _visible(self, data: Dict[str, Runner]) -> Dict[str, Runner]:
+        """Hide registrations whose secrets no longer have the Runner role."""
+        if self._is_token_allowed is None:
+            return data
+        return {key: runner for key, runner in data.items() if self._eligible(runner)}
+
+    def _eligible(self, runner: Runner) -> bool:
+        """Check whether a registered Runner is still authorized."""
+        allowed = self._is_token_allowed
+        return allowed is None or bool(runner.token and allowed(runner.token))
 
     def __getitem__(self, key: str) -> Runner:
-        if not self.shared_enabled:
-            return self._memory[key]
-
         def _operation() -> Runner:
-            data = self._read_disk()
-            return data[key]
+            data = self._read_disk() if self.shared_enabled else self._memory
+            runner = data[key]
+            if not self._eligible(runner):
+                raise KeyError(key)
+            return runner
 
         return self._with_lock(_operation)
 
@@ -196,11 +237,23 @@ class RunnerStore(MutableMapping[str, Runner]):
         def _operation() -> bool:
             data = self._read_disk() if self.shared_enabled else self._memory
             existing = data.get(runner.id)
-            if not runner.token or (
-                existing is not None
-                and (not existing.token or not hmac.compare_digest(existing.token, runner.token))
+            if (
+                not runner.token
+                or not self._eligible(runner)
+                or (
+                    existing is not None
+                    and (
+                        not existing.token or not hmac.compare_digest(existing.token, runner.token)
+                    )
+                )
             ):
                 return False
+            if existing is None:
+                owner = self._read_owners().get(runner.id)
+                if owner is not None and not hmac.compare_digest(
+                    owner, hashlib.sha256(runner.token.encode()).hexdigest()
+                ):
+                    return False
             runner.live_task_id = existing.live_task_id if existing else None
             if runner.live_task_id:
                 runner.availability = "busy"
@@ -210,6 +263,29 @@ class RunnerStore(MutableMapping[str, Runner]):
             return True
 
         return self._with_lock(_operation)
+
+    def expire_inactive(self, key: str, cutoff: datetime) -> bool:
+        """Remove stale capacity while retaining its identity or its Live reservation."""
+
+        def operation() -> bool:
+            data = self._read_disk() if self.shared_enabled else self._memory
+            runner = data.get(key)
+            if runner is None or runner.last_heartbeat >= cutoff:
+                return False
+            if runner.live_task_id:
+                runner.status = "offline"
+            else:
+                if runner.token:
+                    owners = self._read_owners()
+                    owners[key] = hashlib.sha256(runner.token.encode()).hexdigest()
+                    if self.shared_enabled:
+                        self._write_json(self._owners_file, owners)
+                del data[key]
+            if self.shared_enabled:
+                self._write_disk(data)
+            return not runner.live_task_id
+
+        return self._with_lock(operation)
 
     def __delitem__(self, key: str) -> None:
         if not self.shared_enabled:
@@ -225,44 +301,45 @@ class RunnerStore(MutableMapping[str, Runner]):
 
     def __iter__(self) -> Iterator[str]:
         if not self.shared_enabled:
-            return iter(self._memory)
+            return iter(self._visible(self._memory))
 
         def _operation() -> list[str]:
             data = self._read_disk()
-            return list(data.keys())
+            return list(self._visible(data))
 
         keys = self._with_lock(_operation)
         return iter(keys)
 
     def __len__(self) -> int:
         if not self.shared_enabled:
-            return len(self._memory)
+            return len(self._visible(self._memory))
 
         def _operation() -> int:
             data = self._read_disk()
-            return len(data)
+            return len(self._visible(data))
 
         return self._with_lock(_operation)
 
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, str):
             return False
-
-        if not self.shared_enabled:
-            return key in self._memory
-
-        def _operation() -> bool:
-            data = self._read_disk()
-            return key in data
-
-        return self._with_lock(_operation)
+        try:
+            self[key]
+        except KeyError:
+            return False
+        return True
 
     def clear(self) -> None:
         if not self.shared_enabled:
             self._memory.clear()
+            self._memory_owners.clear()
             return
 
-        self._with_lock(lambda: self._write_disk({}))
+        def operation() -> None:
+            self._write_disk({})
+            self._owners_file.unlink(missing_ok=True)
+
+        self._with_lock(operation)
 
     def update(self, *args: Any, **kwargs: Any) -> None:
         updates = dict(*args, **kwargs)
@@ -287,42 +364,40 @@ class RunnerStore(MutableMapping[str, Runner]):
     def get(self, key: str, default: _T) -> Runner | _T: ...
 
     def get(self, key: str, default: _T | None = None) -> Runner | _T | None:
-        if not self.shared_enabled:
-            return self._memory.get(key, default)
-
         def _operation() -> Runner | _T | None:
-            data = self._read_disk()
-            return data.get(key, default)
+            data = self._read_disk() if self.shared_enabled else self._memory
+            runner = data.get(key)
+            return runner if runner is not None and self._eligible(runner) else default
 
         return self._with_lock(_operation)
 
     def items(self):  # type: ignore[override]
         if not self.shared_enabled:
-            return list(self._memory.items())
+            return list(self._visible(self._memory).items())
 
         def _operation():
             data = self._read_disk()
-            return list(data.items())
+            return list(self._visible(data).items())
 
         return self._with_lock(_operation)
 
     def keys(self):  # type: ignore[override]
         if not self.shared_enabled:
-            return list(self._memory.keys())
+            return list(self._visible(self._memory))
 
         def _operation():
             data = self._read_disk()
-            return list(data.keys())
+            return list(self._visible(data))
 
         return self._with_lock(_operation)
 
     def values(self):  # type: ignore[override]
         if not self.shared_enabled:
-            return list(self._memory.values())
+            return list(self._visible(self._memory).values())
 
         def _operation():
             data = self._read_disk()
-            return list(data.values())
+            return list(self._visible(data).values())
 
         return self._with_lock(_operation)
 
@@ -332,22 +407,16 @@ class RunnerStore(MutableMapping[str, Runner]):
         Returns the updated runner when reservation succeeds, otherwise ``None``
         (runner missing or already busy).
         """
-        if not self.shared_enabled:
-            runner = self._memory.get(key)
-            if runner is None or runner.availability != "available":
-                return None
-            runner.availability = "busy"
-            self._memory[key] = runner
-            return runner
 
         def _operation() -> Optional[Runner]:
-            data = self._read_disk()
+            data = self._read_disk() if self.shared_enabled else self._memory
             runner = data.get(key)
-            if runner is None or runner.availability != "available":
+            if runner is None or not self._eligible(runner) or runner.availability != "available":
                 return None
             runner.availability = "busy"
             data[key] = runner
-            self._write_disk(data)
+            if self.shared_enabled:
+                self._write_disk(data)
             return runner
 
         return self._with_lock(_operation)
@@ -367,7 +436,12 @@ class RunnerStore(MutableMapping[str, Runner]):
             """Assign the session owner while holding the Runner store lock."""
             data = self._read_disk() if self.shared_enabled else self._memory
             runner = data.get(key)
-            if runner is None or "live" not in runner.task_types or runner.status != "online":
+            if (
+                runner is None
+                or not self._eligible(runner)
+                or "live" not in runner.task_types
+                or runner.status != "online"
+            ):
                 return None
             if not confirmed_running and datetime.now() - runner.last_heartbeat >= timedelta(
                 minutes=1

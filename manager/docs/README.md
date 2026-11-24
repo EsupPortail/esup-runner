@@ -140,11 +140,13 @@ for all instances on a server.
 Manager API endpoints use token-based auth:
 
 - Send either `Authorization: Bearer <token>` or `X-API-Token: <token>`.
-- Tokens must match one of the configured `AUTHORIZED_TOKENS__*` environment variables.
+- Use an `AUTHORIZED_TOKENS__app*` value. Task access is scoped to the secret used to submit the task.
 
 ### Runner → Manager (register / heartbeat / completion)
 
-Runners also authenticate using the same token mechanism.
+Runners authenticate with an `AUTHORIZED_TOKENS__runners*` value. See the
+[token configuration reference](CONFIGURATION.md#api-tokens-authorized_tokens__)
+for naming and ownership rules.
 
 Additionally, runner registration and heartbeat require the header:
 

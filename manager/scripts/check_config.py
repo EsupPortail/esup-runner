@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Validate the manager configuration loaded from environment variables.
 
-This preflight command uses the same configuration loader and validators as the
-manager. It reports every detected error without printing sensitive values,
-then returns a process-friendly exit code.
+This preflight command uses the Manager's configuration validators and checks
+for both API token roles. It reports errors without printing sensitive values.
 
 Usage:
   uv run scripts/check_config.py
@@ -29,6 +28,7 @@ from app.core._check_output import (
     format_status,
     manager_configuration_rows,
 )
+from app.core.token_roles import token_label_role
 
 ConfigLoadResult = Tuple[Optional[Any], Tuple[str, ...]]
 
@@ -42,7 +42,7 @@ def _configuration_errors(error: Exception) -> Tuple[str, ...]:
 
 
 def _load_and_validate_config() -> ConfigLoadResult:
-    """Load the effective manager configuration and run its central validator."""
+    """Validate the effective Manager configuration and require both API token roles."""
     try:
         config_module = importlib.import_module("app.core.config")
         config = config_module.get_config()
@@ -50,6 +50,15 @@ def _load_and_validate_config() -> ConfigLoadResult:
             config.validate_configuration()
     except Exception as error:
         return None, _configuration_errors(error)
+
+    configured_roles = {token_label_role(label) for label in config.AUTHORIZED_TOKENS}
+    missing_roles = tuple(
+        f"At least one AUTHORIZED_TOKENS__{role}* entry is required."
+        for role in ("runners", "app")
+        if role not in configured_roles
+    )
+    if missing_roles:
+        return None, missing_roles
     return config, ()
 
 

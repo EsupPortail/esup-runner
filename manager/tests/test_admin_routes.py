@@ -1455,15 +1455,16 @@ def test_create_authorized_token_endpoint_persists_and_reloads(admin_client, mon
 
     resp = admin_client.post(
         "/admin/credentials/tokens",
-        data={"token_name": "new_token"},
+        data={"token_name": "app_new_token"},
         follow_redirects=False,
     )
 
     assert resp.status_code == 303
     assert (
-        resp.headers["location"] == "/admin/credentials?feedback=token_created&token_name=new_token"
+        resp.headers["location"]
+        == "/admin/credentials?feedback=token_created&token_name=app_new_token"
     )
-    assert captured == {"token_name": "new_token", "token_value": "generated"}
+    assert captured == {"token_name": "app_new_token", "token_value": "generated"}
     assert reload_calls["count"] == 1
     assert publish_calls["count"] == 1
 
@@ -1482,17 +1483,18 @@ def test_create_authorized_token_endpoint_rejects_invalid_label(admin_client):
 
 def test_create_authorized_token_endpoint_rejects_duplicate_label(admin_client, monkeypatch):
     """Validate token creation endpoint rejects already existing token labels."""
-    monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"existing": "tok"})
+    monkeypatch.setattr(config, "AUTHORIZED_TOKENS", {"app_existing": "tok"})
 
     resp = admin_client.post(
         "/admin/credentials/tokens",
-        data={"token_name": "existing"},
+        data={"token_name": "app_existing"},
         follow_redirects=False,
     )
 
     assert resp.status_code == 303
     assert (
-        resp.headers["location"] == "/admin/credentials?feedback=token_exists&token_name=existing"
+        resp.headers["location"]
+        == "/admin/credentials?feedback=token_exists&token_name=app_existing"
     )
 
 
@@ -1508,14 +1510,14 @@ def test_create_authorized_token_endpoint_reports_write_failure(admin_client, mo
 
     resp = admin_client.post(
         "/admin/credentials/tokens",
-        data={"token_name": "new_token"},
+        data={"token_name": "app_new_token"},
         follow_redirects=False,
     )
 
     assert resp.status_code == 303
     assert (
         resp.headers["location"]
-        == "/admin/credentials?feedback=token_write_failed&token_name=new_token"
+        == "/admin/credentials?feedback=token_write_failed&token_name=app_new_token"
     )
 
 

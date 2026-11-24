@@ -40,10 +40,11 @@ restarting the Manager:
 uv run scripts/check_config.py
 ```
 
-The command uses the same loader and validators as the Manager, reports all
-detected errors together, excludes credential values from its summary, and
-returns exit code `0` when valid or `2` when invalid. The same validation runs at
-startup and before a hot-reloaded configuration replaces the live one.
+The command uses the Manager's startup validators, including token name
+validation. It also requires at least one `AUTHORIZED_TOKENS__runners*` entry
+and one `AUTHORIZED_TOKENS__app*` entry, accepting the default names and names
+with valid suffixes. It reports errors without printing credential values and
+returns exit code `0` when valid or `2` when invalid.
 
 ## Core manager settings
 
@@ -127,21 +128,35 @@ The Manager accepts API tokens from:
 - `Authorization: Bearer <token>`
 - `X-API-Token: <token>`
 
-Configure tokens with environment variables prefixed by `AUTHORIZED_TOKENS__`:
+The token label specifies its role. It must start with lowercase `runners` or
+`app` and may contain only ASCII letters, digits, and underscores. Use distinct
+secrets for the two roles.
 
 ```properties
 AUTHORIZED_TOKENS__runners=CHANGE_ME_RUNNERS_TOKEN
 AUTHORIZED_TOKENS__app=CHANGE_ME_APP_TOKEN
 ```
 
-Notes:
-- Suffix (for example `runners`, `app`) is just a label.
-- If no token is configured, the manager logs a warning and protected API access will fail.
-- Token entries can be generated/managed from `/admin/credentials` (UI) or via `scripts/generate_token.py` (CLI).
-- Registering an existing runner ID requires the same token value as its current
-  registration. A different authorized token receives `403` without changing the
-  stored runner; the request body's `token` cannot override the authenticated
-  token. A restart with the same token may refresh the URL and capabilities.
+- A Runner uses an `AUTHORIZED_TOKENS__runners*` value as `RUNNER_TOKEN` for
+  registration, heartbeats, and task completion. Examples include `runners_cpu`
+  and `runners_gpu_um`. An existing Runner ID stays bound to its token after
+  inactivity and, in production, after Manager restarts. Runners sharing a
+  secret share the same identity. Use a distinct secret per Runner deployment
+  to isolate them.
+- An application uses `AUTHORIZED_TOKENS__app*` to submit tasks and list, poll,
+  stop, or retrieve results for tasks created with that secret. Examples include
+  `app_pod` and `app_pod_um`. Use a distinct secret for each application or
+  institution whose tasks must be isolated. Revoking a value removes access to
+  its tasks through the application API. Administrators can still view them.
+- Create tokens from `/admin/credentials` or with `uv run scripts/generate_token.py`.
+  Both enforce the same naming rules. The Manager rejects invalid names and
+  secrets reused across roles when it validates its configuration.
+- Health, version, and operational discovery accept either role. Runner task
+  status contains only recovery and automatic Live synchronization metadata.
+  Live source discovery and application controls for automatic Live sessions
+  retain their shared scope.
+- The default labels `runners` and `app` require no changes. See the
+  [upgrade guide](UPGRADE.md#check-api-token-labels) for custom labels and rotation.
 
 ### Admin users (`ADMIN_USERS__*`)
 

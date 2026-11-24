@@ -549,10 +549,13 @@ def test_update_selects_dependency_profile_without_environment_override(
 def smoke_update(tmp_path, configuration_repository):
     """Enable the smoke test with mocked task execution, delay, and SMTP."""
     checkout, env, email_path = _prepare_update(tmp_path, configuration_repository)
+    with (checkout / "manager/.env").open("a", encoding="utf-8") as manager_env:
+        manager_env.write("AUTHORIZED_TOKENS__app=test-app-token\n")
     with (checkout / "runner/.env").open("a", encoding="utf-8") as runner_env:
         runner_env.write("RUNNER_TOKEN=test-token\nMANAGER_URL=http://manager.example.invalid\n")
     for command, content in {
-        "uv": '#!/bin/sh\nprintf "%s\\n" "$TEST_SMOKE_OUTPUT" >&2\n'
+        "uv": '#!/bin/sh\n[ "$RUNNER_API_TOKEN" = "test-app-token" ] || exit 1\n'
+        'printf "%s\\n" "$TEST_SMOKE_OUTPUT" >&2\n'
         'exit "$TEST_SMOKE_EXIT_CODE"\n',
         "sleep": "#!/bin/sh\nexit 0\n",
     }.items():

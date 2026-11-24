@@ -331,7 +331,7 @@ uv run scripts/check_pipeline_tasks.py --with-transcription-translation
 
 Before running this script:
 
-- The script auto-loads the private `MANAGER_URL` built from `MANAGER_PROTOCOL`, `MANAGER_HOST` and `MANAGER_PORT`, plus the first configured `AUTHORIZED_TOKENS__*` value from `manager/.env`.
+- The script auto-loads the private `MANAGER_URL` and an application token from `manager/.env`, preferring `AUTHORIZED_TOKENS__app`.
 - Optional overrides remain available through `RUNNER_API_TOKEN` and `RUNNER_MANAGER_URL`.
 - The smoke test leaves `notify_url` empty by default so it does not depend on an external webhook service; set `RUNNER_NOTIFY_URL` to test a callback endpoint explicitly.
 - If the script runs from another server, avoid `127.0.0.1`; use the real manager host/IP.

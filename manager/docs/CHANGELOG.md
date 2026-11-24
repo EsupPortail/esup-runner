@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Separate Runner and application API tokens by the `runners` and `app` label
+  prefixes, scope tasks to their submitting application, and retain Runner
+  identity after inactivity. Existing default labels remain valid. See the
+  [upgrade guide](UPGRADE.md#check-api-token-labels) for custom labels.
 - Persist and deduplicate task completions before sending `notify_url` callbacks,
   so the Manager can accept other completions from the same Runner during
   delivery. Limit each attempt to 20 seconds and retain up to 4 KiB of

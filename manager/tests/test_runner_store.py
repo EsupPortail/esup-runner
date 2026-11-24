@@ -28,6 +28,37 @@ def _runner(runner_id: str) -> Runner:
     )
 
 
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("{", "Could not read expired Runner registrations"),
+        ("[]", "Invalid expired Runner registrations"),
+    ],
+)
+def test_registration_fails_closed_when_expired_owners_are_unreadable(tmp_path, content, message):
+    state_path = tmp_path / "runners_state.json"
+    store = RunnerStore(shared_enabled=True, state_file=str(state_path))
+    store._owners_file.write_text(content, encoding="utf-8")
+
+    with pytest.raises(OSError, match=message):
+        store.register(_runner("r1"))
+    assert store.get("r1") is None
+    assert store._owners_file.read_text(encoding="utf-8") == content
+
+
+def test_direct_lookup_hides_revoked_runner(tmp_path):
+    authorized = {"tok"}
+    store = RunnerStore(
+        shared_enabled=True,
+        state_file=str(tmp_path / "runners.json"),
+        is_token_allowed=authorized.__contains__,
+    )
+    assert store.register(_runner("r1"))
+    authorized.clear()
+    with pytest.raises(KeyError):
+        store["r1"]
+
+
 def test_shared_store_is_visible_across_instances(tmp_path):
     """Validate Shared store is visible across instances."""
     state_path = tmp_path / "runners_state.json"

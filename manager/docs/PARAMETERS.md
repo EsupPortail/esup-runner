@@ -44,7 +44,7 @@ RUNNER_URL_ALLOW_PRIVATE_NETWORKS=true
 
 ## Authentication and admin access
 - `ADMIN_TITLE` (default `Runners Monitoring`): Plain-text browser tab title and heading of the `/admin` dashboard. Empty or whitespace-only values use the default. Restart the Manager after changing it.
-- `AUTHORIZED_TOKENS__*`: Defines accepted API tokens (headers: `Authorization: Bearer <token>` or `X-API-Token: <token>`).
+- `AUTHORIZED_TOKENS__runners*` and `AUTHORIZED_TOKENS__app*`: Define Runner and application API tokens. Both accept `Authorization: Bearer <token>` or `X-API-Token: <token>`. See [API token roles](CONFIGURATION.md#api-tokens-authorized_tokens__).
 - `ADMIN_USERS__*`: Defines admin users for `/admin` with bcrypt hashes.
 - If no `AUTHORIZED_TOKENS__*` is configured, the manager logs a warning and protected API access is effectively blocked.
 - If no `ADMIN_USERS__*` is configured, the manager logs a warning and admin login is unavailable.

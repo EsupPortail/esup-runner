@@ -12,10 +12,11 @@ from urllib.parse import ParseResult, urlparse, urlunparse
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
 from pydantic import BaseModel
 
-from app.core.auth import verify_runner_version, verify_token
+from app.core.auth import verify_runner_token, verify_runner_version
 from app.core.config import config
 from app.core.setup_logging import setup_default_logging
 from app.core.state import runners
+from app.core.token_roles import token_matches
 from app.models.models import Runner
 
 # Configure logging
@@ -187,7 +188,7 @@ def _validate_and_normalize_runner_url(url: str) -> str:
 )
 async def register_runner(
     runner: Runner,
-    current_token: str = Depends(verify_token),
+    current_token: str = Depends(verify_runner_token),
     current_version: str = Depends(verify_runner_version),
 ) -> dict:
     """
@@ -208,7 +209,12 @@ async def register_runner(
     runner.last_heartbeat = datetime.now()
     runner.token = current_token
     runner.version = current_version
-    if not runners.register(runner):
+    try:
+        registered = runners.register(runner)
+    except OSError:
+        logger.exception("Could not persist registration for Runner %s", runner.id)
+        raise HTTPException(503, "Runner registration storage unavailable") from None
+    if not registered:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Token not authorized for this runner"
         )
@@ -223,12 +229,11 @@ async def register_runner(
     summary="Send heartbeat",
     description="Endpoint for runners to signal they are still active",
     tags=["Runner"],
-    dependencies=[Depends(verify_token), Depends(verify_runner_version)],
 )
 async def runner_heartbeat(
     runner_id: str = Path(..., description="Runner identifier"),
     payload: RunnerHeartbeatPayload | None = Body(default=None),
-    current_token: str = Depends(verify_token),
+    current_token: str = Depends(verify_runner_token),
     current_version: str = Depends(verify_runner_version),
 ) -> dict:
     """
@@ -248,7 +253,7 @@ async def runner_heartbeat(
     if runner is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runner not found")
 
-    if runner.token != current_token:
+    if not token_matches(current_token, runner.token):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Token not authorized for this runner"
         )

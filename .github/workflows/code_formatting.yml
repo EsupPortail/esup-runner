@@ -3,10 +3,12 @@ name: Code Formatting
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: code-formatting-${{ github.ref }}
@@ -14,17 +16,16 @@ concurrency:
 
 jobs:
   code-formatting:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up uv + Python
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           python-version: "3.11"
           enable-cache: true
@@ -39,14 +40,9 @@ jobs:
         run: uv --version
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
-
-      - name: Configure Git author
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Install manager dev dependencies
         working-directory: manager
@@ -56,26 +52,16 @@ jobs:
         working-directory: runner
         run: uv sync --locked --extra dev
 
-      - name: Format manager Python (black + isort)
+      - name: Check manager Python formatting (black + isort)
         working-directory: manager
-        run: make fmt
+        run: make fmt-check
 
-      - name: Format runner Python (black + isort)
+      - name: Check runner Python formatting (black + isort)
         working-directory: runner
-        run: make fmt
+        run: make fmt-check
 
-      - name: Format manager web assets (Prettier)
+      - name: Check manager web formatting (Prettier)
         run: |
-          npx --yes prettier@3 --write \
+          npx --yes prettier@3.6.2 --check \
             manager/app/web/static/*.js \
             manager/app/web/static/*.css
-
-      - name: Commit and push formatting changes
-        run: |
-          if git diff --quiet; then
-            echo "No formatting changes to commit."
-            exit 0
-          fi
-          git add -A
-          git commit -m "chore: auto-format code"
-          git push origin HEAD:${{ github.ref_name }}

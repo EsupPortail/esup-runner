@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bound API request bodies, reject example Runner tokens,
   and restrict proxy trust for HLS viewer counts.
 - Verify SMTP server certificates.
+- Pin CI and Docker build dependencies.
 
 ### Fixed
 

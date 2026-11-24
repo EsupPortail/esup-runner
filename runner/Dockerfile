@@ -4,7 +4,7 @@
 FROM python:3.12-slim AS build
 
 # Copy uv binaries from the official image.
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.19@sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424 /uv /uvx /bin/
 
 WORKDIR /app
 

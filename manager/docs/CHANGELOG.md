@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Limit API request bodies and task metadata, validate Runner and Live IDs,
   bound log parsing, and neutralize formulas in statistics exports.
 - Verify SMTP server certificates.
+- Pin CI dependencies and check formatting with read-only permissions.
 
 ### Fixed
 

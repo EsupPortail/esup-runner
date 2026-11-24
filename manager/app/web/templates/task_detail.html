@@ -264,12 +264,18 @@
 
       <!-- Specific details -->
       {% if task.warnings %}
+        {% set encoding_warnings = task.warnings | unique(case_sensitive=true) | list %}
         <div class="detail-section">
           <h3 class="h5 mb-3 text-warning">Encoding warnings</h3>
           <div class="alert alert-warning">
-            {% for warning in task.warnings %}
-              <p class="mb-0">{{ warning }}</p>
-            {% endfor %}
+            <p class="mb-0">
+              {% if encoding_warnings | length == 1 %}
+                {{ encoding_warnings[0] }}
+              {% else %}
+                {{ encoding_warnings | length }} output streams are shorter than expected.
+                Check source integrity and FFmpeg errors. See encoding.log for details.
+              {% endif %}
+            </p>
           </div>
         </div>
       {% endif %}

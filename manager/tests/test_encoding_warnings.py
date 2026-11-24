@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import escape
 from pydantic import ValidationError
 from task_routes_helpers import clean_state, make_runner, make_task, task_module
 
@@ -84,9 +85,24 @@ def test_unrelated_warnings_are_not_accepted_as_encoding_warnings():
     assert task.warnings == []
 
 
-def test_task_details_display_and_escape_encoding_warnings():
+@pytest.mark.parametrize(
+    ("warnings", "expected_message"),
+    [
+        ([], None),
+        (
+            [WARNING + " <script>alert('unsafe')</script>"],
+            WARNING + " <script>alert('unsafe')</script>",
+        ),
+        ([WARNING, WARNING], WARNING),
+        (
+            [WARNING, WARNING, WARNING.replace("360p", "720p")],
+            "2 output streams are shorter than expected.",
+        ),
+    ],
+)
+def test_task_details_display_and_escape_encoding_warnings(warnings, expected_message):
     task = make_task("t1", "r1", status="completed")
-    task.warnings = [WARNING + " <script>alert('unsafe')</script>"]
+    task.warnings = warnings
     env = Environment(loader=FileSystemLoader("app/web/templates"), autoescape=select_autoescape())
     rendered = env.get_template("task_detail.html").render(
         task=task,
@@ -97,6 +113,8 @@ def test_task_details_display_and_escape_encoding_warnings():
         task_actions={},
         last_update="2026-11-16",
     )
-    assert "Encoding warnings" in rendered
-    assert "&lt;script&gt;" in rendered
+    assert rendered.count("Encoding warnings") == int(expected_message is not None)
+    if expected_message is not None:
+        assert rendered.count(escape(expected_message)) == 1
+    assert rendered.count("Encoding incomplete:") == int(len(set(warnings)) == 1)
     assert "<script>alert('unsafe')</script>" not in rendered

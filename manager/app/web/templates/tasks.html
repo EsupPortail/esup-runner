@@ -838,9 +838,7 @@
           const updatedAt = escapeHtml(task.updated_at);
           const runnerId = escapeHtml(task.runner_id);
           const errorText = escapeHtml(task.error);
-          const warningsHtml = (task.warnings || []).map(warning =>
-            `<p class="mb-0">${escapeHtml(warning)}</p>`
-          ).join('');
+          const encodingWarnings = [...new Set(task.warnings || [])];
           const parametersJson = escapeHtml(JSON.stringify(task.parameters || {}, null, 2));
           const scriptOutput = escapeHtml(task.script_output);
           const resultJson = escapeHtml(JSON.stringify(task.result, null, 2));
@@ -912,10 +910,15 @@
               <code>${runnerId}</code>
             </div>
             ` : ''}
-            ${warningsHtml ? `
+            ${encodingWarnings.length ? `
             <div class="mb-3">
               <h3 class="h5 text-warning mb-2">Encoding warnings</h3>
-              <div class="alert alert-warning">${warningsHtml}</div>
+              <div class="alert alert-warning">
+                <p class="mb-0">${encodingWarnings.length === 1
+                  ? escapeHtml(encodingWarnings[0])
+                  : `${encodingWarnings.length} output streams are shorter than expected.
+                     Check source integrity and FFmpeg errors. See encoding.log for details.`}</p>
+              </div>
             </div>
             ` : ''}
             ${task.error ? `

@@ -18,6 +18,7 @@ from functools import lru_cache
 from typing import Any, Dict, Optional, Union
 
 from app.core.encoding_diagnostics import incomplete_output_warnings
+from app.services.task_results import RESULT_PATH_PART_RE
 
 from . import (
     dressing_runtime_utils,
@@ -515,20 +516,13 @@ def get_cmd_cpu(format: str, codec: str, height: int, file: str) -> str:
 
 
 def sanitize_filename(filename: str) -> str:
-    """
-    Remove accents and special characters from filename.
-
-    Args:
-        filename: Original filename
-
-    Returns:
-        str: Sanitized filename
-    """
-    filenamesan = "".join(
-        (c for c in unicodedata.normalize("NFD", filename) if unicodedata.category(c) != "Mn")
+    """Remove accents and replace spaces and invalid result filename characters."""
+    normalized = unicodedata.normalize("NFD", filename).replace(" ", "_")
+    return "".join(
+        char if RESULT_PATH_PART_RE.fullmatch(char) else "_"
+        for char in normalized
+        if unicodedata.category(char) != "Mn"
     )
-    filenamesan = filenamesan.replace(" ", "_")
-    return filenamesan
 
 
 @lru_cache(maxsize=4)

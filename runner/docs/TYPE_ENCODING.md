@@ -35,8 +35,11 @@ Outputs typically include:
 - Overview sprite (`overview.png`) + VTT (`overview.vtt`)
 - Metadata (`info_video.json`) and logs (`encoding.log`)
 
+Output filenames derived from the source drop accents and replace spaces and
+characters disallowed by the result API, such as parentheses, with underscores.
+
 ## Input
-- `source_url`: must point to a downloadable media file (mp4, mkv, webm, …). The runner validates the filename extension.
+- `source_url`: must point to a downloadable media file (mp4, mkv, webm, …). The runner validates the filename extension and replaces whitespace, quotes, backslashes and control characters in the local filename with underscores.
 
 ## Manager parameters (JSON strings)
 All parameters are optional.

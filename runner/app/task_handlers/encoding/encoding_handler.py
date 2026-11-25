@@ -4,6 +4,7 @@ Video encoding task handler using FFmpeg.
 Handles various video encoding tasks through specialized scripts.
 """
 
+import re
 import signal
 from pathlib import Path
 from typing import Any, Dict, List
@@ -15,6 +16,19 @@ from app.managers.storage_manager import storage_manager
 from app.models.models import TaskRequest
 from app.services.task_results import resolve_task_workspace
 from app.task_handlers.base_handler import BaseTaskHandler
+
+_COMMAND_UNSAFE_FILENAME_CHARACTERS = re.compile(r"[\s'\"\\\x00-\x1f\x7f]")
+
+
+def _safe_source_filename(source_name: str) -> str:
+    """Return a local source filename that encoding command strings cannot split.
+
+    The encoding script interpolates the input filename into FFmpeg and ffprobe
+    command strings parsed with ``shlex.split``. Whitespace, quotes, backslashes
+    and control characters become underscores; other characters are kept so
+    output names derived from ordinary filenames do not change.
+    """
+    return _COMMAND_UNSAFE_FILENAME_CHARACTERS.sub("_", source_name)
 
 
 class VideoEncodingHandler(BaseTaskHandler):
@@ -101,7 +115,7 @@ class VideoEncodingHandler(BaseTaskHandler):
                 f"Source URL points to a video file: {task_request.source_url} (ext: {extension})"
             )
 
-            filename = source_name
+            filename = _safe_source_filename(source_name)
             input_path = workspace / filename
             self.logger.info(f"Input video will be saved to: {str(input_path)}")
 

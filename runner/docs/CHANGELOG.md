@@ -20,9 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and restrict proxy trust for HLS viewer counts.
 - Verify SMTP server certificates.
 - Pin CI and Docker build dependencies.
+- Normalize Encoding source filenames to prevent FFmpeg argument injection.
 
 ### Fixed
 
+- Normalize Encoding output filenames so punctuation in source names cannot
+  make generated files unavailable through the result API.
 - Keep file-task status responses compact so the Manager can reconcile finished
   tasks when a completion callback fails.
 - Reject malformed [`cut` configurations](TYPE_ENCODING.md#cut) before

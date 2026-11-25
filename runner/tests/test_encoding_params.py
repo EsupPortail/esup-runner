@@ -9,6 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.services.task_results import resolve_task_result_file_path
 from app.task_handlers.encoding.encoding_handler import VideoEncodingHandler
 from app.task_handlers.studio.studio_handler import StudioEncodingHandler
 
@@ -1078,6 +1079,37 @@ def test_prepare_input_file_rejects_missing_or_empty_input(tmp_path):
 
     with pytest.raises(enc.EncodingValidationError, match="Invalid file or path:"):
         enc._prepare_input_file(args)
+
+
+@pytest.mark.parametrize(
+    ("source_name", "output_name"),
+    [
+        ("L_amphi_A_(séance_1).mp4", "360p_L_amphi_A__seance_1_.mp4"),
+        ("course-1.v2.mp4", "360p_course-1.v2.mp4"),
+    ],
+)
+def test_encoding_output_path_is_downloadable(tmp_path, monkeypatch, source_name, output_name):
+    """Use the same downloadable path in the FFmpeg command and output validation."""
+    enc = _load_encoding_script_module()
+    task_id = "downloadable-encoding"
+    workspace = tmp_path / task_id
+    output_dir = workspace / "output"
+    output_dir.mkdir(parents=True)
+    (workspace / source_name).write_bytes(b"test media")
+    monkeypatch.setattr(enc, "_VIDEOS_DIR", str(workspace))
+    monkeypatch.setattr(enc, "_VIDEOS_OUTPUT_DIR", str(output_dir))
+    monkeypatch.setattr(enc, "_choose_h264_encoder", lambda: ("libx264", ""))
+
+    input_name, _ = enc._prepare_input_file(Mock(input_file=source_name))
+    command = enc.get_cmd_cpu("mp4", "h264", 360, input_name)
+    output_path = output_dir / output_name
+    assert str(output_path) in shlex.split(command)
+    assert (str(output_path), str(output_path)) in enc._video_output_validation_targets(
+        {"height": 360}, input_name
+    )
+
+    output_path.write_bytes(b"encoded media")
+    assert resolve_task_result_file_path(task_id, output_name, tmp_path) == output_path
 
 
 def test_process_encoding_rejects_invalid_source_video_file(tmp_path):

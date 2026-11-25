@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep file-task status responses compact so the Manager can reconcile finished
+  tasks when a completion callback fails.
 - Reject malformed [`cut` configurations](TYPE_ENCODING.md#cut) before
   encoding starts in Encoding and Studio tasks, and preserve fractional seconds
   when calculating the cut duration.

@@ -132,6 +132,60 @@ def test_get_task_status_returns_tracked_status():
         assert resp.json() == {"task_id": "task-running", "status": "running"}
 
 
+def test_get_task_status_keeps_large_file_task_reconcilable():
+    """A missed callback can be reconciled even with large requests and diagnostics."""
+    task_id = "task-large"
+    script_output = "é" * 500_000 + "\nMost recent log entry"
+    error_message = "Transcoding failed: " + "é" * 20_000
+    warnings = [f"Encoding incomplete: output {index} " + "é" * 2000 for index in range(40)]
+    state.set_task_status(
+        task_id, "failed", script_output=script_output, error_message=error_message
+    )
+    state.set_task_metadata(
+        task_id,
+        task_request={"parameters": {"description": "a" * 1_800_000}},
+        execution_id="current-attempt",
+        warnings=warnings,
+    )
+
+    with TestClient(app) as client:
+        response = client.get(f"/task/status/{task_id}")
+
+    assert response.status_code == 200
+    assert len(response.content) < 2 * 1024 * 1024
+    assert response.json() == {
+        "task_id": task_id,
+        "status": "failed",
+        "execution_id": "current-attempt",
+        "error_message": error_message[:8192],
+        "script_output": script_output[-200_000:],
+        "warnings": [warning[:1024] for warning in warnings[:32]],
+    }
+    assert state.get_task_status(task_id)["script_output"] == script_output
+    assert state.get_task_status(task_id)["task_request"]["parameters"] == {
+        "description": "a" * 1_800_000
+    }
+
+
+def test_get_task_status_preserves_live_operational_metadata():
+    """The Live status still exposes the tracked session and its pending Pod update."""
+    task_id = "task-live"
+    state.set_task_status(task_id, "running")
+    live = {"state": "running", "hls_ready": True, "pod_status_pending": True}
+    state.set_task_metadata(task_id, live=live, stop_requested="live_stop")
+
+    with TestClient(app) as client:
+        response = client.get(f"/task/status/{task_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "task_id": task_id,
+        "status": "running",
+        "live": live,
+        "stop_requested": "live_stop",
+    }
+
+
 def test_get_task_status_returns_completed_when_manifest_exists(tmp_path):
     """Validate Get task status returns completed when manifest exists."""
     from app.api.routes import task as task_module

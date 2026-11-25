@@ -57,6 +57,11 @@ _RECOVERY_MONITORS = task_recovery.RECOVERY_MONITORS
 _STOP_REQUESTED_METADATA_VALUE = "true"
 _CANCELLED_BY_USER_ERROR = "Cancelled by user."
 _COMPLETION_NOTIFY_READ_TIMEOUT_SECONDS = 30.0
+# Leave room for JSON escaping under the Manager's 2 MiB reconciliation limit.
+_TASK_STATUS_MAX_ERROR_CHARS = 8192
+_TASK_STATUS_MAX_OUTPUT_CHARS = 200_000
+_TASK_STATUS_MAX_WARNINGS = 32
+_TASK_STATUS_MAX_WARNING_CHARS = 1024
 
 
 def _task_recovery_runtime() -> ModuleType:
@@ -610,11 +615,29 @@ async def process_task(task_id: str, task_request: TaskRequest):
         _refresh_availability_from_recovered_state()
 
 
+def _compact_task_status(payload: dict) -> dict:
+    """Return execution identity and bounded diagnostics for file-task reconciliation."""
+    result = {key: payload[key] for key in ("task_id", "status", "execution_id") if key in payload}
+    error_message = payload.get("error_message")
+    if isinstance(error_message, str) and error_message:
+        result["error_message"] = error_message[:_TASK_STATUS_MAX_ERROR_CHARS]
+    script_output = payload.get("script_output")
+    if isinstance(script_output, str) and script_output:
+        result["script_output"] = script_output[-_TASK_STATUS_MAX_OUTPUT_CHARS:]
+    warnings = normalize_encoding_warnings(payload.get("warnings"))
+    if warnings:
+        result["warnings"] = [
+            warning[:_TASK_STATUS_MAX_WARNING_CHARS]
+            for warning in warnings[:_TASK_STATUS_MAX_WARNINGS]
+        ]
+    return result
+
+
 @router.get(
     "/status/{task_id}",
     response_model=dict,
     summary="Get task execution status",
-    description="Return the runner-side status for a specific task",
+    description="Return the Runner task status with bounded diagnostics for file tasks",
     tags=["Task"],
 )
 async def get_task_status_endpoint(
@@ -623,6 +646,9 @@ async def get_task_status_endpoint(
 ) -> dict:
     """
     Return the current task status known by the runner.
+
+    File tasks return execution identity and bounded diagnostics. Live sessions
+    also expose their session and operational metadata.
 
     Status source priority:
     1) In-memory task status tracked during execution.
@@ -633,7 +659,9 @@ async def get_task_status_endpoint(
 
     tracked_status = get_task_status(safe_task_id)
     if tracked_status is not None:
-        return tracked_status
+        if "live" in tracked_status:
+            return tracked_status
+        return _compact_task_status(tracked_status)
 
     try:
         manifest_path = _resolve_task_manifest_path(safe_task_id)
@@ -647,12 +675,10 @@ async def get_task_status_endpoint(
                 raise ValueError("Task output directory is missing")
             task_monitor.validate_output_files(output_dir, manifest.get("files"))
             payload["execution_id"] = manifest["execution_id"]
-        warnings = task_recovery.read_task_warnings(
+        payload["warnings"] = task_recovery.read_task_warnings(
             safe_task_id, payload, runtime=_task_recovery_runtime()
         )
-        if warnings:
-            payload["warnings"] = warnings
-        return payload
+        return _compact_task_status(payload)
     except HTTPException as exc:
         if exc.status_code != 404:
             raise

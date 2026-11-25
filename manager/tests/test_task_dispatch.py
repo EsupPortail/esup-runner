@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from types import SimpleNamespace
@@ -118,6 +119,65 @@ async def test_dispatch_prefers_idle_host_and_retains_fallbacks(
     assert visited == ["http://b.example:8001/runner/ping"] + (
         ["http://a.example:8001/runner/ping"] if failure else []
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["deep-json", "oversized-json", "slow-body"])
+async def test_dispatch_skips_runner_with_abusive_ping_response(
+    monkeypatch, task_module, clean_state, failure
+):
+    """Nested, oversized or slowly streamed pings cannot block other Runners."""
+    from app.core.request_limits import MAX_REQUEST_BODY_BYTES
+    from app.services import task_dispatch_service
+
+    abusive = _runner("abusive", url="http://b.example:8001")
+    fallback = _runner("fallback", url="http://a.example:8001")
+    for worker in (abusive, fallback):
+        runners[worker.id] = worker
+    monkeypatch.setattr("app.services.runner_selection.random.shuffle", lambda groups: None)
+    monkeypatch.setattr(task_module.config, "PRIORITIES_ENABLED", False)
+    monkeypatch.setattr(task_module, "get_tasks_snapshot", lambda: dict(tasks))
+    monkeypatch.setattr(task_module, "save_tasks", lambda: None)
+    monkeypatch.setattr(task_dispatch_service, "_RUNNER_PING_DEADLINE_SECONDS", 0.2)
+    valid = {"available": True, "registered": True, "task_types": ["encoding"]}
+    visited = []
+
+    async def slow_body():
+        yield b'{"available": true,'
+        await asyncio.sleep(5)
+        yield b' "registered": true, "task_types": ["encoding"]}'
+
+    async def ping(request):
+        visited.append(request.url.host)
+        if request.url.host == "a.example":
+            return httpx.Response(200, json=valid)
+        if failure == "deep-json":
+            return httpx.Response(200, content=b"[" * 200_000)
+        if failure == "oversized-json":
+            return httpx.Response(200, json=valid | {"padding": "x" * MAX_REQUEST_BODY_BYTES})
+        return httpx.Response(200, content=slow_body())
+
+    http_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        task_module.httpx,
+        "AsyncClient",
+        lambda **kwargs: http_client(transport=httpx.MockTransport(ping), **kwargs),
+    )
+    monkeypatch.setattr(task_module.asyncio, "create_task", lambda coroutine: coroutine.close())
+
+    result = await task_module._queue_task_execution(
+        TaskRequest(
+            etab_name="university",
+            app_name="pod",
+            task_type="encoding",
+            source_url="https://media.example/input",
+            notify_url="",
+        ),
+        "client",
+    )
+
+    assert tasks[result["task_id"]].runner_id == fallback.id
+    assert visited == ["b.example", "a.example"]
 
 
 @pytest.mark.asyncio
@@ -725,6 +785,7 @@ def test_execute_task_async_reservation_race_skips_runner(
 
     class FakeResponse:
         status_code = 200
+        content = b"{}"
 
         def json(self):
             return {"available": True, "registered": True, "task_types": ["encoding"]}
@@ -773,6 +834,7 @@ def test_execute_task_async_reuses_duplicate_after_reservation_race(
 
     class FakeResponse:
         status_code = 200
+        content = b"{}"
 
         def json(self):
             return {"available": True, "registered": True, "task_types": ["encoding"]}
@@ -832,6 +894,7 @@ def test_execute_task_async_success_creates_task_and_schedules(
 
     class FakeResponse:
         status_code = 200
+        content = b"{}"
 
         def json(self):
             return {"available": True, "registered": True, "task_types": ["encoding"]}
@@ -934,35 +997,43 @@ def test_list_tasks_returns_dict(client, clean_state):
 # -----------------------------
 
 
+@pytest.fixture
+def mock_dispatch_transport(monkeypatch, task_module):
+    """Install a transport that exercises HTTPX's actual response streaming."""
+    async_client = httpx.AsyncClient
+
+    def install(handler):
+        monkeypatch.setattr(
+            task_module.httpx,
+            "AsyncClient",
+            lambda **kwargs: async_client(transport=httpx.MockTransport(handler), **kwargs),
+        )
+
+    return install
+
+
 @pytest.mark.asyncio
 async def test_execute_task_async_background_success_sets_runner_busy(
-    monkeypatch, task_module, clean_state
+    monkeypatch, task_module, clean_state, mock_dispatch_transport
 ):
-    """Validate Execute task async background success sets runner busy."""
+    """Accept a successful dispatch from headers without consuming its body."""
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t1"] = _task("t1", "r1", status="pending")
     tasks["t1"].run_id = "current-attempt"
     captured: dict[str, Any] = {}
 
-    class FakeResponse:
-        status_code = 200
-        text = "ok"
+    async def body():
+        pytest.fail("Dispatch read the successful response body")
+        yield b"accepted"
 
-    class FakeAsyncClient:
-        def __init__(self, *_, **__):
-            pass
+    async def dispatch(request):
+        assert request.method == "POST"
+        assert request.url.path == "/task/run"
+        assert request.headers["Accept-Encoding"] == "identity"
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, content=body())
 
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def post(self, *_a, **kwargs):
-            captured.update(kwargs["json"])
-            return FakeResponse()
-
-    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+    mock_dispatch_transport(dispatch)
     monkeypatch.setattr(task_module.config, "MANAGER_URL", "http://manager.internal:8081/")
     monkeypatch.setattr(
         task_module.config, "MANAGER_PUBLIC_URL", "https://admin.example.org/runner-manager/"
@@ -1003,30 +1074,16 @@ async def test_execute_task_async_background_success_sets_runner_busy(
     ],
 )
 async def test_execute_task_async_background_failure_marks_task_failed(
-    monkeypatch, task_module, clean_state, runner_status, runner_error
+    task_module, clean_state, mock_dispatch_transport, runner_status, runner_error
 ):
     """Validate Execute task async background failure marks task failed."""
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t1"] = _task("t1", "r1", status="pending")
 
-    class FakeResponse:
-        status_code = runner_status
-        text = runner_error
+    async def body():
+        yield runner_error.encode("utf-8")
 
-    class FakeAsyncClient:
-        def __init__(self, *_, **__):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def post(self, *_a, **_k):
-            return FakeResponse()
-
-    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+    mock_dispatch_transport(lambda request: httpx.Response(runner_status, content=body()))
 
     from app.models.models import TaskRequest
 
@@ -1048,27 +1105,94 @@ async def test_execute_task_async_background_failure_marks_task_failed(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("encoding", ["identity", "gzip"])
+async def test_execute_task_async_background_bounds_runner_error_text(
+    task_module, clean_state, mock_dispatch_transport, encoding
+):
+    """Stop reading at the byte limit and skip encoded response bodies."""
+    runners["r1"] = _runner("r1", url="http://r1.example")
+    tasks["t1"] = _task("t1", "r1", status="pending")
+
+    async def body():
+        assert encoding == "identity"
+        yield "é".encode() * 300
+        yield b"x" * 500
+        pytest.fail("Dispatch read beyond its error body limit")
+
+    mock_dispatch_transport(
+        lambda request: httpx.Response(500, headers={"Content-Encoding": encoding}, content=body())
+    )
+
+    req = TaskRequest(
+        etab_name="UM",
+        app_name="pod",
+        task_type="encoding",
+        source_url="https://example.com/video.mp4",
+        notify_url="https://example.com/notify",
+    )
+
+    await task_module.execute_task_async_background("t1", runners["r1"], req)
+
+    expected = "Runner returned status 500"
+    if encoding == "identity":
+        expected += ": " + "é" * 300 + "x" * 400
+    assert tasks["t1"].error == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["headers-deadline", "body-deadline", "body-disconnect"])
+async def test_execute_task_async_background_bounds_dispatch_wait(
+    monkeypatch, task_module, clean_state, mock_dispatch_transport, failure
+):
+    """Bound dispatch duration and retain a received rejection status after a body failure."""
+    from app.services import task_dispatch_service
+
+    runners["r1"] = _runner("r1", url="http://r1.example")
+    tasks["t1"] = _task("t1", "r1", status="pending")
+    monkeypatch.setattr(task_dispatch_service, "_RUNNER_DISPATCH_DEADLINE_SECONDS", 0.01)
+
+    async def body():
+        if failure == "body-disconnect":
+            raise httpx.ReadError("Runner disconnected")
+        await asyncio.sleep(0.1)
+        yield b"late diagnostic"
+
+    async def dispatch(request):
+        if failure == "headers-deadline":
+            await asyncio.sleep(0.1)
+        return httpx.Response(503, content=body())
+
+    mock_dispatch_transport(dispatch)
+    req = TaskRequest(
+        etab_name="UM",
+        app_name="pod",
+        task_type="encoding",
+        source_url="https://example.com/video.mp4",
+        notify_url="",
+    )
+
+    await task_module.execute_task_async_background("t1", runners["r1"], req)
+
+    assert tasks["t1"].status == "failed"
+    assert runners["r1"].availability == "available"
+    if failure == "headers-deadline":
+        assert tasks["t1"].error == "Runner dispatch exceeded its deadline"
+    else:
+        assert tasks["t1"].error == "Runner returned status 503"
+
+
+@pytest.mark.asyncio
 async def test_execute_task_async_background_exception_marks_failed(
-    monkeypatch, task_module, clean_state
+    task_module, clean_state, mock_dispatch_transport
 ):
     """Validate Execute task async background exception marks failed."""
     runners["r1"] = _runner("r1", url="http://r1.example")
     tasks["t1"] = _task("t1", "r1", status="pending")
 
-    class FakeAsyncClient:
-        def __init__(self, *_, **__):
-            pass
+    def dispatch(request):
+        raise httpx.ConnectError("boom")
 
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def post(self, *_a, **_k):
-            raise RuntimeError("boom")
-
-    monkeypatch.setattr(task_module.httpx, "AsyncClient", FakeAsyncClient)
+    mock_dispatch_transport(dispatch)
 
     from app.models.models import TaskRequest
 

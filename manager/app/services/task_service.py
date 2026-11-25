@@ -10,6 +10,7 @@ from typing import Dict, Optional
 import httpx
 
 from app.core.config import config
+from app.core.request_limits import decode_runner_json
 from app.core.setup_logging import setup_default_logging
 from app.core.state import delete_task_for_retention_cleanup
 from app.core.state import get_task as get_task_from_state
@@ -18,6 +19,7 @@ from app.models.models import Runner, Task
 
 logger = setup_default_logging()
 
+_RUNNER_TASK_STATUS_DEADLINE_SECONDS = 20.0
 _RUNNER_REPORTED_STATUSES = {"running", "completed", "failed", "timeout"}
 _MISSING_TASK_GRACE_SECONDS = 60
 _MISSING_TASK_RECHECK_SECONDS = 10
@@ -156,8 +158,9 @@ async def _fetch_runner_task_status(runner: Runner, task_id: str) -> dict | None
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(url, headers=headers)
-    except (httpx.RequestError, httpx.TimeoutException) as exc:
+            async with asyncio.timeout(_RUNNER_TASK_STATUS_DEADLINE_SECONDS):
+                response = await client.get(url, headers=headers)
+    except (httpx.RequestError, httpx.TimeoutException, TimeoutError) as exc:
         logger.warning(
             "Task status reconciliation failed for %s on runner %s: %s",
             task_id,
@@ -176,7 +179,7 @@ async def _fetch_runner_task_status(runner: Runner, task_id: str) -> dict | None
         return None
 
     try:
-        payload = response.json()
+        payload = decode_runner_json(response)
     except ValueError:
         logger.warning(
             "Task status reconciliation got invalid JSON for task %s on runner %s",

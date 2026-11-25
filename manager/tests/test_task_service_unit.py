@@ -316,6 +316,29 @@ async def test_fetch_runner_task_status_returns_none_without_token():
 
 
 @pytest.mark.asyncio
+async def test_fetch_runner_task_status_bounds_slow_response(monkeypatch):
+    """A Runner task status slower than its overall deadline is skipped."""
+
+    class FakeClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, *_a, **_k):
+            await asyncio.sleep(5)
+
+    monkeypatch.setattr(task_service.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(task_service, "_RUNNER_TASK_STATUS_DEADLINE_SECONDS", 0.01)
+
+    assert await task_service._fetch_runner_task_status(_runner(), "t1") is None
+
+
+@pytest.mark.asyncio
 async def test_fetch_runner_task_status_handles_request_error(monkeypatch):
     """Validate Fetch runner task status handles request error."""
 
@@ -374,6 +397,7 @@ async def test_fetch_runner_task_status_handles_invalid_json(monkeypatch):
 
     class Response:
         status_code = 200
+        content = b"{}"
         text = "ok"
 
         def json(self):
@@ -404,6 +428,7 @@ async def test_fetch_runner_task_status_handles_non_object_payload(monkeypatch):
 
     class Response:
         status_code = 200
+        content = b"{}"
         text = "ok"
 
         def json(self):
@@ -434,6 +459,7 @@ async def test_fetch_runner_task_status_success(monkeypatch):
 
     class Response:
         status_code = 200
+        content = b"{}"
         text = "ok"
 
         def json(self):

@@ -1,9 +1,26 @@
-"""Limit incoming HTTP bodies before the application parses them."""
+"""Limit HTTP bodies exchanged with clients and Runners before parsing them."""
 
+from typing import Any
+
+import httpx
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
+
+
+def decode_runner_json(response: httpx.Response) -> Any:
+    """Decode a Runner JSON response no larger than an accepted Runner request.
+
+    Raises:
+        ValueError: The body is too large, malformed or nested too deeply.
+    """
+    if len(response.content) > MAX_REQUEST_BODY_BYTES:
+        raise ValueError("Runner response body is too large")
+    try:
+        return response.json()
+    except RecursionError as exc:
+        raise ValueError("Runner response JSON is nested too deeply") from exc
 
 
 class RequestBodyLimitMiddleware:

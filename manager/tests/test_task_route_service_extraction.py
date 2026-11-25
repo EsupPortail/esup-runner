@@ -113,6 +113,7 @@ async def test_dispatch_skips_runner_with_incompatible_ping_payload(monkeypatch)
 
     class FakeResponse:
         status_code = 200
+        content = b"{}"
 
         def json(self):
             return {"available": False, "registered": True, "task_types": ["encoding"]}

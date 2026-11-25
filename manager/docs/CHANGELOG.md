@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bound log parsing, and neutralize formulas in statistics exports.
 - Verify SMTP server certificates.
 - Pin CI dependencies and check formatting with read-only permissions.
+- Apply deadlines to Runner ping and status requests and reject bodies over
+  2 MiB before parsing JSON.
+- Bound file-task dispatch time and limit how much of a Runner rejection is read.
 
 ### Fixed
 

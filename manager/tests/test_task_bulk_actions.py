@@ -128,6 +128,7 @@ def test_restart_selected_tasks_restarts_and_reports(monkeypatch, client, task_m
 
     class FakePingResponse:
         status_code = 200
+        content = b"{}"
 
         def json(self):
             return {"available": True, "registered": True, "task_types": ["encoding"]}

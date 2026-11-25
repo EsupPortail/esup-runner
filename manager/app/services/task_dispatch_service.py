@@ -1,5 +1,6 @@
 """Runner reservation, task deduplication and execution dispatch."""
 
+import asyncio
 import json
 import uuid
 from datetime import datetime
@@ -9,9 +10,52 @@ from typing import Any, Callable, Dict, cast
 import httpx
 from fastapi import HTTPException, status
 
+from app.core.request_limits import decode_runner_json
 from app.core.token_roles import token_matches
 from app.models.models import Runner, Task, TaskRequest
 from app.services.runner_selection import rank_runners
+
+_RUNNER_PING_DEADLINE_SECONDS = 5.0
+_RUNNER_DISPATCH_DEADLINE_SECONDS = 30.0
+_RUNNER_REJECTION_MAX_BYTES = 1000
+
+
+async def _read_runner_rejection(response: httpx.Response) -> str:
+    """Read a bounded UTF-8 diagnostic from an uncompressed Runner response."""
+    if response.headers.get("Content-Encoding", "identity").strip().lower() != "identity":
+        return ""
+
+    body = bytearray()
+    async for chunk in response.aiter_raw():
+        body.extend(chunk[: _RUNNER_REJECTION_MAX_BYTES - len(body)])
+        if len(body) >= _RUNNER_REJECTION_MAX_BYTES:
+            break
+    return body.decode("utf-8", errors="replace")
+
+
+async def _send_task_to_runner(
+    client: httpx.AsyncClient, url: str, payload: dict, headers: dict[str, str]
+) -> tuple[int, str]:
+    """Send a dispatch within one deadline and return its status and optional diagnostic.
+
+    Transport errors propagate if no status was received. A received status
+    remains authoritative if the optional rejection body cannot be read.
+    """
+    response_status: int | None = None
+    try:
+        async with (
+            asyncio.timeout(_RUNNER_DISPATCH_DEADLINE_SECONDS),
+            client.stream("POST", url, json=payload, headers=headers) as response,
+        ):
+            response_status = response.status_code
+            diagnostic = "" if response_status == 200 else await _read_runner_rejection(response)
+            return response_status, diagnostic
+    except (httpx.RequestError, TimeoutError) as exc:
+        if response_status is not None:
+            return response_status, ""
+        if isinstance(exc, TimeoutError):
+            raise httpx.ReadTimeout("Runner dispatch exceeded its deadline") from exc
+        raise
 
 
 async def execute_task_background(
@@ -26,37 +70,40 @@ async def execute_task_background(
         context.tasks[task_id].status = "running"
         context.tasks[task_id].updated_at = datetime.now().isoformat()
 
-        async with context.httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{runner.url}/task/run",
-                json={
-                    "task_id": task_id,
-                    "run_id": context.tasks[task_id].run_id,
-                    "etab_name": task_request.etab_name,
-                    "app_name": task_request.app_name,
-                    "app_version": task_request.app_version,
-                    "task_type": task_request.task_type,
-                    "source_url": task_request.source_url,
-                    "affiliation": task_request.affiliation,
-                    "parameters": task_request.parameters,
-                    "notify_url": task_request.notify_url,
-                    "completion_callback": f"{context.config.MANAGER_URL.rstrip('/')}/task/completion",
-                    "completion_callback_public": f"{context.config.MANAGER_PUBLIC_URL.rstrip('/')}/task/completion",
-                },
-                headers=context._runner_auth_headers(runner, accept="application/json"),
+        payload = {
+            "task_id": task_id,
+            "run_id": context.tasks[task_id].run_id,
+            "etab_name": task_request.etab_name,
+            "app_name": task_request.app_name,
+            "app_version": task_request.app_version,
+            "task_type": task_request.task_type,
+            "source_url": task_request.source_url,
+            "affiliation": task_request.affiliation,
+            "parameters": task_request.parameters,
+            "notify_url": task_request.notify_url,
+            "completion_callback": f"{context.config.MANAGER_URL.rstrip('/')}/task/completion",
+            "completion_callback_public": f"{context.config.MANAGER_PUBLIC_URL.rstrip('/')}/task/completion",
+        }
+        headers = context._runner_auth_headers(runner, accept="application/json")
+        headers["Accept-Encoding"] = "identity"
+        async with context.httpx.AsyncClient(timeout=_RUNNER_DISPATCH_DEADLINE_SECONDS) as client:
+            response_status, diagnostic = await _send_task_to_runner(
+                client, f"{runner.url}/task/run", payload, headers
             )
 
-            if response.status_code == 200:
-                runner.availability = "busy"
-            else:
-                task = context.tasks[task_id]
-                task.status = "failed"
-                task.error = f"Runner returned status {response.status_code}: {response.text}"
-                task.updated_at = datetime.now().isoformat()
-                runner.availability = "available"
-                context.logger.error("Task %s failed with status %s", task_id, response.status_code)
-            context.runners[runner.id] = runner
-            context.save_tasks()
+        if response_status == 200:
+            runner.availability = "busy"
+        else:
+            task = context.tasks[task_id]
+            task.status = "failed"
+            task.error = f"Runner returned status {response_status}"
+            if diagnostic:
+                task.error += f": {diagnostic}"
+            task.updated_at = datetime.now().isoformat()
+            runner.availability = "available"
+            context.logger.error("Task %s failed with status %s", task_id, response_status)
+        context.runners[runner.id] = runner
+        context.save_tasks()
     except Exception as exc:
         task = context.tasks[task_id]
         task.status = "failed"
@@ -239,6 +286,19 @@ def persist_task_before_dispatch(
     raise HTTPException(503, "Task could not be persisted; retry")
 
 
+async def _ping_runner(client: httpx.AsyncClient, runner_url: str) -> httpx.Response:
+    """Fetch a Runner ping within one deadline, including slowly streamed bodies.
+
+    Raises:
+        httpx.TimeoutException: The complete response was not received in time.
+    """
+    try:
+        async with asyncio.timeout(_RUNNER_PING_DEADLINE_SECONDS):
+            return await client.get(f"{runner_url}/runner/ping")
+    except TimeoutError:
+        raise httpx.ReadTimeout("Runner ping exceeded its deadline") from None
+
+
 def _runner_ping_supports_task(
     response: httpx.Response, task_type: str, runner_id: str, logger: Logger
 ) -> bool:
@@ -247,7 +307,7 @@ def _runner_ping_supports_task(
         logger.warning("Runner %r ping returned HTTP %s", runner_id, response.status_code)
         return False
     try:
-        payload = response.json()
+        payload = decode_runner_json(response)
     except ValueError:
         logger.warning("Runner %r ping returned invalid JSON", runner_id)
         return False
@@ -308,7 +368,7 @@ async def queue_task_execution(
         try:
             async with context.httpx.AsyncClient(timeout=5.0) as client:
                 context.logger.info("Pinging runner at: %r", runner.url)
-                response = await client.get(f"{runner.url}/runner/ping")
+                response = await _ping_runner(client, runner.url)
                 if not _runner_ping_supports_task(
                     response, task_request.task_type, runner_id, context.logger
                 ):

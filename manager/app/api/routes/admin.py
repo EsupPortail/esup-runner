@@ -35,6 +35,7 @@ from app.core.etab_badges import build_etab_badge
 from app.core.live_config import MEDIAMTX_VERSION
 from app.core.passwords import BcryptPasswordContext
 from app.core.paths import WEB_TEMPLATES_DIR
+from app.core.request_limits import decode_runner_json
 from app.core.setup_logging import setup_default_logging
 from app.core.state import get_task as get_task_from_state
 from app.core.state import get_tasks_snapshot, runners
@@ -75,6 +76,7 @@ _TASK_AGE_UPDATED_AT_LABELS = {
 }
 _ADMIN_DASHBOARD_RATE_LIMIT = "60/minute"
 _RUNNER_STATUS_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=2.0, pool=2.0)
+_RUNNER_STATUS_DEADLINE_SECONDS = 5.0
 _MEDIAMTX_STATUS_TIMEOUT = 2.0
 _RUNNER_ONLINE_HEARTBEAT_SECONDS = 60
 _TOKEN_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
@@ -494,8 +496,9 @@ async def _fetch_runner_live_status(runner: Any) -> dict[str, Any]:
     url = f"{str(getattr(runner, 'url', '')).rstrip('/')}/runner/status"
     try:
         async with httpx.AsyncClient(timeout=_RUNNER_STATUS_TIMEOUT) as client:
-            response = await client.get(url, headers=_runner_status_headers(runner))
-    except (httpx.RequestError, httpx.TimeoutException) as exc:
+            async with asyncio.timeout(_RUNNER_STATUS_DEADLINE_SECONDS):
+                response = await client.get(url, headers=_runner_status_headers(runner))
+    except (httpx.RequestError, httpx.TimeoutException, TimeoutError) as exc:
         logger.warning(f"Unable to fetch runner status from {url}: {exc}")
         return {
             "available": False,
@@ -513,7 +516,7 @@ async def _fetch_runner_live_status(runner: Any) -> dict[str, Any]:
         }
 
     try:
-        payload = response.json()
+        payload = decode_runner_json(response)
     except ValueError:
         return {
             "available": False,

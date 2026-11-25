@@ -410,6 +410,7 @@ async def test_fetch_runner_live_status_success(monkeypatch):
 
     class FakeResponse:
         status_code = 200
+        content = b"{}"
 
         def json(self):
             return {"disk_usage": {"ok": True}}
@@ -439,6 +440,35 @@ async def test_fetch_runner_live_status_success(monkeypatch):
     assert payload["disk_usage"] == {"ok": True}
     assert captured["url"] == "http://runner.example/runner/status"
     assert captured["headers"] == {"X-API-Token": "runner-token"}
+
+
+@pytest.mark.asyncio
+async def test_fetch_runner_live_status_bounds_slow_response(monkeypatch):
+    """A Runner status reply slower than its overall deadline is unavailable."""
+    import asyncio
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            await asyncio.sleep(5)
+
+    monkeypatch.setattr(admin_routes.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(admin_routes, "_RUNNER_STATUS_DEADLINE_SECONDS", 0.01)
+
+    payload = await admin_routes._fetch_runner_live_status(
+        SimpleNamespace(url="http://runner.example", token="runner-token")
+    )
+
+    assert payload["available"] is False
+    assert payload["error"] == "Runner status request failed."
 
 
 @pytest.mark.asyncio
@@ -512,6 +542,7 @@ async def test_fetch_runner_live_status_handles_invalid_json(monkeypatch):
 
     class FakeResponse:
         status_code = 200
+        content = b"{}"
 
         def json(self):
             raise ValueError("bad json")
@@ -549,6 +580,7 @@ async def test_fetch_runner_live_status_handles_non_object_payload(monkeypatch):
 
     class FakeResponse:
         status_code = 200
+        content = b"{}"
 
         def json(self):
             return []

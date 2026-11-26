@@ -326,6 +326,21 @@ cd /opt/esup-runner
 ./update-stack.sh --dry-run --skip-uv-update --skip-git-update
 ```
 
+### Smoke test when upgrading to 1.12.1
+
+An older `update-stack.sh` can send a Runner token and fail the smoke test with
+`403 app token required`. Pass `--skip-test` when upgrading with the old script.
+After the upgrade, run the test manually.
+
+```bash
+cd /opt/esup-runner/manager
+UV_CACHE_DIR=/tmp/esup-runner-uv-cache-$(id -un) \
+  env -u RUNNER_API_TOKEN -u RUNNER_MANAGER_URL \
+  uv run --no-sync scripts/check_pipeline_tasks.py
+```
+
+Add `--with-transcription-translation` for transcription profiles.
+
 ### Scheduled updates
 
 As the service account (`esup-runner` by default), prepare the log directory,

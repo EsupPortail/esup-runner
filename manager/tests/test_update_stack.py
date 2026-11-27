@@ -204,7 +204,7 @@ def _prepare_update(tmp_path, repository):
         f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8"
     )
     (fake_bin / "python3").chmod(0o755)
-    # The runner FFmpeg is resolved from the service PATH, which starts with ~/.local/bin.
+    # Keep a different executable in the fallback directory to check PATH precedence.
     service_home = tmp_path / "home"
     (service_home / ".local/bin").mkdir(parents=True)
     (fake_bin / "getent").write_text(
@@ -212,7 +212,10 @@ def _prepare_update(tmp_path, repository):
         encoding="utf-8",
     )
     (fake_bin / "getent").chmod(0o755)
-    fake_ffmpeg = service_home / ".local/bin/ffmpeg"
+    fallback_ffmpeg = service_home / ".local/bin/ffmpeg"
+    fallback_ffmpeg.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fallback_ffmpeg.chmod(0o755)
+    fake_ffmpeg = fake_bin / "ffmpeg"
     fake_ffmpeg.write_text(
         '#!/bin/sh\nprintf "%s\\n" "$TEST_FFMPEG_VERSION"\nexit "${TEST_FFMPEG_EXIT_CODE:-0}"\n',
         encoding="utf-8",
@@ -320,6 +323,150 @@ def _summary_value(output, label):
     return (
         next(line for line in output.splitlines() if f"{label}:" in line).split(":", 1)[1].strip()
     )
+
+
+def test_update_stack_skips_email_when_already_up_to_date(tmp_path, configuration_repository):
+    checkout, env, email_path = _prepare_update(tmp_path, configuration_repository)
+
+    result = _run_update(checkout, env, "--skip-email-when-up-to-date")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _summary_value(result.stdout, "Email notification") == "skipped (already up to date)"
+    assert not email_path.exists()
+
+
+@pytest.fixture
+def restart_update(tmp_path, configuration_repository):
+    """Record dependency syncs, configuration checks, and attempted restarts."""
+    checkout, env, email_path = _prepare_update(tmp_path, configuration_repository)
+    trace = tmp_path / "update-trace"
+    trace.touch()
+    env.update(TEST_UPDATE_TRACE=str(trace), TEST_INVALID_COMPONENTS="")
+    for name, content in {
+        "make": 'printf "sync %s\\n" "${PWD##*/}" >> "$TEST_UPDATE_TRACE"\n',
+        "uv": '[ "$*" = "run --no-sync scripts/check_config.py" ] || exit 99\n'
+        'component="${PWD##*/}"\n'
+        'printf "check %s\\n" "$component" >> "$TEST_UPDATE_TRACE"\n'
+        'case " $TEST_INVALID_COMPONENTS " in\n'
+        '  *" $component "*) printf "Invalid setting in %s/.env\\n" "$component"; exit 2 ;;\n'
+        "esac\n",
+        "systemctl": 'case "$*" in\n'
+        "  cat\\ esup-runner-*.service) exit 0 ;;\n"
+        '  restart\\ esup-runner-*.service) printf "%s\\n" "$*" >> "$TEST_UPDATE_TRACE" ;;\n'
+        "  *) exit 1 ;;\n"
+        "esac\n",
+        "sudo": 'exec "$@"\n',
+    }.items():
+        executable = tmp_path / "bin" / name
+        executable.write_text(f"#!/bin/sh\n{content}", encoding="utf-8")
+        executable.chmod(0o755)
+    return checkout, env, email_path, trace
+
+
+@pytest.mark.parametrize("invalid", [(), ("manager",), ("runner",), ("manager", "runner")])
+def test_update_stack_checks_all_configs_before_restarting(
+    configuration_repository, restart_update, invalid
+):
+    """Block every restart when either check fails and report the cause."""
+    checkout, env, email_path, trace = restart_update
+    _commit_files(configuration_repository, {"manager/VERSION": "1.2.3", "runner/VERSION": "1.2.3"})
+    env["TEST_INVALID_COMPONENTS"] = " ".join(invalid)
+
+    result = _run_update(checkout, env, "--restart-policy", "if-changed", run_test=True)
+
+    expected_trace = ["sync manager", "sync runner", "check manager", "check runner"]
+    if invalid:
+        assert result.returncode == 1, result.stdout + result.stderr
+        for component in invalid:
+            assert f"Invalid setting in {component}/.env" in result.stdout
+            assert f"Configuration check for {component} failed" in result.stderr
+        assert "Run post-update smoke test" not in result.stdout
+        message = BytesParser(policy=policy.default).parsebytes(email_path.read_bytes())
+        assert "FAILED - service restarts blocked" in message["Subject"]
+        for output in (
+            result.stderr,
+            _email_content(message, "plain"),
+            _email_content(message, "html"),
+        ):
+            assert f"Configuration check failed for {', '.join(invalid)}" in output
+            assert "No services were restarted." in output
+            assert "--always-restart" in output
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        expected_trace += [
+            "restart esup-runner-manager.service",
+            "restart esup-runner-runner.service",
+        ]
+    assert trace.read_text(encoding="utf-8").splitlines() == expected_trace
+
+
+def test_update_stack_checks_unchanged_component_and_can_retry(
+    configuration_repository, restart_update
+):
+    """Validate both selected components even when only one changed in Git."""
+    checkout, env, _, trace = restart_update
+    revision = _commit_files(configuration_repository, {"manager/VERSION": "1.2.3"})
+    env["TEST_INVALID_COMPONENTS"] = "runner"
+
+    failed = _run_update(checkout, env, "--restart-policy", "if-changed")
+    assert failed.returncode == 1, failed.stdout + failed.stderr
+    assert _git(checkout, "rev-parse", "HEAD") == revision
+    assert trace.read_text(encoding="utf-8").splitlines() == [
+        "sync manager",
+        "sync runner",
+        "check manager",
+        "check runner",
+    ]
+
+    env["TEST_INVALID_COMPONENTS"] = ""
+    trace.write_text("", encoding="utf-8")
+    retried = _run_update(checkout, env, "--always-restart")
+    assert retried.returncode == 0, retried.stdout + retried.stderr
+    assert trace.read_text(encoding="utf-8").splitlines()[-2:] == [
+        "restart esup-runner-manager.service",
+        "restart esup-runner-runner.service",
+    ]
+
+
+@pytest.mark.parametrize("component", ["manager", "runner"])
+def test_update_stack_checks_only_selected_component(restart_update, component):
+    checkout, env, _, trace = restart_update
+    env["TEST_INVALID_COMPONENTS"] = "runner" if component == "manager" else "manager"
+
+    result = _run_update(checkout, env, f"--{component}-only", "--always-restart")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert trace.read_text(encoding="utf-8").splitlines() == [
+        f"sync {component}",
+        f"check {component}",
+        f"restart esup-runner-{component}.service",
+    ]
+
+
+@pytest.mark.parametrize("options", [("--no-restart",), ("--restart-policy", "if-changed")])
+def test_update_stack_skips_checks_when_no_restart_is_planned(restart_update, options):
+    checkout, env, _, trace = restart_update
+
+    result = _run_update(checkout, env, *options)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert trace.read_text(encoding="utf-8").splitlines() == ["sync manager", "sync runner"]
+
+
+def test_update_stack_previews_checks_before_restart(restart_update):
+    checkout, env, _, trace = restart_update
+
+    result = _run_update(checkout, env, "--always-restart", "--dry-run")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    checks = [
+        result.stdout.index(
+            f"cd {checkout / component} && uv run --no-sync scripts/check_config.py"
+        )
+        for component in ("manager", "runner")
+    ]
+    assert max(checks) < result.stdout.index("systemctl restart esup-runner-manager.service")
+    assert not trace.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -450,7 +597,7 @@ def test_update_stack_does_not_report_no_updates_after_git_changes(
     checkout, env, email_path = _prepare_update(tmp_path, configuration_repository)
     after = _commit_files(configuration_repository, {changed_file: "Updated content\n"})
 
-    result = _run_update(checkout, env)
+    result = _run_update(checkout, env, "--skip-email-when-up-to-date")
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert _git(checkout, "rev-parse", "HEAD") == after
@@ -476,6 +623,7 @@ def test_update_stack_does_not_report_no_updates_after_gpu_lock_refresh(
         "transcription-gpu",
         "--gpu-lock-profile",
         profile,
+        "--skip-email-when-up-to-date",
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -646,7 +794,7 @@ def test_unavailable_runners_do_not_hide_other_update_failures(
         command.write_text(f"#!/bin/sh\n{content}exit 1\n", encoding="utf-8")
         command.chmod(0o755)
 
-    result = _run_update(checkout, env, run_test=True)
+    result = _run_update(checkout, env, "--skip-email-when-up-to-date", run_test=True)
 
     assert result.returncode == 1, result.stdout + result.stderr
     expected_status = "skipped (No runners available)" if failure == "configuration" else "failed"
@@ -753,7 +901,7 @@ def test_update_stack_does_not_compare_configuration_when_update_is_skipped(
     checkout, env, email_path = _prepare_update(tmp_path, repository)
     _commit_files(repository, {"runner/.env.example": "A=2\n"})
 
-    result = _run_update(checkout, env, option)
+    result = _run_update(checkout, env, option, "--skip-email-when-up-to-date")
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert _git(checkout, "rev-parse", "HEAD") == before

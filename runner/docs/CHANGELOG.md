@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Generate video outputs for Motion JPEG (MJPEG) sources, including AVI files,
+  while continuing to treat embedded JPEG cover art as a thumbnail.
 - Validate each selected component with `check_config.py` before any restart
   in `update-stack.sh`. A failed check blocks all restarts and is reported in
   the update log and configured email. After fixing the errors, rerun with

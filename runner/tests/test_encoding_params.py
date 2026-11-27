@@ -936,6 +936,56 @@ def test_get_info_video_keeps_first_non_image_video_stream_as_primary(tmp_path):
     assert info["audio_stream_indices"] == [2, 4]
 
 
+@pytest.mark.parametrize(
+    ("disposition", "has_video"),
+    [
+        ({"attached_pic": 0, "still_image": 0}, True),
+        (None, True),
+        ({"attached_pic": 1}, False),
+        ({"still_image": 1}, False),
+    ],
+)
+def test_get_info_video_distinguishes_mjpeg_video_from_still_images(
+    monkeypatch, disposition, has_video
+):
+    """Keep Motion JPEG video metadata and classify attached JPEGs as thumbnails."""
+    enc = _load_encoding_script_module()
+    monkeypatch.setattr(enc, "_DEBUG", False)
+    video_stream = {
+        "codec_type": "video",
+        "codec_name": "mjpeg",
+        "height": 1080,
+        "avg_frame_rate": "16/1",
+        "duration": "1866.365191",
+        "profile": "Baseline",
+        "pix_fmt": "yuvj420p",
+    }
+    if disposition is not None:
+        video_stream["disposition"] = disposition
+    probe_info = {
+        "format": {"duration": "1866.365191"},
+        "streams": [
+            video_stream,
+            {"index": 1, "codec_type": "audio", "codec_name": "mp3", "duration": "1866.36"},
+        ],
+    }
+    monkeypatch.setattr(enc, "get_info_from_video", Mock(return_value=(probe_info, "")))
+    monkeypatch.setattr(enc, "encode_log", Mock())
+
+    info = enc.get_info_video("input.avi" if has_video else "input.mp3")
+
+    assert info["has_stream_video"] is has_video
+    assert info["has_stream_thumbnail"] is True
+    assert info["has_stream_audio"] is True
+    assert info["audio_stream_indices"] == [1]
+    assert info["codec"] == ("mjpeg" if has_video else "")
+    assert info["height"] == (1080 if has_video else 0)
+    assert info["video_duration"] == (1866.365191 if has_video else 0.0)
+    assert info["source_fps"] == (16.0 if has_video else 0.0)
+    assert info["profile"] == ("Baseline" if has_video else "")
+    assert info["pix_fmt"] == ("yuvj420p" if has_video else "")
+
+
 def test_parse_fps_value_covers_valid_and_invalid_inputs():
     """Validate Parse fps value covers valid and invalid inputs."""
     enc = _load_encoding_script_module()

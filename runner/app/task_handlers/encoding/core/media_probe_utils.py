@@ -214,7 +214,7 @@ def extract_primary_video_duration_from_probe(
             continue
         if stream.get("codec_type") != "video":
             continue
-        if is_image_codec_name(str(stream.get("codec_name", "")), image_codecs=image_codecs):
+        if _is_image_video_stream(stream, image_codecs=image_codecs):
             continue
 
         candidates: list[DurationValue] = [stream.get("duration")]
@@ -260,7 +260,19 @@ def extract_audio_stream_durations_from_probe(info: Dict[str, Any]) -> list[floa
 def is_image_codec_name(codec_name: str, *, image_codecs: list[str]) -> bool:
     """Return whether a codec name should be treated as image-only."""
     codec_text = str(codec_name or "").lower()
+    if codec_text == "mjpeg":
+        return codec_text in image_codecs
     return any(ext in codec_text for ext in image_codecs)
+
+
+def _is_image_video_stream(stream: dict[str, Any], *, image_codecs: list[str]) -> bool:
+    """Identify cover art and still images reported by ffprobe as video streams."""
+    disposition = stream.get("disposition")
+    if isinstance(disposition, dict) and (
+        disposition.get("attached_pic") == 1 or disposition.get("still_image") == 1
+    ):
+        return True
+    return is_image_codec_name(stream.get("codec_name", ""), image_codecs=image_codecs)
 
 
 def analyze_streams(
@@ -302,7 +314,7 @@ def analyze_streams(
             continue
         if stream_type != "video":
             continue
-        if is_image_codec_name(codec_name, image_codecs=image_codecs):
+        if _is_image_video_stream(stream, image_codecs=image_codecs):
             has_stream_thumbnail = True
             continue
 
@@ -343,8 +355,7 @@ def extract_primary_video_encoding_metadata(
             continue
         if stream.get("codec_type") != "video":
             continue
-        codec_name = str(stream.get("codec_name", ""))
-        if is_image_codec_name(codec_name, image_codecs=image_codecs):
+        if _is_image_video_stream(stream, image_codecs=image_codecs):
             continue
         return str(stream.get("profile") or ""), str(stream.get("pix_fmt") or "")
 

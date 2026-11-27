@@ -311,10 +311,17 @@ code for updated components in the console and, when configured, the update
 email. Review [parameters](PARAMETERS.md) and [configuration](CONFIGURATION.md)
 before adapting your local `.env` manually. Email uses `SMTP_*` and
 `MANAGER_EMAIL` from `runner/.env`; `--skip-email` disables it.
+Use `--skip-email-when-up-to-date` to skip the email after a successful run
+when the stack is already up to date.
 
 The comparison covers only changes brought by this pull and is skipped with
 `--skip-git-update` or `--dry-run`. A comparison failure returns a non-zero exit
 code but lets the remaining update steps continue.
+
+Before any planned restart, the script runs `scripts/check_config.py` for
+each selected component. If a check fails, all restarts are blocked and the
+script exits with an error. Fix the issues shown in the update log, then rerun
+with `--always-restart` because Git may already have pulled the update.
 
 The script also checks the Runner FFmpeg for CVE-2026-8461 (MagicYUV): below
 8.1.2 or with an unreadable version, it adds `magicyuv` to `MEDIA_CODEC_DENYLIST`

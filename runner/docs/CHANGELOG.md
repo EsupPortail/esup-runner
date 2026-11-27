@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `update-stack.sh --skip-email-when-up-to-date` to suppress email after a
+  successful run with no updates.
+
+### Fixed
+
+- Validate each selected component with `check_config.py` before any restart
+  in `update-stack.sh`. A failed check blocks all restarts and is reported in
+  the update log and configured email. After fixing the errors, rerun with
+  `--always-restart`. See the [upgrade guide](UPGRADE.md#11-automated-stack-update-script).
 
 ## [1.12.1] - 2026-11-26
 

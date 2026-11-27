@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `update-stack.sh --skip-email-when-up-to-date` to suppress email after a
   successful run with no updates.
+- Copy the full script output to the clipboard from task details, including
+  output shown under Error Details.
 
 ### Fixed
 

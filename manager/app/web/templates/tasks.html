@@ -933,8 +933,11 @@
             </div>
             ${task.script_output ? `
             <div class="mb-3">
-              <h3 class="h5 text-muted mb-2">Script Output</h6>
-              <pre class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded" style="max-height: 300px; overflow-y: auto;"><code>${scriptOutput}</code></pre>
+              <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <h3 class="h5 text-muted mb-0">Script Output</h3>
+                {% include "script_output_copy.html" %}
+              </div>
+              <pre id="scriptOutput" class="{% if dark_mode_enabled %}bg-dark{% else %}bg-light{% endif %} p-3 rounded" style="max-height: 300px; overflow-y: auto;"><code>${scriptOutput}</code></pre>
             </div>
             ` : ''}
             ${task.result ? `

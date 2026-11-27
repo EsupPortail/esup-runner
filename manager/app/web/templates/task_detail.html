@@ -281,7 +281,12 @@
       {% endif %}
       {% if task.error %}
         <div class="detail-section">
-          <h3 class="h5 mb-3 text-danger">Error</h3>
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <h3 class="h5 mb-0 text-danger">Error</h3>
+            {% if task.script_output %}
+              {% include "script_output_copy.html" %}
+            {% endif %}
+          </div>
           <div class="card bg-danger bg-opacity-10 border-danger">
             <div class="card-body">
               <p class="text-danger mb-0">{{ task.error }}</p>
@@ -289,7 +294,7 @@
                 <details class="mt-2">
                   <summary class="text-danger">Error Details</summary>
                   <div class="mt-2 p-2 bg-dark text-light rounded">
-                    <pre class="mb-0" style="white-space: pre-wrap;word-wrap: break-word;max-height: 400px; overflow-y: auto;">{{- task.script_output -}}</pre>
+                    <pre id="scriptOutput" class="mb-0" style="white-space: pre-wrap;word-wrap: break-word;max-height: 400px; overflow-y: auto;"><code>{{ task.script_output }}</code></pre>
                   </div>
                 </details>
               {% endif %}
@@ -299,10 +304,13 @@
       {% else %}
         {% if task.script_output %}
           <div class="detail-section">
-            <h3 class="h5 mb-3">Script Output</h3>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+              <h3 class="h5 mb-0">Script Output</h3>
+              {% include "script_output_copy.html" %}
+            </div>
             <div class="card border-secondary">
               <div class="card-body">
-                <pre class="p-2 bg-opacity-50 rounded mb-0" style="word-wrap: break-word; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">{{- task.script_output -}}</pre>
+                <pre id="scriptOutput" class="p-2 bg-opacity-50 rounded mb-0" style="word-wrap: break-word; white-space: pre-wrap; max-height: 400px; overflow-y: auto;"><code>{{ task.script_output }}</code></pre>
               </div>
             </div>
           </div>

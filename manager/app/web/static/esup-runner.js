@@ -1,7 +1,7 @@
 /**
  * @file Shared browser behaviors for the Runner Manager administration pages.
  *
- * This script handles refresh controls, incident acknowledgments and confirmations.
+ * This script handles refresh controls, clipboard actions, incident acknowledgments and confirmations.
  * Confirmations use a reusable Bootstrap modal when available and fall back to
  * the browser's native confirmation dialog otherwise.
  */
@@ -26,6 +26,58 @@ if (refreshBtn) {
     window.location.reload();
   });
 }
+
+async function copyTextToClipboard(text, container = document.body) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const previousFocus = document.activeElement;
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-1000px";
+  textarea.style.left = "-1000px";
+  container.appendChild(textarea);
+
+  try {
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    if (!document.execCommand("copy")) {
+      throw new Error("Copy command failed");
+    }
+  } finally {
+    textarea.remove();
+    previousFocus?.focus({ preventScroll: true });
+  }
+}
+
+document.addEventListener("click", async (event) => {
+  // Delegate clicks so the button also works in task details loaded into a modal.
+  const button = event.target.closest?.("[data-copy-script-output]");
+  if (!button) return;
+
+  const output = document.getElementById("scriptOutput");
+  const feedback = document.getElementById("scriptOutputCopyStatus");
+  feedback.textContent = "";
+
+  try {
+    // Keep the temporary textarea inside the modal's focus trap when present.
+    const container = button.closest(".modal") || document.body;
+    await copyTextToClipboard(output.textContent, container);
+    feedback.innerHTML = `
+      <span class="badge rounded-pill border bg-success-subtle border-success-subtle text-success-emphasis">
+        <i class="bi bi-check-circle me-1" aria-hidden="true"></i>Copied to clipboard.
+      </span>`;
+  } catch {
+    feedback.innerHTML = `
+      <span class="badge rounded-pill border bg-danger-subtle border-danger-subtle text-danger-emphasis text-wrap">
+        <i class="bi bi-exclamation-circle me-1" aria-hidden="true"></i>Unable to copy script output.
+      </span>`;
+  }
+});
 
 const acknowledgeFeedback = document.querySelector(
   "[data-acknowledge-feedback]",

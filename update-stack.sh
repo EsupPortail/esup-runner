@@ -18,16 +18,18 @@
 #    - restore tracked runner/uv.lock before git pull (avoid local lock conflicts),
 #    - then regenerate it during runner update.
 # 4) Update installed components:
-#    - manager: make init, make sync, then restart service if available.
+#    - manager: optionally run make init, then make sync.
 #    - runner:  check the FFmpeg fix for CVE-2026-8461 (MagicYUV): below 8.1.2
 #      or unverified, ensure MEDIA_CODEC_DENYLIST in runner/.env denies magicyuv;
 #      otherwise report that magicyuv can be removed from the denylist.
-#      Then make init, make sync variant based on runner mode, then restart service if available.
-# 5) Optionally run a post-update smoke test with
+#      Optionally run make init, then the make sync variant for the runner mode.
+# 5) Before any restart, validate all selected components with check_config.py.
+#    Restart the applicable services only after all checks pass.
+# 6) Optionally run a post-update smoke test with
 #    manager/scripts/check_pipeline_tasks.py.
 #    In transcription-cpu/transcription-gpu modes, the test adds
 #    --with-transcription-translation.
-# 6) Optionally send an update summary email to MANAGER_EMAIL
+# 7) Optionally send an update summary email to MANAGER_EMAIL
 #    (using SMTP settings from runner/.env), including configuration changes
 #    detected between the Git revisions before and after the update.
 #
@@ -56,6 +58,7 @@ RUN_UV_UPDATE=1
 RUN_GIT_UPDATE=1
 RUN_TEST=1
 RUN_EMAIL=1
+SKIP_EMAIL_WHEN_UP_TO_DATE=0
 SEND_TEST_EMAIL=0
 USE_SUDO=1
 DRY_RUN=0
@@ -79,6 +82,7 @@ CONFIG_CHANGES_REPORT=""
 EXIT_CODE=0
 MANAGER_RESTART_REQUIRED=0
 RUNNER_RESTART_REQUIRED=0
+RESTART_BLOCK_REASON=""
 UV_UPDATED_USERS=""
 # First FFmpeg release fixing CVE-2026-8461 / PixelSmash (MagicYUV decoder).
 FFMPEG_MAGICYUV_FIXED_VERSION="8.1.2"
@@ -119,6 +123,7 @@ Options:
   --no-restart                      Shortcut for --restart-policy never
   --skip-test                       Skip post-update check_pipeline_tasks test
   --skip-email                      Skip email notification
+  --skip-email-when-up-to-date      Skip email after a successful run with no updates
   --send-test-email                 Send only a test update email, then exit
   --no-sudo                         Do not use sudo even when needed
   --dry-run                         Print commands without executing them
@@ -127,6 +132,10 @@ Options:
 Detection:
   - manager is considered installed if <root>/manager/.env exists
   - runner is considered installed if <root>/runner/.env exists
+
+Configuration check:
+  - before any service restart, check_config.py must pass for every selected component
+  - after a failed check, fix the error and rerun with --always-restart
 
 Runner sync mode:
   - auto: if RUNNER_TASK_TYPES does not contain "transcription" -> base
@@ -137,7 +146,7 @@ Runner sync mode:
     check_pipeline_tasks.py --with-transcription-translation
 
 Runner FFmpeg check (CVE-2026-8461, MagicYUV decoder):
-  - ffmpeg is resolved with the runner service PATH order
+  - ffmpeg is resolved first from the inherited PATH, then from the default runner service PATH
   - FFmpeg < 8.1.2, or version unknown: magicyuv is added to
     MEDIA_CODEC_DENYLIST in runner/.env when missing (runner restart required)
   - FFmpeg >= 8.1.2: reports that magicyuv can be removed from the denylist
@@ -965,7 +974,7 @@ infer_runner_sync_mode() {
 }
 
 resolve_runner_ffmpeg() {
-  # Resolve ffmpeg in the runner unit PATH order, independently of the cron PATH.
+  # Prefer the inherited PATH and fall back to the default runner service PATH.
   local service_user service_home=""
   local search_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
@@ -976,6 +985,7 @@ resolve_runner_ffmpeg() {
   if [[ -n "${service_home}" ]]; then
     search_path="${service_home}/.local/bin:${search_path}"
   fi
+  search_path="${PATH:+${PATH}:}${search_path}"
   PATH="${search_path}" type -P ffmpeg
 }
 
@@ -1062,7 +1072,7 @@ check_runner_ffmpeg_magicyuv_fix() {
   ffmpeg_bin="$(resolve_runner_ffmpeg || true)"
   if [[ -z "${ffmpeg_bin}" ]]; then
     label="FFmpeg not found"
-    warn "FFmpeg not found in the runner service PATH: assuming CVE-2026-8461 is not fixed."
+    warn "FFmpeg not found in the inherited or default runner service PATH: assuming CVE-2026-8461 is not fixed."
   elif ! version="$(read_ffmpeg_version "${ffmpeg_bin}")"; then
     label="FFmpeg version unknown"
     warn "Unable to read a release version from ${ffmpeg_bin}: assuming CVE-2026-8461 is not fixed."
@@ -1115,7 +1125,7 @@ check_runner_ffmpeg_magicyuv_fix() {
 }
 
 update_manager() {
-  # Manager update flow: optional init, sync deps, conditional service restart.
+  # Prepare the manager environment for the configuration check and restart.
   if [[ "${RUN_INIT}" -eq 1 ]]; then
     run_component_make_in_dir root "${MANAGER_DIR}" "${MANAGER_ENV_FILE}" \
       "Manager init (make init)" init
@@ -1126,27 +1136,11 @@ update_manager() {
   run_component_make_in_dir current "${MANAGER_DIR}" "${MANAGER_ENV_FILE}" \
     "Manager dependency sync (make sync)" sync
 
-  case "${RESTART_POLICY}" in
-    always)
-      restart_service_if_present "esup-runner-manager"
-      ;;
-    if-changed)
-      if [[ "${MANAGER_RESTART_REQUIRED}" -eq 1 ]]; then
-        restart_service_if_present "esup-runner-manager"
-      else
-        log "Manager restart skipped (no change detected under manager/)."
-      fi
-      ;;
-    never)
-      log "Manager restart skipped (--restart-policy never)."
-      ;;
-  esac
-
   UPDATED_MANAGER=1
 }
 
 update_runner() {
-  # Runner update flow with mode-specific dependency sync and conditional restart.
+  # Prepare the runner environment with the selected dependency profile.
   local mode="$1"
 
   if [[ "${RUN_INIT}" -eq 1 ]]; then
@@ -1196,23 +1190,88 @@ update_runner() {
       ;;
   esac
 
-  case "${RESTART_POLICY}" in
-    always)
-      restart_service_if_present "esup-runner-runner"
-      ;;
-    if-changed)
-      if [[ "${RUNNER_RESTART_REQUIRED}" -eq 1 ]]; then
-        restart_service_if_present "esup-runner-runner"
-      else
-        log "Runner restart skipped (no change detected under runner/)."
-      fi
-      ;;
-    never)
-      log "Runner restart skipped (--restart-policy never)."
-      ;;
-  esac
-
   UPDATED_RUNNER=1
+}
+
+check_component_config() {
+  # Use the environment just synced by make, including any runner extras.
+  local component="$1"
+  local directory="$2"
+  local check_status
+  local check_command=(uv run --no-sync scripts/check_config.py)
+
+  log_action "Check ${component} configuration"
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf 'DRY-RUN: (cd %q &&' "${directory}"
+    printf ' %q' "${check_command[@]}"
+    printf ')\n'
+    return 0
+  fi
+
+  (
+    cd "${directory}" || exit 1
+    "${check_command[@]}"
+  )
+  check_status=$?
+  if [[ "${check_status}" -ne 0 ]]; then
+    warn "Configuration check for ${component} failed in ${directory} (exit code ${check_status})."
+    return 1
+  fi
+}
+
+restart_updated_components() {
+  # Gate every planned restart on the configuration of all updated components.
+  if [[ "${RESTART_POLICY}" == "never" ]]; then
+    log "Service restarts skipped (--restart-policy never)."
+    return 0
+  fi
+
+  local restart_manager=0 restart_runner=0
+  if [[ "${UPDATED_MANAGER}" -eq 1 ]] \
+    && [[ "${RESTART_POLICY}" == "always" || "${MANAGER_RESTART_REQUIRED}" -eq 1 ]]; then
+    restart_manager=1
+  fi
+  if [[ "${UPDATED_RUNNER}" -eq 1 ]] \
+    && [[ "${RESTART_POLICY}" == "always" || "${RUNNER_RESTART_REQUIRED}" -eq 1 ]]; then
+    restart_runner=1
+  fi
+  if [[ "${restart_manager}" -eq 0 && "${restart_runner}" -eq 0 ]]; then
+    log "Service restarts skipped (no change detected in the selected components)."
+    return 0
+  fi
+
+  print_step_banner "Validate configuration before restarting services"
+  local failed_checks=()
+  if [[ "${UPDATED_MANAGER}" -eq 1 ]] && ! check_component_config "manager" "${MANAGER_DIR}"; then
+    failed_checks+=("manager")
+  fi
+  if [[ "${UPDATED_RUNNER}" -eq 1 ]] && ! check_component_config "runner" "${RUNNER_DIR}"; then
+    failed_checks+=("runner")
+  fi
+  if [[ "${#failed_checks[@]}" -gt 0 ]]; then
+    local failed_components
+    failed_components="$(printf '%s, ' "${failed_checks[@]}")"
+    RESTART_BLOCK_REASON="Configuration check failed for ${failed_components%, }. No services were restarted. Resolve the errors in the update log, then rerun with --always-restart."
+    warn "${RESTART_BLOCK_REASON}"
+    mark_non_fatal_failure
+    return 1
+  fi
+
+  print_step_banner "Restart services"
+  if [[ "${UPDATED_MANAGER}" -eq 1 ]]; then
+    if [[ "${restart_manager}" -eq 1 ]]; then
+      restart_service_if_present "esup-runner-manager"
+    else
+      log "Manager restart skipped (no change detected under manager/)."
+    fi
+  fi
+  if [[ "${UPDATED_RUNNER}" -eq 1 ]]; then
+    if [[ "${restart_runner}" -eq 1 ]]; then
+      restart_service_if_present "esup-runner-runner"
+    else
+      log "Runner restart skipped (no change detected under runner/)."
+    fi
+  fi
 }
 
 build_manager_url_from_manager_env() {
@@ -1376,6 +1435,19 @@ send_update_email_if_configured() {
     return 0
   fi
 
+  local no_updates=0
+  if [[ "${GIT_REVISION_UNCHANGED}" -eq 1 \
+    && "${MANAGER_RESTART_REQUIRED}" -eq 0 && "${RUNNER_RESTART_REQUIRED}" -eq 0 ]]; then
+    no_updates=1
+  fi
+
+  if [[ "${SKIP_EMAIL_WHEN_UP_TO_DATE}" -eq 1 && "${no_updates}" -eq 1 \
+    && "${EXIT_CODE}" -eq 0 && "${SEND_TEST_EMAIL}" -eq 0 ]]; then
+    EMAIL_STATUS="skipped (already up to date)"
+    log "Email notification skipped (--skip-email-when-up-to-date)."
+    return 0
+  fi
+
   if [[ ! -f "${RUNNER_ENV_FILE}" ]]; then
     EMAIL_STATUS="skipped"
     warn "Runner .env not found: update email skipped."
@@ -1404,12 +1476,6 @@ send_update_email_if_configured() {
   fi
 
   smtp_port="${smtp_port:-25}"
-
-  local no_updates=0
-  if [[ "${GIT_REVISION_UNCHANGED}" -eq 1 \
-    && "${MANAGER_RESTART_REQUIRED}" -eq 0 && "${RUNNER_RESTART_REQUIRED}" -eq 0 ]]; then
-    no_updates=1
-  fi
 
   local updated_parts=()
   if [[ "${UPDATED_MANAGER}" -eq 1 ]]; then
@@ -1478,6 +1544,8 @@ ${CONFIG_CHANGES_REPORT}
 
   if [[ "${SEND_TEST_EMAIL}" -eq 1 ]]; then
     overall_status="TEST EMAIL"
+  elif [[ -n "${RESTART_BLOCK_REASON}" ]]; then
+    overall_status="FAILED"
   elif [[ "${EXIT_CODE}" -eq 0 ]]; then
     overall_status="SUCCESS"
   else
@@ -1534,7 +1602,11 @@ This message was generated automatically by the ESUP-Runner update-stack.sh."
     report_eyebrow="Stack update report"
     report_title="ESUP-Runner update completed"
     report_summary="The automatic stack update finished and this report summarizes the result."
-    if [[ "${no_updates}" -eq 1 ]]; then
+    if [[ -n "${RESTART_BLOCK_REASON}" ]]; then
+      subject="[esup-runner] ${overall_status} - service restarts blocked - ${versions_label}"
+      report_title="ESUP-Runner service restarts blocked"
+      report_summary="${RESTART_BLOCK_REASON}"
+    elif [[ "${no_updates}" -eq 1 ]]; then
       subject="[esup-runner] ${overall_status} - No updates - ${versions_label}"
       report_title="ESUP-Runner already up to date"
       report_summary="No updates were applied. The stack is already up to date."
@@ -1971,6 +2043,10 @@ parse_args() {
         RUN_EMAIL=0
         shift
         ;;
+      --skip-email-when-up-to-date)
+        SKIP_EMAIL_WHEN_UP_TO_DATE=1
+        shift
+        ;;
       --send-test-email)
         SEND_TEST_EMAIL=1
         shift
@@ -2161,8 +2237,12 @@ main() {
     update_runner "${effective_runner_mode}"
   fi
 
-  print_step_banner "Run post-update smoke test"
-  run_post_update_test
+  if restart_updated_components; then
+    print_step_banner "Run post-update smoke test"
+    run_post_update_test
+  else
+    TEST_STATUS="skipped (configuration check failed)"
+  fi
   print_step_banner "Send update notification email"
   send_update_email_if_configured
 

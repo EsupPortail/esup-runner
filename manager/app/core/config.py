@@ -874,7 +874,12 @@ class Config:
                 errors.append("AUTHORIZED_TOKENS entries must have a non-empty name")
             elif role is None:
                 errors.append(
-                    f"AUTHORIZED_TOKENS__{name} must start with runners or app and use only letters, digits or underscores"
+                    f"Invalid token variable name 'AUTHORIZED_TOKENS__{name}'. "
+                    "Rename it using the case-sensitive prefix 'AUTHORIZED_TOKENS__runners' "
+                    "for a Runner token or 'AUTHORIZED_TOKENS__app' for an application token. "
+                    "You can append letters (A-Z, a-z), digits (0-9), and underscores (_). "
+                    "Valid names include 'AUTHORIZED_TOKENS__runners_gpu' and "
+                    "'AUTHORIZED_TOKENS__app_pod'."
                 )
             if not value.strip():
                 errors.append(f"AUTHORIZED_TOKENS__{name} must not be empty")

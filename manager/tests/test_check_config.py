@@ -176,7 +176,11 @@ def test_check_config_reports_invalid_token_name(monkeypatch, capsys):
 
     assert check_config.main() == 2
     output = capsys.readouterr().out
-    assert "ERROR: AUTHORIZED_TOKENS__toto must start with runners or app" in output
+    assert "ERROR: Invalid token variable name 'AUTHORIZED_TOKENS__toto'." in output
+    assert "'AUTHORIZED_TOKENS__runners' for a Runner token" in output
+    assert "'AUTHORIZED_TOKENS__app' for an application token" in output
+    assert "letters (A-Z, a-z), digits (0-9), and underscores (_)" in output
+    assert "'AUTHORIZED_TOKENS__runners_gpu' and 'AUTHORIZED_TOKENS__app_pod'" in output
     assert "never-print-invalid-token" not in output
 
 

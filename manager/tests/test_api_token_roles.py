@@ -177,7 +177,7 @@ def test_config_rejects_unknown_labels_and_secrets_shared_between_roles(monkeypa
     )
     with pytest.raises(ConfigValidationError) as error:
         config._validate_authorized_tokens()
-    assert "AUTHORIZED_TOKENS__legacy must start with runners or app" in str(error.value)
+    assert "Invalid token variable name 'AUTHORIZED_TOKENS__legacy'" in str(error.value)
     assert "API tokens must use distinct values" in str(error.value)
     assert api_token_role("shared") is None
 
